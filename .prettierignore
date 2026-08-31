@@ -1,0 +1,10 @@
+.agents/
+.codex/
+.idea/
+coverage/
+dist/
+drizzle/meta/
+node_modules/
+package-lock.json
+playwright-report/
+test-results/
