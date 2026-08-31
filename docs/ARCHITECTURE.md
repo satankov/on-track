@@ -73,6 +73,9 @@ creates `on-track.sqlite`, enables foreign keys and WAL, and restricts database
 and sidecar files to the owner. Database, journal, backup, and export patterns are
 ignored by Git and forbidden by the release contract if tracked.
 
+Default directory composition uses explicit Windows or POSIX path semantics, so
+the macOS, Windows, and Linux rules are testable independently of the CI host.
+
 Migrations are applied at startup. A database with a newer schema version or a
 newer migration marker is refused rather than opened by older code. Shipped
 migrations are never edited.

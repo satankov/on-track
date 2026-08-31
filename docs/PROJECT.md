@@ -14,16 +14,17 @@ the encryption or recovery parts of that promise.
 
 ## Current phase
 
-Version 0.0.1 plaintext alpha, prepared for its first public source release under
-Apache License 2.0.
+Version 0.0.1 plaintext alpha is published as an immutable GitHub source release
+under Apache License 2.0. The project is collecting early feedback and selecting
+the first post-alpha data-safety slice.
 
 ## Current objective
 
-Validate the smallest useful local workflow: create and customize multiple
-project chats, append plain-text notes, switch between projects, and recover the
-same state after an application restart.
+Prioritize and plan the first post-alpha slice without relaxing the plaintext and
+recovery warnings. Backup/export/restore and integrity checking are the leading
+safety need before users entrust important data to the application.
 
-## Success criteria
+## v0.0.1 outcome
 
 - The core project-chat workflow works at representative desktop and mobile
   browser widths and is keyboard accessible.
@@ -34,7 +35,8 @@ same state after an application restart.
 - A fresh user can install/build/start with `npm run quickstart`, stop with
   `Ctrl+C`, and later restart with `npm start`.
 - Build, type, lint, format, test, coverage, migration, browser E2E, release, and
-  dependency-security gates are reproducible locally and in GitHub Actions.
+  dependency-security gates are reproducible locally and passed on the published
+  release commit across the configured GitHub Actions workflows.
 
 ## Current capabilities
 
@@ -83,17 +85,25 @@ apps, peer-to-peer sync, public hosting, analytics, and telemetry.
 
 ## Roadmap and tracker
 
-Use GitHub Issues and a GitHub Project after publication for feature backlog,
-ownership, and status. Durable decisions live in `docs/adr/`; significant active
-work lives in `docs/plans/`.
+The public repository and release are:
+
+- [GitHub repository](https://github.com/satankov/on-track)
+- [v0.0.1 release](https://github.com/satankov/on-track/releases/tag/v0.0.1)
+- [Issues](https://github.com/satankov/on-track/issues)
+
+GitHub Issues is the intended backlog and ownership tracker. At the v0.0.1
+closeout it contains automated dependency pull requests but no product-roadmap
+issues; the near-term priorities above still need tracker records. Durable
+decisions live in `docs/adr/`; significant active work lives in `docs/plans/`.
 
 ## Current risks
 
 - A copied v0.0.1 database is readable because at-rest encryption is absent.
 - Backup/restore and corruption recovery do not exist, so important data could be
   lost.
-- Source installation requires Node.js 24 and a native SQLite dependency; CI is
-  prepared for Linux, macOS, and Windows but cannot run until publication.
+- Source installation requires Node.js 24 and a native SQLite dependency. The
+  release commit passed CI on Linux plus native install/test coverage on Linux,
+  macOS, and Windows, but future dependency upgrades can still affect portability.
 - Loopback HTTP narrows exposure but is still a trust boundary requiring Host,
   Origin, content-security, and input-validation controls.
 

@@ -125,9 +125,17 @@ local commit.
 - README has no **Develop and test** heading and current public docs contain no
   active PolyForm, source-available, or separate-commercial-license claim.
 
-### Git state
+### Git state at plan completion
 
 The verified initial tree is staged for one local commit. No commit, tag, remote,
 push, repository setting, or GitHub Release was created. Ignored agent, IDE,
 dependency, build, coverage, browser-report, and database artifacts remain
 unstaged.
+
+### Publication outcome
+
+The owner subsequently committed and pushed the initial tree, applied the
+Windows path-portability correction in commit `81027e1`, and created annotated
+tag `v0.0.1` at that commit. CI, CodeQL, cross-platform portability, and the
+tag-gated release workflow passed. GitHub published the immutable
+[On Track v0.0.1 release](https://github.com/satankov/on-track/releases/tag/v0.0.1).

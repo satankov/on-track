@@ -8,9 +8,9 @@ defines the current public license.
 ## Context
 
 The owner reconsidered the earlier personal-use/noncommercial restriction and
-explicitly selected Apache License 2.0. The repository has no commits, remote,
-tags, or published releases, so the earlier candidate license was never shipped
-from this repository.
+explicitly selected Apache License 2.0. At the time of this decision the
+repository had no commits, remote, tags, or published releases, so the earlier
+candidate license was never shipped from this repository.
 
 Apache-2.0 is an OSI-approved permissive open-source license. It allows personal
 and commercial use, modification, and distribution subject to its conditions. It
