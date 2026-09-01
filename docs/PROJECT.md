@@ -14,16 +14,15 @@ but does not yet fulfill the encryption or recovery parts of that promise.
 
 ## Current phase
 
-Version 0.0.2 is prepared as the next plaintext alpha source release under
-Apache License 2.0. It keeps the local-only browser/server architecture while
-adding backup, restore, Markdown, project deletion, and message-management
-workflows.
+Version 0.0.2 is tagged on the current `main` history as the next plaintext alpha
+source release under Apache License 2.0. It keeps the local-only browser/server
+architecture while adding backup, restore, Markdown, project deletion, and
+message-management workflows.
 
 ## Current objective
 
-Ship the first post-alpha usability and data-safety slice without relaxing the
-plaintext and recovery warnings. Backups remain readable until encryption is
-designed.
+Select and plan the next data-safety slice without relaxing the plaintext and
+recovery warnings. Backups remain readable until encryption is designed.
 
 ## v0.0.1 outcome
 
@@ -39,7 +38,7 @@ designed.
   dependency-security gates are reproducible locally and passed on the published
   release commit across the configured GitHub Actions workflows.
 
-## v0.0.2 release-candidate outcome
+## v0.0.2 outcome
 
 - Settings opens as a workspace mode and supports local SQLite database export
   and import.
@@ -50,6 +49,8 @@ designed.
 - Projects can be edited and deleted from the workspace without modal dialogs.
 - Plaintext warnings remain accurate: exports and the active database are local
   readable SQLite files, and import replaces local data rather than merging.
+- Database transfer endpoints are rate-limited as defense in depth around local
+  filesystem and database work.
 
 ## Current capabilities
 
@@ -104,12 +105,12 @@ The public repository and release are:
 
 - [GitHub repository](https://github.com/satankov/on-track)
 - [v0.0.1 release](https://github.com/satankov/on-track/releases/tag/v0.0.1)
+- [v0.0.2 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.2)
 - [Issues](https://github.com/satankov/on-track/issues)
 
-GitHub Issues is the intended backlog and ownership tracker. At the v0.0.1
-closeout it contains automated dependency pull requests but no product-roadmap
-issues; the near-term priorities above still need tracker records. Durable
-decisions live in `docs/adr/`; significant active work lives in `docs/plans/`.
+GitHub Issues is the intended backlog and ownership tracker. The near-term
+priorities above still need tracker records. Durable decisions live in
+`docs/adr/`; significant active work lives in `docs/plans/`.
 
 ## Current risks
 

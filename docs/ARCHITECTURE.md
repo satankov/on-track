@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented for the v0.0.1 plaintext alpha. The core decisions are recorded in
+Implemented through the v0.0.2 plaintext alpha. The core decisions are recorded in
 [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the encryption limitation in
 [ADR-0002](adr/0002-defer-at-rest-encryption.md), source delivery in
 [ADR-0003](adr/0003-source-release-pipeline.md), and the current license in
@@ -26,6 +26,8 @@ Local browser -> loopback Fastify server -> application service -> repository ->
 
 - React 19 and Vite 8 provide the TypeScript browser UI and production bundle.
 - Fastify 5 serves the static bundle and local API on IPv4 loopback.
+- `@fastify/rate-limit` limits local database transfer routes that perform
+  filesystem/database work.
 - `better-sqlite3` owns synchronous database access; Drizzle defines schema and
   applies checked-in, versioned SQL migrations.
 - `react-markdown` and `remark-gfm` render user notes as Markdown without raw
@@ -33,7 +35,7 @@ Local browser -> loopback Fastify server -> application service -> repository ->
 - Zod validates untrusted transport/domain input.
 - Vitest and Testing Library cover domain, database, API, client, and component
   behavior; Playwright covers the persisted browser journey.
-- npm lockfile installation and GitHub source releases are the v0.0.1 packaging
+- npm lockfile installation and GitHub source releases are the current packaging
   model. Node.js 24 is the supported runtime.
 
 ## Components and dependency direction
@@ -88,7 +90,8 @@ The Settings workflow exports the live SQLite database through
 validates it as an On Track database, runs SQLite `quick_check`, closes the live
 connection, replaces the database file in the configured data directory, and
 reopens the repository against the imported file. Import is replacement, not
-merge.
+merge. Export is limited to three attempts per minute per process; import is
+limited to two attempts per minute per process.
 
 ## Trust and security boundaries
 
@@ -99,6 +102,7 @@ merge.
 - Input is schema-validated, SQL is parameterized through prepared
   statements/query tooling, and user notes render through a Markdown component
   with raw HTML skipped.
+- Database export and import routes are rate-limited before transfer work runs.
 - Error responses avoid internal paths and stack details.
 - The database is plaintext. Filesystem permissions and loopback binding reduce
   exposure but do not protect a copied database, exported backup, or an unlocked
@@ -106,8 +110,9 @@ merge.
 
 Before confidential use, encryption must cover the database, WAL/journals,
 backups, exports, attachments, indexes, migration, key storage, lock behavior,
-forgotten credentials, recovery, and cleanup of plaintext artifacts. Backup and
-restore must be implemented and tested before production-readiness claims.
+forgotten credentials, recovery, and cleanup of plaintext artifacts. Backup
+integrity, import conflict handling, recovery UX, and restore failure modes must
+be hardened before production-readiness claims.
 
 ## Critical user journeys
 
@@ -149,8 +154,8 @@ publishes only a matching tag whose commit is already on `main`.
   review.
 - Do not promise peer-to-peer sync until identity, pairing, transport, conflicts,
   deletion, recovery, and discovery/relay behavior are explicitly designed.
-- Do not call the product NDA-safe or production-ready before encryption and
-  backup/restore are complete.
+- Do not call the product NDA-safe or production-ready before encryption,
+  recovery, and hardened backup/restore semantics are complete.
 
 ## Maintenance rule
 

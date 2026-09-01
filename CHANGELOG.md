@@ -28,6 +28,8 @@ below `1.0.0`, minor versions may contain breaking changes.
 ### Security
 
 - Database import validates the selected file before replacing local app data.
+- Database export and import routes are rate-limited to reduce repeated local
+  filesystem/database work from same-origin abuse.
 - Project deletion and message deletion run through explicit server-side
   persistence APIs instead of client-only state changes.
 

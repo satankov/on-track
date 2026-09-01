@@ -13,7 +13,9 @@ owner and uses Zod, repository transactions, and loopback Host/Origin checks at
 the API boundary. `better-sqlite3` provides an online backup API suitable for
 exporting a consistent SQLite file while the app is running. `react-markdown`
 renders Markdown to React elements without `dangerouslySetInnerHTML`, and
-`remark-gfm` adds familiar GitHub-flavored Markdown syntax.
+`remark-gfm` adds familiar GitHub-flavored Markdown syntax. The final release
+also uses `@fastify/rate-limit` on database transfer routes so repeated requests
+are stopped before additional filesystem/database work runs.
 
 The worktree already contains the workspace-state and scroll-containment changes
 from plan 0005; this slice preserves those edits and builds on the fixed
@@ -55,11 +57,12 @@ temporary online backup and serves it as an attachment. Import buffers a backup
 upload, writes it to the configured data directory as a temporary file, validates
 the On Track schema and SQLite integrity, closes the active connection, replaces
 the database file, and reopens the repository. Roll back to the previous file if
-replacement fails.
+replacement fails. Rate-limit export to three attempts per minute and import to
+two attempts per minute per process.
 
 Render notes with `react-markdown` plus `remark-gfm` and `skipHtml`. Keep links
-browser-openable but avoid custom URL transforms. Add compact per-note controls
-and modal editing for body/timestamp.
+browser-openable but avoid custom URL transforms. Add compact per-note icon
+controls and reuse the main composer for body/timestamp editing.
 
 ## Data and migration impact
 
@@ -92,17 +95,19 @@ rollback files after success or failure. Exported backups remain plaintext.
 ### Review and verification
 
 - Security review covered Markdown rendering, imported database files, temporary
-  files, rollback behavior, clipboard writes, destructive deletion, and new
-  dependencies. No Critical, High, or Medium findings remain.
+  files, rollback behavior, transfer rate limiting, clipboard writes,
+  destructive deletion, and new dependencies. No Critical, High, or Medium
+  findings remain.
 - A WAL-sidecar risk found during review was fixed by checkpointing imported
   databases after validation and cleaning temporary sidecars after replacement.
 - `npm run verify` passes release validation, build, typecheck, lint, formatting,
   coverage, migration tests, desktop/mobile Playwright E2E, and production
   dependency audit.
-- Coverage: 93 tests pass with 88.25% statements, 80.5% branches, 87.58%
-  functions, and 91.2% lines.
+- Coverage: 104 tests pass with 88.96% statements, 82.26% branches, 89.72%
+  functions, and 91.49% lines.
 - E2E: 6 Playwright tests pass across desktop Chromium and mobile WebKit,
   including Markdown message management and Settings export/import.
+- Release: annotated tag `v0.0.2` points at `c2ef29b` on `main`/`origin/main`.
 
 ### Remaining risk
 
