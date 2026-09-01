@@ -35,6 +35,61 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
 }
 
 describe("personal project chat workspace", () => {
+  it("shows a loading workspace while projects are still being fetched", () => {
+    const listRequest = deferred<[]>();
+    const api = createApi({
+      listChats: vi.fn(() => listRequest.promise),
+    });
+    render(<App api={api} />);
+
+    expect(screen.getByRole("main")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading your projects",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Create your first project" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the first-project call to action only after a successful empty list", async () => {
+    const api = createApi();
+    render(<App api={api} />);
+
+    expect(
+      await screen.findByRole("button", { name: "Create your first project" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText("A quiet place for every moving project."),
+    ).toBeVisible();
+  });
+
+  it("asks desktop users to choose a project when projects exist but none is open", async () => {
+    const chat = {
+      id: "chat-1",
+      title: "Existing project",
+      accent: "moss" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+    });
+    render(<App api={api} />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Choose a project to continue.",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Create your first project" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Open Existing project" }),
+    ).toBeVisible();
+    expect(api.getChat).not.toHaveBeenCalled();
+  });
+
   it("shows a recoverable local-service error when the project list fails", async () => {
     const api = createApi({
       listChats: vi.fn().mockRejectedValue(new Error("offline")),
@@ -44,6 +99,9 @@ describe("personal project chat workspace", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The local project list could not be loaded.",
     );
+    expect(
+      screen.queryByRole("button", { name: "Create your first project" }),
+    ).not.toBeInTheDocument();
   });
 
   it("creates a customized project from the useful empty state", async () => {

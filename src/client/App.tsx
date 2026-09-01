@@ -250,13 +250,42 @@ function ProjectRail({
   );
 }
 
+type WorkspacePlaceholderState = "loading" | "empty" | "choose" | "error";
+
 function EmptyWorkspace({
-  loading,
+  state,
   onCreate,
 }: {
-  loading: boolean;
+  state: WorkspacePlaceholderState;
   onCreate: () => void;
 }) {
+  const content = {
+    loading: {
+      eyebrow: "Projects",
+      heading: "Loading your projects.",
+      copy: "Your local workspace is opening.",
+    },
+    empty: {
+      eyebrow: "Your personal project log",
+      heading: "A quiet place for every moving project.",
+      copy: "Capture decisions, loose ends, and the thought you will need three weeks from now. Nothing leaves this computer.",
+    },
+    choose: {
+      eyebrow: "Projects ready",
+      heading: "Choose a project to continue.",
+      copy: "Select a project from the list to reopen its thread, or start a new one when another moving piece appears.",
+    },
+    error: {
+      eyebrow: "Projects unavailable",
+      heading: "Your project list could not be loaded.",
+      copy: "Check the local service and try again. Existing local data has not been changed.",
+    },
+  }[state];
+  const statusProps =
+    state === "loading"
+      ? ({ role: "status", "aria-live": "polite" } as const)
+      : undefined;
+
   return (
     <main className="workspace workspace-empty">
       <div className="empty-thread" aria-hidden="true">
@@ -264,21 +293,19 @@ function EmptyWorkspace({
         <span />
         <span />
       </div>
-      <div className="empty-copy">
-        <p className="eyebrow">Your personal project log</p>
-        <h1>A quiet place for every moving project.</h1>
-        <p>
-          Capture decisions, loose ends, and the thought you will need three
-          weeks from now. Nothing leaves this computer.
-        </p>
-        <button
-          className="button button-primary"
-          type="button"
-          onClick={onCreate}
-          disabled={loading}
-        >
-          {loading ? "Loading…" : "Create your first project"}
-        </button>
+      <div className="empty-copy" {...statusProps}>
+        <p className="eyebrow">{content.eyebrow}</p>
+        <h1>{content.heading}</h1>
+        <p>{content.copy}</p>
+        {state === "empty" && (
+          <button
+            className="button button-primary"
+            type="button"
+            onClick={onCreate}
+          >
+            Create your first project
+          </button>
+        )}
       </div>
     </main>
   );
@@ -348,27 +375,32 @@ function ChatWorkspace({
       </header>
 
       <section className="history" aria-label={`${detail.title} notes`}>
-        <div className="thread-line" aria-hidden="true" />
         {detail.notes.length === 0 ? (
-          <div className="no-notes">
-            <p className="eyebrow">The thread starts here</p>
-            <h2>What is worth remembering?</h2>
-            <p>
-              Record a decision, an open question, or the next concrete move.
-            </p>
-          </div>
+          <>
+            <div className="thread-line" aria-hidden="true" />
+            <div className="no-notes">
+              <p className="eyebrow">The thread starts here</p>
+              <h2>What is worth remembering?</h2>
+              <p>
+                Record a decision, an open question, or the next concrete move.
+              </p>
+            </div>
+          </>
         ) : (
-          <ol className="note-list">
-            {detail.notes.map((note) => (
-              <li className="note" key={note.id}>
-                <span className="note-node" aria-hidden="true" />
-                <time dateTime={new Date(note.createdAt).toISOString()}>
-                  {formatTime(note.createdAt)}
-                </time>
-                <p>{note.body}</p>
-              </li>
-            ))}
-          </ol>
+          <div className="note-thread">
+            <div className="thread-line" aria-hidden="true" />
+            <ol className="note-list">
+              {detail.notes.map((note) => (
+                <li className="note" key={note.id}>
+                  <span className="note-node" aria-hidden="true" />
+                  <time dateTime={new Date(note.createdAt).toISOString()}>
+                    {formatTime(note.createdAt)}
+                  </time>
+                  <p>{note.body}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
         )}
       </section>
 
@@ -410,7 +442,9 @@ function ChatWorkspace({
 export function App({ api = apiClient }: { api?: ApiClient }) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [active, setActive] = useState<ChatDetail>();
-  const [loading, setLoading] = useState(true);
+  const [loadState, setLoadState] = useState<"loading" | "loaded" | "error">(
+    "loading",
+  );
   const [dialog, setDialog] = useState<"create" | "edit">();
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
@@ -426,12 +460,16 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     let current = true;
     api
       .listChats()
-      .then((result) => current && setChats(result))
-      .catch(
-        () =>
-          current && setError("The local project list could not be loaded."),
-      )
-      .finally(() => current && setLoading(false));
+      .then((result) => {
+        if (!current) return;
+        setChats(result);
+        setLoadState("loaded");
+      })
+      .catch(() => {
+        if (!current) return;
+        setError("The local project list could not be loaded.");
+        setLoadState("error");
+      });
     return () => {
       current = false;
     };
@@ -441,6 +479,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     () => chats.find((chat) => chat.id === active?.id),
     [active?.id, chats],
   );
+  const placeholderState: WorkspacePlaceholderState =
+    loadState === "loading"
+      ? "loading"
+      : loadState === "error"
+        ? "error"
+        : chats.length > 0
+          ? "choose"
+          : "empty";
 
   async function selectChat(id: string) {
     if (savingNote) return;
@@ -564,7 +610,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         />
       ) : (
         <EmptyWorkspace
-          loading={loading}
+          state={placeholderState}
           onCreate={() => setDialog("create")}
         />
       )}
