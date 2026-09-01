@@ -1,4 +1,5 @@
 import type { APIRequestContext } from "@playwright/test";
+import { writeFileSync } from "node:fs";
 
 import { expect, test } from "./fixtures.js";
 
@@ -220,6 +221,54 @@ test("manages markdown messages and database backups from the UI", async ({
   await expect(
     page.getByRole("button", { name: `Open ${extraProject.title}` }),
   ).toHaveCount(0);
+});
+
+test("adds an attachment message and filters history by files", async ({
+  page,
+  localApp,
+}, testInfo) => {
+  const suffix = `${viewportName(testInfo.project.name)}-${Date.now()}`;
+  const attachmentPath = testInfo.outputPath("roadmap.txt");
+  writeFileSync(attachmentPath, "roadmap bytes");
+
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: "New project" }).click();
+  await page.getByLabel("Project name").fill(`Attachments ${suffix}`);
+  await page.getByRole("button", { name: "Create project" }).click();
+
+  await page.getByLabel("Add a note").fill("Plain status");
+  await page.getByRole("button", { name: /Add note/ }).click();
+  await expect(page.getByText("Plain status")).toBeVisible();
+
+  await page.getByLabel("Attach files").setInputFiles(attachmentPath);
+  await expect(page.getByText("roadmap.txt")).toBeVisible();
+  await page.getByLabel("Add a note").fill("Roadmap context");
+  await page.getByRole("button", { name: /Add note/ }).click();
+
+  await expect(page.getByText("Roadmap context")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Files 1" })).toBeVisible();
+  await page.getByRole("button", { name: "Files 1" }).click();
+  await expect(page.getByText("Plain status")).toBeHidden();
+  await expect(page.getByText("Roadmap context")).toBeVisible();
+
+  await page.evaluate(() => {
+    window.open = (url) => {
+      (
+        window as unknown as { openedAttachmentUrl?: string }
+      ).openedAttachmentUrl = String(url);
+      return window;
+    };
+  });
+  await page.getByRole("button", { name: "Open roadmap.txt" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { openedAttachmentUrl?: string })
+            .openedAttachmentUrl,
+      ),
+    )
+    .toMatch(/^blob:/);
 });
 
 test("keeps project and note collections inside their own scroll panes", async ({

@@ -15,14 +15,14 @@ but does not yet fulfill the encryption or recovery parts of that promise.
 ## Current phase
 
 Version 0.0.2 is tagged on the current `main` history as the next plaintext alpha
-source release under Apache License 2.0. It keeps the local-only browser/server
-architecture while adding backup, restore, Markdown, project deletion, and
-message-management workflows.
+source release under Apache License 2.0. The active development branch is
+building the future v0.0.3 attachment and history-filter slice.
 
 ## Current objective
 
-Select and plan the next data-safety slice without relaxing the plaintext and
-recovery warnings. Backups remain readable until encryption is designed.
+Commit the v0.0.3 attachment/file-filter slice, then design managed mutable
+attachments early while storage architecture is still cheap to change. Backups
+remain readable until encryption is designed.
 
 ## v0.0.1 outcome
 
@@ -57,6 +57,9 @@ recovery warnings. Backups remain readable until encryption is designed.
 - Create and switch between personal project chats.
 - Rename a project and select a restrained accent color.
 - Add multiline Markdown notes in deterministic chronological order.
+- Add local files to project messages with optional text context, including
+  attachment add/remove while editing a message.
+- Filter the open project history to messages with attached files.
 - Copy, edit, timestamp-adjust, and delete notes.
 - Export and import the local SQLite database from Settings.
 - Persist state across browser and server restarts.
@@ -68,8 +71,8 @@ recovery warnings. Backups remain readable until encryption is designed.
    semantics before users entrust irreplaceable data to the application.
 2. Design the encryption threat model, unlock and recovery experience, encrypted
    database/sidecar/attachment handling, and plaintext migration.
-3. Add attachments with explicit storage, size, type, lifecycle, and import
-   security boundaries.
+3. Design native mutable attachment opening, richer previews, lifecycle
+   controls, and import/security hardening beyond the first SQLite BLOB slice.
 4. Add a broad built-in label vocabulary—such as TODO, open question, decision,
    risk, and meeting note—and convenient history filtering.
 5. Evaluate native desktop packaging once the storage and key lifecycle are
@@ -84,11 +87,11 @@ offline history, deletion rules, recovery, and relay/discovery decisions. The
 current stable IDs, explicit migrations, and repository boundaries preserve
 options without pretending those choices are solved.
 
-## Non-goals for published v0.0.2
+## Non-goals for current plaintext alpha
 
-Collaboration, accounts, attachments, labels, filtering, search, encryption,
-NDA-safe claims, native installers, mobile apps, peer-to-peer sync, public
-hosting, analytics, and telemetry.
+Collaboration, accounts, labels, search, encryption, NDA-safe claims, native
+installers, mobile apps, peer-to-peer sync, public hosting, analytics, and
+telemetry.
 
 ## Product decisions
 
@@ -115,8 +118,9 @@ priorities above still need tracker records. Durable decisions live in
 ## Current risks
 
 - A copied On Track database is readable because at-rest encryption is absent.
-- Plaintext exports are readable copies of the database; importing replaces the
-  local database rather than merging histories.
+- Plaintext exports are readable copies of the database and now include attached
+  file bytes; importing replaces the local database rather than merging
+  histories.
 - Source installation requires Node.js 24 and a native SQLite dependency. The
   release commit passed CI on Linux plus native install/test coverage on Linux,
   macOS, and Windows, but future dependency upgrades can still affect portability.

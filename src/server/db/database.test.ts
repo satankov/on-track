@@ -33,7 +33,12 @@ describe("SQLite project-chat persistence", () => {
       .all();
 
     expect(tables).toEqual(
-      expect.arrayContaining(["chats", "notes", "__drizzle_migrations"]),
+      expect.arrayContaining([
+        "chats",
+        "notes",
+        "note_attachments",
+        "__drizzle_migrations",
+      ]),
     );
     expect(database.pragma("foreign_keys", { simple: true })).toBe(1);
     expect(() =>
@@ -149,6 +154,121 @@ describe("SQLite project-chat persistence", () => {
       "note-c",
     );
     expect(repository.getChat("chat-a")?.updatedAt).toBe(200);
+  });
+
+  it("persists attachment metadata with note history and deletes bytes with notes", () => {
+    repository.createChat({
+      id: "chat-a",
+      title: "Alpha",
+      accent: "coral",
+      now: 100,
+    });
+
+    const note = repository.appendNote({
+      id: "note-a",
+      chatId: "chat-a",
+      body: "Spec context",
+      now: 200,
+      attachments: [
+        {
+          id: "attachment-a",
+          filename: "launch-spec.pdf",
+          mediaType: "application/pdf",
+          byteSize: 4,
+          content: Buffer.from("spec"),
+          createdAt: 200,
+        },
+      ],
+    });
+
+    expect(note).toMatchObject({
+      id: "note-a",
+      attachments: [
+        {
+          id: "attachment-a",
+          noteId: "note-a",
+          filename: "launch-spec.pdf",
+          mediaType: "application/pdf",
+          byteSize: 4,
+        },
+      ],
+    });
+    expect(repository.listNotes("chat-a")[0]).toMatchObject({
+      attachments: [{ filename: "launch-spec.pdf" }],
+    });
+    expect(
+      repository.getAttachment("chat-a", "note-a", "attachment-a"),
+    ).toMatchObject({
+      filename: "launch-spec.pdf",
+      content: Buffer.from("spec"),
+    });
+
+    expect(repository.deleteNote("chat-a", "note-a")).toBe(true);
+    expect(
+      repository.getAttachment("chat-a", "note-a", "attachment-a"),
+    ).toBeUndefined();
+  });
+
+  it("updates note attachments by keeping existing rows and adding new bytes", () => {
+    repository.createChat({
+      id: "chat-a",
+      title: "Alpha",
+      accent: "coral",
+      now: 100,
+    });
+    repository.appendNote({
+      id: "note-a",
+      chatId: "chat-a",
+      body: "Original",
+      now: 200,
+      attachments: [
+        {
+          id: "attachment-keep",
+          filename: "keep.pdf",
+          mediaType: "application/pdf",
+          byteSize: 4,
+          content: Buffer.from("keep"),
+          createdAt: 200,
+        },
+        {
+          id: "attachment-remove",
+          filename: "remove.pdf",
+          mediaType: "application/pdf",
+          byteSize: 6,
+          content: Buffer.from("remove"),
+          createdAt: 200,
+        },
+      ],
+    });
+
+    const updated = repository.updateNote("chat-a", "note-a", {
+      body: "Updated",
+      createdAt: 250,
+      now: 300,
+      keepAttachmentIds: ["attachment-keep"],
+      attachments: [
+        {
+          id: "attachment-new",
+          filename: "new.pptx",
+          mediaType:
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          byteSize: 3,
+          content: Buffer.from("new"),
+          createdAt: 300,
+        },
+      ],
+    });
+
+    expect(updated).toMatchObject({
+      body: "Updated",
+      attachments: [
+        { id: "attachment-keep", filename: "keep.pdf" },
+        { id: "attachment-new", filename: "new.pptx" },
+      ],
+    });
+    expect(
+      repository.getAttachment("chat-a", "note-a", "attachment-remove"),
+    ).toBeUndefined();
   });
 
   it("appends a note with a custom past timestamp without rolling back project activity", () => {

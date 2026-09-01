@@ -2,11 +2,12 @@
 
 ## Status
 
-Implemented through the v0.0.2 plaintext alpha. The core decisions are recorded in
-[ADR-0001](adr/0001-localhost-typescript-sqlite.md), the encryption limitation in
-[ADR-0002](adr/0002-defer-at-rest-encryption.md), source delivery in
-[ADR-0003](adr/0003-source-release-pipeline.md), and the current license in
-[ADR-0005](adr/0005-apache-2-license.md).
+Implemented through the v0.0.2 plaintext alpha plus the active v0.0.3
+attachment/file-filter work in the current development tree. The core decisions
+are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
+encryption limitation in [ADR-0002](adr/0002-defer-at-rest-encryption.md),
+source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the
+current license in [ADR-0005](adr/0005-apache-2-license.md).
 
 ## System context
 
@@ -28,6 +29,8 @@ Local browser -> loopback Fastify server -> application service -> repository ->
 - Fastify 5 serves the static bundle and local API on IPv4 loopback.
 - `@fastify/rate-limit` limits local database transfer routes that perform
   filesystem/database work.
+- `@fastify/multipart` parses local attachment uploads with bounded file and
+  part limits.
 - `better-sqlite3` owns synchronous database access; Drizzle defines schema and
   applies checked-in, versioned SQL migrations.
 - `react-markdown` and `remark-gfm` render user notes as Markdown without raw
@@ -59,12 +62,14 @@ the local API; raw SQL and filesystem paths never cross that boundary.
 
 ## Data design and location
 
-The initial migration creates `chats`, `notes`, and single-row `app_metadata`
-tables. Foreign keys and check constraints enforce ownership and length/accent
-rules. Indexed `(chat_id, created_at, id)` ordering makes note history stable;
-chat activity is ordered using timestamps with a deterministic ID tie-breaker.
-Appending, editing, timestamp-adjusting, and deleting notes keep chat activity
-consistent with the newest remaining note in a transaction.
+The migrations create `chats`, `notes`, `note_attachments`, and single-row
+`app_metadata` tables. Foreign keys and check constraints enforce ownership,
+length/accent rules, attachment metadata bounds, non-empty attachment content, and
+byte-size agreement. Indexed `(chat_id, created_at, id)` ordering makes note
+history stable; chat activity is ordered using timestamps with a deterministic ID
+tie-breaker. Appending, editing, timestamp-adjusting, and deleting notes keep
+chat activity consistent with the newest remaining note in a transaction.
+Attachment rows cascade with their owning note.
 
 Default data directories:
 
@@ -85,13 +90,20 @@ Migrations are applied at startup. A database with a newer schema version or a
 newer migration marker is refused rather than opened by older code. Shipped
 migrations are never edited.
 
+Message attachments are stored as SQLite BLOBs in the same database as message
+metadata. The first slice caps each file at 100 MB, stores sanitized filename and
+media-type strings as display/open metadata, and serves bytes only through a
+project-, note-, and attachment-scoped route. The browser client opens fetched
+attachment bytes as a local blob URL; native app opening and in-place file
+mutation are deferred OS-integration work.
+
 The Settings workflow exports the live SQLite database through
-`better-sqlite3`'s online backup API. Import accepts an uploaded SQLite file,
-validates it as an On Track database, runs SQLite `quick_check`, closes the live
-connection, replaces the database file in the configured data directory, and
-reopens the repository against the imported file. Import is replacement, not
-merge. Export is limited to three attempts per minute per process; import is
-limited to two attempts per minute per process.
+`better-sqlite3`'s online backup API, including attachment bytes. Import accepts
+an uploaded SQLite file, validates it as an On Track database, runs SQLite
+`quick_check`, closes the live connection, replaces the database file in the
+configured data directory, and reopens the repository against the imported file.
+Import is replacement, not merge. Export is limited to three attempts per minute
+per process; import is limited to two attempts per minute per process.
 
 ## Trust and security boundaries
 
@@ -102,6 +114,9 @@ limited to two attempts per minute per process.
 - Input is schema-validated, SQL is parameterized through prepared
   statements/query tooling, and user notes render through a Markdown component
   with raw HTML skipped.
+- Multipart file uploads are capped at 100 MB per file and ten files per
+  message. Filenames and media types are treated as untrusted metadata, not
+  filesystem paths or execution instructions.
 - Database export and import routes are rate-limited before transfer work runs.
 - Error responses avoid internal paths and stack details.
 - The database is plaintext. Filesystem permissions and loopback binding reduce
@@ -121,6 +136,8 @@ be hardened before production-readiness claims.
 - Copy, edit, timestamp-adjust, and delete notes while preserving deterministic
   ordering.
 - Export a database backup and import it through Settings with validation.
+- Attach a local file to a message, edit message attachments, filter the project
+  history to messages with attached files, and open a scoped attachment.
 - Stop and restart the server against the same isolated data directory and
   recover all state.
 - Complete the flow at desktop and mobile widths with keyboard/focus behavior and
@@ -149,9 +166,9 @@ publishes only a matching tag whose commit is already on `main`.
 
 - Keep one local process as the only database writer for this phase.
 - Add every schema change as a new migration with rollback/error-path tests.
-- Treat attachments, imports/exports, external URLs, encryption, OS integration,
-  and sync as new trust-boundary work requiring dedicated plans and security
-  review.
+- Treat native mutable attachments, imports/exports, external URLs, encryption,
+  OS integration, and sync as new trust-boundary work requiring dedicated plans
+  and security review.
 - Do not promise peer-to-peer sync until identity, pairing, transport, conflicts,
   deletion, recovery, and discovery/relay behavior are explicitly designed.
 - Do not call the product NDA-safe or production-ready before encryption,

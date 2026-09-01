@@ -1,4 +1,5 @@
 import {
+  blob,
   check,
   index,
   integer,
@@ -52,10 +53,42 @@ export const notes = sqliteTable(
     createdAt: integer("created_at").notNull(),
   },
   (table) => [
-    check(
-      "notes_body_length",
-      sql`length(trim(${table.body})) BETWEEN 1 AND 10000`,
-    ),
+    check("notes_body_length", sql`length(${table.body}) <= 10000`),
     index("notes_chat_history_idx").on(table.chatId, table.createdAt, table.id),
+  ],
+);
+
+export const noteAttachments = sqliteTable(
+  "note_attachments",
+  {
+    id: text("id").primaryKey(),
+    noteId: text("note_id")
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+    filename: text("filename").notNull(),
+    mediaType: text("media_type").notNull(),
+    byteSize: integer("byte_size").notNull(),
+    content: blob("content", { mode: "buffer" }).notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    check(
+      "note_attachments_filename_length",
+      sql`length(trim(${table.filename})) BETWEEN 1 AND 255`,
+    ),
+    check(
+      "note_attachments_media_type_length",
+      sql`length(trim(${table.mediaType})) BETWEEN 1 AND 255`,
+    ),
+    check("note_attachments_byte_size_positive", sql`${table.byteSize} > 0`),
+    check(
+      "note_attachments_content_length",
+      sql`length(${table.content}) = ${table.byteSize}`,
+    ),
+    index("note_attachments_note_idx").on(
+      table.noteId,
+      table.createdAt,
+      table.id,
+    ),
   ],
 );

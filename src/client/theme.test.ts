@@ -27,4 +27,17 @@ describe("accent accessibility", () => {
     const ratio = 1.05 / (luminance(match![1]!) + 0.05);
     expect(ratio).toBeGreaterThanOrEqual(4.5);
   });
+
+  it("renders pending attachment remove icons with visible strokes", () => {
+    const stylesheet = readFileSync(
+      resolve(process.cwd(), "src/client/styles.css"),
+      "utf8",
+    );
+    const match = stylesheet.match(
+      /\.pending-attachment button svg\s*\{(?<body>[^}]+)\}/,
+    );
+
+    expect(match?.groups?.body).toContain("stroke: currentColor");
+    expect(match?.groups?.body).toContain("fill: none");
+  });
 });

@@ -15,6 +15,13 @@
       "when": 1788171601656,
       "tag": "0001_dusty_rafael_vega",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788270000000,
+      "tag": "0002_attachment_messages",
+      "breakpoints": true
     }
   ]
 }

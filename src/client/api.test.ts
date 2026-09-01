@@ -111,6 +111,91 @@ describe("browser API client", () => {
     });
   });
 
+  it("uploads note attachments with multipart form data and downloads attachment bytes", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: "note-1" }), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response("deck", {
+          status: 200,
+          headers: { "Content-Type": "application/vnd.ms-powerpoint" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["deck"], "roadmap.ppt", {
+      type: "application/vnd.ms-powerpoint",
+    });
+
+    await apiClient.appendNote("project/one", {
+      body: "Deck context",
+      createdAt: 250,
+      files: [file],
+    });
+    const downloaded = await apiClient.downloadAttachment(
+      "project/one",
+      "note/two",
+      "attachment/three",
+    );
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/chats/project%2Fone/notes",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.any(FormData),
+      }),
+    );
+    expect(fetchMock.mock.calls[0][1].headers).toBeUndefined();
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/chats/project%2Fone/notes/note%2Ftwo/attachments/attachment%2Fthree",
+    );
+    expect(await downloaded.text()).toBe("deck");
+  });
+
+  it("updates note attachments with multipart form data", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "note-1" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["new"], "new.pdf", { type: "application/pdf" });
+
+    await apiClient.updateNote("project/one", "note/two", {
+      body: "Updated",
+      createdAt: 300,
+      keepAttachmentIds: ["attachment/keep"],
+      files: [file],
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/chats/project%2Fone/notes/note%2Ftwo",
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.any(FormData),
+      }),
+    );
+    expect(fetchMock.mock.calls[0][1].headers).toBeUndefined();
+  });
+
+  it("reports attachment read failures safely", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("missing", { status: 404 })),
+    );
+
+    await expect(
+      apiClient.downloadAttachment("project/one", "note/two", "attachment"),
+    ).rejects.toThrow("The attachment could not be downloaded.");
+  });
+
   it("uses a server error message without exposing response details", async () => {
     vi.stubGlobal(
       "fetch",

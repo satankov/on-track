@@ -33,6 +33,7 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
     appendNote: vi.fn(),
     updateNote: vi.fn(),
     deleteNote: vi.fn(),
+    downloadAttachment: vi.fn(),
     exportDatabase: vi.fn(),
     importDatabase: vi.fn(),
     ...overrides,
@@ -328,6 +329,66 @@ describe("personal project chat workspace", () => {
     expect(screen.getByLabelText("Add a note")).toHaveValue("");
   });
 
+  it("sends selected files with caption text and can remove a pending attachment", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const uploaded = new File(["deck"], "roadmap.pptx", {
+      type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    });
+    const removed = new File(["draft"], "draft.pdf", {
+      type: "application/pdf",
+    });
+    const appendNote = vi.fn().mockResolvedValue({
+      id: "note-1",
+      chatId: "chat-1",
+      body: "Deck context",
+      createdAt: 2,
+      attachments: [
+        {
+          id: "attachment-1",
+          noteId: "note-1",
+          filename: "roadmap.pptx",
+          mediaType:
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          byteSize: 4,
+          createdAt: 2,
+        },
+      ],
+    });
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      appendNote,
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    await user.upload(screen.getByLabelText("Attach files"), [
+      uploaded,
+      removed,
+    ]);
+    expect(screen.getByText("roadmap.pptx")).toBeVisible();
+    expect(screen.getByText("draft.pdf")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Remove draft.pdf" }));
+    await user.type(screen.getByLabelText("Add a note"), "Deck context");
+    await user.click(screen.getByRole("button", { name: "Add note" }));
+
+    expect(appendNote).toHaveBeenCalledWith("chat-1", {
+      body: "Deck context",
+      files: [uploaded],
+    });
+    expect(await screen.findByText("roadmap.pptx")).toBeVisible();
+    expect(screen.queryByText("draft.pdf")).not.toBeInTheDocument();
+  });
+
   it("opens settings as a rail mode and exports from the main workspace", async () => {
     const user = userEvent.setup();
     const api = createApi({
@@ -511,7 +572,81 @@ describe("personal project chat workspace", () => {
     expect(document.querySelectorAll(".message-time")).toHaveLength(3);
   });
 
-  it("copies with icon feedback, edits from the composer, and deletes an existing message", async () => {
+  it("renders attachment cards and filters history to messages with files", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 100,
+      updatedAt: 2_000,
+    };
+    const notes = [
+      {
+        id: "note-1",
+        chatId: "chat-1",
+        body: "Plain update",
+        createdAt: 1_000,
+        attachments: [],
+      },
+      {
+        id: "note-2",
+        chatId: "chat-1",
+        body: "Read this deck",
+        createdAt: 2_000,
+        attachments: [
+          {
+            id: "attachment-1",
+            noteId: "note-2",
+            filename: "roadmap.pptx",
+            mediaType:
+              "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            byteSize: 2048,
+            createdAt: 2_000,
+          },
+        ],
+      },
+    ];
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes }),
+      downloadAttachment: vi.fn().mockResolvedValue(
+        new Blob(["deck"], {
+          type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        }),
+      ),
+    });
+    const createObjectURL = vi.fn(() => "blob:on-track-attachment");
+    const revokeObjectURL = vi.fn();
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+
+    expect(screen.getByText("Plain update")).toBeVisible();
+    expect(screen.getByText("roadmap.pptx")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Files 1" }));
+    expect(screen.queryByText("Plain update")).not.toBeInTheDocument();
+    expect(screen.getByText("Read this deck")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Open roadmap.pptx" }));
+    expect(api.downloadAttachment).toHaveBeenCalledWith(
+      "chat-1",
+      "note-2",
+      "attachment-1",
+    );
+    expect(createObjectURL).toHaveBeenCalled();
+    expect(open).toHaveBeenCalledWith(
+      "blob:on-track-attachment",
+      "_blank",
+      "noopener,noreferrer",
+    );
+  });
+
+  it("copies with icon feedback, edits message files from the composer, and deletes an existing message", async () => {
     const user = userEvent.setup();
     const chat = {
       id: "chat-1",
@@ -530,6 +665,24 @@ describe("personal project chat workspace", () => {
             chatId: "chat-1",
             body: "Original **message**",
             createdAt: 2_000,
+            attachments: [
+              {
+                id: "attachment-keep",
+                noteId: "note-1",
+                filename: "keep.pdf",
+                mediaType: "application/pdf",
+                byteSize: 4,
+                createdAt: 2_000,
+              },
+              {
+                id: "attachment-remove",
+                noteId: "note-1",
+                filename: "remove.pdf",
+                mediaType: "application/pdf",
+                byteSize: 6,
+                createdAt: 2_000,
+              },
+            ],
           },
         ],
       }),
@@ -538,6 +691,24 @@ describe("personal project chat workspace", () => {
         chatId: "chat-1",
         body: "Revised **message**",
         createdAt: 3_600_000,
+        attachments: [
+          {
+            id: "attachment-keep",
+            noteId: "note-1",
+            filename: "keep.pdf",
+            mediaType: "application/pdf",
+            byteSize: 4,
+            createdAt: 2_000,
+          },
+          {
+            id: "attachment-new",
+            noteId: "note-1",
+            filename: "new.pdf",
+            mediaType: "application/pdf",
+            byteSize: 3,
+            createdAt: 3_600_000,
+          },
+        ],
       }),
       deleteNote: vi.fn().mockResolvedValue(undefined),
     });
@@ -568,6 +739,13 @@ describe("personal project chat workspace", () => {
     expect(screen.queryByRole("dialog", { name: "Edit message" })).toBeNull();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeVisible();
     expect(screen.queryByLabelText("Message timestamp")).toBeNull();
+    const editFiles = screen.getByLabelText("Pending files");
+    expect(within(editFiles).getByText("keep.pdf")).toBeVisible();
+    expect(within(editFiles).getByText("remove.pdf")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Remove remove.pdf" }));
+    const newFile = new File(["new"], "new.pdf", { type: "application/pdf" });
+    await user.upload(screen.getByLabelText("Attach files"), newFile);
+    expect(screen.getByText("new.pdf")).toBeVisible();
     const editComposer = screen.getByRole("textbox", { name: "Edit message" });
     await user.clear(editComposer);
     await user.type(editComposer, "Revised **message**");
@@ -583,6 +761,8 @@ describe("personal project chat workspace", () => {
     expect(api.updateNote).toHaveBeenCalledWith("chat-1", "note-1", {
       body: "Revised **message**",
       createdAt: new Date(revisedTimestamp).getTime(),
+      keepAttachmentIds: ["attachment-keep"],
+      files: [newFile],
     });
     expect(await screen.findByText("Revised")).toBeVisible();
 

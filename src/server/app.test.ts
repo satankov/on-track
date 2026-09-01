@@ -96,6 +96,213 @@ describe("local project-chat API", () => {
     });
   });
 
+  it("creates an attachment message through multipart and downloads file bytes", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
+      payload: { title: "Files", accent: "amber" },
+    });
+    const form = new FormData();
+    form.set("body", "Deck context");
+    form.set("createdAt", "250");
+    form.append(
+      "files",
+      new File([new Uint8Array([1, 2, 3])], "roadmap.pptx", {
+        type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      }),
+    );
+
+    const note = await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes",
+      headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
+      payload: form,
+    });
+
+    expect(note.statusCode).toBe(201);
+    expect(note.json()).toMatchObject({
+      id: "id-2",
+      body: "Deck context",
+      createdAt: 250,
+      attachments: [
+        {
+          id: "id-3",
+          noteId: "id-2",
+          filename: "roadmap.pptx",
+          byteSize: 3,
+        },
+      ],
+    });
+
+    const attachment = await app.inject({
+      method: "GET",
+      url: "/api/chats/id-1/notes/id-2/attachments/id-3",
+      headers: { host: "localhost:4173" },
+    });
+
+    expect(attachment.statusCode).toBe(200);
+    expect(attachment.headers["content-disposition"]).toContain(
+      'filename="roadmap.pptx"',
+    );
+    expect(attachment.rawPayload).toEqual(Buffer.from([1, 2, 3]));
+  });
+
+  it("edits attachment messages through multipart by keeping and adding files", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
+      payload: { title: "Files", accent: "amber" },
+    });
+    const createForm = new FormData();
+    createForm.set("body", "Original");
+    createForm.append("files", new File(["keep"], "keep.pdf"));
+    createForm.append("files", new File(["remove"], "remove.pdf"));
+    await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes",
+      headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
+      payload: createForm,
+    });
+
+    const updateForm = new FormData();
+    updateForm.set("body", "Updated");
+    updateForm.set("createdAt", "500");
+    updateForm.append("keepAttachmentIds", "id-3");
+    updateForm.append("files", new File(["new"], "new.pptx"));
+    const updated = await app.inject({
+      method: "PATCH",
+      url: "/api/chats/id-1/notes/id-2",
+      headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
+      payload: updateForm,
+    });
+
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({
+      body: "Updated",
+      createdAt: 500,
+      attachments: [
+        { id: "id-3", filename: "keep.pdf" },
+        { id: "id-5", filename: "new.pptx" },
+      ],
+    });
+  });
+
+  it("rejects invalid attachment edits without partially changing the message", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
+      payload: { title: "Files", accent: "amber" },
+    });
+    const createForm = new FormData();
+    createForm.set("body", "Original");
+    createForm.append("files", new File(["keep"], "keep.pdf"));
+    await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes",
+      headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
+      payload: createForm,
+    });
+
+    const emptyEdit = new FormData();
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: "/api/chats/id-1/notes/id-2",
+          headers: {
+            host: "127.0.0.1:4173",
+            origin: "http://127.0.0.1:4173",
+          },
+          payload: emptyEdit,
+        })
+      ).statusCode,
+    ).toBe(400);
+
+    const tooManyKept = new FormData();
+    tooManyKept.set("body", "Too many");
+    for (let index = 0; index < 11; index += 1) {
+      tooManyKept.append("keepAttachmentIds", `attachment-${index}`);
+    }
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: "/api/chats/id-1/notes/id-2",
+          headers: {
+            host: "127.0.0.1:4173",
+            origin: "http://127.0.0.1:4173",
+          },
+          payload: tooManyKept,
+        })
+      ).statusCode,
+    ).toBe(400);
+
+    const emptyFile = new FormData();
+    emptyFile.set("body", "Empty file");
+    emptyFile.append("files", new File([], "empty.pdf"));
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: "/api/chats/id-1/notes/id-2",
+          headers: {
+            host: "127.0.0.1:4173",
+            origin: "http://127.0.0.1:4173",
+          },
+          payload: emptyFile,
+        })
+      ).statusCode,
+    ).toBe(400);
+
+    const chat = await app.inject({
+      method: "GET",
+      url: "/api/chats/id-1",
+      headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
+    });
+    expect(chat.json().notes[0]).toMatchObject({
+      body: "Original",
+      attachments: [{ id: "id-3", filename: "keep.pdf" }],
+    });
+  });
+
+  it("rejects oversized attachments without creating partial notes", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
+      payload: { title: "Files", accent: "amber" },
+    });
+    const form = new FormData();
+    form.append(
+      "files",
+      new File([new Uint8Array(100 * 1024 * 1024 + 1)], "too-big.bin", {
+        type: "application/octet-stream",
+      }),
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes",
+      headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
+      payload: form,
+    });
+    const detail = await app.inject({
+      method: "GET",
+      url: "/api/chats/id-1",
+      headers: { host: "localhost:4173" },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      code: "invalid_input",
+      message: "Please check the submitted values.",
+    });
+    expect(detail.json().notes).toEqual([]);
+  });
+
   it.each([
     { url: "/api/chats", payload: { title: " ", accent: "coral" } },
     { url: "/api/chats", payload: { title: "Valid", accent: "neon" } },

@@ -259,7 +259,7 @@ label {
 .settings-back-button svg,
 .settings-section-icon svg,
 .message-action svg,
-.composer-time-button svg {
+.composer-icon-button svg {
   width: 20px;
   height: 20px;
   fill: none;
@@ -465,7 +465,7 @@ label {
 .workspace-chat {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 .chat-header {
   min-height: 108px;
@@ -504,6 +504,34 @@ label {
   flex: 0 0 auto;
   margin-left: auto;
   white-space: nowrap;
+}
+.history-filter {
+  padding: 10px clamp(24px, 7vw, 96px);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--paper) 86%, #fff);
+}
+.history-filter-inner {
+  max-width: var(--chat-column-width);
+  margin: 0 auto;
+  display: flex;
+  gap: 6px;
+}
+.history-filter-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 750;
+}
+.history-filter-button:hover,
+.history-filter-button--active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 10%, #fff);
 }
 .back-button {
   display: none;
@@ -788,6 +816,76 @@ label {
 .message-body {
   min-width: 0;
 }
+.attachment-list {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+.attachment-card {
+  min-width: min(360px, 100%);
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, #d8d3c8);
+  border-radius: 7px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.68);
+  cursor: pointer;
+  text-align: left;
+}
+.attachment-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 52%, #d8d3c8);
+  background: #fff;
+}
+.attachment-type {
+  min-width: 0;
+  overflow: hidden;
+  padding: 6px 4px;
+  border-radius: 5px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 16%, #fff);
+  font-size: 0.62rem;
+  font-weight: 850;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-copy {
+  min-width: 0;
+}
+.attachment-copy strong,
+.attachment-copy small {
+  display: block;
+}
+.attachment-copy strong {
+  overflow: hidden;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-copy small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.attachment-open {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  background: #fff;
+}
+.attachment-card:hover .attachment-open {
+  border-color: var(--accent);
+  color: var(--ink);
+}
 .message-footer {
   min-height: 18px;
   display: flex;
@@ -887,6 +985,79 @@ label {
   background: #fff;
   box-shadow: 0 16px 50px rgba(56, 48, 38, 0.08);
 }
+.pending-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px 0;
+}
+.pending-attachment {
+  position: relative;
+  max-width: min(280px, 100%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 28px 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 7%, #fff);
+}
+.pending-attachment span {
+  min-width: 0;
+}
+.pending-attachment strong,
+.pending-attachment small {
+  display: block;
+}
+.pending-attachment strong {
+  overflow: hidden;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pending-attachment small {
+  color: var(--muted);
+  font-size: 0.64rem;
+}
+.pending-attachment button {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(56, 48, 38, 0.12);
+  cursor: pointer;
+}
+.pending-attachment button:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, #fff);
+}
+.pending-attachment button svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+}
+.visually-hidden-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
 .composer textarea {
   width: 100%;
   min-height: 92px;
@@ -920,6 +1091,12 @@ label {
 .composer-bar > span {
   color: var(--muted);
   font-size: 0.68rem;
+}
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
 }
 kbd {
   font: inherit;
@@ -986,12 +1163,11 @@ kbd {
 .composer-timestamp-input {
   height: 38px;
 }
-.composer-time-button {
+.composer-icon-button {
   width: 34px;
   height: 34px;
   display: grid;
   place-items: center;
-  margin-left: auto;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 50%;
@@ -999,8 +1175,8 @@ kbd {
   background: transparent;
   cursor: pointer;
 }
-.composer-time-button[aria-expanded="true"],
-.composer-time-button:hover {
+.composer-icon-button[aria-expanded="true"],
+.composer-icon-button:hover {
   border-color: var(--accent);
   color: var(--ink);
   background: color-mix(in srgb, var(--accent) 8%, #fff);
@@ -1168,8 +1344,18 @@ kbd {
   .history {
     padding: 22px 12px 36px;
   }
+  .history-filter {
+    padding: 8px 12px;
+  }
+  .history-filter-inner {
+    overflow-x: auto;
+  }
   .message-stack {
     max-width: 88%;
+  }
+  .attachment-card {
+    min-width: min(300px, 100%);
+    grid-template-columns: 40px minmax(0, 1fr) 32px;
   }
   .message-actions {
     opacity: 1;

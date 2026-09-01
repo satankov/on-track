@@ -59,6 +59,23 @@ function errorMessage(caught: unknown, fallback: string): string {
   return caught instanceof Error ? caught.message : fallback;
 }
 
+function hasAttachments(note: Note): boolean {
+  return (note.attachments?.length ?? 0) > 0;
+}
+
+function formatFileSize(byteSize: number): string {
+  if (byteSize < 1024) return `${byteSize} B`;
+  if (byteSize < 1024 * 1024) return `${Math.round(byteSize / 1024)} KB`;
+  return `${(byteSize / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileTypeLabel(filename: string, mediaType: string): string {
+  const extension = filename.includes(".")
+    ? filename.split(".").pop()?.toUpperCase()
+    : "";
+  return extension || mediaType.split("/").pop()?.toUpperCase() || "FILE";
+}
+
 function useModalDialog(): RefObject<HTMLDialogElement | null> {
   const dialogRef = useRef<HTMLDialogElement>(null);
   useLayoutEffect(() => {
@@ -745,6 +762,33 @@ function ClockIcon() {
   );
 }
 
+function PaperclipIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="m21.4 11.6-8.5 8.5a5 5 0 0 1-7.1-7.1l9.2-9.2a3.5 3.5 0 1 1 5 5l-9.3 9.3a2 2 0 0 1-2.8-2.8l8.6-8.6" />
+    </svg>
+  );
+}
+
+function OpenIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M7 17 17 7" />
+      <path d="M9 7h8v8" />
+      <path d="M19 19H5V5" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
 function MessageActionButton({
   label,
   children,
@@ -770,10 +814,45 @@ function MessageActionButton({
 }
 
 function MarkdownMessage({ body }: { body: string }) {
+  if (!body.trim()) return null;
   return (
     <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
       {body}
     </ReactMarkdown>
+  );
+}
+
+function AttachmentList({
+  note,
+  onOpen,
+}: {
+  note: Note;
+  onOpen: (note: Note, attachmentId: string) => void;
+}) {
+  if (!note.attachments?.length) return null;
+  return (
+    <div className="attachment-list" aria-label="Message attachments">
+      {note.attachments.map((attachment) => (
+        <button
+          className="attachment-card"
+          key={attachment.id}
+          type="button"
+          aria-label={`Open ${attachment.filename}`}
+          onClick={() => onOpen(note, attachment.id)}
+        >
+          <span className="attachment-type" aria-hidden="true">
+            {fileTypeLabel(attachment.filename, attachment.mediaType)}
+          </span>
+          <span className="attachment-copy">
+            <strong>{attachment.filename}</strong>
+            <small>{formatFileSize(attachment.byteSize)}</small>
+          </span>
+          <span className="attachment-open" aria-hidden="true">
+            <OpenIcon />
+          </span>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -783,16 +862,24 @@ function ChatWorkspace({
   draftTimestamp,
   error,
   editingNote,
+  editingAttachmentIds,
+  pendingFiles,
+  historyFilter,
   saving,
   timestampOpen,
   onBack,
   onCancelEditNote,
   onCustomize,
   onCopyNote,
+  onOpenAttachment,
   onEditNote,
   onDeleteNote,
   onDraftChange,
   onDraftTimestampChange,
+  onFilesSelected,
+  onHistoryFilterChange,
+  onRemoveEditingAttachment,
+  onRemovePendingFile,
   onSubmit,
   onToggleTimestamp,
   copiedNoteId,
@@ -803,21 +890,42 @@ function ChatWorkspace({
   draftTimestamp: string;
   error: string;
   editingNote?: Note;
+  editingAttachmentIds: string[];
+  pendingFiles: File[];
+  historyFilter: "all" | "attachments";
   saving: boolean;
   timestampOpen: boolean;
   onBack: () => void;
   onCancelEditNote: () => void;
   onCustomize: () => void;
   onCopyNote: (note: Note) => void;
+  onOpenAttachment: (note: Note, attachmentId: string) => void;
   onEditNote: (note: Note) => void;
   onDeleteNote: (note: Note) => void;
   onDraftChange: (value: string) => void;
   onDraftTimestampChange: (value: string) => void;
+  onFilesSelected: (files: File[]) => void;
+  onHistoryFilterChange: (filter: "all" | "attachments") => void;
+  onRemoveEditingAttachment: (attachmentId: string) => void;
+  onRemovePendingFile: (index: number) => void;
   onSubmit: () => void;
   onToggleTimestamp: () => void;
   copiedNoteId?: string;
   navigationDisabled: boolean;
 }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachmentCount = detail.notes.filter(hasAttachments).length;
+  const visibleNotes =
+    historyFilter === "attachments"
+      ? detail.notes.filter(hasAttachments)
+      : detail.notes;
+  const showingEmptyFilter =
+    historyFilter === "attachments" && visibleNotes.length === 0;
+  const editingAttachments =
+    editingNote?.attachments?.filter((attachment) =>
+      editingAttachmentIds.includes(attachment.id),
+    ) ?? [];
+
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
@@ -853,6 +961,27 @@ function ChatWorkspace({
         </div>
       </header>
 
+      <nav className="history-filter" aria-label="History filters">
+        <div className="history-filter-inner">
+          <button
+            type="button"
+            className={`history-filter-button ${historyFilter === "all" ? "history-filter-button--active" : ""}`}
+            aria-pressed={historyFilter === "all"}
+            onClick={() => onHistoryFilterChange("all")}
+          >
+            All {detail.notes.length}
+          </button>
+          <button
+            type="button"
+            className={`history-filter-button ${historyFilter === "attachments" ? "history-filter-button--active" : ""}`}
+            aria-pressed={historyFilter === "attachments"}
+            onClick={() => onHistoryFilterChange("attachments")}
+          >
+            Files {attachmentCount}
+          </button>
+        </div>
+      </nav>
+
       <section className="history" aria-label={`${detail.title} messages`}>
         {detail.notes.length === 0 ? (
           <>
@@ -864,9 +993,19 @@ function ChatWorkspace({
               </p>
             </div>
           </>
+        ) : showingEmptyFilter ? (
+          <div className="message-groups">
+            <div className="no-notes no-notes--filtered">
+              <p className="eyebrow">Files</p>
+              <h2>No attached files yet.</h2>
+              <p>
+                Messages with attachments will appear in this project slice.
+              </p>
+            </div>
+          </div>
         ) : (
           <div className="message-groups">
-            {groupNotesByDay(detail.notes).map((group) => (
+            {groupNotesByDay(visibleNotes).map((group) => (
               <section className="message-day" key={group.key}>
                 <div className="message-date-separator">{group.label}</div>
                 <ol className="message-list">
@@ -879,6 +1018,10 @@ function ChatWorkspace({
                       >
                         <div className="message-stack">
                           <article className="message-bubble">
+                            <AttachmentList
+                              note={note}
+                              onOpen={onOpenAttachment}
+                            />
                             <div className="message-body note-body">
                               <MarkdownMessage body={note.body} />
                             </div>
@@ -935,6 +1078,43 @@ function ChatWorkspace({
           </p>
         )}
         <div className={`composer ${editingNote ? "composer--editing" : ""}`}>
+          {(editingAttachments.length > 0 || pendingFiles.length > 0) && (
+            <div className="pending-attachments" aria-label="Pending files">
+              {editingAttachments.map((attachment) => (
+                <span className="pending-attachment" key={attachment.id}>
+                  <span>
+                    <strong>{attachment.filename}</strong>
+                    <small>{formatFileSize(attachment.byteSize)}</small>
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${attachment.filename}`}
+                    onClick={() => onRemoveEditingAttachment(attachment.id)}
+                  >
+                    <XIcon />
+                  </button>
+                </span>
+              ))}
+              {pendingFiles.map((file, index) => (
+                <span
+                  className="pending-attachment"
+                  key={`${file.name}-${index}`}
+                >
+                  <span>
+                    <strong>{file.name}</strong>
+                    <small>{formatFileSize(file.size)}</small>
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${file.name}`}
+                    onClick={() => onRemovePendingFile(index)}
+                  >
+                    <XIcon />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <textarea
             data-composer-textarea
             aria-label={editingNote ? "Edit message" : "Add a note"}
@@ -964,16 +1144,40 @@ function ChatWorkspace({
             <span>
               <kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd> to add
             </span>
-            <button
-              className="composer-time-button"
-              type="button"
-              onClick={onToggleTimestamp}
-              aria-label={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
-              aria-expanded={timestampOpen}
-              title={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
-            >
-              <ClockIcon />
-            </button>
+            <div className="composer-tools">
+              <input
+                ref={fileInputRef}
+                className="visually-hidden-file"
+                type="file"
+                multiple
+                aria-label="Attach files"
+                onChange={(event) => {
+                  onFilesSelected(Array.from(event.target.files ?? []));
+                  event.target.value = "";
+                }}
+              />
+              <button
+                className="composer-icon-button"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                aria-label="Open file picker"
+                title="Attach files"
+              >
+                <PaperclipIcon />
+              </button>
+              <button
+                className="composer-icon-button"
+                type="button"
+                onClick={onToggleTimestamp}
+                aria-label={
+                  timestampOpen ? "Hide timestamp" : "Choose timestamp"
+                }
+                aria-expanded={timestampOpen}
+                title={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
+              >
+                <ClockIcon />
+              </button>
+            </div>
             {editingNote && (
               <button
                 className="composer-cancel-button"
@@ -987,7 +1191,12 @@ function ChatWorkspace({
               className="send-button"
               type="button"
               onClick={onSubmit}
-              disabled={saving || !draft.trim()}
+              disabled={
+                saving ||
+                (!draft.trim() &&
+                  pendingFiles.length === 0 &&
+                  editingAttachments.length === 0)
+              }
             >
               {saving
                 ? editingNote
@@ -1016,8 +1225,15 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     "projects",
   );
   const [editingNote, setEditingNote] = useState<Note>();
+  const [editingAttachmentIds, setEditingAttachmentIds] = useState<string[]>(
+    [],
+  );
   const [copiedNoteId, setCopiedNoteId] = useState<string>();
   const [draft, setDraft] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [historyFilter, setHistoryFilter] = useState<"all" | "attachments">(
+    "all",
+  );
   const [draftTimestamp, setDraftTimestamp] = useState("");
   const [composerTimestampOpen, setComposerTimestampOpen] = useState(false);
   const [error, setError] = useState("");
@@ -1068,9 +1284,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       if (request !== selectionRequest.current) return;
       setActive(detail);
       setDraft("");
+      setPendingFiles([]);
+      setHistoryFilter("all");
       setDraftTimestamp("");
       setComposerTimestampOpen(false);
       setEditingNote(undefined);
+      setEditingAttachmentIds([]);
       focusMobileBackButton();
     } catch (caught) {
       if (request !== selectionRequest.current) return;
@@ -1084,9 +1303,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setChats((current) => [chat, ...current]);
     setActive({ ...chat, notes: [] });
     setDialog(undefined);
+    setPendingFiles([]);
+    setHistoryFilter("all");
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
     setEditingNote(undefined);
+    setEditingAttachmentIds([]);
     focusMobileBackButton();
   }
 
@@ -1113,17 +1335,22 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setChats((current) => current.filter((chat) => chat.id !== projectId));
     setActive(undefined);
     setDraft("");
+    setPendingFiles([]);
+    setHistoryFilter("all");
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
     setError("");
     setEditingNote(undefined);
+    setEditingAttachmentIds([]);
     setMode("projects");
   }
 
   async function appendNote() {
-    if (!active || !draft.trim() || savingNote) return;
+    if (!active || (!draft.trim() && pendingFiles.length === 0) || savingNote)
+      return;
     const projectId = active.id;
     const submittedDraft = draft;
+    const submittedFiles = pendingFiles;
     const editing = editingNote;
     const timestampValue = draftTimestamp;
     setSavingNote(true);
@@ -1139,11 +1366,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         await updateNote(editing, {
           body: submittedDraft,
           createdAt: timestamp,
+          keepAttachmentIds: editingAttachmentIds,
+          files: submittedFiles,
         });
       } else {
         const note = await api.appendNote(projectId, {
           body: submittedDraft,
           ...(timestamp === undefined ? {} : { createdAt: timestamp }),
+          ...(submittedFiles.length === 0 ? {} : { files: submittedFiles }),
         });
         setActive((current) =>
           current?.id === projectId
@@ -1168,6 +1398,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       }
       if (activeId.current === projectId) {
         setDraft((current) => (current === submittedDraft ? "" : current));
+        setPendingFiles((current) =>
+          current === submittedFiles ? [] : current,
+        );
         setDraftTimestamp("");
         setComposerTimestampOpen(false);
       }
@@ -1182,7 +1415,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
 
   function startEditingNote(note: Note) {
     setEditingNote(note);
+    setEditingAttachmentIds(
+      note.attachments?.map((attachment) => attachment.id) ?? [],
+    );
     setDraft(note.body);
+    setPendingFiles([]);
     setDraftTimestamp(toDateTimeLocalValue(note.createdAt));
     setComposerTimestampOpen(false);
     setError("");
@@ -1195,7 +1432,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
 
   function cancelEditingNote() {
     setEditingNote(undefined);
+    setEditingAttachmentIds([]);
     setDraft("");
+    setPendingFiles([]);
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
     setError("");
@@ -1216,9 +1455,57 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     }
   }
 
+  async function openAttachment(note: Note, attachmentId: string) {
+    if (!active) return;
+    const attachment = note.attachments?.find(
+      (item) => item.id === attachmentId,
+    );
+    if (!attachment) return;
+    try {
+      const blob = await api.downloadAttachment(
+        active.id,
+        note.id,
+        attachmentId,
+      );
+      const url = URL.createObjectURL(blob);
+      const opened = window.open(url, "_blank", "noopener,noreferrer");
+      if (!opened) {
+        const link = document.createElement("a");
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.click();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (caught) {
+      setError(errorMessage(caught, "The attachment could not be opened."));
+    }
+  }
+
+  function addPendingFiles(files: File[]) {
+    setPendingFiles((current) => [...current, ...files]);
+  }
+
+  function removePendingFile(index: number) {
+    setPendingFiles((current) =>
+      current.filter((_, itemIndex) => itemIndex !== index),
+    );
+  }
+
+  function removeEditingAttachment(attachmentId: string) {
+    setEditingAttachmentIds((current) =>
+      current.filter((id) => id !== attachmentId),
+    );
+  }
+
   async function updateNote(
     noteToUpdate: Note,
-    input: { body: string; createdAt: number },
+    input: {
+      body: string;
+      createdAt: number;
+      keepAttachmentIds?: string[];
+      files?: File[];
+    },
   ) {
     if (!active) return;
     const projectId = active.id;
@@ -1254,6 +1541,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       ),
     );
     setEditingNote(undefined);
+    setEditingAttachmentIds([]);
   }
 
   async function deleteNote(note: Note) {
@@ -1292,6 +1580,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setChats(importedChats);
     setActive(undefined);
     setDraftTimestamp("");
+    setPendingFiles([]);
+    setHistoryFilter("all");
     setComposerTimestampOpen(false);
     setMode("projects");
     setDraft("");
@@ -1304,7 +1594,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     selectionRequest.current += 1;
     setActive(undefined);
     setEditingNote(undefined);
+    setEditingAttachmentIds([]);
     setDraft("");
+    setPendingFiles([]);
+    setHistoryFilter("all");
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
     if (projectId && isMobileViewport()) {
@@ -1355,16 +1648,24 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           draftTimestamp={draftTimestamp}
           error={error}
           editingNote={editingNote}
+          editingAttachmentIds={editingAttachmentIds}
+          pendingFiles={pendingFiles}
+          historyFilter={historyFilter}
           saving={savingNote}
           timestampOpen={composerTimestampOpen}
           onBack={backToProjects}
           onCustomize={() => setMode("projectEdit")}
           onCopyNote={copyNote}
+          onOpenAttachment={openAttachment}
           onEditNote={startEditingNote}
           onCancelEditNote={cancelEditingNote}
           onDeleteNote={deleteNote}
           onDraftChange={setDraft}
           onDraftTimestampChange={setDraftTimestamp}
+          onFilesSelected={addPendingFiles}
+          onHistoryFilterChange={setHistoryFilter}
+          onRemoveEditingAttachment={removeEditingAttachment}
+          onRemovePendingFile={removePendingFile}
           onSubmit={appendNote}
           onToggleTimestamp={() => {
             setComposerTimestampOpen((current) => {

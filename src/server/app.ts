@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import Sqlite from "better-sqlite3";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -10,13 +11,21 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { ZodError } from "zod";
 
-import { ChatService, ProjectNotFoundError } from "./chat-service.js";
+import {
+  ChatService,
+  InvalidInputError,
+  ProjectNotFoundError,
+} from "./chat-service.js";
 import { openDatabase } from "./db/database.js";
 import { SqliteChatRepository } from "./db/repository.js";
+import {
+  MAX_ATTACHMENTS_PER_MESSAGE,
+  MAX_ATTACHMENT_BYTES,
+} from "../domain/validation.js";
 
 interface BuildAppOptions {
   database: Database.Database;
@@ -28,6 +37,7 @@ interface BuildAppOptions {
 const LOOPBACK_HOST = /^(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/i;
 const LOOPBACK_ORIGIN = /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/i;
 const DATABASE_TRANSFER_RATE_LIMIT_WINDOW_MS = 60_000;
+const MULTIPART_BODY_LIMIT_BYTES = 128 * 1024 * 1024;
 
 function isDatabaseTransferRateLimitError(error: unknown): boolean {
   return (
@@ -41,7 +51,7 @@ function isDatabaseTransferRateLimitError(error: unknown): boolean {
 }
 
 export function buildApp(options: BuildAppOptions): FastifyInstance {
-  const app = Fastify({ logger: false, bodyLimit: 64 * 1024 * 1024 });
+  const app = Fastify({ logger: false, bodyLimit: MULTIPART_BODY_LIMIT_BYTES });
   let database = options.database;
   let service = new ChatService(
     new SqliteChatRepository(database),
@@ -54,6 +64,119 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     { parseAs: "buffer" },
     (_request, body, done) => done(null, body),
   );
+
+  void app.register(multipart, {
+    limits: {
+      fileSize: MAX_ATTACHMENT_BYTES,
+      files: MAX_ATTACHMENTS_PER_MESSAGE,
+      parts: MAX_ATTACHMENTS_PER_MESSAGE + 2,
+    },
+  });
+
+  function isUnsafeHeaderCharacter(character: string): boolean {
+    const code = character.charCodeAt(0);
+    return (
+      code <= 31 || code === 127 || character === '"' || character === "\\"
+    );
+  }
+
+  function stripControlCharacters(value: string): string {
+    return [...value]
+      .filter((character) => {
+        const code = character.charCodeAt(0);
+        return code > 31 && code !== 127;
+      })
+      .join("");
+  }
+
+  function sanitizeFilename(filename: string | undefined): string {
+    const value = basename(filename || "attachment")
+      .split("")
+      .map((character) =>
+        isUnsafeHeaderCharacter(character) ? "_" : character,
+      )
+      .join("")
+      .trim();
+    return value.slice(0, 255) || "attachment";
+  }
+
+  function sanitizeMediaType(mediaType: string | undefined): string {
+    const value = stripControlCharacters(
+      mediaType || "application/octet-stream",
+    )
+      .trim()
+      .slice(0, 255);
+    return value || "application/octet-stream";
+  }
+
+  function attachmentDispositionFilename(filename: string): string {
+    return filename
+      .split("")
+      .map((character) =>
+        isUnsafeHeaderCharacter(character) ? "_" : character,
+      )
+      .join("");
+  }
+
+  async function parseMultipartNote(request: {
+    parts: () => AsyncIterableIterator<
+      | {
+          type: "file";
+          filename?: string;
+          mimetype?: string;
+          toBuffer: () => Promise<Buffer>;
+        }
+      | { type: "field"; fieldname: string; value: unknown }
+    >;
+  }): Promise<{
+    body?: string;
+    createdAt?: number;
+    keepAttachmentIds: string[];
+    attachments: {
+      filename: string;
+      mediaType: string;
+      byteSize: number;
+      content: Buffer;
+    }[];
+  }> {
+    let body: string | undefined;
+    let createdAt: number | undefined;
+    const keepAttachmentIds: string[] = [];
+    const attachments = [];
+    try {
+      for await (const part of request.parts()) {
+        if (part.type === "file") {
+          const content = await part.toBuffer();
+          attachments.push({
+            filename: sanitizeFilename(part.filename),
+            mediaType: sanitizeMediaType(part.mimetype),
+            byteSize: content.byteLength,
+            content,
+          });
+          continue;
+        }
+        if (part.fieldname === "body" && typeof part.value === "string") {
+          body = part.value;
+        }
+        if (part.fieldname === "createdAt") {
+          const timestamp = Number(part.value);
+          if (!Number.isSafeInteger(timestamp) || timestamp < 0) {
+            throw new InvalidInputError();
+          }
+          createdAt = timestamp;
+        }
+        if (
+          part.fieldname === "keepAttachmentIds" &&
+          typeof part.value === "string"
+        ) {
+          keepAttachmentIds.push(part.value);
+        }
+      }
+    } catch {
+      throw new InvalidInputError();
+    }
+    return { body, createdAt, keepAttachmentIds, attachments };
+  }
 
   function removeDatabaseFiles(path: string): void {
     for (const candidate of [
@@ -169,7 +292,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   });
 
   app.setErrorHandler((error, _request, reply) => {
-    if (error instanceof ZodError) {
+    if (error instanceof ZodError || error instanceof InvalidInputError) {
       return reply.code(400).send({
         code: "invalid_input",
         message: "Please check the submitted values.",
@@ -215,18 +338,46 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   app.post<{ Params: { id: string } }>(
     "/api/chats/:id/notes",
     async (request, reply) => {
-      const note = service.appendNote(request.params.id, request.body);
+      const note = request.isMultipart()
+        ? service.appendNoteWithAttachments(
+            request.params.id,
+            await parseMultipartNote(request),
+          )
+        : service.appendNote(request.params.id, request.body);
       return reply.code(201).send(note);
+    },
+  );
+  app.get<{ Params: { id: string; noteId: string; attachmentId: string } }>(
+    "/api/chats/:id/notes/:noteId/attachments/:attachmentId",
+    async (request, reply) => {
+      const attachment = service.getAttachment(
+        request.params.id,
+        request.params.noteId,
+        request.params.attachmentId,
+      );
+      return reply
+        .header("Content-Type", attachment.mediaType)
+        .header(
+          "Content-Disposition",
+          `attachment; filename="${attachmentDispositionFilename(attachment.filename)}"`,
+        )
+        .send(Buffer.from(attachment.content));
     },
   );
   app.patch<{ Params: { id: string; noteId: string } }>(
     "/api/chats/:id/notes/:noteId",
     async (request) =>
-      service.updateNote(
-        request.params.id,
-        request.params.noteId,
-        request.body,
-      ),
+      request.isMultipart()
+        ? service.updateNoteWithAttachments(
+            request.params.id,
+            request.params.noteId,
+            await parseMultipartNote(request),
+          )
+        : service.updateNote(
+            request.params.id,
+            request.params.noteId,
+            request.body,
+          ),
   );
   app.delete<{ Params: { id: string; noteId: string } }>(
     "/api/chats/:id/notes/:noteId",
