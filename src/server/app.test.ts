@@ -310,6 +310,56 @@ describe("local project-chat API", () => {
     }
   });
 
+  it("rate-limits database exports before repeated filesystem work", async () => {
+    const responses = [];
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      responses.push(
+        await app.inject({
+          method: "GET",
+          url: "/api/database/export",
+          headers: { host: "localhost:4173" },
+        }),
+      );
+    }
+
+    expect(responses.map((response) => response.statusCode)).toEqual([
+      200, 200, 200, 429,
+    ]);
+    expect(responses[3].json()).toEqual({
+      code: "rate_limited",
+      message: "Database transfer is temporarily rate-limited.",
+    });
+    expect(responses[3].headers["retry-after"]).toBe("60");
+  });
+
+  it("rate-limits database imports before repeated filesystem work", async () => {
+    const payload = Buffer.from("not sqlite");
+    const responses = [];
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      responses.push(
+        await app.inject({
+          method: "PUT",
+          url: "/api/database/import",
+          headers: {
+            host: "localhost:4173",
+            origin: "http://localhost:4173",
+            "content-type": "application/octet-stream",
+          },
+          payload,
+        }),
+      );
+    }
+
+    expect(responses.map((response) => response.statusCode)).toEqual([
+      400, 400, 429,
+    ]);
+    expect(responses[2].json()).toEqual({
+      code: "rate_limited",
+      message: "Database transfer is temporarily rate-limited.",
+    });
+    expect(responses[2].headers["retry-after"]).toBe("60");
+  });
+
   it("rejects an invalid database import without replacing local data", async () => {
     await app.inject({
       method: "POST",

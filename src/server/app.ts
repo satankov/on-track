@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import rateLimit from "@fastify/rate-limit";
 import Sqlite from "better-sqlite3";
 import Fastify, { type FastifyInstance } from "fastify";
 import {
@@ -26,6 +27,18 @@ interface BuildAppOptions {
 
 const LOOPBACK_HOST = /^(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/i;
 const LOOPBACK_ORIGIN = /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/i;
+const DATABASE_TRANSFER_RATE_LIMIT_WINDOW_MS = 60_000;
+
+function isDatabaseTransferRateLimitError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "statusCode" in error &&
+    error.statusCode === 429 &&
+    "code" in error &&
+    error.code === "rate_limited"
+  );
+}
 
 export function buildApp(options: BuildAppOptions): FastifyInstance {
   const app = Fastify({ logger: false, bodyLimit: 64 * 1024 * 1024 });
@@ -167,6 +180,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         .code(404)
         .send({ code: "not_found", message: error.message });
     }
+    if (isDatabaseTransferRateLimitError(error)) {
+      return reply.code(429).send({
+        code: "rate_limited",
+        message: "Database transfer is temporarily rate-limited.",
+      });
+    }
 
     app.log.error(error);
     return reply
@@ -217,64 +236,98 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     },
   );
 
-  app.get("/api/database/export", async (_request, reply) => {
-    if (!options.databasePath) {
-      return reply.code(501).send({
-        code: "unavailable",
-        message: "Database export is unavailable.",
-      });
-    }
-    const exportPath = join(
-      dirname(options.databasePath),
-      `.on-track-export-${randomUUID()}.sqlite`,
-    );
-    try {
-      await database.backup(exportPath);
-      const backup = readFileSync(exportPath);
-      return reply
-        .header("Content-Type", "application/vnd.sqlite3")
-        .header(
-          "Content-Disposition",
-          `attachment; filename="on-track-${new Date().toISOString().slice(0, 10)}.sqlite"`,
-        )
-        .send(backup);
-    } finally {
-      removeDatabaseFiles(exportPath);
-    }
-  });
+  void app.register(async (transferApp) => {
+    await transferApp.register(rateLimit, {
+      global: false,
+      errorResponseBuilder: () => ({
+        statusCode: 429,
+        code: "rate_limited",
+        message: "Database transfer is temporarily rate-limited.",
+      }),
+    });
 
-  app.put("/api/database/import", async (request, reply) => {
-    if (!options.databasePath) {
-      return reply.code(501).send({
-        code: "unavailable",
-        message: "Database import is unavailable.",
-      });
-    }
-    if (!Buffer.isBuffer(request.body) || request.body.length === 0) {
-      return reply.code(400).send({
-        code: "invalid_database",
-        message: "Choose a non-empty On Track database backup.",
-      });
-    }
-
-    const importPath = join(
-      dirname(options.databasePath),
-      `.on-track-import-${randomUUID()}.sqlite`,
+    transferApp.get(
+      "/api/database/export",
+      {
+        config: {
+          rateLimit: {
+            max: 3,
+            timeWindow: DATABASE_TRANSFER_RATE_LIMIT_WINDOW_MS,
+          },
+        },
+      },
+      async (_request, reply) => {
+        if (!options.databasePath) {
+          return reply.code(501).send({
+            code: "unavailable",
+            message: "Database export is unavailable.",
+          });
+        }
+        const exportPath = join(
+          dirname(options.databasePath),
+          `.on-track-export-${randomUUID()}.sqlite`,
+        );
+        try {
+          await database.backup(exportPath);
+          const backup = readFileSync(exportPath);
+          return reply
+            .header("Content-Type", "application/vnd.sqlite3")
+            .header(
+              "Content-Disposition",
+              `attachment; filename="on-track-${new Date().toISOString().slice(0, 10)}.sqlite"`,
+            )
+            .send(backup);
+        } finally {
+          removeDatabaseFiles(exportPath);
+        }
+      },
     );
-    try {
-      writeFileSync(importPath, request.body, { mode: 0o600 });
-      chmodSync(importPath, 0o600);
-      validateImportedDatabase(importPath);
-      replaceDatabase(importPath);
-      removeDatabaseFiles(importPath);
-      return reply.code(204).send();
-    } catch {
-      removeDatabaseFiles(importPath);
-      return reply.code(400).send({
-        code: "invalid_database",
-        message: "The selected file is not a valid On Track database backup.",
-      });
-    }
+
+    transferApp.put(
+      "/api/database/import",
+      {
+        config: {
+          rateLimit: {
+            max: 2,
+            timeWindow: DATABASE_TRANSFER_RATE_LIMIT_WINDOW_MS,
+          },
+        },
+      },
+      async (request, reply) => {
+        if (!options.databasePath) {
+          return reply.code(501).send({
+            code: "unavailable",
+            message: "Database import is unavailable.",
+          });
+        }
+        if (!Buffer.isBuffer(request.body) || request.body.length === 0) {
+          return reply.code(400).send({
+            code: "invalid_database",
+            message: "Choose a non-empty On Track database backup.",
+          });
+        }
+
+        const importPath = join(
+          dirname(options.databasePath),
+          `.on-track-import-${randomUUID()}.sqlite`,
+        );
+        try {
+          writeFileSync(importPath, request.body, { mode: 0o600 });
+          chmodSync(importPath, 0o600);
+          validateImportedDatabase(importPath);
+          replaceDatabase(importPath);
+          removeDatabaseFiles(importPath);
+          return reply.code(204).send();
+        } catch {
+          removeDatabaseFiles(importPath);
+          return reply.code(400).send({
+            code: "invalid_database",
+            message:
+              "The selected file is not a valid On Track database backup.",
+          });
+        }
+      },
+    );
   });
 
   app.addHook("onClose", async () => {
