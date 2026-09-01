@@ -151,6 +151,123 @@ describe("SQLite project-chat persistence", () => {
     expect(repository.getChat("chat-a")?.updatedAt).toBe(200);
   });
 
+  it("appends a note with a custom past timestamp without rolling back project activity", () => {
+    repository.createChat({
+      id: "chat-a",
+      title: "Alpha",
+      accent: "coral",
+      now: 100,
+    });
+    repository.appendNote({
+      id: "note-current",
+      chatId: "chat-a",
+      body: "Current",
+      now: 500,
+    });
+
+    const backfilled = repository.appendNote({
+      id: "note-past",
+      chatId: "chat-a",
+      body: "Past",
+      createdAt: 200,
+      now: 700,
+    });
+
+    expect(backfilled).toMatchObject({ id: "note-past", createdAt: 200 });
+    expect(repository.listNotes("chat-a").map((note) => note.id)).toEqual([
+      "note-past",
+      "note-current",
+    ]);
+    expect(repository.getChat("chat-a")?.updatedAt).toBe(500);
+  });
+
+  it("updates note body and timestamp while preserving deterministic ordering", () => {
+    repository.createChat({
+      id: "chat-a",
+      title: "Alpha",
+      accent: "coral",
+      now: 100,
+    });
+    repository.appendNote({
+      id: "note-late",
+      chatId: "chat-a",
+      body: "Later",
+      now: 300,
+    });
+    repository.appendNote({
+      id: "note-early",
+      chatId: "chat-a",
+      body: "Earlier",
+      now: 200,
+    });
+
+    const updated = repository.updateNote("chat-a", "note-late", {
+      body: "Moved earlier",
+      createdAt: 150,
+      now: 400,
+    });
+
+    expect(updated).toMatchObject({
+      id: "note-late",
+      body: "Moved earlier",
+      createdAt: 150,
+    });
+    expect(repository.listNotes("chat-a").map((note) => note.id)).toEqual([
+      "note-late",
+      "note-early",
+    ]);
+    expect(repository.getChat("chat-a")?.updatedAt).toBe(200);
+  });
+
+  it("deletes notes and rolls chat activity back to the newest remaining item", () => {
+    repository.createChat({
+      id: "chat-a",
+      title: "Alpha",
+      accent: "coral",
+      now: 100,
+    });
+    repository.appendNote({
+      id: "note-a",
+      chatId: "chat-a",
+      body: "First",
+      now: 200,
+    });
+    repository.appendNote({
+      id: "note-b",
+      chatId: "chat-a",
+      body: "Second",
+      now: 300,
+    });
+
+    expect(repository.deleteNote("chat-a", "note-b")).toBe(true);
+
+    expect(repository.listNotes("chat-a").map((note) => note.id)).toEqual([
+      "note-a",
+    ]);
+    expect(repository.getChat("chat-a")?.updatedAt).toBe(200);
+  });
+
+  it("deletes a chat and its notes atomically", () => {
+    repository.createChat({
+      id: "chat-a",
+      title: "Alpha",
+      accent: "coral",
+      now: 100,
+    });
+    repository.appendNote({
+      id: "note-a",
+      chatId: "chat-a",
+      body: "First",
+      now: 200,
+    });
+
+    expect(repository.deleteChat("chat-a")).toBe(true);
+
+    expect(repository.getChat("chat-a")).toBeUndefined();
+    expect(repository.listNotes("chat-a")).toEqual([]);
+    expect(repository.deleteChat("chat-a")).toBe(false);
+  });
+
   it("rejects invalid rows at the database boundary", () => {
     expect(() =>
       database

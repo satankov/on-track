@@ -2,6 +2,7 @@ import type { Chat, ChatDetail, Note } from "../domain/types.js";
 import {
   createChatInputSchema,
   createNoteInputSchema,
+  updateNoteInputSchema,
   updateChatInputSchema,
 } from "../domain/validation.js";
 import type { SqliteChatRepository } from "./db/repository.js";
@@ -48,15 +49,38 @@ export class ChatService {
     return chat;
   }
 
+  deleteChat(id: string): void {
+    if (!this.repository.deleteChat(id)) {
+      throw new ProjectNotFoundError();
+    }
+  }
+
   appendNote(chatId: string, input: unknown): Note {
     const values = createNoteInputSchema.parse(input);
     const note = this.repository.appendNote({
       id: this.idFactory(),
       chatId,
+      body: values.body,
+      createdAt: values.createdAt,
+      now: this.clock(),
+    });
+    if (!note) throw new ProjectNotFoundError();
+    return note;
+  }
+
+  updateNote(chatId: string, noteId: string, input: unknown): Note {
+    const values = updateNoteInputSchema.parse(input);
+    const note = this.repository.updateNote(chatId, noteId, {
       ...values,
       now: this.clock(),
     });
     if (!note) throw new ProjectNotFoundError();
     return note;
+  }
+
+  deleteNote(chatId: string, noteId: string): void {
+    if (!this.repository.deleteNote(chatId, noteId)) {
+      throw new ProjectNotFoundError();
+    }
   }
 }

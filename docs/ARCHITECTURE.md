@@ -28,6 +28,8 @@ Local browser -> loopback Fastify server -> application service -> repository ->
 - Fastify 5 serves the static bundle and local API on IPv4 loopback.
 - `better-sqlite3` owns synchronous database access; Drizzle defines schema and
   applies checked-in, versioned SQL migrations.
+- `react-markdown` and `remark-gfm` render user notes as Markdown without raw
+  HTML.
 - Zod validates untrusted transport/domain input.
 - Vitest and Testing Library cover domain, database, API, client, and component
   behavior; Playwright covers the persisted browser journey.
@@ -59,7 +61,8 @@ The initial migration creates `chats`, `notes`, and single-row `app_metadata`
 tables. Foreign keys and check constraints enforce ownership and length/accent
 rules. Indexed `(chat_id, created_at, id)` ordering makes note history stable;
 chat activity is ordered using timestamps with a deterministic ID tie-breaker.
-Appending a note and updating chat activity occur in one transaction.
+Appending, editing, timestamp-adjusting, and deleting notes keep chat activity
+consistent with the newest remaining note in a transaction.
 
 Default data directories:
 
@@ -73,9 +76,19 @@ creates `on-track.sqlite`, enables foreign keys and WAL, and restricts database
 and sidecar files to the owner. Database, journal, backup, and export patterns are
 ignored by Git and forbidden by the release contract if tracked.
 
+Default directory composition uses explicit Windows or POSIX path semantics, so
+the macOS, Windows, and Linux rules are testable independently of the CI host.
+
 Migrations are applied at startup. A database with a newer schema version or a
 newer migration marker is refused rather than opened by older code. Shipped
 migrations are never edited.
+
+The Settings workflow exports the live SQLite database through
+`better-sqlite3`'s online backup API. Import accepts an uploaded SQLite file,
+validates it as an On Track database, runs SQLite `quick_check`, closes the live
+connection, replaces the database file in the configured data directory, and
+reopens the repository against the imported file. Import is replacement, not
+merge.
 
 ## Trust and security boundaries
 
@@ -84,10 +97,12 @@ migrations are never edited.
 - Production responses set a same-origin content security policy, deny framing,
   suppress referrers, and disable MIME sniffing.
 - Input is schema-validated, SQL is parameterized through prepared
-  statements/query tooling, and user notes render as literal React text.
+  statements/query tooling, and user notes render through a Markdown component
+  with raw HTML skipped.
 - Error responses avoid internal paths and stack details.
 - The database is plaintext. Filesystem permissions and loopback binding reduce
-  exposure but do not protect a copied database or an unlocked user account.
+  exposure but do not protect a copied database, exported backup, or an unlocked
+  user account.
 
 Before confidential use, encryption must cover the database, WAL/journals,
 backups, exports, attachments, indexes, migration, key storage, lock behavior,
@@ -98,6 +113,9 @@ restore must be implemented and tested before production-readiness claims.
 
 - Empty state -> create project -> customize title/accent -> add multiline note.
 - Create/switch multiple projects and preserve project-specific histories.
+- Copy, edit, timestamp-adjust, and delete notes while preserving deterministic
+  ordering.
+- Export a database backup and import it through Settings with validation.
 - Stop and restart the server against the same isolated data directory and
   recover all state.
 - Complete the flow at desktop and mobile widths with keyboard/focus behavior and

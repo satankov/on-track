@@ -8,8 +8,9 @@ import { resolveDataDirectory } from "./data-directory.js";
 import { openDatabase } from "./db/database.js";
 
 const dataDirectory = resolveDataDirectory();
-const database = openDatabase(join(dataDirectory, "on-track.sqlite"));
-const app = buildApp({ database });
+const databasePath = join(dataDirectory, "on-track.sqlite");
+const database = openDatabase(databasePath);
+const app = buildApp({ database, databasePath });
 const clientRoot = resolve(process.cwd(), "dist/client");
 
 if (existsSync(clientRoot)) {
