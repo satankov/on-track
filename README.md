@@ -12,21 +12,24 @@ a team messenger: there are no accounts, members, presence indicators, cloud
 services, analytics, or remote runtime assets.
 
 > [!IMPORTANT]
-> **v0.0.1 is an early plaintext alpha.** Data stays local by default, but the
-> database is not yet encrypted and backup/restore is not implemented. Do not use
-> it for confidential, NDA-bound, or irreplaceable information yet.
+> **This is an early plaintext alpha.** Data stays local by default, and the app
+> can export/import SQLite backups, but the database and backups are not yet
+> encrypted. Do not use it for confidential, NDA-bound, or irreplaceable
+> information yet.
 
-## What works in v0.0.1
+## What works in this checkout
 
 - Create and switch between personal project chats.
 - Customize each project's title and accent.
-- Add multiline plain-text notes with keyboard-friendly controls.
+- Add multiline Markdown notes with keyboard-friendly controls.
+- Copy, edit, timestamp-adjust, and delete notes.
+- Export and import the local SQLite database from Settings.
 - Keep state after closing and restarting the application.
 - Use the main flow at desktop and mobile browser widths.
 - Run without accounts, telemetry, or an internet connection after installation.
 
 Attachments, built-in TODO/open-question/decision labels, filtering, encryption,
-backup/restore, native installers, and peer-to-peer iPhone sync are roadmap work.
+native installers, and peer-to-peer iPhone sync are roadmap work.
 
 ## Quick start
 
@@ -70,7 +73,9 @@ folder, **outside the Git checkout**:
 
 SQLite databases, journals, backups, exports, and common local development
 artifacts are ignored by Git. The release check also fails if a database file is
-ever tracked. You can isolate evaluation data with an absolute disposable path:
+ever tracked. Use the Settings button at the bottom of the sidebar to export or
+import a local database backup. You can isolate evaluation data with an absolute
+disposable path:
 
 ```sh
 ON_TRACK_DATA_DIR=/absolute/path/to/on-track-data npm start

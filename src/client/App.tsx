@@ -1,14 +1,17 @@
 import {
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type FormEvent,
   type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
 } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
-import type { Chat, ChatDetail } from "../domain/types.js";
+import type { Chat, ChatDetail, Note } from "../domain/types.js";
 import { ACCENTS, type Accent } from "../domain/validation.js";
 import { apiClient, type ApiClient } from "./api.js";
 
@@ -25,6 +28,47 @@ function sortChats(chats: Chat[]): Chat[] {
   return [...chats].sort(
     (a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id),
   );
+}
+
+function sortNotes(notes: Note[]): Note[] {
+  return [...notes].sort(
+    (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
+  );
+}
+
+function toDateTimeLocalValue(timestamp: number): string {
+  const date = new Date(timestamp);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function fromDateTimeLocalValue(value: string): number {
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) throw new Error("Choose a valid timestamp.");
+  return timestamp;
+}
+
+function chatActivityFromNotes(chat: ChatDetail, notes: Note[]): number {
+  return notes.reduce(
+    (newest, note) => Math.max(newest, note.createdAt),
+    chat.createdAt,
+  );
+}
+
+function errorMessage(caught: unknown, fallback: string): string {
+  return caught instanceof Error ? caught.message : fallback;
+}
+
+function useModalDialog(): RefObject<HTMLDialogElement | null> {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog || typeof dialog.showModal !== "function") return;
+    dialog.removeAttribute("open");
+    dialog.showModal();
+    return () => dialog.close();
+  }, []);
+  return dialogRef;
 }
 
 function isMobileViewport(): boolean {
@@ -44,6 +88,49 @@ function focusMobileBackButton(): void {
   });
 }
 
+function formatMessageTime(timestamp: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
+}
+
+function formatMessageDate(timestamp: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(timestamp));
+}
+
+function messageDateKey(timestamp: number): string {
+  const date = new Date(timestamp);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function groupNotesByDay(
+  notes: Note[],
+): { key: string; label: string; notes: Note[] }[] {
+  return notes.reduce<{ key: string; label: string; notes: Note[] }[]>(
+    (groups, note) => {
+      const key = messageDateKey(note.createdAt);
+      const current = groups.at(-1);
+      if (current?.key === key) {
+        current.notes.push(note);
+      } else {
+        groups.push({
+          key,
+          label: formatMessageDate(note.createdAt),
+          notes: [note],
+        });
+      }
+      return groups;
+    },
+    [],
+  );
+}
+
 interface ProjectFormProps {
   chat?: Chat;
   onCancel: () => void;
@@ -51,20 +138,12 @@ interface ProjectFormProps {
 }
 
 function ProjectForm({ chat, onCancel, onSubmit }: ProjectFormProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const dialogRef = useModalDialog();
   const [title, setTitle] = useState(chat?.title ?? "");
   const [accent, setAccent] = useState<Accent>(chat?.accent ?? "coral");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const editing = Boolean(chat);
-
-  useLayoutEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog || typeof dialog.showModal !== "function") return;
-    dialog.removeAttribute("open");
-    dialog.showModal();
-    return () => dialog.close();
-  }, []);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -73,11 +152,7 @@ function ProjectForm({ chat, onCancel, onSubmit }: ProjectFormProps) {
     try {
       await onSubmit({ title, accent });
     } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "The project could not be saved.",
-      );
+      setError(errorMessage(caught, "The project could not be saved."));
       setSaving(false);
     }
   }
@@ -103,7 +178,7 @@ function ProjectForm({ chat, onCancel, onSubmit }: ProjectFormProps) {
       >
         <p className="eyebrow">{editing ? "Project settings" : "New thread"}</p>
         <h2 id="project-dialog-title">
-          {editing ? "Customize project" : "Create project"}
+          {editing ? "Edit project" : "Create project"}
         </h2>
         <p className="dialog-copy">
           Give this stream a clear name and a color you can spot quickly.
@@ -172,17 +247,145 @@ function ProjectForm({ chat, onCancel, onSubmit }: ProjectFormProps) {
   );
 }
 
+function ProjectEditWorkspace({
+  chat,
+  onBack,
+  onSubmit,
+  onDelete,
+}: {
+  chat: ChatDetail;
+  onBack: () => void;
+  onSubmit: (input: { title: string; accent: Accent }) => Promise<void>;
+  onDelete: () => Promise<void>;
+}) {
+  const [title, setTitle] = useState(chat.title);
+  const [accent, setAccent] = useState<Accent>(chat.accent);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      await onSubmit({ title, accent });
+    } catch (caught) {
+      setError(errorMessage(caught, "The project could not be saved."));
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm(`Delete "${chat.title}" and all of its messages?`)) {
+      return;
+    }
+    setDeleting(true);
+    setError("");
+    try {
+      await onDelete();
+    } catch (caught) {
+      setError(errorMessage(caught, "The project could not be deleted."));
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <main className="workspace settings-workspace project-edit-workspace">
+      <header className="settings-workspace-header">
+        <p className="eyebrow">Project</p>
+        <h1>Edit project</h1>
+      </header>
+      <section className="settings-panel" aria-labelledby="project-edit-title">
+        <div className="settings-panel-copy">
+          <h2 id="project-edit-title">{chat.title}</h2>
+          <p>Change the project name, accent color, or delete this project.</p>
+        </div>
+        <form className="project-edit-form" onSubmit={handleSubmit}>
+          <label className="field-label" htmlFor="project-edit-name">
+            Project name
+          </label>
+          <input
+            autoFocus
+            id="project-edit-name"
+            className="text-input"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            maxLength={80}
+            required
+          />
+          <fieldset className="accent-fieldset">
+            <legend>Project accent</legend>
+            <div className="accent-options">
+              {ACCENTS.map((value) => (
+                <label
+                  className="accent-option"
+                  data-accent={value}
+                  key={value}
+                >
+                  <input
+                    type="radio"
+                    name="project-edit-accent"
+                    value={value}
+                    checked={accent === value}
+                    onChange={() => setAccent(value)}
+                  />
+                  <span className="accent-swatch" aria-hidden="true" />
+                  <span>{ACCENT_NAMES[value]}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          {error && (
+            <p role="alert" className="form-error">
+              {error}
+            </p>
+          )}
+          <div className="project-edit-actions">
+            <button
+              className="button button-danger"
+              type="button"
+              onClick={handleDelete}
+              disabled={saving || deleting}
+            >
+              {deleting ? "Deleting…" : "Delete project"}
+            </button>
+            <span />
+            <button
+              className="button button-quiet"
+              type="button"
+              onClick={onBack}
+              disabled={saving || deleting}
+            >
+              Back to project
+            </button>
+            <button
+              className="button button-primary"
+              type="submit"
+              disabled={saving || deleting}
+            >
+              {saving ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </section>
+    </main>
+  );
+}
+
 function ProjectRail({
   chats,
   activeId,
   onSelect,
   onCreate,
+  onSettings,
   navigationDisabled,
 }: {
   chats: Chat[];
   activeId?: string;
   onSelect: (id: string) => void;
   onCreate: () => void;
+  onSettings: () => void;
   navigationDisabled: boolean;
 }) {
   return (
@@ -241,10 +444,18 @@ function ProjectRail({
 
       <footer className="local-footnote">
         <span className="local-indicator" aria-hidden="true" />
-        <span>
+        <span className="local-footnote-copy">
           <strong>Local only</strong>
           <small>Not encrypted yet</small>
         </span>
+        <button
+          className="settings-icon-button"
+          type="button"
+          onClick={onSettings}
+          aria-label="Settings. Local only, not encrypted yet."
+        >
+          <SettingsIcon />
+        </button>
       </footer>
     </aside>
   );
@@ -311,34 +522,300 @@ function EmptyWorkspace({
   );
 }
 
-function formatTime(timestamp: number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(timestamp));
+function SettingsRail({ onBack }: { onBack: () => void }) {
+  return (
+    <aside className="project-rail settings-rail">
+      <header className="rail-header settings-rail-header">
+        <div>
+          <p className="brand-mark">Settings</p>
+          <p className="brand-subtitle">Local workspace controls</p>
+        </div>
+        <button
+          className="settings-back-button"
+          type="button"
+          onClick={onBack}
+          aria-label="Back to projects"
+        >
+          <ArrowLeftIcon />
+        </button>
+      </header>
+      <nav aria-label="Settings sections" className="settings-section-list">
+        <button
+          className="settings-section-item settings-section-item--active"
+          type="button"
+          aria-current="page"
+        >
+          <span className="settings-section-icon" aria-hidden="true">
+            <DatabaseIcon />
+          </span>
+          <span>
+            <strong>Database</strong>
+            <small>Import and export</small>
+          </span>
+        </button>
+      </nav>
+    </aside>
+  );
+}
+
+function SettingsWorkspace({
+  onExport,
+  onImport,
+}: {
+  onExport: () => Promise<void>;
+  onImport: (file: File) => Promise<void>;
+}) {
+  const [file, setFile] = useState<File>();
+  const [error, setError] = useState("");
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function handleExport() {
+    setBusy(true);
+    setError("");
+    setStatus("");
+    try {
+      await onExport();
+      setStatus("Database export is ready.");
+    } catch (caught) {
+      setError(errorMessage(caught, "The database could not be exported."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleImport() {
+    if (!file) return;
+    if (
+      !window.confirm(
+        "Importing this backup will replace the current local database.",
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setStatus("");
+    try {
+      await onImport(file);
+      setStatus("Database imported.");
+    } catch (caught) {
+      setError(errorMessage(caught, "The database could not be imported."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="workspace settings-workspace">
+      <header className="settings-workspace-header">
+        <p className="eyebrow">Database</p>
+        <h1>Database settings</h1>
+      </header>
+      <section className="settings-panel" aria-labelledby="database-transfer">
+        <div className="settings-panel-copy">
+          <h2 id="database-transfer">Import and export</h2>
+          <p>
+            Export a SQLite backup or import one you trust. Backups are still
+            plaintext.
+          </p>
+        </div>
+        <div className="settings-control-group">
+          <div className="settings-control-row">
+            <div>
+              <strong>Export database</strong>
+              <small>Create a restorable copy of the current local data.</small>
+            </div>
+            <button
+              className="button button-primary"
+              type="button"
+              onClick={handleExport}
+              disabled={busy}
+            >
+              Export database
+            </button>
+          </div>
+          <div className="settings-control-row settings-control-row--stacked">
+            <label className="field-label" htmlFor="database-import">
+              Choose database backup
+            </label>
+            <input
+              id="database-import"
+              className="file-input"
+              type="file"
+              accept=".sqlite,.sqlite3,.db,application/vnd.sqlite3"
+              onChange={(event) => setFile(event.target.files?.[0])}
+            />
+            <button
+              className="button button-primary"
+              type="button"
+              onClick={handleImport}
+              disabled={busy || !file}
+            >
+              Import database
+            </button>
+          </div>
+        </div>
+        {status && (
+          <p role="status" className="form-status">
+            {status}
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="form-error">
+            {error}
+          </p>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21a2 2 0 0 1-4 0v-.08A1.7 1.7 0 0 0 8.96 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.04H3a2 2 0 0 1 0-4h.04A1.7 1.7 0 0 0 4.6 8.92a1.7 1.7 0 0 0-.34-1.87L4.2 6.99a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.56V3a2 2 0 0 1 4 0v.08a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.56 1H21a2 2 0 0 1 0 4h-.08A1.7 1.7 0 0 0 19.4 15Z" />
+    </svg>
+  );
+}
+
+function ArrowLeftIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="m15 18-6-6 6-6" />
+    </svg>
+  );
+}
+
+function DatabaseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <ellipse cx="12" cy="5" rx="7" ry="3" />
+      <path d="M5 5v14c0 1.66 3.13 3 7 3s7-1.34 7-3V5" />
+      <path d="M5 12c0 1.66 3.13 3 7 3s7-1.34 7-3" />
+    </svg>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="8" y="8" width="11" height="11" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="m20 6-11 11-5-5" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6l-1 14H6L5 6" />
+      <path d="M10 11v5" />
+      <path d="M14 11v5" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function MessageActionButton({
+  label,
+  children,
+  danger = false,
+  onClick,
+}: {
+  label: string;
+  children: ReactNode;
+  danger?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`message-action ${danger ? "message-action--danger" : ""}`}
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MarkdownMessage({ body }: { body: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
+      {body}
+    </ReactMarkdown>
+  );
 }
 
 function ChatWorkspace({
   detail,
   draft,
+  draftTimestamp,
   error,
+  editingNote,
   saving,
+  timestampOpen,
   onBack,
+  onCancelEditNote,
   onCustomize,
+  onCopyNote,
+  onEditNote,
+  onDeleteNote,
   onDraftChange,
+  onDraftTimestampChange,
   onSubmit,
+  onToggleTimestamp,
+  copiedNoteId,
   navigationDisabled,
 }: {
   detail: ChatDetail;
   draft: string;
+  draftTimestamp: string;
   error: string;
+  editingNote?: Note;
   saving: boolean;
+  timestampOpen: boolean;
   onBack: () => void;
+  onCancelEditNote: () => void;
   onCustomize: () => void;
+  onCopyNote: (note: Note) => void;
+  onEditNote: (note: Note) => void;
+  onDeleteNote: (note: Note) => void;
   onDraftChange: (value: string) => void;
+  onDraftTimestampChange: (value: string) => void;
   onSubmit: () => void;
+  onToggleTimestamp: () => void;
+  copiedNoteId?: string;
   navigationDisabled: boolean;
 }) {
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -351,33 +828,34 @@ function ChatWorkspace({
   return (
     <main className="workspace workspace-chat" data-accent={detail.accent}>
       <header className="chat-header">
-        <button
-          className="back-button"
-          data-back-button
-          type="button"
-          onClick={onBack}
-          disabled={navigationDisabled}
-          aria-label="Back to projects"
-        >
-          ←
-        </button>
-        <div className="chat-heading">
-          <p className="eyebrow">Project thread</p>
-          <h1>{detail.title}</h1>
+        <div className="chat-header-inner">
+          <button
+            className="back-button"
+            data-back-button
+            type="button"
+            onClick={onBack}
+            disabled={navigationDisabled}
+            aria-label="Back to projects"
+          >
+            ←
+          </button>
+          <div className="chat-heading">
+            <p className="eyebrow">Project thread</p>
+            <h1>{detail.title}</h1>
+          </div>
+          <button
+            className="button button-quiet edit-project-button"
+            type="button"
+            onClick={onCustomize}
+          >
+            Edit
+          </button>
         </div>
-        <button
-          className="button button-quiet customize-button"
-          type="button"
-          onClick={onCustomize}
-        >
-          Customize project
-        </button>
       </header>
 
-      <section className="history" aria-label={`${detail.title} notes`}>
+      <section className="history" aria-label={`${detail.title} messages`}>
         {detail.notes.length === 0 ? (
           <>
-            <div className="thread-line" aria-hidden="true" />
             <div className="no-notes">
               <p className="eyebrow">The thread starts here</p>
               <h2>What is worth remembering?</h2>
@@ -387,19 +865,65 @@ function ChatWorkspace({
             </div>
           </>
         ) : (
-          <div className="note-thread">
-            <div className="thread-line" aria-hidden="true" />
-            <ol className="note-list">
-              {detail.notes.map((note) => (
-                <li className="note" key={note.id}>
-                  <span className="note-node" aria-hidden="true" />
-                  <time dateTime={new Date(note.createdAt).toISOString()}>
-                    {formatTime(note.createdAt)}
-                  </time>
-                  <p>{note.body}</p>
-                </li>
-              ))}
-            </ol>
+          <div className="message-groups">
+            {groupNotesByDay(detail.notes).map((group) => (
+              <section className="message-day" key={group.key}>
+                <div className="message-date-separator">{group.label}</div>
+                <ol className="message-list">
+                  {group.notes.map((note) => {
+                    const copied = copiedNoteId === note.id;
+                    return (
+                      <li
+                        className="message-row message-row--own"
+                        key={note.id}
+                      >
+                        <div className="message-stack">
+                          <article className="message-bubble">
+                            <div className="message-body note-body">
+                              <MarkdownMessage body={note.body} />
+                            </div>
+                            <footer className="message-footer">
+                              <time
+                                className="message-time"
+                                dateTime={new Date(
+                                  note.createdAt,
+                                ).toISOString()}
+                              >
+                                {formatMessageTime(note.createdAt)}
+                              </time>
+                            </footer>
+                          </article>
+                          <div
+                            className="message-actions"
+                            aria-label="Message actions"
+                          >
+                            <MessageActionButton
+                              label={copied ? "Message copied" : "Copy message"}
+                              onClick={() => onCopyNote(note)}
+                            >
+                              {copied ? <CheckIcon /> : <CopyIcon />}
+                            </MessageActionButton>
+                            <MessageActionButton
+                              label="Edit message"
+                              onClick={() => onEditNote(note)}
+                            >
+                              <EditIcon />
+                            </MessageActionButton>
+                            <MessageActionButton
+                              label="Delete message"
+                              danger
+                              onClick={() => onDeleteNote(note)}
+                            >
+                              <TrashIcon />
+                            </MessageActionButton>
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </section>
+            ))}
           </div>
         )}
       </section>
@@ -410,26 +934,68 @@ function ChatWorkspace({
             Your note is still here. {error}
           </p>
         )}
-        <div className="composer">
+        <div className={`composer ${editingNote ? "composer--editing" : ""}`}>
           <textarea
-            aria-label="Add a note"
-            placeholder="Add a note to this project…"
+            data-composer-textarea
+            aria-label={editingNote ? "Edit message" : "Add a note"}
+            placeholder={
+              editingNote ? "Edit this message…" : "Add a note to this project…"
+            }
             value={draft}
             maxLength={10_000}
             onChange={(event) => onDraftChange(event.target.value)}
             onKeyDown={handleKeyDown}
           />
+          {timestampOpen && (
+            <div className="composer-timestamp-row">
+              <label className="field-label" htmlFor="composer-timestamp">
+                Message timestamp
+              </label>
+              <input
+                id="composer-timestamp"
+                className="text-input composer-timestamp-input"
+                type="datetime-local"
+                value={draftTimestamp}
+                onChange={(event) => onDraftTimestampChange(event.target.value)}
+              />
+            </div>
+          )}
           <div className="composer-bar">
             <span>
               <kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd> to add
             </span>
+            <button
+              className="composer-time-button"
+              type="button"
+              onClick={onToggleTimestamp}
+              aria-label={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
+              aria-expanded={timestampOpen}
+              title={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
+            >
+              <ClockIcon />
+            </button>
+            {editingNote && (
+              <button
+                className="composer-cancel-button"
+                type="button"
+                onClick={onCancelEditNote}
+              >
+                Cancel
+              </button>
+            )}
             <button
               className="send-button"
               type="button"
               onClick={onSubmit}
               disabled={saving || !draft.trim()}
             >
-              {saving ? "Adding…" : "Add note"}{" "}
+              {saving
+                ? editingNote
+                  ? "Saving…"
+                  : "Adding…"
+                : editingNote
+                  ? "Save"
+                  : "Add note"}{" "}
               <span aria-hidden="true">↑</span>
             </button>
           </div>
@@ -446,11 +1012,19 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     "loading",
   );
   const [dialog, setDialog] = useState<"create" | "edit">();
+  const [mode, setMode] = useState<"projects" | "settings" | "projectEdit">(
+    "projects",
+  );
+  const [editingNote, setEditingNote] = useState<Note>();
+  const [copiedNoteId, setCopiedNoteId] = useState<string>();
   const [draft, setDraft] = useState("");
+  const [draftTimestamp, setDraftTimestamp] = useState("");
+  const [composerTimestampOpen, setComposerTimestampOpen] = useState(false);
   const [error, setError] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const selectionRequest = useRef(0);
   const activeId = useRef<string | undefined>(undefined);
+  const copyResetTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     activeId.current = active?.id;
@@ -475,10 +1049,6 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     };
   }, [api]);
 
-  const activeSummary = useMemo(
-    () => chats.find((chat) => chat.id === active?.id),
-    [active?.id, chats],
-  );
   const placeholderState: WorkspacePlaceholderState =
     loadState === "loading"
       ? "loading"
@@ -491,20 +1061,20 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function selectChat(id: string) {
     if (savingNote) return;
     const request = ++selectionRequest.current;
+    setMode("projects");
     setError("");
     try {
       const detail = await api.getChat(id);
       if (request !== selectionRequest.current) return;
       setActive(detail);
       setDraft("");
+      setDraftTimestamp("");
+      setComposerTimestampOpen(false);
+      setEditingNote(undefined);
       focusMobileBackButton();
     } catch (caught) {
       if (request !== selectionRequest.current) return;
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "The project could not be opened.",
-      );
+      setError(errorMessage(caught, "The project could not be opened."));
     }
   }
 
@@ -514,11 +1084,15 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setChats((current) => [chat, ...current]);
     setActive({ ...chat, notes: [] });
     setDialog(undefined);
+    setDraftTimestamp("");
+    setComposerTimestampOpen(false);
+    setEditingNote(undefined);
     focusMobileBackButton();
   }
 
   async function updateChat(input: { title: string; accent: Accent }) {
     if (!active) return;
+    const projectId = active.id;
     const chat = await api.updateChat(active.id, input);
     setChats((current) =>
       sortChats(current.map((item) => (item.id === chat.id ? chat : item))),
@@ -527,44 +1101,201 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       current?.id === chat.id ? { ...current, ...chat } : current,
     );
     setDialog(undefined);
+    setMode("projects");
+    if (activeId.current === projectId) focusMobileBackButton();
+  }
+
+  async function deleteChat() {
+    if (!active) return;
+    const projectId = active.id;
+    await api.deleteChat(projectId);
+    selectionRequest.current += 1;
+    setChats((current) => current.filter((chat) => chat.id !== projectId));
+    setActive(undefined);
+    setDraft("");
+    setDraftTimestamp("");
+    setComposerTimestampOpen(false);
+    setError("");
+    setEditingNote(undefined);
+    setMode("projects");
   }
 
   async function appendNote() {
     if (!active || !draft.trim() || savingNote) return;
     const projectId = active.id;
     const submittedDraft = draft;
+    const editing = editingNote;
+    const timestampValue = draftTimestamp;
     setSavingNote(true);
     setError("");
     try {
-      const note = await api.appendNote(projectId, { body: submittedDraft });
-      setActive((current) =>
-        current?.id === projectId
-          ? { ...current, notes: [...current.notes, note] }
-          : current,
-      );
-      setChats((current) =>
-        sortChats(
-          current.map((chat) =>
-            chat.id === projectId
-              ? { ...chat, updatedAt: note.createdAt }
-              : chat,
+      const timestamp =
+        (editing || composerTimestampOpen) && timestampValue
+          ? fromDateTimeLocalValue(timestampValue)
+          : undefined;
+      if (editing) {
+        if (timestamp === undefined)
+          throw new Error("Choose a valid timestamp.");
+        await updateNote(editing, {
+          body: submittedDraft,
+          createdAt: timestamp,
+        });
+      } else {
+        const note = await api.appendNote(projectId, {
+          body: submittedDraft,
+          ...(timestamp === undefined ? {} : { createdAt: timestamp }),
+        });
+        setActive((current) =>
+          current?.id === projectId
+            ? { ...current, notes: sortNotes([...current.notes, note]) }
+            : current,
+        );
+        setChats((current) =>
+          sortChats(
+            current.map((chat) =>
+              chat.id === projectId
+                ? {
+                    ...chat,
+                    updatedAt: chatActivityFromNotes(active, [
+                      ...active.notes,
+                      note,
+                    ]),
+                  }
+                : chat,
+            ),
           ),
-        ),
-      );
+        );
+      }
       if (activeId.current === projectId) {
         setDraft((current) => (current === submittedDraft ? "" : current));
+        setDraftTimestamp("");
+        setComposerTimestampOpen(false);
       }
     } catch (caught) {
       if (activeId.current === projectId) {
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : "The note could not be added.",
-        );
+        setError(errorMessage(caught, "The note could not be added."));
       }
     } finally {
       setSavingNote(false);
     }
+  }
+
+  function startEditingNote(note: Note) {
+    setEditingNote(note);
+    setDraft(note.body);
+    setDraftTimestamp(toDateTimeLocalValue(note.createdAt));
+    setComposerTimestampOpen(false);
+    setError("");
+    requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLTextAreaElement>("[data-composer-textarea]")
+        ?.focus();
+    });
+  }
+
+  function cancelEditingNote() {
+    setEditingNote(undefined);
+    setDraft("");
+    setDraftTimestamp("");
+    setComposerTimestampOpen(false);
+    setError("");
+  }
+
+  async function copyNote(note: Note) {
+    try {
+      await navigator.clipboard.writeText(note.body);
+      window.clearTimeout(copyResetTimer.current);
+      setCopiedNoteId(note.id);
+      copyResetTimer.current = window.setTimeout(() => {
+        setCopiedNoteId((current) =>
+          current === note.id ? undefined : current,
+        );
+      }, 1200);
+    } catch {
+      setError("The message could not be copied.");
+    }
+  }
+
+  async function updateNote(
+    noteToUpdate: Note,
+    input: { body: string; createdAt: number },
+  ) {
+    if (!active) return;
+    const projectId = active.id;
+    const updated = await api.updateNote(projectId, noteToUpdate.id, input);
+    setActive((current) => {
+      if (!current) return current;
+      const notes = sortNotes(
+        current.notes.map((note) => (note.id === updated.id ? updated : note)),
+      );
+      return {
+        ...current,
+        notes,
+        updatedAt: chatActivityFromNotes(current, notes),
+      };
+    });
+    setChats((current) =>
+      sortChats(
+        current.map((chat) =>
+          chat.id === projectId
+            ? {
+                ...chat,
+                updatedAt: chatActivityFromNotes(
+                  active,
+                  sortNotes(
+                    active.notes.map((note) =>
+                      note.id === updated.id ? updated : note,
+                    ),
+                  ),
+                ),
+              }
+            : chat,
+        ),
+      ),
+    );
+    setEditingNote(undefined);
+  }
+
+  async function deleteNote(note: Note) {
+    if (!active) return;
+    if (!window.confirm("Delete this message?")) return;
+    await api.deleteNote(active.id, note.id);
+    const remaining = active.notes.filter((item) => item.id !== note.id);
+    const updatedAt = chatActivityFromNotes(active, remaining);
+    setActive((current) =>
+      current?.id === active.id
+        ? { ...current, notes: remaining, updatedAt }
+        : current,
+    );
+    setChats((current) =>
+      sortChats(
+        current.map((chat) =>
+          chat.id === active.id ? { ...chat, updatedAt } : chat,
+        ),
+      ),
+    );
+  }
+
+  async function exportDatabase() {
+    const blob = await api.exportDatabase();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `on-track-${new Date().toISOString().slice(0, 10)}.sqlite`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importDatabase(file: File) {
+    await api.importDatabase(file);
+    const importedChats = await api.listChats();
+    setChats(importedChats);
+    setActive(undefined);
+    setDraftTimestamp("");
+    setComposerTimestampOpen(false);
+    setMode("projects");
+    setDraft("");
+    setError("");
   }
 
   function backToProjects() {
@@ -572,6 +1303,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     const projectId = active?.id;
     selectionRequest.current += 1;
     setActive(undefined);
+    setEditingNote(undefined);
+    setDraft("");
+    setDraftTimestamp("");
+    setComposerTimestampOpen(false);
     if (projectId && isMobileViewport()) {
       requestAnimationFrame(() => {
         const project = [
@@ -584,28 +1319,63 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
 
   return (
     <div className="app-shell">
-      <ProjectRail
-        chats={chats}
-        activeId={active?.id}
-        onSelect={selectChat}
-        onCreate={() => setDialog("create")}
-        navigationDisabled={savingNote}
-      />
+      {mode === "settings" ? (
+        <SettingsRail onBack={() => setMode("projects")} />
+      ) : (
+        <ProjectRail
+          chats={chats}
+          activeId={active?.id}
+          onSelect={selectChat}
+          onCreate={() => setDialog("create")}
+          onSettings={() => setMode("settings")}
+          navigationDisabled={savingNote}
+        />
+      )}
       {!active && error && (
         <p className="global-error" role="alert">
           {error}
         </p>
       )}
-      {active ? (
+      {mode === "settings" ? (
+        <SettingsWorkspace
+          onExport={exportDatabase}
+          onImport={importDatabase}
+        />
+      ) : mode === "projectEdit" && active ? (
+        <ProjectEditWorkspace
+          chat={active}
+          onBack={() => setMode("projects")}
+          onSubmit={updateChat}
+          onDelete={deleteChat}
+        />
+      ) : active ? (
         <ChatWorkspace
           detail={active}
           draft={draft}
+          draftTimestamp={draftTimestamp}
           error={error}
+          editingNote={editingNote}
           saving={savingNote}
+          timestampOpen={composerTimestampOpen}
           onBack={backToProjects}
-          onCustomize={() => setDialog("edit")}
+          onCustomize={() => setMode("projectEdit")}
+          onCopyNote={copyNote}
+          onEditNote={startEditingNote}
+          onCancelEditNote={cancelEditingNote}
+          onDeleteNote={deleteNote}
           onDraftChange={setDraft}
+          onDraftTimestampChange={setDraftTimestamp}
           onSubmit={appendNote}
+          onToggleTimestamp={() => {
+            setComposerTimestampOpen((current) => {
+              const next = !current;
+              if (next && !draftTimestamp) {
+                setDraftTimestamp(toDateTimeLocalValue(Date.now()));
+              }
+              return next;
+            });
+          }}
+          copiedNoteId={copiedNoteId}
           navigationDisabled={savingNote}
         />
       ) : (
@@ -618,13 +1388,6 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         <ProjectForm
           onCancel={() => setDialog(undefined)}
           onSubmit={createChat}
-        />
-      )}
-      {dialog === "edit" && activeSummary && (
-        <ProjectForm
-          chat={activeSummary}
-          onCancel={() => setDialog(undefined)}
-          onSubmit={updateChat}
         />
       )}
     </div>

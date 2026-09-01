@@ -6,6 +6,31 @@ below `1.0.0`, minor versions may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-09-01
+
+### Added
+
+- Settings workspace with local SQLite database export and import.
+- Markdown rendering for chat messages, including GitHub-flavored Markdown.
+- Message copy, edit, timestamp adjustment, and delete actions.
+- Optional composer timestamp selection for adding backfilled messages.
+- Project edit workspace with project deletion.
+
+### Changed
+
+- Reworked the main project view into a more chat-like message layout with
+  right-aligned message bubbles, grouped date dividers, and per-message times.
+- Replaced message action text buttons with hover-visible icon controls and
+  copied-state feedback.
+- Moved message editing into the main composer with compact Save, Cancel, and
+  timestamp controls.
+
+### Security
+
+- Database import validates the selected file before replacing local app data.
+- Project deletion and message deletion run through explicit server-side
+  persistence APIs instead of client-only state changes.
+
 ## [0.0.1] - 2026-08-31
 
 ### Added

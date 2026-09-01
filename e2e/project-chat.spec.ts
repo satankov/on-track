@@ -37,9 +37,10 @@ async function addNote(
   url: string,
   chatId: string,
   body: string,
+  createdAt?: number,
 ): Promise<void> {
   const response = await request.post(`${url}/api/chats/${chatId}/notes`, {
-    data: { body },
+    data: { body, ...(createdAt === undefined ? {} : { createdAt }) },
   });
   expect(response.ok()).toBe(true);
 }
@@ -72,12 +73,38 @@ test("creates, customizes, records, and reopens a private project thread", async
     ).toBeFocused();
   }
   await page.getByLabel("Add a note").fill(note);
+  await page.getByRole("button", { name: "Choose timestamp" }).click();
+  await page.getByLabel("Message timestamp").fill("2026-08-30T10:15");
   await page.getByRole("button", { name: /Add note/ }).click();
   await expect(
     page.getByText("Ship the smallest useful workflow."),
   ).toBeVisible();
+  await expect(page.getByText("August 30, 2026")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Edit", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".message-bubble").first()).toBeVisible();
 
-  await page.getByRole("button", { name: "Customize project" }).click();
+  const messageLayout = await page.evaluate(() => {
+    const bubble = document.querySelector(".message-bubble")!;
+    const actions = document.querySelector(".message-actions")!;
+    const editButton = document.querySelector(".edit-project-button")!;
+    const composer = document.querySelector(".composer")!;
+    return {
+      bubbleRight: bubble.getBoundingClientRect().right,
+      actionsTop: actions.getBoundingClientRect().top,
+      bubbleBottom: bubble.getBoundingClientRect().bottom,
+      editRight: editButton.getBoundingClientRect().right,
+      composerRight: composer.getBoundingClientRect().right,
+    };
+  });
+  expect(messageLayout.actionsTop).toBeGreaterThanOrEqual(
+    messageLayout.bubbleBottom,
+  );
+  expect(messageLayout.bubbleRight).toBeCloseTo(messageLayout.composerRight, 0);
+  expect(messageLayout.editRight).toBeCloseTo(messageLayout.composerRight, 0);
+
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByLabel("Project name").fill(renamedProject);
   await page.getByRole("radio", { name: "Iris" }).check();
   await page.getByRole("button", { name: "Save changes" }).click();
@@ -112,6 +139,87 @@ test("creates, customizes, records, and reopens a private project thread", async
     fullPage: true,
   });
   expect([...unexpectedHosts]).toEqual([]);
+});
+
+test("manages markdown messages and database backups from the UI", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  const suffix = `${viewportName(testInfo.project.name)}-${Date.now()}`;
+  const exportedProject = await createProject(request, localApp.url, {
+    title: `Backup source ${suffix}`,
+    accent: "ocean",
+  });
+  await addNote(
+    request,
+    localApp.url,
+    exportedProject.id,
+    "**Decision**\n\nKeep the export restorable.",
+  );
+
+  await page.goto(localApp.url);
+  await page
+    .getByRole("button", { name: `Open ${exportedProject.title}` })
+    .click();
+  await expect(
+    page.locator(".message-body strong", { hasText: "Decision" }),
+  ).toBeVisible();
+
+  const note = page.locator(".message-row").first();
+  await note.getByRole("button", { name: "Edit message" }).click();
+  await page
+    .getByRole("textbox", { name: "Edit message" })
+    .fill("Revised **decision**");
+  await expect(page.getByLabel("Message timestamp")).toBeHidden();
+  await page.getByRole("button", { name: "Choose timestamp" }).click();
+  await page.getByLabel("Message timestamp").fill("2026-08-29T09:00");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(
+    page.locator(".message-body strong", { hasText: "decision" }),
+  ).toBeVisible();
+  await expect(page.getByText("August 29, 2026")).toBeVisible();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await note.getByRole("button", { name: "Delete message" }).click();
+  await expect(page.getByText("Revised")).toBeHidden();
+
+  if (testInfo.project.name === "mobile-webkit") {
+    await page.getByRole("button", { name: "Back to projects" }).click();
+  }
+  await page.getByRole("button", { name: /Settings/ }).click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export database" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(
+    /on-track-\d{4}-\d{2}-\d{2}\.sqlite/,
+  );
+  const backupPath = await download.path();
+  expect(backupPath).toBeTruthy();
+
+  const extraProject = await createProject(request, localApp.url, {
+    title: `Import should remove ${suffix}`,
+    accent: "moss",
+  });
+  await page.getByRole("button", { name: "Back to projects" }).click();
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: `Open ${extraProject.title}` }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: /Settings/ }).click();
+  await page
+    .getByLabel("Choose database backup")
+    .setInputFiles(backupPath ?? "");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Import database" }).click();
+
+  await expect(
+    page.getByRole("button", { name: `Open ${exportedProject.title}` }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: `Open ${extraProject.title}` }),
+  ).toHaveCount(0);
 });
 
 test("keeps project and note collections inside their own scroll panes", async ({
@@ -265,13 +373,12 @@ test("keeps project and note collections inside their own scroll panes", async (
     history.scrollTop = history.scrollHeight;
     const chatHeader = document.querySelector(".chat-header")!;
     const composer = document.querySelector(".composer-wrap")!;
-    const line = document.querySelector(".history .thread-line")!;
-    const lastNode = [...document.querySelectorAll(".note-node")].at(-1)!;
+    const lastMessage = [...document.querySelectorAll(".message-row")].at(-1)!;
     return {
       headerTop: chatHeader.getBoundingClientRect().top,
       composerBottom: composer.getBoundingClientRect().bottom,
-      lineBottom: line.getBoundingClientRect().bottom,
-      lastNodeBottom: lastNode.getBoundingClientRect().bottom,
+      historyBottom: history.getBoundingClientRect().bottom,
+      lastMessageBottom: lastMessage.getBoundingClientRect().bottom,
     };
   });
   expect(workspaceAfter.headerTop).toBeCloseTo(workspaceBefore.header.top, 0);
@@ -279,7 +386,7 @@ test("keeps project and note collections inside their own scroll panes", async (
     workspaceBefore.composer.bottom,
     0,
   );
-  expect(workspaceAfter.lineBottom).toBeGreaterThanOrEqual(
-    workspaceAfter.lastNodeBottom,
+  expect(workspaceAfter.lastMessageBottom).toBeLessThanOrEqual(
+    workspaceAfter.historyBottom + 1,
   );
 });
