@@ -59,6 +59,30 @@ function errorMessage(caught: unknown, fallback: string): string {
   return caught instanceof Error ? caught.message : fallback;
 }
 
+function hasAttachments(note: Note): boolean {
+  return (note.attachments?.length ?? 0) > 0;
+}
+
+function formatFileSize(byteSize: number): string {
+  if (byteSize < 1024) return `${byteSize} B`;
+  if (byteSize < 1024 * 1024) return `${Math.round(byteSize / 1024)} KB`;
+  return `${(byteSize / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatAttachmentModified(timestamp: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(timestamp));
+}
+
+function fileTypeLabel(filename: string, mediaType: string): string {
+  const extension = filename.includes(".")
+    ? filename.split(".").pop()?.toUpperCase()
+    : "";
+  return extension || mediaType.split("/").pop()?.toUpperCase() || "FILE";
+}
+
 function useModalDialog(): RefObject<HTMLDialogElement | null> {
   const dialogRef = useRef<HTMLDialogElement>(null);
   useLayoutEffect(() => {
@@ -549,8 +573,8 @@ function SettingsRail({ onBack }: { onBack: () => void }) {
             <DatabaseIcon />
           </span>
           <span>
-            <strong>Database</strong>
-            <small>Import and export</small>
+            <strong>Backups</strong>
+            <small>Export and restore</small>
           </span>
         </button>
       </nav>
@@ -576,7 +600,7 @@ function SettingsWorkspace({
     setStatus("");
     try {
       await onExport();
-      setStatus("Database export is ready.");
+      setStatus("Backup export is ready.");
     } catch (caught) {
       setError(errorMessage(caught, "The database could not be exported."));
     } finally {
@@ -588,7 +612,7 @@ function SettingsWorkspace({
     if (!file) return;
     if (
       !window.confirm(
-        "Importing this backup will replace the current local database.",
+        "Restoring this backup will replace all current local projects and attached files. It does not merge data.",
       )
     ) {
       return;
@@ -598,7 +622,7 @@ function SettingsWorkspace({
     setStatus("");
     try {
       await onImport(file);
-      setStatus("Database imported.");
+      setStatus("Backup restored.");
     } catch (caught) {
       setError(errorMessage(caught, "The database could not be imported."));
     } finally {
@@ -609,22 +633,25 @@ function SettingsWorkspace({
   return (
     <main className="workspace settings-workspace">
       <header className="settings-workspace-header">
-        <p className="eyebrow">Database</p>
-        <h1>Database settings</h1>
+        <p className="eyebrow">Backups</p>
+        <h1>Backup settings</h1>
       </header>
       <section className="settings-panel" aria-labelledby="database-transfer">
         <div className="settings-panel-copy">
-          <h2 id="database-transfer">Import and export</h2>
+          <h2 id="database-transfer">Export and restore</h2>
           <p>
-            Export a SQLite backup or import one you trust. Backups are still
-            plaintext.
+            Export one versioned On Track backup containing projects, messages,
+            and attached files. Backups are plaintext and readable. Restoring
+            replaces current local data; it does not merge histories.
           </p>
         </div>
         <div className="settings-control-group">
           <div className="settings-control-row">
             <div>
-              <strong>Export database</strong>
-              <small>Create a restorable copy of the current local data.</small>
+              <strong>Export backup</strong>
+              <small>
+                Create one restorable copy of current local data and files.
+              </small>
             </div>
             <button
               className="button button-primary"
@@ -632,18 +659,18 @@ function SettingsWorkspace({
               onClick={handleExport}
               disabled={busy}
             >
-              Export database
+              Export backup
             </button>
           </div>
           <div className="settings-control-row settings-control-row--stacked">
             <label className="field-label" htmlFor="database-import">
-              Choose database backup
+              Choose On Track backup
             </label>
             <input
               id="database-import"
               className="file-input"
               type="file"
-              accept=".sqlite,.sqlite3,.db,application/vnd.sqlite3"
+              accept=".on-track-backup,application/vnd.on-track.backup+sqlite"
               onChange={(event) => setFile(event.target.files?.[0])}
             />
             <button
@@ -652,7 +679,7 @@ function SettingsWorkspace({
               onClick={handleImport}
               disabled={busy || !file}
             >
-              Import database
+              Restore backup
             </button>
           </div>
         </div>
@@ -745,6 +772,23 @@ function ClockIcon() {
   );
 }
 
+function PaperclipIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="m21.4 11.6-8.5 8.5a5 5 0 0 1-7.1-7.1l9.2-9.2a3.5 3.5 0 1 1 5 5l-9.3 9.3a2 2 0 0 1-2.8-2.8l8.6-8.6" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
 function MessageActionButton({
   label,
   children,
@@ -770,10 +814,119 @@ function MessageActionButton({
 }
 
 function MarkdownMessage({ body }: { body: string }) {
+  if (!body.trim()) return null;
   return (
     <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
       {body}
     </ReactMarkdown>
+  );
+}
+
+function AttachmentList({
+  note,
+  onAction,
+}: {
+  note: Note;
+  onAction: (
+    note: Note,
+    attachmentId: string,
+    action: "open" | "reveal",
+  ) => Promise<void>;
+}) {
+  const [busyAction, setBusyAction] = useState<string>();
+  const [actionError, setActionError] = useState<string>();
+  if (!note.attachments?.length) return null;
+
+  async function runAction(attachmentId: string, action: "open" | "reveal") {
+    const key = `${attachmentId}:${action}`;
+    if (busyAction) return;
+    setBusyAction(key);
+    setActionError(undefined);
+    try {
+      await onAction(note, attachmentId, action);
+    } catch (caught) {
+      setActionError(
+        errorMessage(caught, "The file action could not be completed."),
+      );
+    } finally {
+      setBusyAction(undefined);
+    }
+  }
+
+  return (
+    <div className="attachment-list" aria-label="Message attachments">
+      {note.attachments.map((attachment) => {
+        const status = attachment.status ?? "available";
+        const openCapability =
+          attachment.actions?.open ??
+          (status === "available" ? "available" : "unavailable");
+        const revealCapability =
+          attachment.actions?.reveal ??
+          (status === "available" ? "available" : "unavailable");
+        const reasonId = `attachment-${attachment.id}-status`;
+        const reason =
+          openCapability === "blocked"
+            ? "Opening is blocked for this file type."
+            : openCapability === "unsupported"
+              ? "Native file actions are not supported on this system."
+              : status !== "available"
+                ? `File is ${status}.`
+                : undefined;
+        const openBusy = busyAction === `${attachment.id}:open`;
+        const revealBusy = busyAction === `${attachment.id}:reveal`;
+        return (
+          <div className="attachment-card" key={attachment.id}>
+            <span className="attachment-type" aria-hidden="true">
+              {fileTypeLabel(attachment.filename, attachment.mediaType)}
+            </span>
+            <span className="attachment-copy">
+              <strong>{attachment.filename}</strong>
+              <small
+                id={reasonId}
+                className={reason ? "attachment-status--warning" : undefined}
+              >
+                {reason ? (
+                  <>
+                    <span aria-hidden="true">⚠ </span>
+                    {reason}
+                  </>
+                ) : (
+                  `${formatFileSize(attachment.byteSize)} · Modified ${formatAttachmentModified(attachment.modifiedAt ?? attachment.createdAt)}`
+                )}
+              </small>
+            </span>
+            <span className="attachment-actions">
+              <button
+                type="button"
+                className="button button-primary attachment-action"
+                aria-label={`Open ${attachment.filename}`}
+                aria-describedby={reason ? reasonId : undefined}
+                disabled={openCapability !== "available" || Boolean(busyAction)}
+                onClick={() => void runAction(attachment.id, "open")}
+              >
+                {openBusy ? "Opening…" : "Open"}
+              </button>
+              <button
+                type="button"
+                className="button button-quiet attachment-action"
+                aria-label={`Show ${attachment.filename} in Folder`}
+                disabled={
+                  revealCapability !== "available" || Boolean(busyAction)
+                }
+                onClick={() => void runAction(attachment.id, "reveal")}
+              >
+                {revealBusy ? "Showing…" : "Show in Folder"}
+              </button>
+            </span>
+          </div>
+        );
+      })}
+      {actionError && (
+        <p className="attachment-action-error" role="alert">
+          {actionError}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -783,16 +936,24 @@ function ChatWorkspace({
   draftTimestamp,
   error,
   editingNote,
+  editingAttachmentIds,
+  pendingFiles,
+  historyFilter,
   saving,
   timestampOpen,
   onBack,
   onCancelEditNote,
   onCustomize,
   onCopyNote,
+  onAttachmentAction,
   onEditNote,
   onDeleteNote,
   onDraftChange,
   onDraftTimestampChange,
+  onFilesSelected,
+  onHistoryFilterChange,
+  onRemoveEditingAttachment,
+  onRemovePendingFile,
   onSubmit,
   onToggleTimestamp,
   copiedNoteId,
@@ -803,21 +964,46 @@ function ChatWorkspace({
   draftTimestamp: string;
   error: string;
   editingNote?: Note;
+  editingAttachmentIds: string[];
+  pendingFiles: File[];
+  historyFilter: "all" | "attachments";
   saving: boolean;
   timestampOpen: boolean;
   onBack: () => void;
   onCancelEditNote: () => void;
   onCustomize: () => void;
   onCopyNote: (note: Note) => void;
+  onAttachmentAction: (
+    note: Note,
+    attachmentId: string,
+    action: "open" | "reveal",
+  ) => Promise<void>;
   onEditNote: (note: Note) => void;
   onDeleteNote: (note: Note) => void;
   onDraftChange: (value: string) => void;
   onDraftTimestampChange: (value: string) => void;
+  onFilesSelected: (files: File[]) => void;
+  onHistoryFilterChange: (filter: "all" | "attachments") => void;
+  onRemoveEditingAttachment: (attachmentId: string) => void;
+  onRemovePendingFile: (index: number) => void;
   onSubmit: () => void;
   onToggleTimestamp: () => void;
   copiedNoteId?: string;
   navigationDisabled: boolean;
 }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachmentCount = detail.notes.filter(hasAttachments).length;
+  const visibleNotes =
+    historyFilter === "attachments"
+      ? detail.notes.filter(hasAttachments)
+      : detail.notes;
+  const showingEmptyFilter =
+    historyFilter === "attachments" && visibleNotes.length === 0;
+  const editingAttachments =
+    editingNote?.attachments?.filter((attachment) =>
+      editingAttachmentIds.includes(attachment.id),
+    ) ?? [];
+
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
@@ -853,6 +1039,27 @@ function ChatWorkspace({
         </div>
       </header>
 
+      <nav className="history-filter" aria-label="History filters">
+        <div className="history-filter-inner">
+          <button
+            type="button"
+            className={`history-filter-button ${historyFilter === "all" ? "history-filter-button--active" : ""}`}
+            aria-pressed={historyFilter === "all"}
+            onClick={() => onHistoryFilterChange("all")}
+          >
+            All {detail.notes.length}
+          </button>
+          <button
+            type="button"
+            className={`history-filter-button ${historyFilter === "attachments" ? "history-filter-button--active" : ""}`}
+            aria-pressed={historyFilter === "attachments"}
+            onClick={() => onHistoryFilterChange("attachments")}
+          >
+            Files {attachmentCount}
+          </button>
+        </div>
+      </nav>
+
       <section className="history" aria-label={`${detail.title} messages`}>
         {detail.notes.length === 0 ? (
           <>
@@ -864,9 +1071,19 @@ function ChatWorkspace({
               </p>
             </div>
           </>
+        ) : showingEmptyFilter ? (
+          <div className="message-groups">
+            <div className="no-notes no-notes--filtered">
+              <p className="eyebrow">Files</p>
+              <h2>No attached files yet.</h2>
+              <p>
+                Messages with attachments will appear in this project slice.
+              </p>
+            </div>
+          </div>
         ) : (
           <div className="message-groups">
-            {groupNotesByDay(detail.notes).map((group) => (
+            {groupNotesByDay(visibleNotes).map((group) => (
               <section className="message-day" key={group.key}>
                 <div className="message-date-separator">{group.label}</div>
                 <ol className="message-list">
@@ -879,6 +1096,10 @@ function ChatWorkspace({
                       >
                         <div className="message-stack">
                           <article className="message-bubble">
+                            <AttachmentList
+                              note={note}
+                              onAction={onAttachmentAction}
+                            />
                             <div className="message-body note-body">
                               <MarkdownMessage body={note.body} />
                             </div>
@@ -935,6 +1156,43 @@ function ChatWorkspace({
           </p>
         )}
         <div className={`composer ${editingNote ? "composer--editing" : ""}`}>
+          {(editingAttachments.length > 0 || pendingFiles.length > 0) && (
+            <div className="pending-attachments" aria-label="Pending files">
+              {editingAttachments.map((attachment) => (
+                <span className="pending-attachment" key={attachment.id}>
+                  <span>
+                    <strong>{attachment.filename}</strong>
+                    <small>{formatFileSize(attachment.byteSize)}</small>
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${attachment.filename}`}
+                    onClick={() => onRemoveEditingAttachment(attachment.id)}
+                  >
+                    <XIcon />
+                  </button>
+                </span>
+              ))}
+              {pendingFiles.map((file, index) => (
+                <span
+                  className="pending-attachment"
+                  key={`${file.name}-${index}`}
+                >
+                  <span>
+                    <strong>{file.name}</strong>
+                    <small>{formatFileSize(file.size)}</small>
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${file.name}`}
+                    onClick={() => onRemovePendingFile(index)}
+                  >
+                    <XIcon />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <textarea
             data-composer-textarea
             aria-label={editingNote ? "Edit message" : "Add a note"}
@@ -964,16 +1222,40 @@ function ChatWorkspace({
             <span>
               <kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd> to add
             </span>
-            <button
-              className="composer-time-button"
-              type="button"
-              onClick={onToggleTimestamp}
-              aria-label={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
-              aria-expanded={timestampOpen}
-              title={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
-            >
-              <ClockIcon />
-            </button>
+            <div className="composer-tools">
+              <input
+                ref={fileInputRef}
+                className="visually-hidden-file"
+                type="file"
+                multiple
+                aria-label="Attach files"
+                onChange={(event) => {
+                  onFilesSelected(Array.from(event.target.files ?? []));
+                  event.target.value = "";
+                }}
+              />
+              <button
+                className="composer-icon-button"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                aria-label="Open file picker"
+                title="Attach files"
+              >
+                <PaperclipIcon />
+              </button>
+              <button
+                className="composer-icon-button"
+                type="button"
+                onClick={onToggleTimestamp}
+                aria-label={
+                  timestampOpen ? "Hide timestamp" : "Choose timestamp"
+                }
+                aria-expanded={timestampOpen}
+                title={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
+              >
+                <ClockIcon />
+              </button>
+            </div>
             {editingNote && (
               <button
                 className="composer-cancel-button"
@@ -987,7 +1269,12 @@ function ChatWorkspace({
               className="send-button"
               type="button"
               onClick={onSubmit}
-              disabled={saving || !draft.trim()}
+              disabled={
+                saving ||
+                (!draft.trim() &&
+                  pendingFiles.length === 0 &&
+                  editingAttachments.length === 0)
+              }
             >
               {saving
                 ? editingNote
@@ -1016,19 +1303,56 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     "projects",
   );
   const [editingNote, setEditingNote] = useState<Note>();
+  const [editingAttachmentIds, setEditingAttachmentIds] = useState<string[]>(
+    [],
+  );
   const [copiedNoteId, setCopiedNoteId] = useState<string>();
   const [draft, setDraft] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [historyFilter, setHistoryFilter] = useState<"all" | "attachments">(
+    "all",
+  );
   const [draftTimestamp, setDraftTimestamp] = useState("");
   const [composerTimestampOpen, setComposerTimestampOpen] = useState(false);
   const [error, setError] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const selectionRequest = useRef(0);
+  const activeMutationGeneration = useRef(0);
   const activeId = useRef<string | undefined>(undefined);
   const copyResetTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     activeId.current = active?.id;
   }, [active?.id]);
+
+  useEffect(() => {
+    let focusRequest = 0;
+    const refreshActiveProject = () => {
+      const projectId = activeId.current;
+      if (!projectId) return;
+      const request = ++focusRequest;
+      const selection = selectionRequest.current;
+      const mutation = activeMutationGeneration.current;
+      void api
+        .getChat(projectId)
+        .then((detail) => {
+          if (
+            request !== focusRequest ||
+            selection !== selectionRequest.current ||
+            mutation !== activeMutationGeneration.current ||
+            activeId.current !== projectId
+          ) {
+            return;
+          }
+          setActive(detail);
+        })
+        .catch(() => {
+          // Focus refresh is best effort; explicit actions surface their errors.
+        });
+    };
+    window.addEventListener("focus", refreshActiveProject);
+    return () => window.removeEventListener("focus", refreshActiveProject);
+  }, [api]);
 
   useEffect(() => {
     let current = true;
@@ -1068,9 +1392,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       if (request !== selectionRequest.current) return;
       setActive(detail);
       setDraft("");
+      setPendingFiles([]);
+      setHistoryFilter("all");
       setDraftTimestamp("");
       setComposerTimestampOpen(false);
       setEditingNote(undefined);
+      setEditingAttachmentIds([]);
       focusMobileBackButton();
     } catch (caught) {
       if (request !== selectionRequest.current) return;
@@ -1084,9 +1411,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setChats((current) => [chat, ...current]);
     setActive({ ...chat, notes: [] });
     setDialog(undefined);
+    setPendingFiles([]);
+    setHistoryFilter("all");
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
     setEditingNote(undefined);
+    setEditingAttachmentIds([]);
     focusMobileBackButton();
   }
 
@@ -1094,6 +1424,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     if (!active) return;
     const projectId = active.id;
     const chat = await api.updateChat(active.id, input);
+    activeMutationGeneration.current += 1;
     setChats((current) =>
       sortChats(current.map((item) => (item.id === chat.id ? chat : item))),
     );
@@ -1113,17 +1444,22 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setChats((current) => current.filter((chat) => chat.id !== projectId));
     setActive(undefined);
     setDraft("");
+    setPendingFiles([]);
+    setHistoryFilter("all");
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
     setError("");
     setEditingNote(undefined);
+    setEditingAttachmentIds([]);
     setMode("projects");
   }
 
   async function appendNote() {
-    if (!active || !draft.trim() || savingNote) return;
+    if (!active || (!draft.trim() && pendingFiles.length === 0) || savingNote)
+      return;
     const projectId = active.id;
     const submittedDraft = draft;
+    const submittedFiles = pendingFiles;
     const editing = editingNote;
     const timestampValue = draftTimestamp;
     setSavingNote(true);
@@ -1139,12 +1475,16 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         await updateNote(editing, {
           body: submittedDraft,
           createdAt: timestamp,
+          keepAttachmentIds: editingAttachmentIds,
+          files: submittedFiles,
         });
       } else {
         const note = await api.appendNote(projectId, {
           body: submittedDraft,
           ...(timestamp === undefined ? {} : { createdAt: timestamp }),
+          ...(submittedFiles.length === 0 ? {} : { files: submittedFiles }),
         });
+        activeMutationGeneration.current += 1;
         setActive((current) =>
           current?.id === projectId
             ? { ...current, notes: sortNotes([...current.notes, note]) }
@@ -1168,6 +1508,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       }
       if (activeId.current === projectId) {
         setDraft((current) => (current === submittedDraft ? "" : current));
+        setPendingFiles((current) =>
+          current === submittedFiles ? [] : current,
+        );
         setDraftTimestamp("");
         setComposerTimestampOpen(false);
       }
@@ -1182,7 +1525,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
 
   function startEditingNote(note: Note) {
     setEditingNote(note);
+    setEditingAttachmentIds(
+      note.attachments?.map((attachment) => attachment.id) ?? [],
+    );
     setDraft(note.body);
+    setPendingFiles([]);
     setDraftTimestamp(toDateTimeLocalValue(note.createdAt));
     setComposerTimestampOpen(false);
     setError("");
@@ -1195,7 +1542,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
 
   function cancelEditingNote() {
     setEditingNote(undefined);
+    setEditingAttachmentIds([]);
     setDraft("");
+    setPendingFiles([]);
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
     setError("");
@@ -1216,13 +1565,52 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     }
   }
 
+  async function attachmentAction(
+    note: Note,
+    attachmentId: string,
+    action: "open" | "reveal",
+  ) {
+    if (!active) return;
+    const attachment = note.attachments?.find(
+      (item) => item.id === attachmentId,
+    );
+    if (!attachment) return;
+    if (action === "open") {
+      await api.openAttachment(active.id, note.id, attachmentId);
+    } else {
+      await api.revealAttachment(active.id, note.id, attachmentId);
+    }
+  }
+
+  function addPendingFiles(files: File[]) {
+    setPendingFiles((current) => [...current, ...files]);
+  }
+
+  function removePendingFile(index: number) {
+    setPendingFiles((current) =>
+      current.filter((_, itemIndex) => itemIndex !== index),
+    );
+  }
+
+  function removeEditingAttachment(attachmentId: string) {
+    setEditingAttachmentIds((current) =>
+      current.filter((id) => id !== attachmentId),
+    );
+  }
+
   async function updateNote(
     noteToUpdate: Note,
-    input: { body: string; createdAt: number },
+    input: {
+      body: string;
+      createdAt: number;
+      keepAttachmentIds?: string[];
+      files?: File[];
+    },
   ) {
     if (!active) return;
     const projectId = active.id;
     const updated = await api.updateNote(projectId, noteToUpdate.id, input);
+    activeMutationGeneration.current += 1;
     setActive((current) => {
       if (!current) return current;
       const notes = sortNotes(
@@ -1254,12 +1642,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       ),
     );
     setEditingNote(undefined);
+    setEditingAttachmentIds([]);
   }
 
   async function deleteNote(note: Note) {
     if (!active) return;
     if (!window.confirm("Delete this message?")) return;
     await api.deleteNote(active.id, note.id);
+    activeMutationGeneration.current += 1;
     const remaining = active.notes.filter((item) => item.id !== note.id);
     const updatedAt = chatActivityFromNotes(active, remaining);
     setActive((current) =>
@@ -1281,7 +1671,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `on-track-${new Date().toISOString().slice(0, 10)}.sqlite`;
+    link.download = `on-track-${new Date().toISOString().slice(0, 10)}.on-track-backup`;
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -1289,9 +1679,13 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function importDatabase(file: File) {
     await api.importDatabase(file);
     const importedChats = await api.listChats();
+    selectionRequest.current += 1;
+    activeMutationGeneration.current += 1;
     setChats(importedChats);
     setActive(undefined);
     setDraftTimestamp("");
+    setPendingFiles([]);
+    setHistoryFilter("all");
     setComposerTimestampOpen(false);
     setMode("projects");
     setDraft("");
@@ -1304,7 +1698,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     selectionRequest.current += 1;
     setActive(undefined);
     setEditingNote(undefined);
+    setEditingAttachmentIds([]);
     setDraft("");
+    setPendingFiles([]);
+    setHistoryFilter("all");
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
     if (projectId && isMobileViewport()) {
@@ -1355,16 +1752,24 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           draftTimestamp={draftTimestamp}
           error={error}
           editingNote={editingNote}
+          editingAttachmentIds={editingAttachmentIds}
+          pendingFiles={pendingFiles}
+          historyFilter={historyFilter}
           saving={savingNote}
           timestampOpen={composerTimestampOpen}
           onBack={backToProjects}
           onCustomize={() => setMode("projectEdit")}
           onCopyNote={copyNote}
+          onAttachmentAction={attachmentAction}
           onEditNote={startEditingNote}
           onCancelEditNote={cancelEditingNote}
           onDeleteNote={deleteNote}
           onDraftChange={setDraft}
           onDraftTimestampChange={setDraftTimestamp}
+          onFilesSelected={addPendingFiles}
+          onHistoryFilterChange={setHistoryFilter}
+          onRemoveEditingAttachment={removeEditingAttachment}
+          onRemovePendingFile={removePendingFile}
           onSubmit={appendNote}
           onToggleTimestamp={() => {
             setComposerTimestampOpen((current) => {

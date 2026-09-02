@@ -1,4 +1,8 @@
 import type { APIRequestContext } from "@playwright/test";
+import { readFileSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+
+import Database from "better-sqlite3";
 
 import { expect, test } from "./fixtures.js";
 
@@ -16,6 +20,15 @@ type ScrollMetrics = {
   scrollHeight: number;
   top: number;
   bottom: number;
+};
+
+type AttachmentRow = {
+  chatId: string;
+  id: string;
+  noteId: string;
+  storagePath: string;
+  byteSize: number;
+  modifiedAt: number;
 };
 
 function viewportName(testName: string): string {
@@ -43,6 +56,39 @@ async function addNote(
     data: { body, ...(createdAt === undefined ? {} : { createdAt }) },
   });
   expect(response.ok()).toBe(true);
+}
+
+function readAttachmentRow(
+  dataDirectory: string,
+  projectTitle: string,
+  filename: string,
+): AttachmentRow {
+  const database = new Database(join(dataDirectory, "on-track.sqlite"), {
+    readonly: true,
+    fileMustExist: true,
+  });
+  try {
+    const row = database
+      .prepare(
+        `SELECT attachment.id,
+                chat.id AS chatId,
+                attachment.note_id AS noteId,
+                attachment.storage_path AS storagePath,
+                attachment.byte_size AS byteSize,
+                attachment.modified_at AS modifiedAt
+           FROM note_attachments attachment
+           JOIN notes note ON note.id = attachment.note_id
+           JOIN chats chat ON chat.id = note.chat_id
+          WHERE chat.title = ? AND attachment.filename = ?
+          ORDER BY attachment.rowid DESC
+          LIMIT 1`,
+      )
+      .get(projectTitle, filename) as AttachmentRow | undefined;
+    if (!row) throw new Error(`Attachment ${filename} was not persisted.`);
+    return row;
+  } finally {
+    database.close();
+  }
 }
 
 test("creates, customizes, records, and reopens a private project thread", async ({
@@ -184,15 +230,22 @@ test("manages markdown messages and database backups from the UI", async ({
   await note.getByRole("button", { name: "Delete message" }).click();
   await expect(page.getByText("Revised")).toBeHidden();
 
+  const bundledAttachmentPath = testInfo.outputPath("bundled-roadmap.txt");
+  writeFileSync(bundledAttachmentPath, "bundle sidecar bytes");
+  await page.getByLabel("Attach files").setInputFiles(bundledAttachmentPath);
+  await page.getByLabel("Add a note").fill("Bundled attachment");
+  await page.getByRole("button", { name: /Add note/ }).click();
+  await expect(page.getByText("bundled-roadmap.txt")).toBeVisible();
+
   if (testInfo.project.name === "mobile-webkit") {
     await page.getByRole("button", { name: "Back to projects" }).click();
   }
   await page.getByRole("button", { name: /Settings/ }).click();
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export database" }).click();
+  await page.getByRole("button", { name: "Export backup" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(
-    /on-track-\d{4}-\d{2}-\d{2}\.sqlite/,
+    /on-track-\d{4}-\d{2}-\d{2}\.on-track-backup/,
   );
   const backupPath = await download.path();
   expect(backupPath).toBeTruthy();
@@ -209,10 +262,10 @@ test("manages markdown messages and database backups from the UI", async ({
 
   await page.getByRole("button", { name: /Settings/ }).click();
   await page
-    .getByLabel("Choose database backup")
+    .getByLabel("Choose On Track backup")
     .setInputFiles(backupPath ?? "");
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Import database" }).click();
+  await page.getByRole("button", { name: "Restore backup" }).click();
 
   await expect(
     page.getByRole("button", { name: `Open ${exportedProject.title}` }),
@@ -220,6 +273,187 @@ test("manages markdown messages and database backups from the UI", async ({
   await expect(
     page.getByRole("button", { name: `Open ${extraProject.title}` }),
   ).toHaveCount(0);
+
+  await page
+    .getByRole("button", { name: `Open ${exportedProject.title}` })
+    .click();
+  await expect(page.getByText("bundled-roadmap.txt")).toBeVisible();
+
+  const activeDatabase = new Database(
+    join(localApp.dataDirectory, "on-track.sqlite"),
+    { readonly: true, fileMustExist: true },
+  );
+  try {
+    expect(
+      activeDatabase
+        .prepare("SELECT name FROM pragma_table_info('note_attachments')")
+        .pluck()
+        .all(),
+    ).not.toContain("content");
+    const storagePath = activeDatabase
+      .prepare("SELECT storage_path FROM note_attachments LIMIT 1")
+      .pluck()
+      .get() as string;
+    expect(storagePath).toMatch(/^attachments\/v1\/restore-/);
+    expect(
+      readFileSync(join(localApp.dataDirectory, storagePath), "utf8"),
+    ).toBe("bundle sidecar bytes");
+  } finally {
+    activeDatabase.close();
+  }
+});
+
+test("adds an attachment message and filters history by files", async ({
+  page,
+  localApp,
+}, testInfo) => {
+  const suffix = `${viewportName(testInfo.project.name)}-${Date.now()}`;
+  const projectTitle = `Attachments ${suffix}`;
+  const attachmentPath = testInfo.outputPath("roadmap.txt");
+  writeFileSync(attachmentPath, "roadmap bytes");
+
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: "New project" }).click();
+  await page.getByLabel("Project name").fill(projectTitle);
+  await page.getByRole("button", { name: "Create project" }).click();
+
+  await page.getByLabel("Add a note").fill("Plain status");
+  await page.getByRole("button", { name: /Add note/ }).click();
+  await expect(page.getByText("Plain status")).toBeVisible();
+
+  await page.getByLabel("Attach files").setInputFiles(attachmentPath);
+  await expect(page.getByText("roadmap.txt")).toBeVisible();
+  await page.getByLabel("Add a note").fill("Roadmap context");
+  await page.getByRole("button", { name: /Add note/ }).click();
+
+  await expect(page.getByText("Roadmap context")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Files 1" })).toBeVisible();
+  await page.getByRole("button", { name: "Files 1" }).click();
+  await expect(page.getByText("Plain status")).toBeHidden();
+  await expect(page.getByText("Roadmap context")).toBeVisible();
+
+  await expect(
+    page.getByRole("button", { name: "Open roadmap.txt" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Show roadmap.txt in Folder" }),
+  ).toBeVisible();
+  const nativeActionReceiptOffset = localApp.nativeActionReceipts().length;
+  const attachmentCard = page.locator(".attachment-card");
+  await expect(attachmentCard).toHaveCount(1);
+  expect(
+    await attachmentCard.evaluate(
+      (element) => element.scrollWidth <= element.clientWidth,
+    ),
+  ).toBe(true);
+
+  const beforeEdit = readAttachmentRow(
+    localApp.dataDirectory,
+    projectTitle,
+    "roadmap.txt",
+  );
+  expect(beforeEdit.storagePath).toMatch(
+    /^attachments\/v1\/[^/]+\/[^/]+\/roadmap\.txt$/,
+  );
+  const managedPath = realpathSync(
+    join(localApp.dataDirectory, beforeEdit.storagePath),
+  );
+  const containingDirectory = realpathSync(dirname(managedPath));
+
+  await page.getByRole("button", { name: "Open roadmap.txt" }).click();
+  await expect
+    .poll(() =>
+      localApp.nativeActionReceipts().slice(nativeActionReceiptOffset),
+    )
+    .toEqual([{ action: "open", path: managedPath }]);
+  await page
+    .getByRole("button", { name: "Show roadmap.txt in Folder" })
+    .click();
+  await expect
+    .poll(() =>
+      localApp.nativeActionReceipts().slice(nativeActionReceiptOffset),
+    )
+    .toEqual([
+      { action: "open", path: managedPath },
+      {
+        action: "reveal",
+        path: managedPath,
+        containingDirectory,
+      },
+    ]);
+
+  const editedContent = "externally edited roadmap bytes";
+  const editedByteSize = Buffer.byteLength(editedContent);
+  const editedTime = new Date(
+    Math.max(Date.now() + 5_000, beforeEdit.modifiedAt + 5_000),
+  );
+  writeFileSync(managedPath, editedContent);
+  utimesSync(managedPath, editedTime, editedTime);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+
+  await expect(attachmentCard.locator("small")).toContainText(
+    `${editedByteSize} B`,
+  );
+  await expect
+    .poll(
+      () =>
+        readAttachmentRow(localApp.dataDirectory, projectTitle, "roadmap.txt")
+          .byteSize,
+    )
+    .toBe(editedByteSize);
+  const afterFocus = readAttachmentRow(
+    localApp.dataDirectory,
+    projectTitle,
+    "roadmap.txt",
+  );
+  expect(afterFocus.id).toBe(beforeEdit.id);
+  expect(afterFocus.noteId).toBe(beforeEdit.noteId);
+  expect(afterFocus.storagePath).toBe(beforeEdit.storagePath);
+  expect(afterFocus.modifiedAt).toBeGreaterThan(beforeEdit.modifiedAt);
+  expect(readFileSync(managedPath, "utf8")).toBe(editedContent);
+  const afterFocusResponse = await page.request.get(
+    `${localApp.url}/api/chats/${encodeURIComponent(afterFocus.chatId)}`,
+  );
+  expect(afterFocusResponse.ok()).toBe(true);
+  const afterFocusDetail = (await afterFocusResponse.json()) as {
+    notes: Array<{
+      attachments?: Array<{
+        id: string;
+        byteSize: number;
+        modifiedAt: number;
+        status: string;
+      }>;
+    }>;
+  };
+  expect(
+    afterFocusDetail.notes
+      .flatMap((note) => note.attachments ?? [])
+      .find((attachment) => attachment.id === afterFocus.id),
+  ).toMatchObject({
+    id: beforeEdit.id,
+    byteSize: editedByteSize,
+    modifiedAt: afterFocus.modifiedAt,
+    status: "available",
+  });
+
+  await localApp.restart();
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${projectTitle}` }).click();
+  await expect(page.getByText("Roadmap context")).toBeVisible();
+  await expect(page.getByText("roadmap.txt")).toBeVisible();
+  await expect(page.locator(".attachment-card small")).toContainText(
+    `${editedByteSize} B`,
+  );
+  expect(
+    readAttachmentRow(localApp.dataDirectory, projectTitle, "roadmap.txt"),
+  ).toEqual(afterFocus);
+  expect(readFileSync(managedPath, "utf8")).toBe(editedContent);
+  await expect(
+    page.getByRole("button", { name: "Open roadmap.txt" }),
+  ).toBeEnabled();
+  expect(
+    localApp.nativeActionReceipts().slice(nativeActionReceiptOffset),
+  ).toHaveLength(2);
 });
 
 test("keeps project and note collections inside their own scroll panes", async ({

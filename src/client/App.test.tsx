@@ -33,6 +33,9 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
     appendNote: vi.fn(),
     updateNote: vi.fn(),
     deleteNote: vi.fn(),
+    downloadAttachment: vi.fn(),
+    openAttachment: vi.fn(),
+    revealAttachment: vi.fn(),
     exportDatabase: vi.fn(),
     importDatabase: vi.fn(),
     ...overrides,
@@ -328,14 +331,74 @@ describe("personal project chat workspace", () => {
     expect(screen.getByLabelText("Add a note")).toHaveValue("");
   });
 
+  it("sends selected files with caption text and can remove a pending attachment", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const uploaded = new File(["deck"], "roadmap.pptx", {
+      type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    });
+    const removed = new File(["draft"], "draft.pdf", {
+      type: "application/pdf",
+    });
+    const appendNote = vi.fn().mockResolvedValue({
+      id: "note-1",
+      chatId: "chat-1",
+      body: "Deck context",
+      createdAt: 2,
+      attachments: [
+        {
+          id: "attachment-1",
+          noteId: "note-1",
+          filename: "roadmap.pptx",
+          mediaType:
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          byteSize: 4,
+          createdAt: 2,
+        },
+      ],
+    });
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      appendNote,
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    await user.upload(screen.getByLabelText("Attach files"), [
+      uploaded,
+      removed,
+    ]);
+    expect(screen.getByText("roadmap.pptx")).toBeVisible();
+    expect(screen.getByText("draft.pdf")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Remove draft.pdf" }));
+    await user.type(screen.getByLabelText("Add a note"), "Deck context");
+    await user.click(screen.getByRole("button", { name: "Add note" }));
+
+    expect(appendNote).toHaveBeenCalledWith("chat-1", {
+      body: "Deck context",
+      files: [uploaded],
+    });
+    expect(await screen.findByText("roadmap.pptx")).toBeVisible();
+    expect(screen.queryByText("draft.pdf")).not.toBeInTheDocument();
+  });
+
   it("opens settings as a rail mode and exports from the main workspace", async () => {
     const user = userEvent.setup();
     const api = createApi({
-      exportDatabase: vi
-        .fn()
-        .mockResolvedValue(
-          new Blob(["SQLite format 3"], { type: "application/vnd.sqlite3" }),
-        ),
+      exportDatabase: vi.fn().mockResolvedValue(
+        new Blob(["SQLite format 3"], {
+          type: "application/vnd.on-track.backup+sqlite",
+        }),
+      ),
     });
     const createObjectURL = vi.fn(() => "blob:on-track-export");
     const revokeObjectURL = vi.fn();
@@ -348,10 +411,17 @@ describe("personal project chat workspace", () => {
       screen.getByRole("navigation", { name: "Settings sections" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("heading", { name: "Database settings" }),
+      screen.getByRole("heading", { name: "Backup settings" }),
     ).toBeVisible();
     expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Export database" }));
+    expect(screen.getByLabelText("Choose On Track backup")).toHaveAttribute(
+      "accept",
+      ".on-track-backup,application/vnd.on-track.backup+sqlite",
+    );
+    expect(
+      screen.getByText(/Backups are plaintext and readable/),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Export backup" }));
 
     await waitFor(() => expect(api.exportDatabase).toHaveBeenCalled());
     expect(createObjectURL).toHaveBeenCalled();
@@ -377,7 +447,7 @@ describe("personal project chat workspace", () => {
     );
     await user.click(screen.getByRole("button", { name: /Settings/ }));
     expect(
-      screen.getByRole("heading", { name: "Database settings" }),
+      screen.getByRole("heading", { name: "Backup settings" }),
     ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Back to projects" }));
 
@@ -394,17 +464,19 @@ describe("personal project chat workspace", () => {
     render(<App api={api} />);
 
     await user.click(screen.getByRole("button", { name: /Settings/ }));
-    await user.click(screen.getByRole("button", { name: "Export database" }));
+    await user.click(screen.getByRole("button", { name: "Export backup" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Export failed");
 
     await user.upload(
-      screen.getByLabelText("Choose database backup"),
-      new File(["bad"], "bad.sqlite", { type: "application/vnd.sqlite3" }),
+      screen.getByLabelText("Choose On Track backup"),
+      new File(["bad"], "bad.on-track-backup", {
+        type: "application/vnd.on-track.backup+sqlite",
+      }),
     );
-    await user.click(screen.getByRole("button", { name: "Import database" }));
+    await user.click(screen.getByRole("button", { name: "Restore backup" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Import failed");
     expect(
-      screen.getByRole("heading", { name: "Database settings" }),
+      screen.getByRole("heading", { name: "Backup settings" }),
     ).toBeVisible();
   });
 
@@ -416,12 +488,12 @@ describe("personal project chat workspace", () => {
 
     await user.click(screen.getByRole("button", { name: /Settings/ }));
     await user.upload(
-      screen.getByLabelText("Choose database backup"),
-      new File(["SQLite format 3"], "backup.sqlite", {
-        type: "application/vnd.sqlite3",
+      screen.getByLabelText("Choose On Track backup"),
+      new File(["SQLite format 3"], "backup.on-track-backup", {
+        type: "application/vnd.on-track.backup+sqlite",
       }),
     );
-    await user.click(screen.getByRole("button", { name: "Import database" }));
+    await user.click(screen.getByRole("button", { name: "Restore backup" }));
 
     expect(api.importDatabase).not.toHaveBeenCalled();
   });
@@ -448,12 +520,12 @@ describe("personal project chat workspace", () => {
 
     await user.click(screen.getByRole("button", { name: /Settings/ }));
     await user.upload(
-      screen.getByLabelText("Choose database backup"),
-      new File(["SQLite format 3"], "backup.sqlite", {
-        type: "application/vnd.sqlite3",
+      screen.getByLabelText("Choose On Track backup"),
+      new File(["SQLite format 3"], "backup.on-track-backup", {
+        type: "application/vnd.on-track.backup+sqlite",
       }),
     );
-    await user.click(screen.getByRole("button", { name: "Import database" }));
+    await user.click(screen.getByRole("button", { name: "Restore backup" }));
 
     await waitFor(() => expect(api.importDatabase).toHaveBeenCalled());
     expect(
@@ -511,7 +583,311 @@ describe("personal project chat workspace", () => {
     expect(document.querySelectorAll(".message-time")).toHaveLength(3);
   });
 
-  it("copies with icon feedback, edits from the composer, and deletes an existing message", async () => {
+  it("renders attachment cards and filters history to messages with files", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 100,
+      updatedAt: 2_000,
+    };
+    const notes = [
+      {
+        id: "note-1",
+        chatId: "chat-1",
+        body: "Plain update",
+        createdAt: 1_000,
+        attachments: [],
+      },
+      {
+        id: "note-2",
+        chatId: "chat-1",
+        body: "Read this deck",
+        createdAt: 2_000,
+        attachments: [
+          {
+            id: "attachment-1",
+            noteId: "note-2",
+            filename: "roadmap.pptx",
+            mediaType:
+              "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            byteSize: 2048,
+            modifiedAt: 2_000,
+            createdAt: 2_000,
+            status: "available" as const,
+            actions: {
+              open: "available" as const,
+              reveal: "available" as const,
+            },
+          },
+          {
+            id: "attachment-missing",
+            noteId: "note-2",
+            filename: "missing.pdf",
+            mediaType: "application/pdf",
+            byteSize: 512,
+            modifiedAt: 2_000,
+            createdAt: 2_000,
+            status: "missing" as const,
+            actions: {
+              open: "unavailable" as const,
+              reveal: "available" as const,
+            },
+          },
+          {
+            id: "attachment-blocked",
+            noteId: "note-2",
+            filename: "installer.exe",
+            mediaType: "application/octet-stream",
+            byteSize: 256,
+            modifiedAt: 2_000,
+            createdAt: 2_000,
+            status: "available" as const,
+            actions: {
+              open: "blocked" as const,
+              reveal: "available" as const,
+            },
+          },
+          {
+            id: "attachment-unsupported",
+            noteId: "note-2",
+            filename: "unsupported.txt",
+            mediaType: "text/plain",
+            byteSize: 128,
+            modifiedAt: 2_000,
+            createdAt: 2_000,
+            status: "available" as const,
+            actions: {
+              open: "unsupported" as const,
+              reveal: "unsupported" as const,
+            },
+          },
+        ],
+      },
+    ];
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes }),
+      openAttachment: vi.fn().mockResolvedValue(undefined),
+      revealAttachment: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+
+    expect(screen.getByText("Plain update")).toBeVisible();
+    expect(screen.getByText("roadmap.pptx")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Open missing.pdf" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Show missing.pdf in Folder" }),
+    ).toBeEnabled();
+    expect(screen.getByText(/File is missing/)).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Open installer.exe" }),
+    ).toBeDisabled();
+    expect(screen.getByText(/Opening is blocked/)).toBeVisible();
+    expect(
+      screen.getByText(/Native file actions are not supported/),
+    ).toBeVisible();
+    expect(screen.getByText(/2 KB · Modified/)).toBeVisible();
+    expect(
+      screen.getByText("roadmap.pptx").closest(".attachment-card")?.tagName,
+    ).toBe("DIV");
+    await user.click(screen.getByRole("button", { name: "Files 1" }));
+    expect(screen.queryByText("Plain update")).not.toBeInTheDocument();
+    expect(screen.getByText("Read this deck")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Open roadmap.pptx" }));
+    expect(api.openAttachment).toHaveBeenCalledWith(
+      "chat-1",
+      "note-2",
+      "attachment-1",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Show roadmap.pptx in Folder" }),
+    );
+    expect(api.revealAttachment).toHaveBeenCalledWith(
+      "chat-1",
+      "note-2",
+      "attachment-1",
+    );
+  });
+
+  it("shows native action progress and a recoverable card-local error", async () => {
+    const user = userEvent.setup();
+    const openRequest = deferred<void>();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 100,
+      updatedAt: 2_000,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({
+        ...chat,
+        notes: [
+          {
+            id: "note-1",
+            chatId: "chat-1",
+            body: "Deck",
+            createdAt: 2_000,
+            attachments: [
+              {
+                id: "attachment-1",
+                noteId: "note-1",
+                filename: "roadmap.pptx",
+                mediaType: "application/octet-stream",
+                byteSize: 1024,
+                modifiedAt: 2_000,
+                createdAt: 2_000,
+                status: "available" as const,
+                actions: {
+                  open: "available" as const,
+                  reveal: "available" as const,
+                },
+              },
+            ],
+          },
+        ],
+      }),
+      openAttachment: vi.fn(() => openRequest.promise),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open roadmap.pptx" }));
+    expect(
+      screen.getByRole("button", { name: "Open roadmap.pptx" }),
+    ).toHaveTextContent("Opening…");
+    await act(async () =>
+      openRequest.reject(new Error("Default application is busy.")),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Default application is busy.",
+    );
+    expect(
+      screen.getByRole("button", { name: "Open roadmap.pptx" }),
+    ).toBeEnabled();
+  });
+
+  it("refreshes attachment metadata on focus without clearing the draft", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 100,
+      updatedAt: 2_000,
+    };
+    const attachment = {
+      id: "attachment-1",
+      noteId: "note-1",
+      filename: "roadmap.pptx",
+      mediaType: "application/octet-stream",
+      byteSize: 1024,
+      modifiedAt: 2_000,
+      createdAt: 2_000,
+      status: "available" as const,
+      actions: { open: "available" as const, reveal: "available" as const },
+    };
+    const getChat = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ...chat,
+        notes: [
+          {
+            id: "note-1",
+            chatId: "chat-1",
+            body: "Deck",
+            createdAt: 2_000,
+            attachments: [attachment],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        ...chat,
+        notes: [
+          {
+            id: "note-1",
+            chatId: "chat-1",
+            body: "Deck",
+            createdAt: 2_000,
+            attachments: [{ ...attachment, byteSize: 3072, modifiedAt: 4_000 }],
+          },
+        ],
+      });
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat,
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    await user.type(screen.getByLabelText("Add a note"), "Keep this draft");
+    act(() => window.dispatchEvent(new Event("focus")));
+
+    expect(await screen.findByText(/3 KB · Modified/)).toBeVisible();
+    expect(screen.getByLabelText("Add a note")).toHaveValue("Keep this draft");
+  });
+
+  it("does not let an older focus refresh overwrite a newer note mutation", async () => {
+    const user = userEvent.setup();
+    const focusRefresh = deferred<{
+      id: string;
+      title: string;
+      accent: "ocean";
+      createdAt: number;
+      updatedAt: number;
+      notes: never[];
+    }>();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 100,
+      updatedAt: 2_000,
+    };
+    const getChat = vi
+      .fn()
+      .mockResolvedValueOnce({ ...chat, notes: [] })
+      .mockImplementationOnce(() => focusRefresh.promise);
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat,
+      appendNote: vi.fn().mockResolvedValue({
+        id: "note-new",
+        chatId: "chat-1",
+        body: "Newer local note",
+        createdAt: 3_000,
+      }),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(getChat).toHaveBeenCalledTimes(2));
+    await user.type(screen.getByLabelText("Add a note"), "Newer local note");
+    await user.click(screen.getByRole("button", { name: /Add note/ }));
+    expect(await screen.findByText("Newer local note")).toBeVisible();
+    await act(async () => focusRefresh.resolve({ ...chat, notes: [] }));
+
+    expect(screen.getByText("Newer local note")).toBeVisible();
+  });
+
+  it("copies with icon feedback, edits message files from the composer, and deletes an existing message", async () => {
     const user = userEvent.setup();
     const chat = {
       id: "chat-1",
@@ -530,6 +906,24 @@ describe("personal project chat workspace", () => {
             chatId: "chat-1",
             body: "Original **message**",
             createdAt: 2_000,
+            attachments: [
+              {
+                id: "attachment-keep",
+                noteId: "note-1",
+                filename: "keep.pdf",
+                mediaType: "application/pdf",
+                byteSize: 4,
+                createdAt: 2_000,
+              },
+              {
+                id: "attachment-remove",
+                noteId: "note-1",
+                filename: "remove.pdf",
+                mediaType: "application/pdf",
+                byteSize: 6,
+                createdAt: 2_000,
+              },
+            ],
           },
         ],
       }),
@@ -538,6 +932,24 @@ describe("personal project chat workspace", () => {
         chatId: "chat-1",
         body: "Revised **message**",
         createdAt: 3_600_000,
+        attachments: [
+          {
+            id: "attachment-keep",
+            noteId: "note-1",
+            filename: "keep.pdf",
+            mediaType: "application/pdf",
+            byteSize: 4,
+            createdAt: 2_000,
+          },
+          {
+            id: "attachment-new",
+            noteId: "note-1",
+            filename: "new.pdf",
+            mediaType: "application/pdf",
+            byteSize: 3,
+            createdAt: 3_600_000,
+          },
+        ],
       }),
       deleteNote: vi.fn().mockResolvedValue(undefined),
     });
@@ -568,6 +980,13 @@ describe("personal project chat workspace", () => {
     expect(screen.queryByRole("dialog", { name: "Edit message" })).toBeNull();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeVisible();
     expect(screen.queryByLabelText("Message timestamp")).toBeNull();
+    const editFiles = screen.getByLabelText("Pending files");
+    expect(within(editFiles).getByText("keep.pdf")).toBeVisible();
+    expect(within(editFiles).getByText("remove.pdf")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Remove remove.pdf" }));
+    const newFile = new File(["new"], "new.pdf", { type: "application/pdf" });
+    await user.upload(screen.getByLabelText("Attach files"), newFile);
+    expect(screen.getByText("new.pdf")).toBeVisible();
     const editComposer = screen.getByRole("textbox", { name: "Edit message" });
     await user.clear(editComposer);
     await user.type(editComposer, "Revised **message**");
@@ -583,6 +1002,8 @@ describe("personal project chat workspace", () => {
     expect(api.updateNote).toHaveBeenCalledWith("chat-1", "note-1", {
       body: "Revised **message**",
       createdAt: new Date(revisedTimestamp).getTime(),
+      keepAttachmentIds: ["attachment-keep"],
+      files: [newFile],
     });
     expect(await screen.findByText("Revised")).toBeVisible();
 

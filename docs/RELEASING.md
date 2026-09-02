@@ -36,7 +36,8 @@ issue/design -> branch -> RED/GREEN tests -> npm run verify -> pull request
 `npm run verify` is the local source of truth: release contract, build, types,
 lint/format, coverage, migration integration, real-browser E2E, and production
 dependency audit. GitHub CI repeats it on a clean Linux runner and checks native
-installation/tests on Linux, macOS, and Windows.
+SQLite dependency installation/tests on Linux, macOS, and Windows. Native desktop
+launcher smoke tests remain separate manual release evidence.
 
 ## Prepare a version
 
@@ -45,14 +46,12 @@ installation/tests on Linux, macOS, and Windows.
 3. Update both manifest versions without creating a tag:
 
    ```sh
-   npm version 0.0.2 --no-git-tag-version
+   npm version 0.0.3 --no-git-tag-version
    ```
 
-4. Run `RELEASE_TAG=v0.0.2 npm run release:check` and `npm run verify`.
-5. Open a release pull request titled `chore: release v0.0.2` and merge only
+4. Run `RELEASE_TAG=v0.0.3 npm run release:check` and `npm run verify`.
+5. Open a release pull request titled `chore: release v0.0.3` and merge only
    after all required checks and review pass.
-
-For v0.0.1 the version and changelog files are already prepared.
 
 ## Publish after merge
 
@@ -60,8 +59,8 @@ From an up-to-date, clean `main` checkout, verify the commit and then create and
 push an annotated matching tag:
 
 ```sh
-git tag -a v0.0.2 -m "On Track v0.0.2"
-git push origin v0.0.2
+git tag -a v0.0.3 -m "On Track v0.0.3"
+git push origin v0.0.3
 ```
 
 The release workflow checks out that exact revision, validates the version/tag
@@ -74,5 +73,5 @@ published version tag; fix the issue in a new version.
 
 GitHub Releases are immutable historical artifacts. If a release is defective,
 mark it as affected in the changelog/security advisory and publish a corrected
-new version. Do not overwrite its tag. Since v0.0.1 has no automatic updater,
+new version. Do not overwrite its tag. On Track has no automatic updater, so
 users choose when to install the fixed source release.
