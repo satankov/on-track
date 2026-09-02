@@ -23,7 +23,9 @@ within seven days and coordinate disclosure after a fix is available.
 
 ## Current data-safety posture
 
-Version 0.0.1 keeps data on the local machine and binds only to loopback, but its
-SQLite database is **not encrypted** and backup/restore is not implemented. It is
-not suitable for confidential, NDA-bound, or irreplaceable information. See
+On Track keeps data on the local machine and binds only to loopback, but its
+SQLite database, managed attachments, and exported backups are **not encrypted**.
+Backup restore replaces current local projects and files rather than merging
+them. The application is not suitable for confidential, NDA-bound, or
+irreplaceable information. See
 [ADR-0002](docs/adr/0002-defer-at-rest-encryption.md).

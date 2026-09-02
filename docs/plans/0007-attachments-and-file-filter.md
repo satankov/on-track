@@ -1,5 +1,13 @@
 # Attachments and file-filter implementation plan
 
+## Status
+
+Superseded before v0.0.3 release by
+[`0008-managed-mutable-attachments.md`](0008-managed-mutable-attachments.md).
+The user-facing attachment and Files-filter behavior remains, but the BLOB
+persistence, raw-database transfer, and browser blob-open design below records a
+discarded development implementation rather than current architecture.
+
 ## Goal
 
 Add the first attachment slice to project messages and the first history filter:
@@ -89,7 +97,8 @@ file bytes and can grow quickly.
 
 ## Completion evidence
 
-Implemented on the active development branch for the future v0.0.3 release.
+Implemented as the initial development slice, then replaced before v0.0.3 release
+by the managed-sidecar, versioned-backup, and native-action design in plan 0008.
 
 Verified behavior:
 
@@ -116,3 +125,7 @@ Remaining risk:
 - Native app opening, revealing in a folder, and in-place mutable attachment
   editing are intentionally deferred to
   `docs/plans/0008-managed-mutable-attachments.md`.
+
+These completion notes are historical evidence for the superseded BLOB
+implementation. Plan 0008 is authoritative for the released storage, transfer,
+open/reveal, recovery, security, and verification behavior.

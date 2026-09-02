@@ -78,6 +78,15 @@ describe("managed attachment storage", () => {
         "quarterly_plan_.pdf",
       ),
     );
+    expect(store.resolveSafeContainingDirectory(created.storagePath)).toBe(
+      join(
+        realpathSync(dataDirectory),
+        "attachments",
+        "v1",
+        "namespace-a",
+        "attachment-a",
+      ),
+    );
 
     if (process.platform !== "win32") {
       expect(lstatSync(join(dataDirectory, "attachments")).mode & 0o777).toBe(
@@ -343,6 +352,26 @@ describe("managed attachment storage", () => {
     expect(store.read(created.storagePath).content).toEqual(Buffer.alloc(0));
   });
 
+  it("resolves a safe containing directory when the target is missing", () => {
+    const store = createStore();
+    const created = store.create({
+      attachmentId: "attachment-a",
+      filename: "mutable.txt",
+      content: Buffer.from("before"),
+    });
+    unlinkSync(store.resolveAvailablePath(created.storagePath));
+
+    expect(store.resolveSafeContainingDirectory(created.storagePath)).toBe(
+      join(
+        realpathSync(dataDirectory),
+        "attachments",
+        "v1",
+        "namespace-a",
+        "attachment-a",
+      ),
+    );
+  });
+
   it("bounds reads after an external file grows", () => {
     const store = new ManagedAttachmentStore(dataDirectory, {
       namespaceFactory: () => "namespace-a",
@@ -476,6 +505,9 @@ describe("managed attachment storage", () => {
     expect(() => store.resolveAvailablePath(storagePath)).toThrow(
       ManagedAttachmentUnavailableError,
     );
+    expect(() => store.resolveSafeContainingDirectory(storagePath)).toThrow(
+      ManagedAttachmentUnavailableError,
+    );
     expect(store.remove(storagePath)).toBe("unsafe");
   });
 
@@ -537,6 +569,9 @@ describe("managed attachment storage", () => {
         status: "unsafe",
         storagePath: ancestorPath,
       });
+      expect(() => store.resolveSafeContainingDirectory(ancestorPath)).toThrow(
+        ManagedAttachmentUnavailableError,
+      );
       expect(store.remove(ancestorPath)).toBe("unsafe");
       expect(
         readFileSync(

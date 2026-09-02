@@ -69,6 +69,13 @@ function formatFileSize(byteSize: number): string {
   return `${(byteSize / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function formatAttachmentModified(timestamp: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(timestamp));
+}
+
 function fileTypeLabel(filename: string, mediaType: string): string {
   const extension = filename.includes(".")
     ? filename.split(".").pop()?.toUpperCase()
@@ -773,16 +780,6 @@ function PaperclipIcon() {
   );
 }
 
-function OpenIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M7 17 17 7" />
-      <path d="M9 7h8v8" />
-      <path d="M19 19H5V5" />
-    </svg>
-  );
-}
-
 function XIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -827,41 +824,108 @@ function MarkdownMessage({ body }: { body: string }) {
 
 function AttachmentList({
   note,
-  onOpen,
+  onAction,
 }: {
   note: Note;
-  onOpen: (note: Note, attachmentId: string) => void;
+  onAction: (
+    note: Note,
+    attachmentId: string,
+    action: "open" | "reveal",
+  ) => Promise<void>;
 }) {
+  const [busyAction, setBusyAction] = useState<string>();
+  const [actionError, setActionError] = useState<string>();
   if (!note.attachments?.length) return null;
+
+  async function runAction(attachmentId: string, action: "open" | "reveal") {
+    const key = `${attachmentId}:${action}`;
+    if (busyAction) return;
+    setBusyAction(key);
+    setActionError(undefined);
+    try {
+      await onAction(note, attachmentId, action);
+    } catch (caught) {
+      setActionError(
+        errorMessage(caught, "The file action could not be completed."),
+      );
+    } finally {
+      setBusyAction(undefined);
+    }
+  }
+
   return (
     <div className="attachment-list" aria-label="Message attachments">
-      {note.attachments.map((attachment) => (
-        <button
-          className="attachment-card"
-          key={attachment.id}
-          type="button"
-          aria-label={`Open ${attachment.filename}`}
-          onClick={() => onOpen(note, attachment.id)}
-          disabled={
-            attachment.status !== undefined && attachment.status !== "available"
-          }
-        >
-          <span className="attachment-type" aria-hidden="true">
-            {fileTypeLabel(attachment.filename, attachment.mediaType)}
-          </span>
-          <span className="attachment-copy">
-            <strong>{attachment.filename}</strong>
-            <small>
-              {attachment.status && attachment.status !== "available"
-                ? `File ${attachment.status}`
-                : formatFileSize(attachment.byteSize)}
-            </small>
-          </span>
-          <span className="attachment-open" aria-hidden="true">
-            <OpenIcon />
-          </span>
-        </button>
-      ))}
+      {note.attachments.map((attachment) => {
+        const status = attachment.status ?? "available";
+        const openCapability =
+          attachment.actions?.open ??
+          (status === "available" ? "available" : "unavailable");
+        const revealCapability =
+          attachment.actions?.reveal ??
+          (status === "available" ? "available" : "unavailable");
+        const reasonId = `attachment-${attachment.id}-status`;
+        const reason =
+          openCapability === "blocked"
+            ? "Opening is blocked for this file type."
+            : openCapability === "unsupported"
+              ? "Native file actions are not supported on this system."
+              : status !== "available"
+                ? `File is ${status}.`
+                : undefined;
+        const openBusy = busyAction === `${attachment.id}:open`;
+        const revealBusy = busyAction === `${attachment.id}:reveal`;
+        return (
+          <div className="attachment-card" key={attachment.id}>
+            <span className="attachment-type" aria-hidden="true">
+              {fileTypeLabel(attachment.filename, attachment.mediaType)}
+            </span>
+            <span className="attachment-copy">
+              <strong>{attachment.filename}</strong>
+              <small
+                id={reasonId}
+                className={reason ? "attachment-status--warning" : undefined}
+              >
+                {reason ? (
+                  <>
+                    <span aria-hidden="true">⚠ </span>
+                    {reason}
+                  </>
+                ) : (
+                  `${formatFileSize(attachment.byteSize)} · Modified ${formatAttachmentModified(attachment.modifiedAt ?? attachment.createdAt)}`
+                )}
+              </small>
+            </span>
+            <span className="attachment-actions">
+              <button
+                type="button"
+                className="button button-primary attachment-action"
+                aria-label={`Open ${attachment.filename}`}
+                aria-describedby={reason ? reasonId : undefined}
+                disabled={openCapability !== "available" || Boolean(busyAction)}
+                onClick={() => void runAction(attachment.id, "open")}
+              >
+                {openBusy ? "Opening…" : "Open"}
+              </button>
+              <button
+                type="button"
+                className="button button-quiet attachment-action"
+                aria-label={`Show ${attachment.filename} in Folder`}
+                disabled={
+                  revealCapability !== "available" || Boolean(busyAction)
+                }
+                onClick={() => void runAction(attachment.id, "reveal")}
+              >
+                {revealBusy ? "Showing…" : "Show in Folder"}
+              </button>
+            </span>
+          </div>
+        );
+      })}
+      {actionError && (
+        <p className="attachment-action-error" role="alert">
+          {actionError}
+        </p>
+      )}
     </div>
   );
 }
@@ -881,7 +945,7 @@ function ChatWorkspace({
   onCancelEditNote,
   onCustomize,
   onCopyNote,
-  onOpenAttachment,
+  onAttachmentAction,
   onEditNote,
   onDeleteNote,
   onDraftChange,
@@ -909,7 +973,11 @@ function ChatWorkspace({
   onCancelEditNote: () => void;
   onCustomize: () => void;
   onCopyNote: (note: Note) => void;
-  onOpenAttachment: (note: Note, attachmentId: string) => void;
+  onAttachmentAction: (
+    note: Note,
+    attachmentId: string,
+    action: "open" | "reveal",
+  ) => Promise<void>;
   onEditNote: (note: Note) => void;
   onDeleteNote: (note: Note) => void;
   onDraftChange: (value: string) => void;
@@ -1030,7 +1098,7 @@ function ChatWorkspace({
                           <article className="message-bubble">
                             <AttachmentList
                               note={note}
-                              onOpen={onOpenAttachment}
+                              onAction={onAttachmentAction}
                             />
                             <div className="message-body note-body">
                               <MarkdownMessage body={note.body} />
@@ -1249,12 +1317,42 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [error, setError] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const selectionRequest = useRef(0);
+  const activeMutationGeneration = useRef(0);
   const activeId = useRef<string | undefined>(undefined);
   const copyResetTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     activeId.current = active?.id;
   }, [active?.id]);
+
+  useEffect(() => {
+    let focusRequest = 0;
+    const refreshActiveProject = () => {
+      const projectId = activeId.current;
+      if (!projectId) return;
+      const request = ++focusRequest;
+      const selection = selectionRequest.current;
+      const mutation = activeMutationGeneration.current;
+      void api
+        .getChat(projectId)
+        .then((detail) => {
+          if (
+            request !== focusRequest ||
+            selection !== selectionRequest.current ||
+            mutation !== activeMutationGeneration.current ||
+            activeId.current !== projectId
+          ) {
+            return;
+          }
+          setActive(detail);
+        })
+        .catch(() => {
+          // Focus refresh is best effort; explicit actions surface their errors.
+        });
+    };
+    window.addEventListener("focus", refreshActiveProject);
+    return () => window.removeEventListener("focus", refreshActiveProject);
+  }, [api]);
 
   useEffect(() => {
     let current = true;
@@ -1326,6 +1424,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     if (!active) return;
     const projectId = active.id;
     const chat = await api.updateChat(active.id, input);
+    activeMutationGeneration.current += 1;
     setChats((current) =>
       sortChats(current.map((item) => (item.id === chat.id ? chat : item))),
     );
@@ -1385,6 +1484,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ...(timestamp === undefined ? {} : { createdAt: timestamp }),
           ...(submittedFiles.length === 0 ? {} : { files: submittedFiles }),
         });
+        activeMutationGeneration.current += 1;
         setActive((current) =>
           current?.id === projectId
             ? { ...current, notes: sortNotes([...current.notes, note]) }
@@ -1465,30 +1565,20 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     }
   }
 
-  async function openAttachment(note: Note, attachmentId: string) {
+  async function attachmentAction(
+    note: Note,
+    attachmentId: string,
+    action: "open" | "reveal",
+  ) {
     if (!active) return;
     const attachment = note.attachments?.find(
       (item) => item.id === attachmentId,
     );
     if (!attachment) return;
-    try {
-      const blob = await api.downloadAttachment(
-        active.id,
-        note.id,
-        attachmentId,
-      );
-      const url = URL.createObjectURL(blob);
-      const opened = window.open(url, "_blank", "noopener,noreferrer");
-      if (!opened) {
-        const link = document.createElement("a");
-        link.href = url;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        link.click();
-      }
-      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
-    } catch (caught) {
-      setError(errorMessage(caught, "The attachment could not be opened."));
+    if (action === "open") {
+      await api.openAttachment(active.id, note.id, attachmentId);
+    } else {
+      await api.revealAttachment(active.id, note.id, attachmentId);
     }
   }
 
@@ -1520,6 +1610,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     if (!active) return;
     const projectId = active.id;
     const updated = await api.updateNote(projectId, noteToUpdate.id, input);
+    activeMutationGeneration.current += 1;
     setActive((current) => {
       if (!current) return current;
       const notes = sortNotes(
@@ -1558,6 +1649,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     if (!active) return;
     if (!window.confirm("Delete this message?")) return;
     await api.deleteNote(active.id, note.id);
+    activeMutationGeneration.current += 1;
     const remaining = active.notes.filter((item) => item.id !== note.id);
     const updatedAt = chatActivityFromNotes(active, remaining);
     setActive((current) =>
@@ -1587,6 +1679,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function importDatabase(file: File) {
     await api.importDatabase(file);
     const importedChats = await api.listChats();
+    selectionRequest.current += 1;
+    activeMutationGeneration.current += 1;
     setChats(importedChats);
     setActive(undefined);
     setDraftTimestamp("");
@@ -1666,7 +1760,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           onBack={backToProjects}
           onCustomize={() => setMode("projectEdit")}
           onCopyNote={copyNote}
-          onOpenAttachment={openAttachment}
+          onAttachmentAction={attachmentAction}
           onEditNote={startEditingNote}
           onCancelEditNote={cancelEditingNote}
           onDeleteNote={deleteNote}

@@ -34,6 +34,8 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
     updateNote: vi.fn(),
     deleteNote: vi.fn(),
     downloadAttachment: vi.fn(),
+    openAttachment: vi.fn(),
+    revealAttachment: vi.fn(),
     exportDatabase: vi.fn(),
     importDatabase: vi.fn(),
     ...overrides,
@@ -611,7 +613,13 @@ describe("personal project chat workspace", () => {
             mediaType:
               "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             byteSize: 2048,
+            modifiedAt: 2_000,
             createdAt: 2_000,
+            status: "available" as const,
+            actions: {
+              open: "available" as const,
+              reveal: "available" as const,
+            },
           },
           {
             id: "attachment-missing",
@@ -622,6 +630,38 @@ describe("personal project chat workspace", () => {
             modifiedAt: 2_000,
             createdAt: 2_000,
             status: "missing" as const,
+            actions: {
+              open: "unavailable" as const,
+              reveal: "available" as const,
+            },
+          },
+          {
+            id: "attachment-blocked",
+            noteId: "note-2",
+            filename: "installer.exe",
+            mediaType: "application/octet-stream",
+            byteSize: 256,
+            modifiedAt: 2_000,
+            createdAt: 2_000,
+            status: "available" as const,
+            actions: {
+              open: "blocked" as const,
+              reveal: "available" as const,
+            },
+          },
+          {
+            id: "attachment-unsupported",
+            noteId: "note-2",
+            filename: "unsupported.txt",
+            mediaType: "text/plain",
+            byteSize: 128,
+            modifiedAt: 2_000,
+            createdAt: 2_000,
+            status: "available" as const,
+            actions: {
+              open: "unsupported" as const,
+              reveal: "unsupported" as const,
+            },
           },
         ],
       },
@@ -629,17 +669,9 @@ describe("personal project chat workspace", () => {
     const api = createApi({
       listChats: vi.fn().mockResolvedValue([chat]),
       getChat: vi.fn().mockResolvedValue({ ...chat, notes }),
-      downloadAttachment: vi.fn().mockResolvedValue(
-        new Blob(["deck"], {
-          type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        }),
-      ),
+      openAttachment: vi.fn().mockResolvedValue(undefined),
+      revealAttachment: vi.fn().mockResolvedValue(undefined),
     });
-    const createObjectURL = vi.fn(() => "blob:on-track-attachment");
-    const revokeObjectURL = vi.fn();
-    const open = vi.spyOn(window, "open").mockReturnValue(null);
-    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     render(<App api={api} />);
 
     await user.click(
@@ -651,22 +683,208 @@ describe("personal project chat workspace", () => {
     expect(
       screen.getByRole("button", { name: "Open missing.pdf" }),
     ).toBeDisabled();
-    expect(screen.getByText("File missing")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Show missing.pdf in Folder" }),
+    ).toBeEnabled();
+    expect(screen.getByText(/File is missing/)).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Open installer.exe" }),
+    ).toBeDisabled();
+    expect(screen.getByText(/Opening is blocked/)).toBeVisible();
+    expect(
+      screen.getByText(/Native file actions are not supported/),
+    ).toBeVisible();
+    expect(screen.getByText(/2 KB · Modified/)).toBeVisible();
+    expect(
+      screen.getByText("roadmap.pptx").closest(".attachment-card")?.tagName,
+    ).toBe("DIV");
     await user.click(screen.getByRole("button", { name: "Files 1" }));
     expect(screen.queryByText("Plain update")).not.toBeInTheDocument();
     expect(screen.getByText("Read this deck")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Open roadmap.pptx" }));
-    expect(api.downloadAttachment).toHaveBeenCalledWith(
+    expect(api.openAttachment).toHaveBeenCalledWith(
       "chat-1",
       "note-2",
       "attachment-1",
     );
-    expect(createObjectURL).toHaveBeenCalled();
-    expect(open).toHaveBeenCalledWith(
-      "blob:on-track-attachment",
-      "_blank",
-      "noopener,noreferrer",
+    await user.click(
+      screen.getByRole("button", { name: "Show roadmap.pptx in Folder" }),
     );
+    expect(api.revealAttachment).toHaveBeenCalledWith(
+      "chat-1",
+      "note-2",
+      "attachment-1",
+    );
+  });
+
+  it("shows native action progress and a recoverable card-local error", async () => {
+    const user = userEvent.setup();
+    const openRequest = deferred<void>();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 100,
+      updatedAt: 2_000,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({
+        ...chat,
+        notes: [
+          {
+            id: "note-1",
+            chatId: "chat-1",
+            body: "Deck",
+            createdAt: 2_000,
+            attachments: [
+              {
+                id: "attachment-1",
+                noteId: "note-1",
+                filename: "roadmap.pptx",
+                mediaType: "application/octet-stream",
+                byteSize: 1024,
+                modifiedAt: 2_000,
+                createdAt: 2_000,
+                status: "available" as const,
+                actions: {
+                  open: "available" as const,
+                  reveal: "available" as const,
+                },
+              },
+            ],
+          },
+        ],
+      }),
+      openAttachment: vi.fn(() => openRequest.promise),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open roadmap.pptx" }));
+    expect(
+      screen.getByRole("button", { name: "Open roadmap.pptx" }),
+    ).toHaveTextContent("Opening…");
+    await act(async () =>
+      openRequest.reject(new Error("Default application is busy.")),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Default application is busy.",
+    );
+    expect(
+      screen.getByRole("button", { name: "Open roadmap.pptx" }),
+    ).toBeEnabled();
+  });
+
+  it("refreshes attachment metadata on focus without clearing the draft", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 100,
+      updatedAt: 2_000,
+    };
+    const attachment = {
+      id: "attachment-1",
+      noteId: "note-1",
+      filename: "roadmap.pptx",
+      mediaType: "application/octet-stream",
+      byteSize: 1024,
+      modifiedAt: 2_000,
+      createdAt: 2_000,
+      status: "available" as const,
+      actions: { open: "available" as const, reveal: "available" as const },
+    };
+    const getChat = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ...chat,
+        notes: [
+          {
+            id: "note-1",
+            chatId: "chat-1",
+            body: "Deck",
+            createdAt: 2_000,
+            attachments: [attachment],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        ...chat,
+        notes: [
+          {
+            id: "note-1",
+            chatId: "chat-1",
+            body: "Deck",
+            createdAt: 2_000,
+            attachments: [{ ...attachment, byteSize: 3072, modifiedAt: 4_000 }],
+          },
+        ],
+      });
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat,
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    await user.type(screen.getByLabelText("Add a note"), "Keep this draft");
+    act(() => window.dispatchEvent(new Event("focus")));
+
+    expect(await screen.findByText(/3 KB · Modified/)).toBeVisible();
+    expect(screen.getByLabelText("Add a note")).toHaveValue("Keep this draft");
+  });
+
+  it("does not let an older focus refresh overwrite a newer note mutation", async () => {
+    const user = userEvent.setup();
+    const focusRefresh = deferred<{
+      id: string;
+      title: string;
+      accent: "ocean";
+      createdAt: number;
+      updatedAt: number;
+      notes: never[];
+    }>();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 100,
+      updatedAt: 2_000,
+    };
+    const getChat = vi
+      .fn()
+      .mockResolvedValueOnce({ ...chat, notes: [] })
+      .mockImplementationOnce(() => focusRefresh.promise);
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat,
+      appendNote: vi.fn().mockResolvedValue({
+        id: "note-new",
+        chatId: "chat-1",
+        body: "Newer local note",
+        createdAt: 3_000,
+      }),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(getChat).toHaveBeenCalledTimes(2));
+    await user.type(screen.getByLabelText("Add a note"), "Newer local note");
+    await user.click(screen.getByRole("button", { name: /Add note/ }));
+    expect(await screen.findByText("Newer local note")).toBeVisible();
+    await act(async () => focusRefresh.resolve({ ...chat, notes: [] }));
+
+    expect(screen.getByText("Newer local note")).toBeVisible();
   });
 
   it("copies with icon feedback, edits message files from the composer, and deletes an existing message", async () => {

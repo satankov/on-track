@@ -29,8 +29,12 @@ export interface NoteAttachment {
   modifiedAt: number;
   createdAt: number;
   status: "available" | "missing" | "unreadable" | "unsafe";
+  actions?: {
+    open: "available" | "blocked" | "unavailable" | "unsupported";
+    reveal: "available" | "unavailable" | "unsupported";
+  };
 }
 
-export interface StoredNoteAttachment extends NoteAttachment {
+export interface StoredNoteAttachment extends Omit<NoteAttachment, "actions"> {
   storagePath: string;
 }

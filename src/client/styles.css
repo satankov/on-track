@@ -822,9 +822,10 @@ label {
   margin-bottom: 10px;
 }
 .attachment-card {
-  min-width: min(360px, 100%);
+  width: min(560px, 100%);
+  min-width: 0;
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) 32px;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 8px;
@@ -832,12 +833,7 @@ label {
   border-radius: 7px;
   color: inherit;
   background: rgba(255, 255, 255, 0.68);
-  cursor: pointer;
   text-align: left;
-}
-.attachment-card:hover {
-  border-color: color-mix(in srgb, var(--accent) 52%, #d8d3c8);
-  background: #fff;
 }
 .attachment-type {
   min-width: 0;
@@ -860,10 +856,8 @@ label {
   display: block;
 }
 .attachment-copy strong {
-  overflow: hidden;
   font-size: 0.78rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .attachment-copy small {
   margin-top: 2px;
@@ -871,20 +865,27 @@ label {
   font-size: 0.68rem;
   font-weight: 700;
 }
-.attachment-open {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  color: var(--muted);
-  background: #fff;
+.attachment-status--warning {
+  color: #7c4b25 !important;
 }
-.attachment-card:hover .attachment-open {
-  border-color: var(--accent);
-  color: var(--ink);
+.attachment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.attachment-action {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+.attachment-action-error {
+  max-width: 560px;
+  margin: 0;
+  color: #883f34;
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 .message-footer {
   min-height: 18px;
@@ -1354,8 +1355,11 @@ kbd {
     max-width: 88%;
   }
   .attachment-card {
-    min-width: min(300px, 100%);
-    grid-template-columns: 40px minmax(0, 1fr) 32px;
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+  .attachment-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
   }
   .message-actions {
     opacity: 1;

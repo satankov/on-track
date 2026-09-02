@@ -1,18 +1,29 @@
 import type Database from "better-sqlite3";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, {
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+} from "fastify";
 import { chmodSync, createReadStream, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ZodError } from "zod";
 
 import {
   AttachmentUnavailableError,
+  AttachmentOpenBlockedError,
   ChatService,
   InvalidInputError,
   ProjectNotFoundError,
   type AttachmentStore,
 } from "./chat-service.js";
+import {
+  NativeFileActionFailedError,
+  NativeFileActionUnsupportedError,
+  SystemNativeFileActions,
+  type NativeFileActions,
+} from "./native-file-actions.js";
 import { ManagedAttachmentStore } from "./attachments/managed-attachment-store.js";
 import {
   sanitizeAttachmentFilename,
@@ -51,11 +62,13 @@ interface BuildAppOptions {
   stagedUploadCleanup?: (staged: StagedUpload) => void;
   idFactory?: () => string;
   clock?: () => number;
+  nativeFileActions?: NativeFileActions;
 }
 
 const LOOPBACK_HOST = /^(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/i;
 const LOOPBACK_ORIGIN = /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/i;
 const DATABASE_TRANSFER_RATE_LIMIT_WINDOW_MS = 60_000;
+const NATIVE_ACTION_RATE_LIMIT_WINDOW_MS = 60_000;
 const MULTIPART_BODY_LIMIT_BYTES = 128 * 1024 * 1024;
 
 function isDatabaseTransferRateLimitError(error: unknown): boolean {
@@ -69,6 +82,17 @@ function isDatabaseTransferRateLimitError(error: unknown): boolean {
   );
 }
 
+function isNativeActionRateLimitError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "statusCode" in error &&
+    error.statusCode === 429 &&
+    "code" in error &&
+    error.code === "native_action_rate_limited"
+  );
+}
+
 export function buildApp(options: BuildAppOptions): FastifyInstance {
   const app = Fastify({ logger: false, bodyLimit: MULTIPART_BODY_LIMIT_BYTES });
   let database = options.database;
@@ -79,6 +103,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     options.attachmentStore ??
     (dataDirectory ? new ManagedAttachmentStore(dataDirectory) : undefined);
   const maintenanceGate = options.maintenanceGate ?? new MaintenanceGate();
+  const nativeFileActions =
+    options.nativeFileActions ?? new SystemNativeFileActions();
   const exportDirectoryCleanup =
     options.exportDirectoryCleanup ??
     ((path: string) => rmSync(path, { recursive: true, force: true }));
@@ -93,6 +119,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       options.idFactory,
       options.clock,
       attachmentStore,
+      nativeFileActions,
     );
   }
 
@@ -246,6 +273,24 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         status: error.status,
       });
     }
+    if (error instanceof AttachmentOpenBlockedError) {
+      return reply.code(409).send({
+        code: "attachment_open_blocked",
+        message: error.message,
+      });
+    }
+    if (error instanceof NativeFileActionUnsupportedError) {
+      return reply.code(501).send({
+        code: "native_action_unsupported",
+        message: error.message,
+      });
+    }
+    if (error instanceof NativeFileActionFailedError) {
+      return reply.code(503).send({
+        code: "native_action_failed",
+        message: error.message,
+      });
+    }
     if (error instanceof MaintenanceBusyError) {
       return reply.code(503).send({
         code: "maintenance_busy",
@@ -256,6 +301,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       return reply.code(429).send({
         code: "rate_limited",
         message: "Database transfer is temporarily rate-limited.",
+      });
+    }
+    if (isNativeActionRateLimitError(error)) {
+      return reply.code(429).send({
+        code: "native_action_rate_limited",
+        message: "Native file actions are temporarily rate-limited.",
       });
     }
 
@@ -360,6 +411,91 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       return reply.code(204).send();
     },
   );
+
+  void app.register(async (nativeApp) => {
+    await nativeApp.register(rateLimit, {
+      global: false,
+      errorResponseBuilder: () => ({
+        statusCode: 429,
+        code: "native_action_rate_limited",
+        message: "Native file actions are temporarily rate-limited.",
+      }),
+    });
+
+    async function nativeRequestPreHandler(
+      request: FastifyRequest,
+      reply: FastifyReply,
+    ) {
+      const host = request.headers.host;
+      const contentType = request.headers["content-type"]?.split(";", 1)[0];
+      if (
+        !host ||
+        request.headers.origin !== `http://${host}` ||
+        request.headers["sec-fetch-site"] !== "same-origin" ||
+        request.headers["sec-fetch-mode"] !== "cors" ||
+        request.headers["sec-fetch-dest"] !== "empty"
+      ) {
+        return reply.code(403).send({
+          code: "native_action_forbidden",
+          message: "Native file action request is not allowed.",
+        });
+      }
+      if (
+        contentType !== "application/json" ||
+        typeof request.body !== "object" ||
+        request.body === null ||
+        Array.isArray(request.body) ||
+        Object.keys(request.body).length !== 0
+      ) {
+        return reply.code(400).send({
+          code: "invalid_input",
+          message: "Please check the submitted values.",
+        });
+      }
+    }
+
+    const nativeRateLimit = nativeApp.rateLimit({
+      max: 10,
+      timeWindow: NATIVE_ACTION_RATE_LIMIT_WINDOW_MS,
+    });
+    const routeOptions = {
+      preHandler: [nativeRequestPreHandler, nativeRateLimit],
+    };
+
+    nativeApp.post<{
+      Params: { id: string; noteId: string; attachmentId: string };
+    }>(
+      "/api/chats/:id/notes/:noteId/attachments/:attachmentId/open",
+      routeOptions,
+      async (request, reply) => {
+        await maintenanceGate.runMutation(() =>
+          service.openAttachment(
+            request.params.id,
+            request.params.noteId,
+            request.params.attachmentId,
+          ),
+        );
+        return reply.code(204).send();
+      },
+    );
+
+    nativeApp.post<{
+      Params: { id: string; noteId: string; attachmentId: string };
+    }>(
+      "/api/chats/:id/notes/:noteId/attachments/:attachmentId/reveal",
+      routeOptions,
+      async (request, reply) => {
+        await maintenanceGate.runMutation(() =>
+          service.revealAttachment(
+            request.params.id,
+            request.params.noteId,
+            request.params.attachmentId,
+          ),
+        );
+        return reply.code(204).send();
+      },
+    );
+  });
 
   void app.register(async (transferApp) => {
     await transferApp.register(rateLimit, {

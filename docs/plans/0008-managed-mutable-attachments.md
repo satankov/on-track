@@ -393,9 +393,9 @@ E2E for the product cutover/UI, dependency audit, full diff review, and finally
 
 ## Approval status
 
-Phases 1-3 were approved and implemented. Phases 4 and 5 remain approval-gated;
-the next independent decision is whether to implement Phase 4's native actions
-and attachment-card slice as proposed.
+Phases 1-5 were approved. Phases 1-4 and Phase 5's automated E2E and durable-state
+work are implemented. Manual Windows and Linux native-adapter smoke verification
+remains, so this plan is not yet complete.
 
 ## Completion evidence
 
@@ -471,3 +471,77 @@ dependencies or native file actions:
   attachment-only messages, shared upload/import metadata rules, stale text-edit
   DTOs, and cleanup failure handling were remediated with focused RED -> GREEN
   tests before final verification.
+
+Phase 4 implemented native actions and the attachment-card cutover without a
+schema change or new dependency:
+
+- RED: focused tests first failed for the absent open policy, platform adapter,
+  safe containing-directory resolver, scoped service/routes, client contracts,
+  card actions, and focus refresh. Route tests initially returned 404 and the
+  previous card still used browser blob URLs.
+- GREEN: project/note/attachment-scoped POST routes accept IDs only, require an
+  exact same-origin browser JSON request, share a ten-action-per-minute limit,
+  run behind the maintenance gate, and return path-redacted recoverable errors.
+  The managed store remains the only canonical path authority.
+- macOS, Windows, and Linux adapters use fixed executables, structured arguments,
+  `shell: false`, discarded output, and bounded settlement. The Windows target
+  stays out of the fixed encoded PowerShell source. Linux desktop-launcher
+  failures are recoverable, and broken targets reveal a safe containing folder.
+- Open fails closed for known executable, installer, script, shortcut,
+  application, and desktop-launcher names—including extension-only Windows
+  names—and executable POSIX files. MIME metadata is ignored; Show in Folder is
+  authorized independently.
+- The compact non-button attachment card exposes separate Open and Show in Folder
+  controls, stable modified metadata or visible warning text, disabled-action
+  explanations, busy/error recovery, filename wrapping, and narrow-width action
+  reflow. Browser focus refresh preserves drafts and ignores stale project
+  selection or completed-mutation responses.
+- The complete unit/component/API suite passes with 314 tests and one platform
+  skip. Aggregate coverage is 90.13% statements, 83.99% branches, 93.14%
+  functions, and 91.88% lines; the native adapter records at least 88% in every
+  measured dimension.
+- Migration verification passes 16 tests. Desktop Chromium and mobile WebKit
+  pass all eight E2E journeys without invoking a real OS launcher. The production
+  dependency audit reports zero vulnerabilities.
+- Independent review findings about extension-only/omitted Windows launcher
+  policy cases and stale focus-refresh races were remediated with focused tests;
+  final re-review found no remaining actionable issue.
+
+Phase 5 implemented the release-safe E2E harness and durable architecture record
+without changing production behavior, dependencies, schema, or API contracts:
+
+- RED: the attachment browser journey failed on its first native receipt
+  expectation because the isolated fixture had no fake-native composition.
+- GREEN: production startup is owned by one shared composition function. An
+  E2E-only entry calls it with a private receipt adapter, and normal startup calls
+  it with the real system adapter. Playwright clicks the production Open and Show
+  in Folder controls without invoking a desktop application or exposing a test
+  endpoint.
+- The desktop and mobile attachment journey derives the canonical target from a
+  scoped database row, verifies both action receipts, edits the managed file
+  directly, dispatches focus, and proves refreshed size/time with unchanged
+  attachment ID, note ID, and storage path after focus and server restart.
+- ADR-0006 records metadata-only managed sidecars, compensation ordering,
+  complete versioned backup bundles, scoped shell-free native actions, blocked
+  executable policy, and residual plaintext/TOCTOU/platform risks.
+- Cross-platform evidence remains intentionally split:
+
+  | Platform      | Automated command shape | Real native dispatch                          |
+  | ------------- | ----------------------- | --------------------------------------------- |
+  | macOS         | Passed                  | User-reported on one current host, 2026-09-02 |
+  | Windows       | Passed                  | Pending                                       |
+  | Linux desktop | Passed                  | Pending                                       |
+
+- Fake-adapter E2E is not native platform verification. Windows and Linux manual
+  smoke tests remain required before this plan is complete.
+- The built production `main.js` starts through the same shared composition and
+  returned HTTP 200 from `/api/health` against an isolated data directory.
+- `npm run verify` passes the release contract, production build, type checking,
+  lint, formatting, 314 covered tests with one platform skip, 16 migration tests,
+  all eight desktop/mobile E2E journeys, and a production audit with zero
+  vulnerabilities. Aggregate coverage is 89.27% statements, 83.28% branches,
+  92.32% functions, and 90.98% lines.
+- Independent review found and prompted removal of duplicated startup
+  composition plus correction of an overstated timeout-test claim. Re-review of
+  the shared startup/fake isolation and complete Phase 4+5 diff found no
+  remaining actionable issue.

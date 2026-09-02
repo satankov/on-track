@@ -200,6 +200,37 @@ describe("browser API client", () => {
     ).rejects.toThrow("The attachment could not be downloaded.");
   });
 
+  it("posts empty JSON to scoped native attachment action routes", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiClient.openAttachment(
+      "project/one",
+      "note/two",
+      "attachment/three",
+    );
+    await apiClient.revealAttachment(
+      "project/one",
+      "note/two",
+      "attachment/three",
+    );
+
+    const base =
+      "/api/chats/project%2Fone/notes/note%2Ftwo/attachments/attachment%2Fthree";
+    expect(fetchMock).toHaveBeenNthCalledWith(1, `${base}/open`, {
+      method: "POST",
+      body: "{}",
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, `${base}/reveal`, {
+      method: "POST",
+      body: "{}",
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
   it("uses a server error message without exposing response details", async () => {
     vi.stubGlobal(
       "fetch",

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,7 +9,14 @@ interface LocalApp {
   url: string;
   dataDirectory: string;
   pid(): number;
+  nativeActionReceipts(): NativeActionReceipt[];
   restart(): Promise<void>;
+}
+
+export interface NativeActionReceipt {
+  action: "open" | "reveal";
+  path: string;
+  containingDirectory?: string;
 }
 
 interface WorkerFixtures {
@@ -39,15 +46,20 @@ async function startServer(
   port: number,
   dataDirectory: string,
 ): Promise<ChildProcess> {
-  const child = spawn(process.execPath, ["dist/server/server/main.js"], {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      ON_TRACK_DATA_DIR: dataDirectory,
-      ON_TRACK_PORT: String(port),
+  const child = spawn(
+    process.execPath,
+    ["node_modules/tsx/dist/cli.mjs", "e2e/native-actions-server.ts"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        ON_TRACK_DATA_DIR: dataDirectory,
+        ON_TRACK_PORT: String(port),
+      },
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
     },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  );
   let output = "";
   child.stdout?.on("data", (chunk) => (output += String(chunk)));
   child.stderr?.on("data", (chunk) => (output += String(chunk)));
@@ -81,6 +93,7 @@ export const test = base.extend<Record<string, never>, WorkerFixtures>({
         url: `http://127.0.0.1:${port}`,
         dataDirectory,
         pid: () => server.pid!,
+        nativeActionReceipts: () => readNativeActionReceipts(dataDirectory),
         restart: async () => {
           await stopServer(server);
           server = await startServer(port, dataDirectory);
@@ -99,3 +112,44 @@ export const test = base.extend<Record<string, never>, WorkerFixtures>({
 });
 
 export { expect };
+
+function readNativeActionReceipts(
+  dataDirectory: string,
+): NativeActionReceipt[] {
+  try {
+    return readFileSync(
+      join(dataDirectory, ".native-action-receipts.jsonl"),
+      "utf8",
+    )
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => parseNativeActionReceipt(line));
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+function parseNativeActionReceipt(line: string): NativeActionReceipt {
+  const value: unknown = JSON.parse(line);
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("action" in value) ||
+    (value.action !== "open" && value.action !== "reveal") ||
+    !("path" in value) ||
+    typeof value.path !== "string" ||
+    ("containingDirectory" in value &&
+      typeof value.containingDirectory !== "string")
+  ) {
+    throw new Error("The E2E native action receipt is malformed.");
+  }
+  return value as NativeActionReceipt;
+}

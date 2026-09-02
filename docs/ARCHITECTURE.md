@@ -2,12 +2,13 @@
 
 ## Status
 
-Implemented through the v0.0.2 plaintext alpha plus the active v0.0.3
-attachment/file-filter work in the current development tree. The core decisions
+Implemented for the v0.0.3 plaintext alpha release candidate. The core decisions
 are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
 encryption limitation in [ADR-0002](adr/0002-defer-at-rest-encryption.md),
 source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the
-current license in [ADR-0005](adr/0005-apache-2-license.md).
+current license in [ADR-0005](adr/0005-apache-2-license.md). Managed mutable
+attachments and guarded native actions are recorded in
+[ADR-0006](adr/0006-managed-mutable-attachments-and-native-file-actions.md).
 
 ## System context
 
@@ -20,15 +21,16 @@ remote assets, or required internet requests at runtime.
 ```text
 Local browser -> loopback Fastify server -> application service -> repository -> SQLite
                      |                         |
-                     +-> built React UI        +-> validation/domain contracts
+                     +-> built React UI        +-> managed files -> native OS adapter
+                                               +-> validation/domain contracts
 ```
 
 ## Technology decisions
 
 - React 19 and Vite 8 provide the TypeScript browser UI and production bundle.
 - Fastify 5 serves the static bundle and local API on IPv4 loopback.
-- `@fastify/rate-limit` limits local database transfer routes that perform
-  filesystem/database work.
+- `@fastify/rate-limit` limits local database transfer and native-file routes
+  that perform filesystem/database or OS-dispatch work.
 - `@fastify/multipart` parses local attachment uploads with bounded file and
   part limits.
 - `better-sqlite3` owns synchronous database access; Drizzle defines schema and
@@ -50,6 +52,8 @@ Local browser -> loopback Fastify server -> application service -> repository ->
 - `src/server/app.ts`: Fastify transport, boundary controls, safe error mapping,
   and route wiring.
 - `src/server/chat-service.ts`: use cases and transactional project/note behavior.
+- `src/server/attachments` and `src/server/native-file-actions.ts`: canonical
+  managed-file resolution and shell-free platform dispatch.
 - `src/server/db`: the sole SQLite boundary, repositories, schema, migration
   startup, permissions, integrity checks, and downgrade refusal.
 - `drizzle/`: immutable checked-in migrations and migration metadata.
@@ -103,8 +107,14 @@ last-known size/modified time, but no attachment BLOB. Creation installs files
 before committing references; deletion commits reference removal before
 best-effort file cleanup. Project reads and scoped downloads refresh metadata
 after external edits and preserve missing, unreadable, or unsafe rows as
-recoverable DTO states. The browser still opens downloaded bytes through a blob
-URL; native app opening and in-place launch are deferred OS-integration work.
+recoverable DTO states. DTOs also expose server-derived Open/Show capability
+states. Scoped POST routes resolve IDs to canonical managed targets and dispatch
+eligible files through fixed, shell-free macOS, Windows, or Linux commands.
+Known executable, installer, script, shortcut, application, and desktop-launcher
+types—and executable POSIX files—cannot be opened from On Track; safe folder
+reveal remains independent. Browser focus refreshes attachment metadata after a
+user returns from an external application. The scoped download route remains for
+compatibility.
 
 Settings exports one versioned SQLite `.on-track-backup` container. An online
 snapshot temporarily gains reserved payload tables containing every readable
@@ -121,6 +131,9 @@ process; restore is limited to two attempts per minute per process.
 
 - API requests require a loopback Host; cross-origin browser requests are
   rejected by Origin checks and no permissive CORS is enabled.
+- Native-file POST routes additionally require exact same-origin Origin and
+  Fetch Metadata headers, an empty JSON object, and a shared ten-action-per-minute
+  process limit. Requests and responses carry IDs only, never local paths.
 - Production responses set a same-origin content security policy, deny framing,
   suppress referrers, and disable MIME sniffing.
 - Input is schema-validated, SQL is parameterized through prepared
@@ -149,7 +162,8 @@ be hardened before production-readiness claims.
   ordering.
 - Export and restore a versioned backup bundle through Settings with validation.
 - Attach a local file to a message, edit message attachments, filter the project
-  history to messages with attached files, and open a scoped attachment.
+  history to messages with attached files, and use separate eligible Open and
+  Show in Folder actions.
 - Stop and restart the server against the same isolated data directory and
   recover all state.
 - Complete the flow at desktop and mobile widths with keyboard/focus behavior and
@@ -164,15 +178,20 @@ be hardened before production-readiness claims.
   80% behavior-bearing coverage thresholds.
 - `npm run test:migrations`: focused real-SQLite migration/integrity tests.
 - `npm run test:e2e`: built application journeys in desktop Chromium and a mobile
-  WebKit viewport, including server restart.
+  WebKit viewport, including fake-native Open/Show receipts, external sidecar
+  edits, metadata refresh, stable attachment identity, and server restart. The
+  E2E adapter never launches a desktop application.
 - `npm run security:check`: production dependency audit.
 - `npm run release:check`: version, license, required-file, tag, and tracked-data
   contract.
 - `npm run verify`: authoritative aggregate local/release gate.
 
-GitHub Actions repeats these checks, exercises native installation/tests on
-Linux, macOS, and Windows, performs dependency review and CodeQL analysis, and
-publishes only a matching tag whose commit is already on `main`.
+GitHub Actions repeats these checks, exercises native SQLite dependency
+installation/tests on Linux, macOS, and Windows, performs dependency review and
+CodeQL analysis, and publishes only a matching tag whose commit is already on
+`main`. Unit tests cover every native command shape; current manual dispatch
+evidence is limited to one user-reported macOS host, with Windows and Linux
+desktop smoke tests pending.
 
 ## Architecture constraints
 

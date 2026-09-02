@@ -24,6 +24,16 @@ export interface ApiClient {
     noteId: string,
     attachmentId: string,
   ): Promise<Blob>;
+  openAttachment(
+    chatId: string,
+    noteId: string,
+    attachmentId: string,
+  ): Promise<void>;
+  revealAttachment(
+    chatId: string,
+    noteId: string,
+    attachmentId: string,
+  ): Promise<void>;
   exportDatabase(): Promise<Blob>;
   importDatabase(file: Blob): Promise<void>;
 }
@@ -125,6 +135,21 @@ export const apiClient: ApiClient = {
     }
     return response.blob();
   },
+  openAttachment: async (chatId, noteId, attachmentId) => {
+    await request<void>(
+      attachmentActionPath(chatId, noteId, attachmentId, "open"),
+      {
+        method: "POST",
+        body: "{}",
+      },
+    );
+  },
+  revealAttachment: async (chatId, noteId, attachmentId) => {
+    await request<void>(
+      attachmentActionPath(chatId, noteId, attachmentId, "reveal"),
+      { method: "POST", body: "{}" },
+    );
+  },
   exportDatabase: async () => {
     const response = await fetch("/api/database/export");
     if (!response.ok) throw new Error("The database could not be exported.");
@@ -148,3 +173,12 @@ export const apiClient: ApiClient = {
     }
   },
 };
+
+function attachmentActionPath(
+  chatId: string,
+  noteId: string,
+  attachmentId: string,
+  action: "open" | "reveal",
+): string {
+  return `/api/chats/${encodeURIComponent(chatId)}/notes/${encodeURIComponent(noteId)}/attachments/${encodeURIComponent(attachmentId)}/${action}`;
+}

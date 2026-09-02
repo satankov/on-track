@@ -18,6 +18,10 @@ import {
   ManagedAttachmentUnavailableError,
   type ManagedAttachmentStore,
 } from "./attachments/managed-attachment-store.js";
+import { attachmentOpenPolicy } from "./attachment-open-policy.js";
+import type { NativeFileActions } from "./native-file-actions.js";
+import { NativeFileActionUnsupportedError } from "./native-file-actions.js";
+import { NativeFileActionFailedError } from "./native-file-actions.js";
 
 export class ProjectNotFoundError extends Error {
   constructor() {
@@ -38,10 +42,25 @@ export class AttachmentUnavailableError extends Error {
   }
 }
 
+export class AttachmentOpenBlockedError extends Error {
+  constructor() {
+    super(
+      "This file type cannot be opened from On Track. You can still show it in its folder.",
+    );
+    this.name = "AttachmentOpenBlockedError";
+  }
+}
+
 export type AttachmentStore = Pick<
   ManagedAttachmentStore,
   "create" | "observe" | "read" | "remove"
->;
+> &
+  Partial<
+    Pick<
+      ManagedAttachmentStore,
+      "resolveAvailableTarget" | "resolveSafeContainingDirectory"
+    >
+  >;
 
 export class ChatService {
   constructor(
@@ -49,6 +68,7 @@ export class ChatService {
     private readonly idFactory: () => string = () => crypto.randomUUID(),
     private readonly clock: () => number = () => Date.now(),
     private readonly attachmentStore?: AttachmentStore,
+    private readonly nativeFileActions?: NativeFileActions,
   ) {}
 
   listChats(): Chat[] {
@@ -294,6 +314,59 @@ export class ChatService {
     }
   }
 
+  async openAttachment(
+    chatId: string,
+    noteId: string,
+    attachmentId: string,
+  ): Promise<void> {
+    const attachment = this.requireScopedAttachment(
+      chatId,
+      noteId,
+      attachmentId,
+    );
+    const refreshed = this.refreshAttachment(attachment);
+    if (refreshed.status !== "available") {
+      throw new AttachmentUnavailableError(refreshed.status);
+    }
+    const target = this.resolveAvailableTarget(attachment.storagePath);
+    if (
+      attachmentOpenPolicy({
+        displayFilename: attachment.filename,
+        managedFilename: target.managedFilename,
+        mode: target.mode,
+        platform: this.requireNativeFileActions().platform,
+      }) === "blocked"
+    ) {
+      throw new AttachmentOpenBlockedError();
+    }
+    const actions = this.requireNativeFileActions();
+    if (!actions.supported) throw new NativeFileActionUnsupportedError();
+    await this.runNativeAction(() => actions.open(target.absolutePath));
+  }
+
+  async revealAttachment(
+    chatId: string,
+    noteId: string,
+    attachmentId: string,
+  ): Promise<void> {
+    const attachment = this.requireScopedAttachment(
+      chatId,
+      noteId,
+      attachmentId,
+    );
+    const refreshed = this.refreshAttachment(attachment);
+    const actions = this.requireNativeFileActions();
+    if (!actions.supported) throw new NativeFileActionUnsupportedError();
+    const containingDirectory = this.resolveSafeContainingDirectory(
+      attachment.storagePath,
+    );
+    const path =
+      refreshed.status === "available"
+        ? this.resolveAvailableTarget(attachment.storagePath).absolutePath
+        : containingDirectory;
+    await this.runNativeAction(() => actions.reveal(path, containingDirectory));
+  }
+
   private refreshAttachment(attachment: StoredNoteAttachment): NoteAttachment {
     const observation = this.requireAttachmentStore().observe(
       attachment.storagePath,
@@ -302,6 +375,7 @@ export class ChatService {
       return {
         ...this.toPublicAttachment(attachment),
         status: observation.status,
+        actions: this.actionCapabilities(attachment, observation.status),
       };
     }
     const { byteSize, modifiedAt } = observation;
@@ -323,7 +397,55 @@ export class ChatService {
       byteSize,
       modifiedAt,
       status: "available",
+      actions: this.actionCapabilities(attachment, "available"),
     };
+  }
+
+  private requireScopedAttachment(
+    chatId: string,
+    noteId: string,
+    attachmentId: string,
+  ): StoredNoteAttachment {
+    const attachment = this.repository.getAttachment(
+      chatId,
+      noteId,
+      attachmentId,
+    );
+    if (!attachment) throw new ProjectNotFoundError();
+    return attachment;
+  }
+
+  private actionCapabilities(
+    attachment: StoredNoteAttachment,
+    status: NoteAttachment["status"],
+  ): NoteAttachment["actions"] {
+    const actions = this.nativeFileActions;
+    if (!actions?.supported) {
+      return { open: "unsupported", reveal: "unsupported" };
+    }
+    let reveal: NonNullable<NoteAttachment["actions"]>["reveal"] =
+      "unavailable";
+    try {
+      this.resolveSafeContainingDirectory(attachment.storagePath);
+      reveal = "available";
+    } catch {
+      // Unsafe or unavailable ancestors cannot be revealed.
+    }
+    if (status !== "available") return { open: "unavailable", reveal };
+    try {
+      const target = this.resolveAvailableTarget(attachment.storagePath);
+      return {
+        open: attachmentOpenPolicy({
+          displayFilename: attachment.filename,
+          managedFilename: target.managedFilename,
+          mode: target.mode,
+          platform: actions.platform,
+        }),
+        reveal,
+      };
+    } catch {
+      return { open: "unavailable", reveal };
+    }
   }
 
   private refreshedNote(chatId: string, noteId: string): Note {
@@ -395,6 +517,56 @@ export class ChatService {
     return this.attachmentStore;
   }
 
+  private resolveAvailableTarget(storagePath: string) {
+    const resolver = this.requireAttachmentStore().resolveAvailableTarget;
+    if (!resolver)
+      throw new Error("Native attachment actions are unavailable.");
+    try {
+      return resolver.call(this.attachmentStore, storagePath);
+    } catch (error) {
+      if (error instanceof ManagedAttachmentUnavailableError) {
+        throw new AttachmentUnavailableError(error.status);
+      }
+      throw error;
+    }
+  }
+
+  private resolveSafeContainingDirectory(storagePath: string): string {
+    const resolver =
+      this.requireAttachmentStore().resolveSafeContainingDirectory;
+    if (!resolver)
+      throw new Error("Native attachment actions are unavailable.");
+    try {
+      return resolver.call(this.attachmentStore, storagePath);
+    } catch (error) {
+      if (error instanceof ManagedAttachmentUnavailableError) {
+        throw new AttachmentUnavailableError(error.status);
+      }
+      throw error;
+    }
+  }
+
+  private requireNativeFileActions(): NativeFileActions {
+    if (!this.nativeFileActions) {
+      throw new NativeFileActionUnsupportedError();
+    }
+    return this.nativeFileActions;
+  }
+
+  private async runNativeAction(operation: () => Promise<void>): Promise<void> {
+    try {
+      await operation();
+    } catch (error) {
+      if (
+        error instanceof NativeFileActionUnsupportedError ||
+        error instanceof NativeFileActionFailedError
+      ) {
+        throw error;
+      }
+      throw new NativeFileActionFailedError();
+    }
+  }
+
   private toPublicAttachment(attachment: StoredNoteAttachment): NoteAttachment {
     return {
       id: attachment.id,
@@ -405,6 +577,7 @@ export class ChatService {
       modifiedAt: attachment.modifiedAt,
       createdAt: attachment.createdAt,
       status: attachment.status,
+      actions: this.actionCapabilities(attachment, attachment.status),
     };
   }
 }

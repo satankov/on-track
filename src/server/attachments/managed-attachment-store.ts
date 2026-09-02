@@ -78,6 +78,14 @@ interface OpenedManagedFile extends ParsedStoragePath {
   modifiedAt: number;
   modifiedAtPrecise: number;
   byteSize: number;
+  mode: number;
+}
+
+export interface ManagedAttachmentTarget {
+  absolutePath: string;
+  containingDirectory: string;
+  managedFilename: string;
+  mode: number;
 }
 
 export class ManagedAttachmentUnavailableError extends Error {
@@ -303,9 +311,27 @@ export class ManagedAttachmentStore {
   }
 
   resolveAvailablePath(storagePath: string): string {
+    return this.resolveAvailableTarget(storagePath).absolutePath;
+  }
+
+  resolveAvailableTarget(storagePath: string): ManagedAttachmentTarget {
     const opened = this.openManagedFile(storagePath);
     closeSync(opened.descriptor);
-    return opened.canonicalPath;
+    return {
+      absolutePath: opened.canonicalPath,
+      containingDirectory: realpathSync(opened.attachmentDirectory),
+      managedFilename: opened.storagePath.split("/").at(-1)!,
+      mode: opened.mode,
+    };
+  }
+
+  resolveSafeContainingDirectory(storagePath: string): string {
+    const parsed = this.parseStoragePath(storagePath);
+    const status = this.inspectAncestors(parsed);
+    if (status !== "available") {
+      throw new ManagedAttachmentUnavailableError(status, storagePath);
+    }
+    return realpathSync(parsed.attachmentDirectory);
   }
 
   remove(storagePath: string): "removed" | "missing" | "unreadable" | "unsafe" {
@@ -405,6 +431,7 @@ export class ManagedAttachmentStore {
           byteSize: stat.size,
           modifiedAt: Math.trunc(stat.mtimeMs),
           modifiedAtPrecise: stat.mtimeMs,
+          mode: stat.mode,
         };
       } catch (error) {
         closeSync(descriptor);

@@ -23,16 +23,19 @@ services, analytics, or remote runtime assets.
 - Customize each project's title and accent.
 - Add multiline Markdown notes with keyboard-friendly controls.
 - Copy, edit, timestamp-adjust, and delete notes.
-- Attach local files to notes, filter messages with files, and download them
-  through the scoped browser flow.
+- Attach local files to notes, filter messages with files, open eligible files
+  through the operating system's default association, and show them in their
+  managed folder. Executable and launcher-like files are blocked from Open.
 - Export and restore one versioned `.on-track-backup` bundle from Settings.
 - Keep state after closing and restarting the application.
 - Use the main flow at desktop and mobile browser widths.
 - Run without accounts, telemetry, or an internet connection after installation.
 
-Native attachment Open/Show in Folder actions, built-in TODO/open-question/
+Native Open/Show in Folder has been manually reported working on one macOS host.
+Windows and Linux native-action smoke verification, built-in TODO/open-question/
 decision labels, encryption, native installers, and peer-to-peer iPhone sync are
-roadmap work.
+roadmap work. Open delegates to an installed default application; On Track does
+not provide embedded PowerPoint or document editing.
 
 ## Quick start
 
@@ -104,6 +107,7 @@ application-data directory can currently read the database and attachments.
 - [Encryption posture](docs/adr/0002-defer-at-rest-encryption.md)
 - [Source release decision](docs/adr/0003-source-release-pipeline.md)
 - [Apache-2.0 license decision](docs/adr/0005-apache-2-license.md)
+- [Managed attachment and native-action decision](docs/adr/0006-managed-mutable-attachments-and-native-file-actions.md)
 - [Security policy](SECURITY.md)
 
 ## License

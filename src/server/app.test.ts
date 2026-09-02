@@ -18,6 +18,7 @@ import { buildApp } from "./app.js";
 import { openDatabase } from "./db/database.js";
 import { MaintenanceGate } from "./database-transfer/maintenance-gate.js";
 import type { StagedUpload } from "./database-transfer/staged-upload.js";
+import type { NativeFileActions } from "./native-file-actions.js";
 
 describe("local project-chat API", () => {
   let directory: string;
@@ -25,6 +26,7 @@ describe("local project-chat API", () => {
   let sequence: number;
   let exportDirectoryCleanup: Mock<(path: string) => void>;
   let stagedUploadCleanup: Mock<(staged: StagedUpload) => void>;
+  let nativeFileActions: NativeFileActions;
 
   beforeEach(() => {
     directory = mkdtempSync(join(tmpdir(), "on-track-api-"));
@@ -35,6 +37,12 @@ describe("local project-chat API", () => {
     stagedUploadCleanup = vi.fn((staged: { dispose(): void }) =>
       staged.dispose(),
     );
+    nativeFileActions = {
+      supported: true,
+      platform: "darwin",
+      open: vi.fn(async () => undefined),
+      reveal: vi.fn(async () => undefined),
+    };
     app = buildApp({
       database: openDatabase(join(directory, "on-track.sqlite")),
       databasePath: join(directory, "on-track.sqlite"),
@@ -42,6 +50,7 @@ describe("local project-chat API", () => {
       clock: () => 1_000 + sequence,
       exportDirectoryCleanup,
       stagedUploadCleanup,
+      nativeFileActions,
     });
   });
 
@@ -167,6 +176,195 @@ describe("local project-chat API", () => {
       'filename="roadmap.pptx"',
     );
     expect(attachment.rawPayload).toEqual(Buffer.from([1, 2, 3]));
+  });
+
+  it("opens and reveals scoped managed attachments through privileged routes", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
+      payload: { title: "Files", accent: "amber" },
+    });
+    const form = new FormData();
+    form.append("files", new File(["deck"], "roadmap.pptx"));
+    await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes",
+      headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
+      payload: form,
+    });
+    const headers = {
+      host: "127.0.0.1:4173",
+      origin: "http://127.0.0.1:4173",
+      "sec-fetch-site": "same-origin",
+      "sec-fetch-mode": "cors",
+      "sec-fetch-dest": "empty",
+      "content-type": "application/json",
+    };
+
+    const opened = await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes/id-2/attachments/id-3/open",
+      headers,
+      payload: {},
+    });
+    const revealed = await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes/id-2/attachments/id-3/reveal",
+      headers,
+      payload: {},
+    });
+
+    expect(opened.statusCode).toBe(204);
+    expect(revealed.statusCode).toBe(204);
+    expect(nativeFileActions.open).toHaveBeenCalledOnce();
+    expect(nativeFileActions.reveal).toHaveBeenCalledOnce();
+
+    Object.defineProperty(nativeFileActions, "supported", { value: false });
+    const unsupported = await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes/id-2/attachments/id-3/open",
+      headers,
+      payload: {},
+    });
+    expect(unsupported.statusCode).toBe(501);
+    expect(unsupported.json()).toMatchObject({
+      code: "native_action_unsupported",
+    });
+  });
+
+  it.each([
+    {
+      name: "missing origin",
+      headers: {
+        "sec-fetch-site": "same-origin",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-dest": "empty",
+      },
+    },
+    {
+      name: "mismatched origin",
+      headers: {
+        origin: "http://localhost:4173",
+        "sec-fetch-site": "same-origin",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-dest": "empty",
+      },
+    },
+    {
+      name: "cross-site metadata",
+      headers: {
+        origin: "http://127.0.0.1:4173",
+        "sec-fetch-site": "cross-site",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-dest": "empty",
+      },
+    },
+    {
+      name: "missing fetch mode",
+      headers: {
+        origin: "http://127.0.0.1:4173",
+        "sec-fetch-site": "same-origin",
+        "sec-fetch-dest": "empty",
+      },
+    },
+  ])("rejects native action requests with $name", async ({ headers }) => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/chats/unknown/notes/unknown/attachments/unknown/open",
+      headers: {
+        host: "127.0.0.1:4173",
+        "content-type": "application/json",
+        ...headers,
+      },
+      payload: {},
+    });
+    expect(response.statusCode).toBe(403);
+    expect(nativeFileActions.open).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-empty native action bodies before launch", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/chats/unknown/notes/unknown/attachments/unknown/open",
+      headers: {
+        host: "localhost:4173",
+        origin: "http://localhost:4173",
+        "sec-fetch-site": "same-origin",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-dest": "empty",
+        "content-type": "application/json",
+      },
+      payload: { path: "/tmp/unsafe" },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(nativeFileActions.open).not.toHaveBeenCalled();
+  });
+
+  it("shares a narrow native-action rate limit before service work", async () => {
+    const headers = {
+      host: "localhost:4173",
+      origin: "http://localhost:4173",
+      "sec-fetch-site": "same-origin",
+      "sec-fetch-mode": "cors",
+      "sec-fetch-dest": "empty",
+      "content-type": "application/json",
+    };
+    const responses = [];
+    for (let attempt = 0; attempt < 11; attempt += 1) {
+      responses.push(
+        await app.inject({
+          method: "POST",
+          url: `/api/chats/missing/notes/missing/attachments/missing/${attempt % 2 ? "open" : "reveal"}`,
+          headers,
+          payload: {},
+        }),
+      );
+    }
+
+    expect(
+      responses.slice(0, 10).map((response) => response.statusCode),
+    ).toEqual(Array(10).fill(404));
+    expect(responses[10].statusCode).toBe(429);
+    expect(responses[10].json()).toEqual({
+      code: "native_action_rate_limited",
+      message: "Native file actions are temporarily rate-limited.",
+    });
+  });
+
+  it("returns a recoverable conflict without launching blocked file types", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: { title: "Files", accent: "amber" },
+    });
+    const form = new FormData();
+    form.append("files", new File(["run"], "INSTALLER.EXE"));
+    await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: form,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes/id-2/attachments/id-3/open",
+      headers: {
+        host: "localhost:4173",
+        origin: "http://localhost:4173",
+        "sec-fetch-site": "same-origin",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-dest": "empty",
+        "content-type": "application/json",
+      },
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.body).not.toContain(directory);
+    expect(nativeFileActions.open).not.toHaveBeenCalled();
   });
 
   it("exports attachment metadata accepted through multipart ingestion", async () => {
@@ -876,6 +1074,22 @@ describe("local project-chat API", () => {
 
       expect(response.statusCode).toBe(503);
       expect(response.json()).toMatchObject({ code: "maintenance_busy" });
+
+      const nativeResponse = await blockedApp.inject({
+        method: "POST",
+        url: "/api/chats/missing/notes/missing/attachments/missing/open",
+        headers: {
+          host: "localhost:4173",
+          origin: "http://localhost:4173",
+          "sec-fetch-site": "same-origin",
+          "sec-fetch-mode": "cors",
+          "sec-fetch-dest": "empty",
+          "content-type": "application/json",
+        },
+        payload: {},
+      });
+      expect(nativeResponse.statusCode).toBe(503);
+      expect(nativeResponse.json()).toMatchObject({ code: "maintenance_busy" });
     } finally {
       release();
       await held;

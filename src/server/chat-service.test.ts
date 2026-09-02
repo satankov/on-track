@@ -15,9 +15,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ManagedAttachmentStore } from "./attachments/managed-attachment-store.js";
 import {
   ChatService,
+  AttachmentOpenBlockedError,
   AttachmentUnavailableError,
   type AttachmentStore,
 } from "./chat-service.js";
+import type { NativeFileActions } from "./native-file-actions.js";
+import {
+  NativeFileActionFailedError,
+  NativeFileActionUnsupportedError,
+} from "./native-file-actions.js";
 import { openDatabase } from "./db/database.js";
 import { SqliteChatRepository } from "./db/repository.js";
 
@@ -44,12 +50,23 @@ describe("managed attachment service lifecycle", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  function service(attachmentStore: AttachmentStore = store): ChatService {
+  const nativeActions: NativeFileActions = {
+    supported: true,
+    platform: "darwin",
+    open: vi.fn(async () => undefined),
+    reveal: vi.fn(async () => undefined),
+  };
+
+  function service(
+    attachmentStore: AttachmentStore = store,
+    actions: NativeFileActions = nativeActions,
+  ): ChatService {
     return new ChatService(
       repository,
       () => ids.shift()!,
       () => 1_000,
       attachmentStore,
+      actions,
     );
   }
 
@@ -389,5 +406,167 @@ describe("managed attachment service lifecycle", () => {
     expect(() =>
       chatService.downloadAttachment("chat-a", "note-a", "attachment-a"),
     ).toThrow(AttachmentUnavailableError);
+  });
+
+  it("opens only a scoped safe managed file after refreshing metadata", async () => {
+    ids.push("chat-a", "note-a", "attachment-a");
+    const open = vi.fn(async () => undefined);
+    const chatService = service(store, { ...nativeActions, open });
+    chatService.createChat({ title: "Files", accent: "ocean" });
+    chatService.appendNoteWithAttachments("chat-a", {
+      body: "Context",
+      attachments: [
+        {
+          filename: "roadmap.pptx",
+          mediaType: "application/octet-stream",
+          byteSize: 4,
+          content: Buffer.from("road"),
+        },
+      ],
+    });
+    const stored = repository.getAttachment(
+      "chat-a",
+      "note-a",
+      "attachment-a",
+    )!;
+    const absolutePath = store.resolveAvailablePath(stored.storagePath);
+    writeFileSync(absolutePath, "updated");
+
+    await chatService.openAttachment("chat-a", "note-a", "attachment-a");
+
+    expect(open).toHaveBeenCalledWith(absolutePath);
+    expect(
+      repository.getAttachment("chat-a", "note-a", "attachment-a")?.byteSize,
+    ).toBe(7);
+    await expect(
+      chatService.openAttachment("other", "note-a", "attachment-a"),
+    ).rejects.toThrow(/Project not found/i);
+  });
+
+  it("blocks dangerous and executable attachments while allowing safe reveal", async () => {
+    ids.push("chat-a", "note-a", "attachment-a");
+    const open = vi.fn(async () => undefined);
+    const reveal = vi.fn(async () => undefined);
+    const chatService = service(store, { ...nativeActions, open, reveal });
+    chatService.createChat({ title: "Files", accent: "ocean" });
+    chatService.appendNoteWithAttachments("chat-a", {
+      body: "Context",
+      attachments: [
+        {
+          filename: "installer.EXE",
+          mediaType: "text/plain",
+          byteSize: 4,
+          content: Buffer.from("road"),
+        },
+      ],
+    });
+
+    await expect(
+      chatService.openAttachment("chat-a", "note-a", "attachment-a"),
+    ).rejects.toThrow(AttachmentOpenBlockedError);
+    await chatService.revealAttachment("chat-a", "note-a", "attachment-a");
+
+    expect(open).not.toHaveBeenCalled();
+    expect(reveal).toHaveBeenCalledOnce();
+    expect(
+      chatService.getChat("chat-a").notes[0].attachments![0].actions,
+    ).toEqual({
+      open: "blocked",
+      reveal: "available",
+    });
+  });
+
+  it("keeps recovery reveal available for a missing file", async () => {
+    ids.push("chat-a", "note-a", "attachment-a");
+    const reveal = vi.fn(async () => undefined);
+    const chatService = service(store, { ...nativeActions, reveal });
+    chatService.createChat({ title: "Files", accent: "ocean" });
+    chatService.appendNoteWithAttachments("chat-a", {
+      body: "Context",
+      attachments: [
+        {
+          filename: "roadmap.txt",
+          mediaType: "text/plain",
+          byteSize: 4,
+          content: Buffer.from("road"),
+        },
+      ],
+    });
+    const stored = repository.getAttachment(
+      "chat-a",
+      "note-a",
+      "attachment-a",
+    )!;
+    unlinkSync(store.resolveAvailablePath(stored.storagePath));
+    const containingDirectory = store.resolveSafeContainingDirectory(
+      stored.storagePath,
+    );
+
+    const attachment = chatService.getChat("chat-a").notes[0].attachments![0];
+    expect(attachment.actions).toEqual({
+      open: "unavailable",
+      reveal: "available",
+    });
+    await chatService.revealAttachment("chat-a", "note-a", "attachment-a");
+    expect(reveal).toHaveBeenCalledWith(
+      containingDirectory,
+      containingDirectory,
+    );
+  });
+
+  it("normalizes unexpected native adapter errors without exposing managed paths", async () => {
+    ids.push("chat-a", "note-a", "attachment-a");
+    const chatService = service(store, {
+      ...nativeActions,
+      open: vi.fn(async () => {
+        throw new Error("failed at /private/on-track/attachments/secret.txt");
+      }),
+    });
+    chatService.createChat({ title: "Files", accent: "ocean" });
+    chatService.appendNoteWithAttachments("chat-a", {
+      body: "Context",
+      attachments: [
+        {
+          filename: "roadmap.txt",
+          mediaType: "text/plain",
+          byteSize: 4,
+          content: Buffer.from("road"),
+        },
+      ],
+    });
+
+    const error = await chatService
+      .openAttachment("chat-a", "note-a", "attachment-a")
+      .catch((caught) => caught);
+    expect(error).toBeInstanceOf(NativeFileActionFailedError);
+    expect(String(error)).not.toContain("/private/on-track");
+  });
+
+  it("reports unsupported native actions in DTOs and at action time", async () => {
+    ids.push("chat-a", "note-a", "attachment-a");
+    const chatService = service(store, {
+      ...nativeActions,
+      supported: false,
+      platform: "aix",
+    });
+    chatService.createChat({ title: "Files", accent: "ocean" });
+    chatService.appendNoteWithAttachments("chat-a", {
+      body: "Context",
+      attachments: [
+        {
+          filename: "roadmap.txt",
+          mediaType: "text/plain",
+          byteSize: 4,
+          content: Buffer.from("road"),
+        },
+      ],
+    });
+
+    expect(
+      chatService.getChat("chat-a").notes[0].attachments![0].actions,
+    ).toEqual({ open: "unsupported", reveal: "unsupported" });
+    await expect(
+      chatService.openAttachment("chat-a", "note-a", "attachment-a"),
+    ).rejects.toThrow(NativeFileActionUnsupportedError);
   });
 });
