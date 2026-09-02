@@ -41,6 +41,21 @@ describe("SQLite project-chat persistence", () => {
       ]),
     );
     expect(database.pragma("foreign_keys", { simple: true })).toBe(1);
+    expect(
+      database
+        .prepare("SELECT name FROM pragma_table_info('note_attachments')")
+        .pluck()
+        .all(),
+    ).toEqual([
+      "id",
+      "note_id",
+      "filename",
+      "media_type",
+      "storage_path",
+      "byte_size",
+      "modified_at",
+      "created_at",
+    ]);
     expect(() =>
       database
         .prepare(
@@ -156,7 +171,7 @@ describe("SQLite project-chat persistence", () => {
     expect(repository.getChat("chat-a")?.updatedAt).toBe(200);
   });
 
-  it("persists attachment metadata with note history and deletes bytes with notes", () => {
+  it("persists metadata-only attachment rows and returns paths after deletion", () => {
     repository.createChat({
       id: "chat-a",
       title: "Alpha",
@@ -174,8 +189,10 @@ describe("SQLite project-chat persistence", () => {
           id: "attachment-a",
           filename: "launch-spec.pdf",
           mediaType: "application/pdf",
+          storagePath:
+            "attachments/v1/namespace-a/attachment-a/launch-spec.pdf",
           byteSize: 4,
-          content: Buffer.from("spec"),
+          modifiedAt: 190,
           createdAt: 200,
         },
       ],
@@ -190,6 +207,7 @@ describe("SQLite project-chat persistence", () => {
           filename: "launch-spec.pdf",
           mediaType: "application/pdf",
           byteSize: 4,
+          modifiedAt: 190,
         },
       ],
     });
@@ -200,16 +218,20 @@ describe("SQLite project-chat persistence", () => {
       repository.getAttachment("chat-a", "note-a", "attachment-a"),
     ).toMatchObject({
       filename: "launch-spec.pdf",
-      content: Buffer.from("spec"),
+      storagePath: "attachments/v1/namespace-a/attachment-a/launch-spec.pdf",
+      modifiedAt: 190,
     });
 
-    expect(repository.deleteNote("chat-a", "note-a")).toBe(true);
+    expect(repository.deleteNote("chat-a", "note-a")).toEqual({
+      deleted: true,
+      storagePaths: ["attachments/v1/namespace-a/attachment-a/launch-spec.pdf"],
+    });
     expect(
       repository.getAttachment("chat-a", "note-a", "attachment-a"),
     ).toBeUndefined();
   });
 
-  it("updates note attachments by keeping existing rows and adding new bytes", () => {
+  it("updates note attachments while returning only newly unreferenced paths", () => {
     repository.createChat({
       id: "chat-a",
       title: "Alpha",
@@ -226,16 +248,18 @@ describe("SQLite project-chat persistence", () => {
           id: "attachment-keep",
           filename: "keep.pdf",
           mediaType: "application/pdf",
+          storagePath: "attachments/v1/source/attachment-keep/keep.pdf",
           byteSize: 4,
-          content: Buffer.from("keep"),
+          modifiedAt: 200,
           createdAt: 200,
         },
         {
           id: "attachment-remove",
           filename: "remove.pdf",
           mediaType: "application/pdf",
+          storagePath: "attachments/v1/source/attachment-remove/remove.pdf",
           byteSize: 6,
-          content: Buffer.from("remove"),
+          modifiedAt: 200,
           createdAt: 200,
         },
       ],
@@ -252,18 +276,24 @@ describe("SQLite project-chat persistence", () => {
           filename: "new.pptx",
           mediaType:
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          storagePath: "attachments/v1/source/attachment-new/new.pptx",
           byteSize: 3,
-          content: Buffer.from("new"),
+          modifiedAt: 300,
           createdAt: 300,
         },
       ],
     });
 
     expect(updated).toMatchObject({
-      body: "Updated",
-      attachments: [
-        { id: "attachment-keep", filename: "keep.pdf" },
-        { id: "attachment-new", filename: "new.pptx" },
+      note: {
+        body: "Updated",
+        attachments: [
+          { id: "attachment-keep", filename: "keep.pdf" },
+          { id: "attachment-new", filename: "new.pptx" },
+        ],
+      },
+      removedStoragePaths: [
+        "attachments/v1/source/attachment-remove/remove.pdf",
       ],
     });
     expect(
@@ -328,9 +358,11 @@ describe("SQLite project-chat persistence", () => {
     });
 
     expect(updated).toMatchObject({
-      id: "note-late",
-      body: "Moved earlier",
-      createdAt: 150,
+      note: {
+        id: "note-late",
+        body: "Moved earlier",
+        createdAt: 150,
+      },
     });
     expect(repository.listNotes("chat-a").map((note) => note.id)).toEqual([
       "note-late",
@@ -359,7 +391,9 @@ describe("SQLite project-chat persistence", () => {
       now: 300,
     });
 
-    expect(repository.deleteNote("chat-a", "note-b")).toBe(true);
+    expect(repository.deleteNote("chat-a", "note-b")).toMatchObject({
+      deleted: true,
+    });
 
     expect(repository.listNotes("chat-a").map((note) => note.id)).toEqual([
       "note-a",
@@ -381,11 +415,71 @@ describe("SQLite project-chat persistence", () => {
       now: 200,
     });
 
-    expect(repository.deleteChat("chat-a")).toBe(true);
+    expect(repository.deleteChat("chat-a")).toMatchObject({ deleted: true });
 
     expect(repository.getChat("chat-a")).toBeUndefined();
     expect(repository.listNotes("chat-a")).toEqual([]);
-    expect(repository.deleteChat("chat-a")).toBe(false);
+    expect(repository.deleteChat("chat-a")).toEqual({
+      deleted: false,
+      storagePaths: [],
+    });
+  });
+
+  it("allows zero-byte attachment metadata after an external edit", () => {
+    repository.createChat({
+      id: "chat-a",
+      title: "Alpha",
+      accent: "coral",
+      now: 100,
+    });
+    repository.appendNote({
+      id: "note-a",
+      chatId: "chat-a",
+      body: "Mutable",
+      now: 200,
+      attachments: [
+        {
+          id: "attachment-a",
+          filename: "mutable.txt",
+          mediaType: "text/plain",
+          storagePath: "attachments/v1/source/attachment-a/mutable.txt",
+          byteSize: 0,
+          modifiedAt: 250,
+          createdAt: 200,
+        },
+      ],
+    });
+
+    expect(
+      database
+        .prepare(
+          "SELECT byte_size, modified_at FROM note_attachments WHERE id = ?",
+        )
+        .get("attachment-a"),
+    ).toEqual({ byte_size: 0, modified_at: 250 });
+  });
+
+  it("refuses the obsolete unreleased BLOB attachment schema with reset guidance", () => {
+    database.close();
+    const path = join(directory, "obsolete.sqlite");
+    const obsolete = new Database(path);
+    obsolete.exec(`
+      CREATE TABLE note_attachments (
+        id TEXT PRIMARY KEY NOT NULL,
+        note_id TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        media_type TEXT NOT NULL,
+        byte_size INTEGER NOT NULL,
+        content BLOB NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+    `);
+    obsolete.close();
+
+    expect(() => openDatabase(path)).toThrow(
+      /obsolete development attachment schema.*reset.*local data/i,
+    );
+    database = new Database(join(directory, "on-track.sqlite"));
   });
 
   it("rejects invalid rows at the database boundary", () => {

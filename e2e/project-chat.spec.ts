@@ -1,5 +1,8 @@
 import type { APIRequestContext } from "@playwright/test";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+import Database from "better-sqlite3";
 
 import { expect, test } from "./fixtures.js";
 
@@ -185,15 +188,22 @@ test("manages markdown messages and database backups from the UI", async ({
   await note.getByRole("button", { name: "Delete message" }).click();
   await expect(page.getByText("Revised")).toBeHidden();
 
+  const bundledAttachmentPath = testInfo.outputPath("bundled-roadmap.txt");
+  writeFileSync(bundledAttachmentPath, "bundle sidecar bytes");
+  await page.getByLabel("Attach files").setInputFiles(bundledAttachmentPath);
+  await page.getByLabel("Add a note").fill("Bundled attachment");
+  await page.getByRole("button", { name: /Add note/ }).click();
+  await expect(page.getByText("bundled-roadmap.txt")).toBeVisible();
+
   if (testInfo.project.name === "mobile-webkit") {
     await page.getByRole("button", { name: "Back to projects" }).click();
   }
   await page.getByRole("button", { name: /Settings/ }).click();
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export database" }).click();
+  await page.getByRole("button", { name: "Export backup" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(
-    /on-track-\d{4}-\d{2}-\d{2}\.sqlite/,
+    /on-track-\d{4}-\d{2}-\d{2}\.on-track-backup/,
   );
   const backupPath = await download.path();
   expect(backupPath).toBeTruthy();
@@ -210,10 +220,10 @@ test("manages markdown messages and database backups from the UI", async ({
 
   await page.getByRole("button", { name: /Settings/ }).click();
   await page
-    .getByLabel("Choose database backup")
+    .getByLabel("Choose On Track backup")
     .setInputFiles(backupPath ?? "");
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Import database" }).click();
+  await page.getByRole("button", { name: "Restore backup" }).click();
 
   await expect(
     page.getByRole("button", { name: `Open ${exportedProject.title}` }),
@@ -221,6 +231,34 @@ test("manages markdown messages and database backups from the UI", async ({
   await expect(
     page.getByRole("button", { name: `Open ${extraProject.title}` }),
   ).toHaveCount(0);
+
+  await page
+    .getByRole("button", { name: `Open ${exportedProject.title}` })
+    .click();
+  await expect(page.getByText("bundled-roadmap.txt")).toBeVisible();
+
+  const activeDatabase = new Database(
+    join(localApp.dataDirectory, "on-track.sqlite"),
+    { readonly: true, fileMustExist: true },
+  );
+  try {
+    expect(
+      activeDatabase
+        .prepare("SELECT name FROM pragma_table_info('note_attachments')")
+        .pluck()
+        .all(),
+    ).not.toContain("content");
+    const storagePath = activeDatabase
+      .prepare("SELECT storage_path FROM note_attachments LIMIT 1")
+      .pluck()
+      .get() as string;
+    expect(storagePath).toMatch(/^attachments\/v1\/restore-/);
+    expect(
+      readFileSync(join(localApp.dataDirectory, storagePath), "utf8"),
+    ).toBe("bundle sidecar bytes");
+  } finally {
+    activeDatabase.close();
+  }
 });
 
 test("adds an attachment message and filters history by files", async ({

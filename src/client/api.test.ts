@@ -45,7 +45,9 @@ describe("browser API client", () => {
       .mockResolvedValueOnce(
         new Response("SQLite format 3", {
           status: 200,
-          headers: { "Content-Type": "application/vnd.sqlite3" },
+          headers: {
+            "Content-Type": "application/vnd.on-track.backup+sqlite",
+          },
         }),
       );
     vi.stubGlobal("fetch", fetchMock);
@@ -106,7 +108,9 @@ describe("browser API client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/database/import", {
       method: "PUT",
-      headers: { "Content-Type": "application/octet-stream" },
+      headers: {
+        "Content-Type": "application/vnd.on-track.backup+sqlite",
+      },
       body: expect.any(Blob),
     });
   });

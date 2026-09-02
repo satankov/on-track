@@ -13,7 +13,7 @@ const database = openDatabaseAfterRestoreRecovery({
   dataDirectory,
   databasePath,
 });
-const app = buildApp({ database, databasePath });
+const app = buildApp({ database, databasePath, dataDirectory });
 const clientRoot = resolve(process.cwd(), "dist/client");
 
 if (existsSync(clientRoot)) {

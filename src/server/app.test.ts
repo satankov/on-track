@@ -3,24 +3,45 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { FastifyInstance } from "fastify";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import Database from "better-sqlite3";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type Mock,
+} from "vitest";
 
 import { buildApp } from "./app.js";
 import { openDatabase } from "./db/database.js";
+import { MaintenanceGate } from "./database-transfer/maintenance-gate.js";
+import type { StagedUpload } from "./database-transfer/staged-upload.js";
 
 describe("local project-chat API", () => {
   let directory: string;
   let app: FastifyInstance;
   let sequence: number;
+  let exportDirectoryCleanup: Mock<(path: string) => void>;
+  let stagedUploadCleanup: Mock<(staged: StagedUpload) => void>;
 
   beforeEach(() => {
     directory = mkdtempSync(join(tmpdir(), "on-track-api-"));
     sequence = 0;
+    exportDirectoryCleanup = vi.fn((path: string) =>
+      rmSync(path, { recursive: true, force: true }),
+    );
+    stagedUploadCleanup = vi.fn((staged: { dispose(): void }) =>
+      staged.dispose(),
+    );
     app = buildApp({
       database: openDatabase(join(directory, "on-track.sqlite")),
       databasePath: join(directory, "on-track.sqlite"),
       idFactory: () => `id-${++sequence}`,
       clock: () => 1_000 + sequence,
+      exportDirectoryCleanup,
+      stagedUploadCleanup,
     });
   });
 
@@ -146,6 +167,40 @@ describe("local project-chat API", () => {
       'filename="roadmap.pptx"',
     );
     expect(attachment.rawPayload).toEqual(Buffer.from([1, 2, 3]));
+  });
+
+  it("exports attachment metadata accepted through multipart ingestion", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: { title: "Files", accent: "amber" },
+    });
+    const form = new FormData();
+    form.append(
+      "files",
+      new File(["notes"], "C:notes.txt", {
+        type: "text/plain; charset=utf-8",
+      }),
+    );
+    const note = await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: form,
+    });
+
+    expect(note.statusCode).toBe(201);
+    expect(note.json()).toMatchObject({
+      body: "",
+      attachments: [{ filename: "C:notes.txt" }],
+    });
+    const exported = await app.inject({
+      method: "GET",
+      url: "/api/database/export",
+      headers: { host: "localhost:4173" },
+    });
+    expect(exported.statusCode).toBe(200);
   });
 
   it("edits attachment messages through multipart by keeping and adding files", async () => {
@@ -465,12 +520,21 @@ describe("local project-chat API", () => {
     expect(deleted.statusCode).toBe(404);
   });
 
-  it("exports and imports a validated SQLite backup", async () => {
+  it("round-trips a versioned backup bundle with managed attachment files", async () => {
     await app.inject({
       method: "POST",
       url: "/api/chats",
       headers: { host: "localhost:4173", origin: "http://localhost:4173" },
       payload: { title: "Exported", accent: "moss" },
+    });
+    const form = new FormData();
+    form.set("body", "Bundled file");
+    form.append("files", new File(["sidecar bytes"], "roadmap.txt"));
+    await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: form,
     });
 
     const exported = await app.inject({
@@ -480,7 +544,10 @@ describe("local project-chat API", () => {
     });
     expect(exported.statusCode).toBe(200);
     expect(exported.headers["content-type"]).toContain(
-      "application/vnd.sqlite3",
+      "application/vnd.on-track.backup+sqlite",
+    );
+    expect(exported.headers["content-disposition"]).toMatch(
+      /\.on-track-backup"$/,
     );
 
     const importedDirectory = mkdtempSync(join(tmpdir(), "on-track-import-"));
@@ -511,10 +578,82 @@ describe("local project-chat API", () => {
         headers: { host: "localhost:4173" },
       });
       expect(list.json()).toMatchObject([{ title: "Exported" }]);
+      const attachment = await importedApp.inject({
+        method: "GET",
+        url: "/api/chats/id-1/notes/id-2/attachments/id-3",
+        headers: { host: "localhost:4173" },
+      });
+      expect(attachment.statusCode).toBe(200);
+      expect(attachment.rawPayload).toEqual(Buffer.from("sidecar bytes"));
+
+      const inspected = new Database(importedPath, {
+        readonly: true,
+        fileMustExist: true,
+      });
+      try {
+        expect(
+          inspected
+            .prepare("SELECT name FROM pragma_table_info('note_attachments')")
+            .pluck()
+            .all(),
+        ).not.toContain("content");
+        expect(
+          inspected
+            .prepare(
+              "SELECT name FROM sqlite_schema WHERE name LIKE '_on_track_bundle%'",
+            )
+            .pluck()
+            .all(),
+        ).toEqual([]);
+      } finally {
+        inspected.close();
+      }
     } finally {
       await importedApp.close();
       rmSync(importedDirectory, { recursive: true, force: true });
     }
+  });
+
+  it("keeps successful transfers successful when temporary cleanup fails", async () => {
+    exportDirectoryCleanup.mockImplementationOnce(() => {
+      throw new Error("export cleanup failed");
+    });
+    const exported = await app.inject({
+      method: "GET",
+      url: "/api/database/export",
+      headers: { host: "localhost:4173" },
+    });
+
+    expect(exported.statusCode).toBe(200);
+    await vi.waitFor(() =>
+      expect(exportDirectoryCleanup).toHaveBeenCalledOnce(),
+    );
+
+    stagedUploadCleanup.mockImplementationOnce(() => {
+      throw new Error("staging cleanup failed");
+    });
+    const imported = await app.inject({
+      method: "PUT",
+      url: "/api/database/import",
+      headers: {
+        host: "localhost:4173",
+        origin: "http://localhost:4173",
+        "content-type": "application/octet-stream",
+      },
+      payload: exported.rawPayload,
+    });
+
+    expect(imported.statusCode).toBe(204);
+    expect(stagedUploadCleanup).toHaveBeenCalledOnce();
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/chats",
+          headers: { host: "localhost:4173" },
+        })
+      ).statusCode,
+    ).toBe(200);
   });
 
   it("rate-limits database exports before repeated filesystem work", async () => {
@@ -567,7 +706,7 @@ describe("local project-chat API", () => {
     expect(responses[2].headers["retry-after"]).toBe("60");
   });
 
-  it("rejects an invalid database import without replacing local data", async () => {
+  it("rejects raw and pre-v0.0.3 backup imports without replacing local data", async () => {
     await app.inject({
       method: "POST",
       url: "/api/chats",
@@ -590,11 +729,72 @@ describe("local project-chat API", () => {
 
     expect(imported.statusCode).toBe(400);
     expect(readFileSync(join(directory, "on-track.sqlite"))).toEqual(before);
+
+    const exported = await app.inject({
+      method: "GET",
+      url: "/api/database/export",
+      headers: { host: "localhost:4173" },
+    });
+    const legacyPath = join(directory, "legacy.on-track-backup");
+    writeFileSync(legacyPath, exported.rawPayload);
+    const legacy = new Database(legacyPath);
+    legacy.exec("UPDATE _on_track_bundle SET schema_version = 1");
+    legacy.close();
+    const legacyImport = await app.inject({
+      method: "PUT",
+      url: "/api/database/import",
+      headers: {
+        host: "localhost:4173",
+        origin: "http://localhost:4173",
+        "content-type": "application/octet-stream",
+      },
+      payload: readFileSync(legacyPath),
+    });
+
+    expect(legacyImport.statusCode).toBe(400);
     const list = await app.inject({
       method: "GET",
       url: "/api/chats",
       headers: { host: "localhost:4173" },
     });
+    expect(list.json()).toMatchObject([{ title: "Keep me" }]);
+  });
+
+  it("rejects a domain-invalid bundle without replacing live data", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: { title: "Keep me", accent: "iris" },
+    });
+    const exported = await app.inject({
+      method: "GET",
+      url: "/api/database/export",
+      headers: { host: "localhost:4173" },
+    });
+    const invalidPath = join(directory, "invalid-domain.on-track-backup");
+    writeFileSync(invalidPath, exported.rawPayload);
+    const invalid = new Database(invalidPath);
+    invalid.exec("UPDATE chats SET created_at = 'not-a-timestamp'");
+    invalid.close();
+
+    const imported = await app.inject({
+      method: "PUT",
+      url: "/api/database/import",
+      headers: {
+        host: "localhost:4173",
+        origin: "http://localhost:4173",
+        "content-type": "application/octet-stream",
+      },
+      payload: readFileSync(invalidPath),
+    });
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/chats",
+      headers: { host: "localhost:4173" },
+    });
+
+    expect(imported.statusCode).toBe(400);
     expect(list.json()).toMatchObject([{ title: "Keep me" }]);
   });
 
@@ -630,7 +830,7 @@ describe("local project-chat API", () => {
     }
   });
 
-  it("rejects an empty database import before touching local files", async () => {
+  it("rejects an empty backup import before touching local files", async () => {
     const imported = await app.inject({
       method: "PUT",
       url: "/api/database/import",
@@ -644,9 +844,44 @@ describe("local project-chat API", () => {
 
     expect(imported.statusCode).toBe(400);
     expect(imported.json()).toEqual({
-      code: "invalid_database",
-      message: "Choose a non-empty On Track database backup.",
+      code: "invalid_backup",
+      message:
+        "The selected file is not a valid supported On Track backup bundle.",
     });
+  });
+
+  it("returns a recoverable conflict when maintenance blocks a mutation", async () => {
+    const gate = new MaintenanceGate();
+    let release!: () => void;
+    const held = gate.runExport(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const blockedDirectory = mkdtempSync(join(tmpdir(), "on-track-gated-"));
+    const blockedPath = join(blockedDirectory, "on-track.sqlite");
+    const blockedApp = buildApp({
+      database: openDatabase(blockedPath),
+      databasePath: blockedPath,
+      maintenanceGate: gate,
+    });
+    try {
+      const response = await blockedApp.inject({
+        method: "POST",
+        url: "/api/chats",
+        headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+        payload: { title: "Blocked", accent: "moss" },
+      });
+
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toMatchObject({ code: "maintenance_busy" });
+    } finally {
+      release();
+      await held;
+      await blockedApp.close();
+      rmSync(blockedDirectory, { recursive: true, force: true });
+    }
   });
 
   it("rejects a valid SQLite file that is not an On Track database", async () => {

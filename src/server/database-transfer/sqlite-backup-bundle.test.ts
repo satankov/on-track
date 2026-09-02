@@ -425,6 +425,46 @@ describe("SQLite backup bundle", () => {
       /version is unsupported/i,
     );
 
+    const invalidTimestamp = copyBundle(
+      originalPath,
+      directory,
+      "invalid-timestamp",
+    );
+    mutateBundle(invalidTimestamp, (database) =>
+      database.exec("UPDATE chats SET created_at = 'not-a-timestamp'"),
+    );
+    expect(() => validateSqliteBackupBundle(invalidTimestamp)).toThrow(
+      /project creation time/i,
+    );
+
+    const invalidMediaType = copyBundle(
+      originalPath,
+      directory,
+      "invalid-media-type",
+    );
+    mutateBundle(invalidMediaType, (database) =>
+      database
+        .prepare("UPDATE note_attachments SET media_type = ?")
+        .run("text/plain\r\nx-injected: value"),
+    );
+    expect(() => validateSqliteBackupBundle(invalidMediaType)).toThrow(
+      /attachment metadata/i,
+    );
+
+    const unsafeFilename = copyBundle(
+      originalPath,
+      directory,
+      "unsafe-filename",
+    );
+    mutateBundle(unsafeFilename, (database) =>
+      database
+        .prepare("UPDATE note_attachments SET filename = ?")
+        .run("../deck.pptx"),
+    );
+    expect(() => validateSqliteBackupBundle(unsafeFilename)).toThrow(
+      /attachment metadata/i,
+    );
+
     const missingManifest = copyBundle(originalPath, directory, "no-manifest");
     mutateBundle(missingManifest, (database) =>
       database.exec("DELETE FROM _on_track_bundle"),
@@ -443,6 +483,111 @@ describe("SQLite backup bundle", () => {
     expect(() => validateSqliteBackupBundle(foreignKeyDamage)).toThrow(
       /foreign-key check/i,
     );
+  });
+
+  it("rejects a canonical bundle with more than ten attachments on one note", async () => {
+    const bundlePath = join(directory, "too-many.on-track-backup");
+    await createSqliteBackupBundle({
+      sourceDatabase,
+      destinationPath: bundlePath,
+      attachmentStore: {
+        read: () => {
+          throw new Error("an empty snapshot must not read attachments");
+        },
+      },
+    });
+    mutateBundle(bundlePath, (database) => {
+      const insertAttachmentRow = database.prepare(
+        `INSERT INTO note_attachments
+         (id, note_id, filename, media_type, storage_path, byte_size, modified_at, created_at)
+         VALUES (?, 'note-a', ?, 'application/octet-stream', ?, 0, 1, 1)`,
+      );
+      const insertPayload = database.prepare(
+        `INSERT INTO _on_track_bundle_files
+         (attachment_id, byte_size, modified_at, sha256, content)
+         VALUES (?, 0, 1, ?, ?)`,
+      );
+      const insertRows = database.transaction(() => {
+        for (let index = 0; index < 11; index += 1) {
+          const id = `attachment-${index}`;
+          insertAttachmentRow.run(
+            id,
+            `file-${index}.txt`,
+            `attachments/v1/source/${id}/file-${index}.txt`,
+          );
+          insertPayload.run(
+            id,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            Buffer.alloc(0),
+          );
+        }
+        database.exec(
+          "UPDATE _on_track_bundle SET attachment_count = 11, total_bytes = 0",
+        );
+      });
+      insertRows();
+    });
+
+    expect(() => validateSqliteBackupBundle(bundlePath)).toThrow(
+      /attachments per message/i,
+    );
+  });
+
+  it("exports and prepares a valid attachment-only message", async () => {
+    sourceDatabase.exec("UPDATE notes SET body = '' WHERE id = 'note-a'");
+    insertAttachment(sourceDatabase, {
+      id: "attachment-only",
+      filename: "context.txt",
+      storagePath: "attachments/v1/source/attachment-only/context.txt",
+      byteSize: 7,
+      modifiedAt: 100,
+    });
+    const bundlePath = join(directory, "attachment-only.on-track-backup");
+    await createSqliteBackupBundle({
+      sourceDatabase,
+      destinationPath: bundlePath,
+      attachmentStore: {
+        read: () => ({
+          content: Buffer.from("context"),
+          byteSize: 7,
+          modifiedAt: 100,
+        }),
+      },
+    });
+    const workspace = createRestoreWorkspace(directory, "attachment-only");
+
+    const prepared = prepareSqliteBackupBundle({ bundlePath, workspace });
+
+    const candidate = new Database(prepared.candidateDatabasePath, {
+      readonly: true,
+      fileMustExist: true,
+    });
+    try {
+      expect(
+        candidate
+          .prepare("SELECT body FROM notes WHERE id = 'note-a'")
+          .pluck()
+          .get(),
+      ).toBe("");
+    } finally {
+      candidate.close();
+    }
+  });
+
+  it("rejects an empty message that owns no attachments", async () => {
+    sourceDatabase.exec("UPDATE notes SET body = '' WHERE id = 'note-a'");
+
+    await expect(
+      createSqliteBackupBundle({
+        sourceDatabase,
+        destinationPath: join(directory, "empty-message.on-track-backup"),
+        attachmentStore: {
+          read: () => {
+            throw new Error("an empty snapshot must not read attachments");
+          },
+        },
+      }),
+    ).rejects.toThrow(/message metadata/i);
   });
 
   it("prepares a compact metadata-only candidate with generated restore paths", async () => {
@@ -647,6 +792,20 @@ describe("SQLite backup bundle", () => {
     expect(existsSync(workspace.candidateDatabasePath)).toBe(false);
   });
 
+  it("removes generated preparation state when bundle validation fails", () => {
+    const invalidBundlePath = join(directory, "invalid.on-track-backup");
+    writeFileSync(invalidBundlePath, "not a backup bundle");
+    const workspace = createRestoreWorkspace(directory, "restore-invalid");
+
+    expect(() =>
+      prepareSqliteBackupBundle({
+        bundlePath: invalidBundlePath,
+        workspace,
+      }),
+    ).toThrow(/SQLite file signature/i);
+    expect(existsSync(workspace.stagingDirectory)).toBe(false);
+  });
+
   it.runIf(process.platform !== "win32")(
     "removes all generated preparation state if candidate creation fails",
     async () => {
@@ -703,22 +862,13 @@ function createMetadataOnlySchemaV2Database(
     uniqueStoragePath?: boolean;
   } = {},
 ): Database.Database {
-  const checks = options.includeChecks === false;
+  const omitChecks =
+    options.includeChecks === false || options.fakeMetadataChecks === true;
   const attachmentForeignKey =
     options.attachmentForeignKey === false
       ? ""
-      : "REFERENCES notes(id) ON DELETE CASCADE";
+      : ", FOREIGN KEY (note_id) REFERENCES notes(id) ON UPDATE NO ACTION ON DELETE CASCADE";
   const storagePathUnique = options.uniqueStoragePath === false ? "" : "UNIQUE";
-  const metadataIdCheck = options.fakeMetadataChecks
-    ? ""
-    : checks
-      ? ""
-      : " CHECK (id = 1)";
-  const metadataVersionCheck = options.fakeMetadataChecks
-    ? " DEFAULT 'check(id=1)check(schema_version>=1)'"
-    : checks
-      ? ""
-      : " CHECK (schema_version >= 1)";
   const database = new Database(path);
   database.pragma("foreign_keys = ON");
   database.exec(`
@@ -728,33 +878,34 @@ function createMetadataOnlySchemaV2Database(
       created_at numeric
     );
     CREATE TABLE app_metadata (
-      id INTEGER PRIMARY KEY NOT NULL${metadataIdCheck},
-      schema_version INTEGER NOT NULL${metadataVersionCheck}
+      id INTEGER PRIMARY KEY NOT NULL,
+      schema_version INTEGER NOT NULL${omitChecks ? "" : ", CONSTRAINT app_metadata_single_row CHECK (app_metadata.id = 1), CONSTRAINT app_metadata_version_positive CHECK (app_metadata.schema_version >= 1)"}
     );
     CREATE TABLE chats (
       id TEXT PRIMARY KEY NOT NULL,
       title TEXT NOT NULL,
       accent TEXT NOT NULL,
       created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL${checks ? "" : ", CHECK (length(trim(title)) BETWEEN 1 AND 80), CHECK (accent IN ('coral', 'amber', 'moss', 'ocean', 'iris', 'slate'))"}
+      updated_at INTEGER NOT NULL${omitChecks ? "" : ", CONSTRAINT chats_title_length CHECK (length(trim(chats.title)) BETWEEN 1 AND 80), CONSTRAINT chats_accent_allowed CHECK (accent IN ('coral', 'amber', 'moss', 'ocean', 'iris', 'slate'))"}
     );
     CREATE INDEX chats_activity_idx ON chats(updated_at, id);
     CREATE TABLE notes (
       id TEXT PRIMARY KEY NOT NULL,
-      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      chat_id TEXT NOT NULL,
       body TEXT NOT NULL,
-      created_at INTEGER NOT NULL${checks ? "" : ", CHECK (length(body) <= 10000)"}
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (chat_id) REFERENCES chats(id) ON UPDATE NO ACTION ON DELETE CASCADE${omitChecks ? "" : ", CONSTRAINT notes_body_length CHECK (length(notes.body) <= 10000)"}
     );
     CREATE INDEX notes_chat_history_idx ON notes(chat_id, created_at, id);
     CREATE TABLE note_attachments (
       id TEXT PRIMARY KEY NOT NULL,
-      note_id TEXT NOT NULL ${attachmentForeignKey},
+      note_id TEXT NOT NULL,
       filename TEXT NOT NULL,
       media_type TEXT NOT NULL,
       storage_path TEXT NOT NULL ${storagePathUnique},
       byte_size INTEGER NOT NULL,
       modified_at INTEGER NOT NULL,
-      created_at INTEGER NOT NULL${checks ? "" : ", CHECK (length(trim(filename)) BETWEEN 1 AND 255), CHECK (length(trim(media_type)) BETWEEN 1 AND 255), CHECK (length(storage_path) BETWEEN 1 AND 1024), CHECK (byte_size >= 0), CHECK (modified_at >= 0)"}
+      created_at INTEGER NOT NULL${attachmentForeignKey}${omitChecks ? "" : ", CONSTRAINT note_attachments_filename_length CHECK (length(trim(note_attachments.filename)) BETWEEN 1 AND 255), CONSTRAINT note_attachments_media_type_length CHECK (length(trim(note_attachments.media_type)) BETWEEN 1 AND 255), CONSTRAINT note_attachments_storage_path_length CHECK (length(note_attachments.storage_path) BETWEEN 1 AND 1024), CONSTRAINT note_attachments_byte_size_nonnegative CHECK (note_attachments.byte_size >= 0), CONSTRAINT note_attachments_modified_at_nonnegative CHECK (note_attachments.modified_at >= 0)"}
     );
     CREATE INDEX note_attachments_note_idx
       ON note_attachments(${options.attachmentIndexColumns ?? "note_id, created_at, id"});

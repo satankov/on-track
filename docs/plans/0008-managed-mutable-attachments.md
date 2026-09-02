@@ -393,9 +393,9 @@ E2E for the product cutover/UI, dependency audit, full diff review, and finally
 
 ## Approval status
 
-Phases 1 and 2 were approved and implemented. Phases 3-5 remain approval-gated;
-the next independent decision is whether to implement Phase 3's release-safe
-sidecar cutover as proposed.
+Phases 1-3 were approved and implemented. Phases 4 and 5 remain approval-gated;
+the next independent decision is whether to implement Phase 4's native actions
+and attachment-card slice as proposed.
 
 ## Completion evidence
 
@@ -439,3 +439,35 @@ Phase 2 implemented without changing the current BLOB schema or transfer routes:
   E2E tests, and a production dependency audit with zero vulnerabilities.
 - Independent correctness/security review found no remaining actionable Phase 2
   findings.
+
+Phase 3 implemented the release-safe sidecar and transfer cutover without adding
+dependencies or native file actions:
+
+- RED: migration, repository, service, API, client, bundle, and E2E checks failed
+  against the BLOB schema, database-owned bytes, raw SQLite transfer, stale
+  attachment DTOs, and incomplete import validation before the cutover behavior
+  was added.
+- GREEN: the active v0.0.3 schema is metadata-only; the obsolete development BLOB
+  schema fails with local-reset guidance; sidecar create/edit/delete operations
+  follow the approved compensation ordering; external edits retain identity and
+  refresh metadata; and broken files remain recoverable records.
+- Settings now exports and restores one bounded, strictly validated
+  `.on-track-backup` bundle containing every readable attachment. Raw,
+  pre-v0.0.3, structurally invalid, domain-invalid, incomplete, and unsupported
+  inputs are rejected before live replacement. The maintenance gate and restore
+  journal cover normal concurrency and interrupted activation.
+- Focused tests cover scoped downloads, zero-byte external edits, missing,
+  unreadable, unsafe, and symlink-replaced files, database/file failure ordering,
+  successful-cleanup failures, bundle attachment round trips, maintenance
+  conflicts, and active-database confirmation that no attachment BLOB remains.
+- The complete unit suite passes with 255 tests and one platform skip. Aggregate
+  coverage is 89.92% statements, 83.30% branches, 92.57% functions, and 91.68%
+  lines; the bundle codec records 87.17% statements and 82.64% branches.
+- Migration verification passes 16 tests. Desktop Chromium and mobile WebKit pass
+  all eight E2E journeys, including the Settings bundle replacement flow and
+  restored sidecar bytes. The production dependency audit reports zero
+  vulnerabilities.
+- Independent correctness/security review findings about domain-invalid imports,
+  attachment-only messages, shared upload/import metadata rules, stale text-edit
+  DTOs, and cleanup failure handling were remediated with focused RED -> GREEN
+  tests before final verification.

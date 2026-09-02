@@ -21,14 +21,16 @@ CREATE TABLE `note_attachments` (
 	`note_id` text NOT NULL,
 	`filename` text NOT NULL,
 	`media_type` text NOT NULL,
+	`storage_path` text NOT NULL UNIQUE,
 	`byte_size` integer NOT NULL,
-	`content` blob NOT NULL,
+	`modified_at` integer NOT NULL,
 	`created_at` integer NOT NULL,
 	FOREIGN KEY (`note_id`) REFERENCES `notes`(`id`) ON UPDATE no action ON DELETE cascade,
 	CONSTRAINT "note_attachments_filename_length" CHECK(length(trim("note_attachments"."filename")) BETWEEN 1 AND 255),
 	CONSTRAINT "note_attachments_media_type_length" CHECK(length(trim("note_attachments"."media_type")) BETWEEN 1 AND 255),
-	CONSTRAINT "note_attachments_byte_size_positive" CHECK("note_attachments"."byte_size" > 0),
-	CONSTRAINT "note_attachments_content_length" CHECK(length("note_attachments"."content") = "note_attachments"."byte_size")
+	CONSTRAINT "note_attachments_storage_path_length" CHECK(length("note_attachments"."storage_path") BETWEEN 1 AND 1024),
+	CONSTRAINT "note_attachments_byte_size_nonnegative" CHECK("note_attachments"."byte_size" >= 0),
+	CONSTRAINT "note_attachments_modified_at_nonnegative" CHECK("note_attachments"."modified_at" >= 0)
 );
 --> statement-breakpoint
 CREATE INDEX `note_attachments_note_idx` ON `note_attachments` (`note_id`,`created_at`,`id`);

@@ -566,8 +566,8 @@ function SettingsRail({ onBack }: { onBack: () => void }) {
             <DatabaseIcon />
           </span>
           <span>
-            <strong>Database</strong>
-            <small>Import and export</small>
+            <strong>Backups</strong>
+            <small>Export and restore</small>
           </span>
         </button>
       </nav>
@@ -593,7 +593,7 @@ function SettingsWorkspace({
     setStatus("");
     try {
       await onExport();
-      setStatus("Database export is ready.");
+      setStatus("Backup export is ready.");
     } catch (caught) {
       setError(errorMessage(caught, "The database could not be exported."));
     } finally {
@@ -605,7 +605,7 @@ function SettingsWorkspace({
     if (!file) return;
     if (
       !window.confirm(
-        "Importing this backup will replace the current local database.",
+        "Restoring this backup will replace all current local projects and attached files. It does not merge data.",
       )
     ) {
       return;
@@ -615,7 +615,7 @@ function SettingsWorkspace({
     setStatus("");
     try {
       await onImport(file);
-      setStatus("Database imported.");
+      setStatus("Backup restored.");
     } catch (caught) {
       setError(errorMessage(caught, "The database could not be imported."));
     } finally {
@@ -626,22 +626,25 @@ function SettingsWorkspace({
   return (
     <main className="workspace settings-workspace">
       <header className="settings-workspace-header">
-        <p className="eyebrow">Database</p>
-        <h1>Database settings</h1>
+        <p className="eyebrow">Backups</p>
+        <h1>Backup settings</h1>
       </header>
       <section className="settings-panel" aria-labelledby="database-transfer">
         <div className="settings-panel-copy">
-          <h2 id="database-transfer">Import and export</h2>
+          <h2 id="database-transfer">Export and restore</h2>
           <p>
-            Export a SQLite backup or import one you trust. Backups are still
-            plaintext.
+            Export one versioned On Track backup containing projects, messages,
+            and attached files. Backups are plaintext and readable. Restoring
+            replaces current local data; it does not merge histories.
           </p>
         </div>
         <div className="settings-control-group">
           <div className="settings-control-row">
             <div>
-              <strong>Export database</strong>
-              <small>Create a restorable copy of the current local data.</small>
+              <strong>Export backup</strong>
+              <small>
+                Create one restorable copy of current local data and files.
+              </small>
             </div>
             <button
               className="button button-primary"
@@ -649,18 +652,18 @@ function SettingsWorkspace({
               onClick={handleExport}
               disabled={busy}
             >
-              Export database
+              Export backup
             </button>
           </div>
           <div className="settings-control-row settings-control-row--stacked">
             <label className="field-label" htmlFor="database-import">
-              Choose database backup
+              Choose On Track backup
             </label>
             <input
               id="database-import"
               className="file-input"
               type="file"
-              accept=".sqlite,.sqlite3,.db,application/vnd.sqlite3"
+              accept=".on-track-backup,application/vnd.on-track.backup+sqlite"
               onChange={(event) => setFile(event.target.files?.[0])}
             />
             <button
@@ -669,7 +672,7 @@ function SettingsWorkspace({
               onClick={handleImport}
               disabled={busy || !file}
             >
-              Import database
+              Restore backup
             </button>
           </div>
         </div>
@@ -839,13 +842,20 @@ function AttachmentList({
           type="button"
           aria-label={`Open ${attachment.filename}`}
           onClick={() => onOpen(note, attachment.id)}
+          disabled={
+            attachment.status !== undefined && attachment.status !== "available"
+          }
         >
           <span className="attachment-type" aria-hidden="true">
             {fileTypeLabel(attachment.filename, attachment.mediaType)}
           </span>
           <span className="attachment-copy">
             <strong>{attachment.filename}</strong>
-            <small>{formatFileSize(attachment.byteSize)}</small>
+            <small>
+              {attachment.status && attachment.status !== "available"
+                ? `File ${attachment.status}`
+                : formatFileSize(attachment.byteSize)}
+            </small>
           </span>
           <span className="attachment-open" aria-hidden="true">
             <OpenIcon />
@@ -1569,7 +1579,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `on-track-${new Date().toISOString().slice(0, 10)}.sqlite`;
+    link.download = `on-track-${new Date().toISOString().slice(0, 10)}.on-track-backup`;
     link.click();
     URL.revokeObjectURL(url);
   }

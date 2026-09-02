@@ -2,6 +2,7 @@ import type {
   Chat,
   ChatDetail,
   Note,
+  NoteAttachment,
   StoredNoteAttachment,
 } from "../domain/types.js";
 import {
@@ -13,6 +14,10 @@ import {
   updateChatInputSchema,
 } from "../domain/validation.js";
 import type { SqliteChatRepository } from "./db/repository.js";
+import {
+  ManagedAttachmentUnavailableError,
+  type ManagedAttachmentStore,
+} from "./attachments/managed-attachment-store.js";
 
 export class ProjectNotFoundError extends Error {
   constructor() {
@@ -26,11 +31,24 @@ export class InvalidInputError extends Error {
   }
 }
 
+export class AttachmentUnavailableError extends Error {
+  constructor(readonly status: "missing" | "unreadable" | "unsafe") {
+    super(`The attachment is ${status}.`);
+    this.name = "AttachmentUnavailableError";
+  }
+}
+
+export type AttachmentStore = Pick<
+  ManagedAttachmentStore,
+  "create" | "observe" | "read" | "remove"
+>;
+
 export class ChatService {
   constructor(
     private readonly repository: SqliteChatRepository,
     private readonly idFactory: () => string = () => crypto.randomUUID(),
     private readonly clock: () => number = () => Date.now(),
+    private readonly attachmentStore?: AttachmentStore,
   ) {}
 
   listChats(): Chat[] {
@@ -40,7 +58,13 @@ export class ChatService {
   getChat(id: string): ChatDetail {
     const chat = this.repository.getChat(id);
     if (!chat) throw new ProjectNotFoundError();
-    return { ...chat, notes: this.repository.listNotes(id) };
+    const notes = this.repository.listStoredNotes(id).map((note) => ({
+      ...note,
+      attachments: note.attachments.map((attachment) =>
+        this.refreshAttachment(attachment),
+      ),
+    }));
+    return { ...chat, notes };
   }
 
   createChat(input: unknown): Chat {
@@ -63,9 +87,11 @@ export class ChatService {
   }
 
   deleteChat(id: string): void {
-    if (!this.repository.deleteChat(id)) {
+    const result = this.repository.deleteChat(id);
+    if (!result.deleted) {
       throw new ProjectNotFoundError();
     }
+    this.cleanup(result.storagePaths);
   }
 
   appendNote(chatId: string, input: unknown): Note {
@@ -113,30 +139,47 @@ export class ChatService {
     }
 
     const now = this.clock();
-    const note = this.repository.appendNote({
-      id: this.idFactory(),
-      chatId,
-      body,
-      createdAt: input.createdAt,
-      now,
-      attachments: input.attachments.map((attachment) => ({
-        ...attachment,
-        id: this.idFactory(),
-        createdAt: input.createdAt ?? now,
-      })),
-    });
-    if (!note) throw new ProjectNotFoundError();
-    return { ...note, body };
+    const noteId = this.idFactory();
+    const installed = this.installAttachments(
+      input.attachments,
+      input.createdAt ?? now,
+    );
+    try {
+      const note = this.repository.appendNote({
+        id: noteId,
+        chatId,
+        body,
+        createdAt: input.createdAt,
+        now,
+        attachments: installed,
+      });
+      if (!note) throw new ProjectNotFoundError();
+      return {
+        ...note,
+        body,
+        attachments: installed.map((attachment) =>
+          this.toPublicAttachment({
+            ...attachment,
+            noteId,
+            status: "available",
+          }),
+        ),
+      };
+    } catch (error) {
+      this.cleanup(installed.map((attachment) => attachment.storagePath));
+      throw error;
+    }
   }
 
   updateNote(chatId: string, noteId: string, input: unknown): Note {
     const values = updateNoteInputSchema.parse(input);
-    const note = this.repository.updateNote(chatId, noteId, {
+    const result = this.repository.updateNote(chatId, noteId, {
       ...values,
       now: this.clock(),
     });
-    if (!note) throw new ProjectNotFoundError();
-    return note;
+    if (!result) throw new ProjectNotFoundError();
+    this.cleanup(result.removedStoragePaths);
+    return this.refreshedNote(chatId, noteId);
   }
 
   updateNoteWithAttachments(
@@ -180,38 +223,188 @@ export class ChatService {
     }
 
     const now = this.clock();
-    const note = this.repository.updateNote(chatId, noteId, {
-      body,
-      createdAt: input.createdAt,
-      now,
-      keepAttachmentIds: input.keepAttachmentIds,
-      attachments: input.attachments.map((attachment) => ({
-        ...attachment,
-        id: this.idFactory(),
-        createdAt: now,
-      })),
-    });
-    if (!note) throw new ProjectNotFoundError();
-    return note;
+    const installed = this.installAttachments(input.attachments, now);
+    let result: ReturnType<SqliteChatRepository["updateNote"]>;
+    try {
+      result = this.repository.updateNote(chatId, noteId, {
+        body,
+        createdAt: input.createdAt,
+        now,
+        keepAttachmentIds: input.keepAttachmentIds,
+        attachments: installed,
+      });
+    } catch (error) {
+      this.cleanup(installed.map((attachment) => attachment.storagePath));
+      throw error;
+    }
+    if (!result) {
+      this.cleanup(installed.map((attachment) => attachment.storagePath));
+      throw new ProjectNotFoundError();
+    }
+    this.cleanup(result.removedStoragePaths);
+    return this.refreshedNote(chatId, noteId);
   }
 
   deleteNote(chatId: string, noteId: string): void {
-    if (!this.repository.deleteNote(chatId, noteId)) {
+    const result = this.repository.deleteNote(chatId, noteId);
+    if (!result.deleted) {
       throw new ProjectNotFoundError();
     }
+    this.cleanup(result.storagePaths);
   }
 
-  getAttachment(
+  downloadAttachment(
     chatId: string,
     noteId: string,
     attachmentId: string,
-  ): StoredNoteAttachment {
+  ): { attachment: NoteAttachment; content: Buffer } {
     const attachment = this.repository.getAttachment(
       chatId,
       noteId,
       attachmentId,
     );
     if (!attachment) throw new ProjectNotFoundError();
-    return attachment;
+    const store = this.requireAttachmentStore();
+    try {
+      const read = store.read(attachment.storagePath);
+      if (
+        read.byteSize !== attachment.byteSize ||
+        read.modifiedAt !== attachment.modifiedAt
+      ) {
+        this.repository.updateAttachmentMetadata(
+          attachment.id,
+          read.byteSize,
+          read.modifiedAt,
+        );
+      }
+      return {
+        attachment: {
+          ...this.toPublicAttachment(attachment),
+          byteSize: read.byteSize,
+          modifiedAt: read.modifiedAt,
+          status: "available",
+        },
+        content: read.content,
+      };
+    } catch (error) {
+      if (error instanceof ManagedAttachmentUnavailableError) {
+        throw new AttachmentUnavailableError(error.status);
+      }
+      throw error;
+    }
+  }
+
+  private refreshAttachment(attachment: StoredNoteAttachment): NoteAttachment {
+    const observation = this.requireAttachmentStore().observe(
+      attachment.storagePath,
+    );
+    if (observation.status !== "available") {
+      return {
+        ...this.toPublicAttachment(attachment),
+        status: observation.status,
+      };
+    }
+    const { byteSize, modifiedAt } = observation;
+    if (byteSize === undefined || modifiedAt === undefined) {
+      throw new Error("Managed attachment metadata is unavailable.");
+    }
+    if (
+      byteSize !== attachment.byteSize ||
+      modifiedAt !== attachment.modifiedAt
+    ) {
+      this.repository.updateAttachmentMetadata(
+        attachment.id,
+        byteSize,
+        modifiedAt,
+      );
+    }
+    return {
+      ...this.toPublicAttachment(attachment),
+      byteSize,
+      modifiedAt,
+      status: "available",
+    };
+  }
+
+  private refreshedNote(chatId: string, noteId: string): Note {
+    const note = this.getChat(chatId).notes.find(
+      (candidate) => candidate.id === noteId,
+    );
+    if (!note) throw new ProjectNotFoundError();
+    return note;
+  }
+
+  private installAttachments(
+    attachments: Array<{
+      filename: string;
+      mediaType: string;
+      byteSize: number;
+      content: Uint8Array;
+    }>,
+    createdAt: number,
+  ): Array<{
+    id: string;
+    filename: string;
+    mediaType: string;
+    storagePath: string;
+    byteSize: number;
+    modifiedAt: number;
+    createdAt: number;
+  }> {
+    const installed = [];
+    try {
+      for (const attachment of attachments) {
+        const id = this.idFactory();
+        const created = this.requireAttachmentStore().create({
+          attachmentId: id,
+          filename: attachment.filename,
+          content: attachment.content,
+        });
+        installed.push({
+          id,
+          filename: attachment.filename,
+          mediaType: attachment.mediaType,
+          storagePath: created.storagePath,
+          byteSize: created.byteSize,
+          modifiedAt: created.modifiedAt,
+          createdAt,
+        });
+      }
+      return installed;
+    } catch (error) {
+      this.cleanup(installed.map((attachment) => attachment.storagePath));
+      throw error;
+    }
+  }
+
+  private cleanup(storagePaths: string[]): void {
+    if (!this.attachmentStore) return;
+    for (const storagePath of storagePaths) {
+      try {
+        this.attachmentStore.remove(storagePath);
+      } catch {
+        // Reference changes are already committed; cleanup is best effort.
+      }
+    }
+  }
+
+  private requireAttachmentStore(): AttachmentStore {
+    if (!this.attachmentStore) {
+      throw new Error("Managed attachment storage is unavailable.");
+    }
+    return this.attachmentStore;
+  }
+
+  private toPublicAttachment(attachment: StoredNoteAttachment): NoteAttachment {
+    return {
+      id: attachment.id,
+      noteId: attachment.noteId,
+      filename: attachment.filename,
+      mediaType: attachment.mediaType,
+      byteSize: attachment.byteSize,
+      modifiedAt: attachment.modifiedAt,
+      createdAt: attachment.createdAt,
+      status: attachment.status,
+    };
   }
 }

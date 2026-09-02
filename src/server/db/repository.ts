@@ -28,8 +28,9 @@ interface NoteAttachmentRow {
   note_id: string;
   filename: string;
   media_type: string;
+  storage_path: string;
   byte_size: number;
-  content: Buffer;
+  modified_at: number;
   created_at: number;
 }
 
@@ -50,14 +51,16 @@ function toAttachment(row: NoteAttachmentRow): NoteAttachment {
     filename: row.filename,
     mediaType: row.media_type,
     byteSize: row.byte_size,
+    modifiedAt: row.modified_at,
     createdAt: row.created_at,
+    status: "available",
   };
 }
 
 function toStoredAttachment(row: NoteAttachmentRow): StoredNoteAttachment {
   return {
     ...toAttachment(row),
-    content: row.content,
+    storagePath: row.storage_path,
   };
 }
 
@@ -126,13 +129,23 @@ export class SqliteChatRepository {
     return result.changes === 0 ? undefined : this.getChat(id);
   }
 
-  deleteChat(id: string): boolean {
+  deleteChat(id: string): { deleted: boolean; storagePaths: string[] } {
     const remove = this.database.transaction(() => {
+      const storagePaths = this.database
+        .prepare(
+          `SELECT note_attachments.storage_path
+           FROM note_attachments
+           INNER JOIN notes ON notes.id = note_attachments.note_id
+           WHERE notes.chat_id = ?
+           ORDER BY note_attachments.storage_path`,
+        )
+        .pluck()
+        .all(id) as string[];
       this.database.prepare("DELETE FROM notes WHERE chat_id = ?").run(id);
       const result = this.database
         .prepare("DELETE FROM chats WHERE id = ?")
         .run(id);
-      return result.changes > 0;
+      return { deleted: result.changes > 0, storagePaths };
     });
 
     return remove();
@@ -148,8 +161,9 @@ export class SqliteChatRepository {
       id: string;
       filename: string;
       mediaType: string;
+      storagePath: string;
       byteSize: number;
-      content: Uint8Array;
+      modifiedAt: number;
       createdAt?: number;
     }[];
   }): Note | undefined {
@@ -168,14 +182,13 @@ export class SqliteChatRepository {
         this.database
           .prepare(
             `INSERT INTO note_attachments
-             (id, note_id, filename, media_type, byte_size, content, created_at)
+             (id, note_id, filename, media_type, storage_path, byte_size, modified_at, created_at)
              VALUES
-             (@id, @noteId, @filename, @mediaType, @byteSize, @content, @createdAt)`,
+             (@id, @noteId, @filename, @mediaType, @storagePath, @byteSize, @modifiedAt, @createdAt)`,
           )
           .run({
             ...attachment,
             noteId: input.id,
-            content: Buffer.from(attachment.content),
             createdAt: attachment.createdAt ?? createdAt,
           });
       }
@@ -191,6 +204,14 @@ export class SqliteChatRepository {
   }
 
   listNotes(chatId: string): Note[] {
+    return this.listStoredNotes(chatId);
+  }
+
+  listStoredNotes(
+    chatId: string,
+  ): Array<
+    Omit<Note, "attachments"> & { attachments: StoredNoteAttachment[] }
+  > {
     const rows = this.database
       .prepare(
         `SELECT * FROM notes
@@ -207,13 +228,16 @@ export class SqliteChatRepository {
          ORDER BY note_attachments.created_at ASC, note_attachments.id ASC`,
       )
       .all(chatId) as NoteAttachmentRow[];
-    const attachmentsByNote = new Map<string, NoteAttachment[]>();
+    const attachmentsByNote = new Map<string, StoredNoteAttachment[]>();
     for (const row of attachmentRows) {
       const current = attachmentsByNote.get(row.note_id) ?? [];
-      current.push(toAttachment(row));
+      current.push(toStoredAttachment(row));
       attachmentsByNote.set(row.note_id, current);
     }
-    return rows.map((row) => toNote(row, attachmentsByNote.get(row.id) ?? []));
+    return rows.map((row) => ({
+      ...toNote(row),
+      attachments: attachmentsByNote.get(row.id) ?? [],
+    }));
   }
 
   updateNote(
@@ -228,17 +252,19 @@ export class SqliteChatRepository {
         id: string;
         filename: string;
         mediaType: string;
+        storagePath: string;
         byteSize: number;
-        content: Uint8Array;
+        modifiedAt: number;
         createdAt?: number;
       }[];
     },
-  ): Note | undefined {
+  ): { note: Note; removedStoragePaths: string[] } | undefined {
     const update = this.database.transaction(() => {
       const existing = this.database
         .prepare("SELECT * FROM notes WHERE id = ? AND chat_id = ?")
         .get(noteId, chatId) as NoteRow | undefined;
       if (!existing) return undefined;
+      const existingAttachments = this.listStoredAttachments(noteId);
 
       this.database
         .prepare(
@@ -273,14 +299,13 @@ export class SqliteChatRepository {
           this.database
             .prepare(
               `INSERT INTO note_attachments
-               (id, note_id, filename, media_type, byte_size, content, created_at)
+              (id, note_id, filename, media_type, storage_path, byte_size, modified_at, created_at)
                VALUES
-               (@id, @noteId, @filename, @mediaType, @byteSize, @content, @createdAt)`,
+               (@id, @noteId, @filename, @mediaType, @storagePath, @byteSize, @modifiedAt, @createdAt)`,
             )
             .run({
               ...attachment,
               noteId,
-              content: Buffer.from(attachment.content),
               createdAt:
                 attachment.createdAt ?? input.createdAt ?? existing.created_at,
             });
@@ -288,23 +313,44 @@ export class SqliteChatRepository {
       }
       this.refreshChatActivity(chatId, input.now);
 
-      return this.database
+      const row = this.database
         .prepare("SELECT * FROM notes WHERE id = ? AND chat_id = ?")
         .get(noteId, chatId) as NoteRow;
+      const kept = new Set(
+        input.keepAttachmentIds ??
+          existingAttachments.map((attachment) => attachment.id),
+      );
+      return {
+        row,
+        removedStoragePaths: existingAttachments
+          .filter((attachment) => !kept.has(attachment.id))
+          .map((attachment) => attachment.storagePath),
+      };
     });
 
-    const row = update();
-    return row ? toNote(row, this.listAttachments(row.id)) : undefined;
+    const result = update();
+    return result
+      ? {
+          note: toNote(result.row, this.listAttachments(result.row.id)),
+          removedStoragePaths: result.removedStoragePaths,
+        }
+      : undefined;
   }
 
-  deleteNote(chatId: string, noteId: string): boolean {
+  deleteNote(
+    chatId: string,
+    noteId: string,
+  ): { deleted: boolean; storagePaths: string[] } {
     const remove = this.database.transaction(() => {
+      const storagePaths = this.listStoredAttachments(noteId).map(
+        (attachment) => attachment.storagePath,
+      );
       const result = this.database
         .prepare("DELETE FROM notes WHERE id = ? AND chat_id = ?")
         .run(noteId, chatId);
-      if (result.changes === 0) return false;
+      if (result.changes === 0) return { deleted: false, storagePaths: [] };
       this.refreshChatActivity(chatId);
-      return true;
+      return { deleted: true, storagePaths };
     });
 
     return remove();
@@ -346,6 +392,29 @@ export class SqliteChatRepository {
     return row ? toStoredAttachment(row) : undefined;
   }
 
+  updateAttachmentMetadata(
+    attachmentId: string,
+    byteSize: number,
+    modifiedAt: number,
+  ): void {
+    this.database
+      .prepare(
+        `UPDATE note_attachments
+         SET byte_size = ?, modified_at = ?
+         WHERE id = ?`,
+      )
+      .run(byteSize, modifiedAt, attachmentId);
+  }
+
+  listAllAttachmentStoragePaths(): string[] {
+    return this.database
+      .prepare(
+        "SELECT storage_path FROM note_attachments ORDER BY storage_path",
+      )
+      .pluck()
+      .all() as string[];
+  }
+
   private listAttachments(noteId: string): NoteAttachment[] {
     const rows = this.database
       .prepare(
@@ -356,5 +425,16 @@ export class SqliteChatRepository {
       )
       .all(noteId) as NoteAttachmentRow[];
     return rows.map(toAttachment);
+  }
+
+  private listStoredAttachments(noteId: string): StoredNoteAttachment[] {
+    const rows = this.database
+      .prepare(
+        `SELECT * FROM note_attachments
+         WHERE note_id = ?
+         ORDER BY created_at ASC, id ASC`,
+      )
+      .all(noteId) as NoteAttachmentRow[];
+    return rows.map(toStoredAttachment);
   }
 }

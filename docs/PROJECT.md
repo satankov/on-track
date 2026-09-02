@@ -21,11 +21,11 @@ SQLite BLOB storage with managed mutable attachment sidecars.
 
 ## Current objective
 
-Complete the approved managed-attachment plan for v0.0.3. The storage kernel and
-single-file bundle/recovery primitives are implemented; the next slice is the
-release-safe sidecar and Settings backup/import cutover, followed by native
-Open/Show in Folder actions and cross-platform E2E verification. Backups remain
-readable until encryption is designed.
+Complete the approved managed-attachment plan for v0.0.3. Managed sidecar
+persistence and the versioned single-file Settings backup/restore cutover are
+implemented; the next slice is native Open/Show in Folder actions and their
+cross-platform verification. Backups remain readable until encryption is
+designed.
 
 ## v0.0.1 outcome
 
@@ -64,15 +64,16 @@ readable until encryption is designed.
   attachment add/remove while editing a message.
 - Filter the open project history to messages with attached files.
 - Copy, edit, timestamp-adjust, and delete notes.
-- Export and import the local SQLite database from Settings.
+- Export and restore one versioned `.on-track-backup` bundle containing the
+  metadata database and all readable attachment files.
 - Persist state across browser and server restarts.
 - Use a responsive, accessible browser interface served from a local process.
 
 ## Near-term priorities
 
-1. Complete managed mutable attachments: activate sidecar persistence and the
-   versioned single-file backup/import bundle, then add safe native actions and
-   cross-platform verification.
+1. Complete managed mutable attachments by adding safe native Open/Show in
+   Folder actions and cross-platform verification to the active sidecar and
+   versioned-backup foundation.
 2. Continue hardening backup, restore, integrity checking, recovery, and
    conflict-free import semantics before users entrust irreplaceable data to the
    application.
@@ -123,8 +124,8 @@ priorities above still need tracker records. Durable decisions live in
 ## Current risks
 
 - A copied On Track database is readable because at-rest encryption is absent.
-- Plaintext exports are readable copies of the database and now include attached
-  file bytes; importing replaces the local database rather than merging
+- Plaintext backup bundles contain readable database metadata and attached file
+  bytes; restoring replaces current local projects and files rather than merging
   histories.
 - Source installation requires Node.js 24 and a native SQLite dependency. The
   release commit passed CI on Linux plus native install/test coverage on Linux,

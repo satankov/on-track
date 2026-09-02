@@ -19,6 +19,14 @@ import { dirname, isAbsolute, join, posix, relative, sep } from "node:path";
 import Database from "better-sqlite3";
 
 import {
+  ACCENTS,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+} from "../../domain/validation.js";
+import {
+  isCanonicalAttachmentFilename,
+  isCanonicalAttachmentMediaType,
+} from "../attachment-metadata.js";
+import {
   ManagedAttachmentChangedError,
   ManagedAttachmentStore,
   type ManagedAttachmentRead,
@@ -96,6 +104,7 @@ export class SqliteBackupBundleValidationError extends Error {
 
 interface AttachmentMetadataRow {
   id: string;
+  note_id: string;
   filename: string;
   media_type: string;
   storage_path: string;
@@ -136,6 +145,7 @@ interface ForeignKeyDescription {
 }
 
 const GENERATED_COMPONENT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+const ALLOWED_ACCENTS = new Set<string>(ACCENTS);
 const SQLITE_MAGIC = Buffer.from("SQLite format 3\0", "binary");
 
 const ACTIVE_SCHEMA_OBJECTS = [
@@ -256,13 +266,13 @@ const ACTIVE_TABLE_DEFINITIONS: Readonly<Record<string, string>> = {
   __drizzle_migrations:
     "CREATE TABLE __drizzle_migrations (id SERIAL PRIMARY KEY, hash TEXT NOT NULL, created_at numeric)",
   app_metadata:
-    "CREATE TABLE app_metadata (id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1), schema_version INTEGER NOT NULL CHECK (schema_version >= 1))",
+    "CREATE TABLE app_metadata (id INTEGER PRIMARY KEY NOT NULL, schema_version INTEGER NOT NULL, CONSTRAINT app_metadata_single_row CHECK (app_metadata.id = 1), CONSTRAINT app_metadata_version_positive CHECK (app_metadata.schema_version >= 1))",
   chats:
-    "CREATE TABLE chats (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, accent TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, CHECK (length(trim(title)) BETWEEN 1 AND 80), CHECK (accent IN ('coral', 'amber', 'moss', 'ocean', 'iris', 'slate')))",
+    "CREATE TABLE chats (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, accent TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, CONSTRAINT chats_title_length CHECK (length(trim(chats.title)) BETWEEN 1 AND 80), CONSTRAINT chats_accent_allowed CHECK (accent IN ('coral', 'amber', 'moss', 'ocean', 'iris', 'slate')))",
   notes:
-    "CREATE TABLE notes (id TEXT PRIMARY KEY NOT NULL, chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE, body TEXT NOT NULL, created_at INTEGER NOT NULL, CHECK (length(body) <= 10000))",
+    "CREATE TABLE notes (id TEXT PRIMARY KEY NOT NULL, chat_id TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL, FOREIGN KEY (chat_id) REFERENCES chats(id) ON UPDATE NO ACTION ON DELETE CASCADE, CONSTRAINT notes_body_length CHECK (length(notes.body) <= 10000))",
   note_attachments:
-    "CREATE TABLE note_attachments (id TEXT PRIMARY KEY NOT NULL, note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE, filename TEXT NOT NULL, media_type TEXT NOT NULL, storage_path TEXT NOT NULL UNIQUE, byte_size INTEGER NOT NULL, modified_at INTEGER NOT NULL, created_at INTEGER NOT NULL, CHECK (length(trim(filename)) BETWEEN 1 AND 255), CHECK (length(trim(media_type)) BETWEEN 1 AND 255), CHECK (length(storage_path) BETWEEN 1 AND 1024), CHECK (byte_size >= 0), CHECK (modified_at >= 0))",
+    "CREATE TABLE note_attachments (id TEXT PRIMARY KEY NOT NULL, note_id TEXT NOT NULL, filename TEXT NOT NULL, media_type TEXT NOT NULL, storage_path TEXT NOT NULL UNIQUE, byte_size INTEGER NOT NULL, modified_at INTEGER NOT NULL, created_at INTEGER NOT NULL, FOREIGN KEY (note_id) REFERENCES notes(id) ON UPDATE NO ACTION ON DELETE CASCADE, CONSTRAINT note_attachments_filename_length CHECK (length(trim(note_attachments.filename)) BETWEEN 1 AND 255), CONSTRAINT note_attachments_media_type_length CHECK (length(trim(note_attachments.media_type)) BETWEEN 1 AND 255), CONSTRAINT note_attachments_storage_path_length CHECK (length(note_attachments.storage_path) BETWEEN 1 AND 1024), CONSTRAINT note_attachments_byte_size_nonnegative CHECK (note_attachments.byte_size >= 0), CONSTRAINT note_attachments_modified_at_nonnegative CHECK (note_attachments.modified_at >= 0))",
 };
 
 const BUNDLE_TABLE_DEFINITIONS: Readonly<Record<string, string>> = {
@@ -291,11 +301,11 @@ export async function createSqliteBackupBundle(
     bundle = new Database(options.destinationPath);
     bundle.pragma("foreign_keys = ON");
     bundle.pragma("journal_mode = DELETE");
-    validateActiveDatabase(bundle);
+    validateActiveDatabase(bundle, limits);
 
     const attachments = bundle
       .prepare(
-        `SELECT id, filename, media_type, storage_path,
+        `SELECT id, note_id, filename, media_type, storage_path,
                 byte_size, modified_at, created_at
          FROM note_attachments
          ORDER BY id`,
@@ -419,6 +429,7 @@ export function validateSqliteBackupBundle(
       Object.assign({}, ACTIVE_TABLE_DEFINITIONS, BUNDLE_TABLE_DEFINITIONS),
     );
     validateSchemaVersion(database);
+    validateApplicationData(database, limits);
 
     const rows = database
       .prepare(
@@ -484,7 +495,7 @@ export function validateSqliteBackupBundle(
 
     const metadata = database
       .prepare(
-        `SELECT id, filename, media_type, storage_path,
+        `SELECT id, note_id, filename, media_type, storage_path,
                 byte_size, modified_at, created_at
          FROM note_attachments
          ORDER BY id`,
@@ -584,7 +595,6 @@ export function prepareSqliteBackupBundle(
   options: PrepareSqliteBackupBundleOptions,
 ): PreparedSqliteBackupBundle {
   const limits = resolveLimits(options.limits);
-  validateSqliteBackupBundle(options.bundlePath, limits);
   const workspace = validatePreparationWorkspace(options.workspace);
   const restoreId = workspace.restoreId;
   const restoreDirectory = workspace.stagingDirectory;
@@ -593,6 +603,7 @@ export function prepareSqliteBackupBundle(
 
   let candidate: Database.Database | undefined;
   try {
+    validateSqliteBackupBundle(options.bundlePath, limits);
     copyFileSync(
       options.bundlePath,
       candidateDatabasePath,
@@ -726,6 +737,7 @@ export function validatePreparedSqliteBackupDatabase(
       ACTIVE_TABLE_DEFINITIONS,
     );
     validateSchemaVersion(database);
+    validateApplicationData(database, DEFAULT_SQLITE_BACKUP_BUNDLE_LIMITS);
   } catch (error) {
     throw asValidationError(error);
   } finally {
@@ -832,7 +844,10 @@ export function validateRecoverableSqliteBackupDatabase(
   }
 }
 
-function validateActiveDatabase(database: Database.Database): void {
+function validateActiveDatabase(
+  database: Database.Database,
+  limits: SqliteBackupBundleLimits,
+): void {
   validateIntegrity(database);
   validateExactSchema(
     database,
@@ -843,6 +858,98 @@ function validateActiveDatabase(database: Database.Database): void {
     ACTIVE_TABLE_DEFINITIONS,
   );
   validateSchemaVersion(database);
+  validateApplicationData(database, limits);
+}
+
+function validateApplicationData(
+  database: Database.Database,
+  limits: SqliteBackupBundleLimits,
+): void {
+  const chats = database
+    .prepare("SELECT id, title, accent, created_at, updated_at FROM chats")
+    .all() as Array<{
+    id: unknown;
+    title: unknown;
+    accent: unknown;
+    created_at: unknown;
+    updated_at: unknown;
+  }>;
+  for (const chat of chats) {
+    if (
+      typeof chat.id !== "string" ||
+      !GENERATED_COMPONENT.test(chat.id) ||
+      typeof chat.title !== "string" ||
+      chat.title !== chat.title.trim() ||
+      chat.title.length < 1 ||
+      chat.title.length > 80 ||
+      typeof chat.accent !== "string" ||
+      !ALLOWED_ACCENTS.has(chat.accent)
+    ) {
+      throw validationError("Project metadata is invalid.");
+    }
+    requireNonnegativeSafeInteger(chat.created_at, "project creation time");
+    requireNonnegativeSafeInteger(chat.updated_at, "project update time");
+  }
+
+  const notes = database
+    .prepare("SELECT id, chat_id, body, created_at FROM notes")
+    .all() as Array<{
+    id: unknown;
+    chat_id: unknown;
+    body: unknown;
+    created_at: unknown;
+  }>;
+  const noteIdsWithAttachments = new Set(
+    database
+      .prepare("SELECT DISTINCT note_id FROM note_attachments")
+      .pluck()
+      .all() as string[],
+  );
+  for (const note of notes) {
+    if (
+      typeof note.id !== "string" ||
+      !GENERATED_COMPONENT.test(note.id) ||
+      typeof note.chat_id !== "string" ||
+      !GENERATED_COMPONENT.test(note.chat_id) ||
+      typeof note.body !== "string"
+    ) {
+      throw validationError("Message metadata is invalid.");
+    }
+    if (
+      note.body !== note.body.trim() ||
+      note.body.length > 10_000 ||
+      (note.body.length === 0 && !noteIdsWithAttachments.has(note.id))
+    ) {
+      throw validationError("Message metadata is invalid.");
+    }
+    requireNonnegativeSafeInteger(note.created_at, "message creation time");
+  }
+
+  const attachments = database
+    .prepare(
+      `SELECT id, note_id, filename, media_type, storage_path,
+              byte_size, modified_at, created_at
+       FROM note_attachments`,
+    )
+    .all() as AttachmentMetadataRow[];
+  for (const attachment of attachments) {
+    validateAttachmentMetadata(attachment, limits);
+  }
+  const overfullNote = database
+    .prepare(
+      `SELECT note_id
+       FROM note_attachments
+       GROUP BY note_id
+       HAVING count(*) > ?
+       LIMIT 1`,
+    )
+    .pluck()
+    .get(MAX_ATTACHMENTS_PER_MESSAGE);
+  if (overfullNote !== undefined) {
+    throw validationError(
+      "A message exceeds the attachments per message limit.",
+    );
+  }
 }
 
 function validateSchemaVersion(database: Database.Database): void {
@@ -1021,16 +1128,19 @@ function validateAttachmentMetadata(
   row: AttachmentMetadataRow,
   limits: SqliteBackupBundleLimits,
 ): void {
-  if (!GENERATED_COMPONENT.test(row.id)) {
+  if (
+    typeof row.id !== "string" ||
+    !GENERATED_COMPONENT.test(row.id) ||
+    typeof row.note_id !== "string" ||
+    !GENERATED_COMPONENT.test(row.note_id)
+  ) {
     throw validationError("An attachment ID is invalid.");
   }
   if (
     typeof row.filename !== "string" ||
-    row.filename.trim().length < 1 ||
-    row.filename.length > 255 ||
+    !isCanonicalAttachmentFilename(row.filename) ||
     typeof row.media_type !== "string" ||
-    row.media_type.trim().length < 1 ||
-    row.media_type.length > 255 ||
+    !isCanonicalAttachmentMediaType(row.media_type) ||
     typeof row.storage_path !== "string" ||
     row.storage_path.length < 1 ||
     row.storage_path.length > 1024
@@ -1110,8 +1220,8 @@ function safeTotal(current: number, addition: number, maximum: number): number {
   return total;
 }
 
-function requireNonnegativeSafeInteger(value: number, label: string): void {
-  if (!Number.isSafeInteger(value) || value < 0) {
+function requireNonnegativeSafeInteger(value: unknown, label: string): void {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
     throw validationError(`The ${label} is invalid.`);
   }
 }
@@ -1223,6 +1333,7 @@ function normalizeSchemaSql(sql: string): string {
   return sql
     .toLowerCase()
     .replace(/["`[\]\s;]/g, "")
+    .replace(/\b(?:app_metadata|chats|notes|note_attachments)\./g, "")
     .replace(/constraint[a-z0-9_]+/g, "");
 }
 

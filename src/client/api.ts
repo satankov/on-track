@@ -133,7 +133,9 @@ export const apiClient: ApiClient = {
   importDatabase: async (file) => {
     const response = await fetch("/api/database/import", {
       method: "PUT",
-      headers: { "Content-Type": "application/octet-stream" },
+      headers: {
+        "Content-Type": "application/vnd.on-track.backup+sqlite",
+      },
       body: file,
     });
     if (!response.ok) {

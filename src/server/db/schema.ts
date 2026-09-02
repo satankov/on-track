@@ -1,5 +1,4 @@
 import {
-  blob,
   check,
   index,
   integer,
@@ -67,8 +66,9 @@ export const noteAttachments = sqliteTable(
       .references(() => notes.id, { onDelete: "cascade" }),
     filename: text("filename").notNull(),
     mediaType: text("media_type").notNull(),
+    storagePath: text("storage_path").notNull().unique(),
     byteSize: integer("byte_size").notNull(),
-    content: blob("content", { mode: "buffer" }).notNull(),
+    modifiedAt: integer("modified_at").notNull(),
     createdAt: integer("created_at").notNull(),
   },
   (table) => [
@@ -80,10 +80,17 @@ export const noteAttachments = sqliteTable(
       "note_attachments_media_type_length",
       sql`length(trim(${table.mediaType})) BETWEEN 1 AND 255`,
     ),
-    check("note_attachments_byte_size_positive", sql`${table.byteSize} > 0`),
     check(
-      "note_attachments_content_length",
-      sql`length(${table.content}) = ${table.byteSize}`,
+      "note_attachments_storage_path_length",
+      sql`length(${table.storagePath}) BETWEEN 1 AND 1024`,
+    ),
+    check(
+      "note_attachments_byte_size_nonnegative",
+      sql`${table.byteSize} >= 0`,
+    ),
+    check(
+      "note_attachments_modified_at_nonnegative",
+      sql`${table.modifiedAt} >= 0`,
     ),
     index("note_attachments_note_idx").on(
       table.noteId,

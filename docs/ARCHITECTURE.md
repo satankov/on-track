@@ -64,8 +64,8 @@ the local API; raw SQL and filesystem paths never cross that boundary.
 
 The migrations create `chats`, `notes`, `note_attachments`, and single-row
 `app_metadata` tables. Foreign keys and check constraints enforce ownership,
-length/accent rules, attachment metadata bounds, non-empty attachment content, and
-byte-size agreement. Indexed `(chat_id, created_at, id)` ordering makes note
+length/accent rules, unique repository-owned attachment paths, and nonnegative
+last-known byte sizes and modification times. Indexed `(chat_id, created_at, id)` ordering makes note
 history stable; chat activity is ordered using timestamps with a deterministic ID
 tie-breaker. Appending, editing, timestamp-adjusting, and deleting notes keep
 chat activity consistent with the newest remaining note in a transaction.
@@ -91,33 +91,31 @@ newer migration marker is refused rather than opened by older code. Shipped
 migrations are never edited.
 
 Startup also checks for the fixed, owner-only managed-restore journal before
-opening SQLite. The dormant restore primitive fails closed on malformed or
+opening SQLite. Restore recovery fails closed on malformed or
 ambiguous state, rolls pre-commit states back idempotently, and validates a
 committed database plus managed attachment path safety before deleting rollback
-state. Exact generated-namespace inventory validation runs before commit. Current
-transfer routes do not create this journal yet.
+state. Exact generated-namespace inventory validation runs before commit.
 
-Message attachments are stored as SQLite BLOBs in the same database as message
-metadata. The first slice caps each file at 100 MB, stores sanitized filename and
-media-type strings as display/open metadata, and serves bytes only through a
-project-, note-, and attachment-scoped route. The browser client opens fetched
-attachment bytes as a local blob URL; native app opening and in-place file
-mutation are deferred OS-integration work.
+Message attachments are owner-only files under
+`attachments/v1/<generated-namespace>/<attachment-id>/<safe-filename>`.
+SQLite stores metadata, a unique repository-owned POSIX relative path, and
+last-known size/modified time, but no attachment BLOB. Creation installs files
+before committing references; deletion commits reference removal before
+best-effort file cleanup. Project reads and scoped downloads refresh metadata
+after external edits and preserve missing, unreadable, or unsafe rows as
+recoverable DTO states. The browser still opens downloaded bytes through a blob
+URL; native app opening and in-place launch are deferred OS-integration work.
 
-The Settings workflow exports the live SQLite database through
-`better-sqlite3`'s online backup API, including attachment bytes. Import accepts
-an uploaded SQLite file, validates it as an On Track database, runs SQLite
-`quick_check`, closes the live connection, replaces the database file in the
-configured data directory, and reopens the repository against the imported file.
-Import is replacement, not merge. Export is limited to three attempts per minute
-per process; import is limited to two attempts per minute per process.
-
-The next transfer format is implemented behind unused primitives: one versioned
-SQLite `.on-track-backup` container with strict canonical-schema, integrity,
-foreign-key, count, size, hash, and attachment-inventory validation. Its staging
-primitive accepts bounded incremental input while SQLite payload access buffers
-at most one bounded attachment. The current Settings endpoints continue to use
-raw SQLite until the sidecar schema and bundle routes cut over together.
+Settings exports one versioned SQLite `.on-track-backup` container. An online
+snapshot temporarily gains reserved payload tables containing every readable
+managed file plus size, time, and SHA-256 metadata; strict canonical-schema,
+integrity, foreign-key, count, size, hash, and inventory checks run before the
+completed private file is streamed. Restore incrementally stages a bounded
+upload, rejects raw/pre-v0.0.3 SQLite and unsupported bundles, generates fresh
+managed paths, removes bundle payload tables and compacts the candidate, then
+uses the maintenance gate and restore journal to replace live state. Restore is
+replacement, not merge. Export is limited to three attempts per minute per
+process; restore is limited to two attempts per minute per process.
 
 ## Trust and security boundaries
 
@@ -149,7 +147,7 @@ be hardened before production-readiness claims.
 - Create/switch multiple projects and preserve project-specific histories.
 - Copy, edit, timestamp-adjust, and delete notes while preserving deterministic
   ordering.
-- Export a database backup and import it through Settings with validation.
+- Export and restore a versioned backup bundle through Settings with validation.
 - Attach a local file to a message, edit message attachments, filter the project
   history to messages with attached files, and open a scoped attachment.
 - Stop and restart the server against the same isolated data directory and

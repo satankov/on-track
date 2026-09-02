@@ -26,9 +26,11 @@ export interface NoteAttachment {
   filename: string;
   mediaType: string;
   byteSize: number;
+  modifiedAt: number;
   createdAt: number;
+  status: "available" | "missing" | "unreadable" | "unsafe";
 }
 
 export interface StoredNoteAttachment extends NoteAttachment {
-  content: Uint8Array;
+  storagePath: string;
 }

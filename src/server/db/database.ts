@@ -18,9 +18,18 @@ export function openDatabase(filename: string): Database.Database {
   chmodSync(filename, 0o600);
   sqlite.pragma("foreign_keys = ON");
   sqlite.pragma("busy_timeout = 5000");
-  sqlite.pragma("journal_mode = WAL");
 
   try {
+    const attachmentColumns = sqlite
+      .prepare("SELECT name FROM pragma_table_info('note_attachments')")
+      .pluck()
+      .all() as string[];
+    if (attachmentColumns.includes("content")) {
+      throw new Error(
+        "This database uses the obsolete development attachment schema. Reset local data in the On Track data directory before continuing; unreleased BLOB attachments are not migrated.",
+      );
+    }
+    sqlite.pragma("journal_mode = WAL");
     const hasMigrationTable = sqlite
       .prepare(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'",

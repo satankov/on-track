@@ -392,11 +392,11 @@ describe("personal project chat workspace", () => {
   it("opens settings as a rail mode and exports from the main workspace", async () => {
     const user = userEvent.setup();
     const api = createApi({
-      exportDatabase: vi
-        .fn()
-        .mockResolvedValue(
-          new Blob(["SQLite format 3"], { type: "application/vnd.sqlite3" }),
-        ),
+      exportDatabase: vi.fn().mockResolvedValue(
+        new Blob(["SQLite format 3"], {
+          type: "application/vnd.on-track.backup+sqlite",
+        }),
+      ),
     });
     const createObjectURL = vi.fn(() => "blob:on-track-export");
     const revokeObjectURL = vi.fn();
@@ -409,10 +409,17 @@ describe("personal project chat workspace", () => {
       screen.getByRole("navigation", { name: "Settings sections" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("heading", { name: "Database settings" }),
+      screen.getByRole("heading", { name: "Backup settings" }),
     ).toBeVisible();
     expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Export database" }));
+    expect(screen.getByLabelText("Choose On Track backup")).toHaveAttribute(
+      "accept",
+      ".on-track-backup,application/vnd.on-track.backup+sqlite",
+    );
+    expect(
+      screen.getByText(/Backups are plaintext and readable/),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Export backup" }));
 
     await waitFor(() => expect(api.exportDatabase).toHaveBeenCalled());
     expect(createObjectURL).toHaveBeenCalled();
@@ -438,7 +445,7 @@ describe("personal project chat workspace", () => {
     );
     await user.click(screen.getByRole("button", { name: /Settings/ }));
     expect(
-      screen.getByRole("heading", { name: "Database settings" }),
+      screen.getByRole("heading", { name: "Backup settings" }),
     ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Back to projects" }));
 
@@ -455,17 +462,19 @@ describe("personal project chat workspace", () => {
     render(<App api={api} />);
 
     await user.click(screen.getByRole("button", { name: /Settings/ }));
-    await user.click(screen.getByRole("button", { name: "Export database" }));
+    await user.click(screen.getByRole("button", { name: "Export backup" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Export failed");
 
     await user.upload(
-      screen.getByLabelText("Choose database backup"),
-      new File(["bad"], "bad.sqlite", { type: "application/vnd.sqlite3" }),
+      screen.getByLabelText("Choose On Track backup"),
+      new File(["bad"], "bad.on-track-backup", {
+        type: "application/vnd.on-track.backup+sqlite",
+      }),
     );
-    await user.click(screen.getByRole("button", { name: "Import database" }));
+    await user.click(screen.getByRole("button", { name: "Restore backup" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Import failed");
     expect(
-      screen.getByRole("heading", { name: "Database settings" }),
+      screen.getByRole("heading", { name: "Backup settings" }),
     ).toBeVisible();
   });
 
@@ -477,12 +486,12 @@ describe("personal project chat workspace", () => {
 
     await user.click(screen.getByRole("button", { name: /Settings/ }));
     await user.upload(
-      screen.getByLabelText("Choose database backup"),
-      new File(["SQLite format 3"], "backup.sqlite", {
-        type: "application/vnd.sqlite3",
+      screen.getByLabelText("Choose On Track backup"),
+      new File(["SQLite format 3"], "backup.on-track-backup", {
+        type: "application/vnd.on-track.backup+sqlite",
       }),
     );
-    await user.click(screen.getByRole("button", { name: "Import database" }));
+    await user.click(screen.getByRole("button", { name: "Restore backup" }));
 
     expect(api.importDatabase).not.toHaveBeenCalled();
   });
@@ -509,12 +518,12 @@ describe("personal project chat workspace", () => {
 
     await user.click(screen.getByRole("button", { name: /Settings/ }));
     await user.upload(
-      screen.getByLabelText("Choose database backup"),
-      new File(["SQLite format 3"], "backup.sqlite", {
-        type: "application/vnd.sqlite3",
+      screen.getByLabelText("Choose On Track backup"),
+      new File(["SQLite format 3"], "backup.on-track-backup", {
+        type: "application/vnd.on-track.backup+sqlite",
       }),
     );
-    await user.click(screen.getByRole("button", { name: "Import database" }));
+    await user.click(screen.getByRole("button", { name: "Restore backup" }));
 
     await waitFor(() => expect(api.importDatabase).toHaveBeenCalled());
     expect(
@@ -604,6 +613,16 @@ describe("personal project chat workspace", () => {
             byteSize: 2048,
             createdAt: 2_000,
           },
+          {
+            id: "attachment-missing",
+            noteId: "note-2",
+            filename: "missing.pdf",
+            mediaType: "application/pdf",
+            byteSize: 512,
+            modifiedAt: 2_000,
+            createdAt: 2_000,
+            status: "missing" as const,
+          },
         ],
       },
     ];
@@ -629,6 +648,10 @@ describe("personal project chat workspace", () => {
 
     expect(screen.getByText("Plain update")).toBeVisible();
     expect(screen.getByText("roadmap.pptx")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Open missing.pdf" }),
+    ).toBeDisabled();
+    expect(screen.getByText("File missing")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Files 1" }));
     expect(screen.queryByText("Plain update")).not.toBeInTheDocument();
     expect(screen.getByText("Read this deck")).toBeVisible();

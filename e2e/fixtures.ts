@@ -7,6 +7,7 @@ import { expect, test as base } from "@playwright/test";
 
 interface LocalApp {
   url: string;
+  dataDirectory: string;
   pid(): number;
   restart(): Promise<void>;
 }
@@ -78,6 +79,7 @@ export const test = base.extend<Record<string, never>, WorkerFixtures>({
       let server = await startServer(port, dataDirectory);
       const app: LocalApp = {
         url: `http://127.0.0.1:${port}`,
+        dataDirectory,
         pid: () => server.pid!,
         restart: async () => {
           await stopServer(server);

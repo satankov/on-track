@@ -1,27 +1,41 @@
 import type Database from "better-sqlite3";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
-import Sqlite from "better-sqlite3";
 import Fastify, { type FastifyInstance } from "fastify";
-import {
-  chmodSync,
-  existsSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { basename, dirname, join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { chmodSync, createReadStream, mkdtempSync, rmSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { ZodError } from "zod";
 
 import {
+  AttachmentUnavailableError,
   ChatService,
   InvalidInputError,
   ProjectNotFoundError,
+  type AttachmentStore,
 } from "./chat-service.js";
+import { ManagedAttachmentStore } from "./attachments/managed-attachment-store.js";
+import {
+  sanitizeAttachmentFilename,
+  sanitizeAttachmentMediaType,
+} from "./attachment-metadata.js";
 import { openDatabase } from "./db/database.js";
 import { SqliteChatRepository } from "./db/repository.js";
+import {
+  MaintenanceBusyError,
+  MaintenanceGate,
+} from "./database-transfer/maintenance-gate.js";
+import {
+  DEFAULT_SQLITE_BACKUP_BUNDLE_LIMITS,
+  SqliteBackupBundleValidationError,
+  createSqliteBackupBundle,
+  prepareSqliteBackupBundle,
+} from "./database-transfer/sqlite-backup-bundle.js";
+import { ManagedRestoreCoordinator } from "./database-transfer/restore-journal.js";
+import {
+  StagedUploadTooLargeError,
+  stageUpload,
+  type StagedUpload,
+} from "./database-transfer/staged-upload.js";
 import {
   MAX_ATTACHMENTS_PER_MESSAGE,
   MAX_ATTACHMENT_BYTES,
@@ -30,6 +44,11 @@ import {
 interface BuildAppOptions {
   database: Database.Database;
   databasePath?: string;
+  dataDirectory?: string;
+  attachmentStore?: AttachmentStore;
+  maintenanceGate?: MaintenanceGate;
+  exportDirectoryCleanup?: (path: string) => void;
+  stagedUploadCleanup?: (staged: StagedUpload) => void;
   idFactory?: () => string;
   clock?: () => number;
 }
@@ -53,16 +72,47 @@ function isDatabaseTransferRateLimitError(error: unknown): boolean {
 export function buildApp(options: BuildAppOptions): FastifyInstance {
   const app = Fastify({ logger: false, bodyLimit: MULTIPART_BODY_LIMIT_BYTES });
   let database = options.database;
-  let service = new ChatService(
-    new SqliteChatRepository(database),
-    options.idFactory,
-    options.clock,
-  );
+  const dataDirectory =
+    options.dataDirectory ??
+    (options.databasePath ? dirname(options.databasePath) : undefined);
+  const attachmentStore =
+    options.attachmentStore ??
+    (dataDirectory ? new ManagedAttachmentStore(dataDirectory) : undefined);
+  const maintenanceGate = options.maintenanceGate ?? new MaintenanceGate();
+  const exportDirectoryCleanup =
+    options.exportDirectoryCleanup ??
+    ((path: string) => rmSync(path, { recursive: true, force: true }));
+  const stagedUploadCleanup =
+    options.stagedUploadCleanup ?? ((staged: StagedUpload) => staged.dispose());
+  let repository = new SqliteChatRepository(database);
+  let service = createService();
+
+  function createService(): ChatService {
+    return new ChatService(
+      repository,
+      options.idFactory,
+      options.clock,
+      attachmentStore,
+    );
+  }
+
+  function reopenDatabase(databasePath: string): void {
+    database = openDatabase(databasePath);
+    repository = new SqliteChatRepository(database);
+    service = createService();
+  }
+
+  function cleanupBestEffort(operation: () => void): void {
+    try {
+      operation();
+    } catch {
+      // A completed transfer remains authoritative; private staging may orphan.
+    }
+  }
 
   app.addContentTypeParser(
-    "application/octet-stream",
-    { parseAs: "buffer" },
-    (_request, body, done) => done(null, body),
+    ["application/octet-stream", "application/vnd.on-track.backup+sqlite"],
+    (_request, payload, done) => done(null, payload),
   );
 
   void app.register(multipart, {
@@ -78,35 +128,6 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     return (
       code <= 31 || code === 127 || character === '"' || character === "\\"
     );
-  }
-
-  function stripControlCharacters(value: string): string {
-    return [...value]
-      .filter((character) => {
-        const code = character.charCodeAt(0);
-        return code > 31 && code !== 127;
-      })
-      .join("");
-  }
-
-  function sanitizeFilename(filename: string | undefined): string {
-    const value = basename(filename || "attachment")
-      .split("")
-      .map((character) =>
-        isUnsafeHeaderCharacter(character) ? "_" : character,
-      )
-      .join("")
-      .trim();
-    return value.slice(0, 255) || "attachment";
-  }
-
-  function sanitizeMediaType(mediaType: string | undefined): string {
-    const value = stripControlCharacters(
-      mediaType || "application/octet-stream",
-    )
-      .trim()
-      .slice(0, 255);
-    return value || "application/octet-stream";
   }
 
   function attachmentDispositionFilename(filename: string): string {
@@ -148,8 +169,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         if (part.type === "file") {
           const content = await part.toBuffer();
           attachments.push({
-            filename: sanitizeFilename(part.filename),
-            mediaType: sanitizeMediaType(part.mimetype),
+            filename: sanitizeAttachmentFilename(part.filename),
+            mediaType: sanitizeAttachmentMediaType(part.mimetype),
             byteSize: content.byteLength,
             content,
           });
@@ -176,91 +197,6 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       throw new InvalidInputError();
     }
     return { body, createdAt, keepAttachmentIds, attachments };
-  }
-
-  function removeDatabaseFiles(path: string): void {
-    for (const candidate of [
-      path,
-      `${path}-wal`,
-      `${path}-shm`,
-      `${path}-journal`,
-    ]) {
-      rmSync(candidate, { force: true });
-    }
-  }
-
-  function validateImportedDatabase(path: string): void {
-    const raw = new Sqlite(path, { readonly: true, fileMustExist: true });
-    try {
-      const quickCheck = raw.pragma("quick_check", {
-        simple: true,
-      }) as string;
-      if (quickCheck !== "ok") {
-        throw new Error("The selected file failed SQLite integrity checks.");
-      }
-      const chatTable = raw
-        .prepare(
-          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'chats'",
-        )
-        .pluck()
-        .get();
-      const noteTable = raw
-        .prepare(
-          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'notes'",
-        )
-        .pluck()
-        .get();
-      if (!chatTable || !noteTable) {
-        throw new Error("The selected file is not an On Track database.");
-      }
-    } finally {
-      raw.close();
-    }
-    const imported = openDatabase(path);
-    try {
-      imported.pragma("wal_checkpoint(TRUNCATE)");
-    } finally {
-      imported.close();
-    }
-  }
-
-  function replaceDatabase(importPath: string): void {
-    if (!options.databasePath) {
-      throw new Error("Database import is not available in this environment.");
-    }
-
-    const databasePath = options.databasePath;
-    const rollbackPath = join(
-      dirname(databasePath),
-      `.on-track-rollback-${randomUUID()}.sqlite`,
-    );
-    try {
-      if (database.open) {
-        database.pragma("wal_checkpoint(TRUNCATE)");
-        database.close();
-      }
-      removeDatabaseFiles(rollbackPath);
-      if (existsSync(databasePath)) renameSync(databasePath, rollbackPath);
-      removeDatabaseFiles(databasePath);
-      renameSync(importPath, databasePath);
-      database = openDatabase(databasePath);
-      service = new ChatService(
-        new SqliteChatRepository(database),
-        options.idFactory,
-        options.clock,
-      );
-      removeDatabaseFiles(rollbackPath);
-    } catch (error) {
-      removeDatabaseFiles(databasePath);
-      if (existsSync(rollbackPath)) renameSync(rollbackPath, databasePath);
-      database = openDatabase(databasePath);
-      service = new ChatService(
-        new SqliteChatRepository(database),
-        options.idFactory,
-        options.clock,
-      );
-      throw error;
-    }
   }
 
   app.addHook("onRequest", async (request, reply) => {
@@ -303,6 +239,19 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         .code(404)
         .send({ code: "not_found", message: error.message });
     }
+    if (error instanceof AttachmentUnavailableError) {
+      return reply.code(409).send({
+        code: "attachment_unavailable",
+        message: error.message,
+        status: error.status,
+      });
+    }
+    if (error instanceof MaintenanceBusyError) {
+      return reply.code(503).send({
+        code: "maintenance_busy",
+        message: error.message,
+      });
+    }
     if (isDatabaseTransferRateLimitError(error)) {
       return reply.code(429).send({
         code: "rate_limited",
@@ -317,43 +266,59 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   });
 
   app.get("/api/health", async () => ({ status: "ok" }));
-  app.get("/api/chats", async () => service.listChats());
+  app.get("/api/chats", async () =>
+    maintenanceGate.runRead(() => service.listChats()),
+  );
   app.post("/api/chats", async (request, reply) => {
-    const chat = service.createChat(request.body);
+    const chat = await maintenanceGate.runMutation(() =>
+      service.createChat(request.body),
+    );
     return reply.code(201).send(chat);
   });
   app.get<{ Params: { id: string } }>("/api/chats/:id", async (request) =>
-    service.getChat(request.params.id),
+    maintenanceGate.runMutation(() => service.getChat(request.params.id)),
   );
   app.patch<{ Params: { id: string } }>("/api/chats/:id", async (request) =>
-    service.updateChat(request.params.id, request.body),
+    maintenanceGate.runMutation(() =>
+      service.updateChat(request.params.id, request.body),
+    ),
   );
   app.delete<{ Params: { id: string } }>(
     "/api/chats/:id",
     async (request, reply) => {
-      service.deleteChat(request.params.id);
+      await maintenanceGate.runMutation(() =>
+        service.deleteChat(request.params.id),
+      );
       return reply.code(204).send();
     },
   );
   app.post<{ Params: { id: string } }>(
     "/api/chats/:id/notes",
     async (request, reply) => {
-      const note = request.isMultipart()
-        ? service.appendNoteWithAttachments(
-            request.params.id,
-            await parseMultipartNote(request),
-          )
-        : service.appendNote(request.params.id, request.body);
+      const multipart = request.isMultipart();
+      const parsed = multipart
+        ? await parseMultipartNote(request)
+        : request.body;
+      const note = await maintenanceGate.runMutation(() =>
+        multipart
+          ? service.appendNoteWithAttachments(
+              request.params.id,
+              parsed as Awaited<ReturnType<typeof parseMultipartNote>>,
+            )
+          : service.appendNote(request.params.id, parsed),
+      );
       return reply.code(201).send(note);
     },
   );
   app.get<{ Params: { id: string; noteId: string; attachmentId: string } }>(
     "/api/chats/:id/notes/:noteId/attachments/:attachmentId",
     async (request, reply) => {
-      const attachment = service.getAttachment(
-        request.params.id,
-        request.params.noteId,
-        request.params.attachmentId,
+      const { attachment, content } = await maintenanceGate.runMutation(() =>
+        service.downloadAttachment(
+          request.params.id,
+          request.params.noteId,
+          request.params.attachmentId,
+        ),
       );
       return reply
         .header("Content-Type", attachment.mediaType)
@@ -361,28 +326,37 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
           "Content-Disposition",
           `attachment; filename="${attachmentDispositionFilename(attachment.filename)}"`,
         )
-        .send(Buffer.from(attachment.content));
+        .send(content);
     },
   );
   app.patch<{ Params: { id: string; noteId: string } }>(
     "/api/chats/:id/notes/:noteId",
-    async (request) =>
-      request.isMultipart()
-        ? service.updateNoteWithAttachments(
-            request.params.id,
-            request.params.noteId,
-            await parseMultipartNote(request),
-          )
-        : service.updateNote(
-            request.params.id,
-            request.params.noteId,
-            request.body,
-          ),
+    async (request) => {
+      const multipart = request.isMultipart();
+      const parsed = multipart
+        ? await parseMultipartNote(request)
+        : request.body;
+      return maintenanceGate.runMutation(() =>
+        multipart
+          ? service.updateNoteWithAttachments(
+              request.params.id,
+              request.params.noteId,
+              parsed as Awaited<ReturnType<typeof parseMultipartNote>>,
+            )
+          : service.updateNote(
+              request.params.id,
+              request.params.noteId,
+              parsed,
+            ),
+      );
+    },
   );
   app.delete<{ Params: { id: string; noteId: string } }>(
     "/api/chats/:id/notes/:noteId",
     async (request, reply) => {
-      service.deleteNote(request.params.id, request.params.noteId);
+      await maintenanceGate.runMutation(() =>
+        service.deleteNote(request.params.id, request.params.noteId),
+      );
       return reply.code(204).send();
     },
   );
@@ -408,28 +382,39 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         },
       },
       async (_request, reply) => {
-        if (!options.databasePath) {
+        if (!options.databasePath || !dataDirectory || !attachmentStore) {
           return reply.code(501).send({
             code: "unavailable",
             message: "Database export is unavailable.",
           });
         }
-        const exportPath = join(
-          dirname(options.databasePath),
-          `.on-track-export-${randomUUID()}.sqlite`,
+        const exportDirectory = mkdtempSync(
+          join(dataDirectory, ".on-track-export-"),
         );
+        chmodSync(exportDirectory, 0o700);
+        const exportPath = join(exportDirectory, "backup.on-track-backup");
         try {
-          await database.backup(exportPath);
-          const backup = readFileSync(exportPath);
+          await maintenanceGate.runExport(() =>
+            createSqliteBackupBundle({
+              sourceDatabase: database,
+              destinationPath: exportPath,
+              attachmentStore,
+            }),
+          );
+          const backup = createReadStream(exportPath);
+          backup.once("close", () =>
+            cleanupBestEffort(() => exportDirectoryCleanup(exportDirectory)),
+          );
           return reply
-            .header("Content-Type", "application/vnd.sqlite3")
+            .header("Content-Type", "application/vnd.on-track.backup+sqlite")
             .header(
               "Content-Disposition",
-              `attachment; filename="on-track-${new Date().toISOString().slice(0, 10)}.sqlite"`,
+              `attachment; filename="on-track-${new Date().toISOString().slice(0, 10)}.on-track-backup"`,
             )
             .send(backup);
-        } finally {
-          removeDatabaseFiles(exportPath);
+        } catch (error) {
+          cleanupBestEffort(() => exportDirectoryCleanup(exportDirectory));
+          throw error;
         }
       },
     );
@@ -445,37 +430,71 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         },
       },
       async (request, reply) => {
-        if (!options.databasePath) {
+        if (!options.databasePath || !dataDirectory || !attachmentStore) {
           return reply.code(501).send({
             code: "unavailable",
             message: "Database import is unavailable.",
           });
         }
-        if (!Buffer.isBuffer(request.body) || request.body.length === 0) {
-          return reply.code(400).send({
-            code: "invalid_database",
-            message: "Choose a non-empty On Track database backup.",
-          });
-        }
-
-        const importPath = join(
-          dirname(options.databasePath),
-          `.on-track-import-${randomUUID()}.sqlite`,
-        );
+        let staged: Awaited<ReturnType<typeof stageUpload>> | undefined;
         try {
-          writeFileSync(importPath, request.body, { mode: 0o600 });
-          chmodSync(importPath, 0o600);
-          validateImportedDatabase(importPath);
-          replaceDatabase(importPath);
-          removeDatabaseFiles(importPath);
-          return reply.code(204).send();
-        } catch {
-          removeDatabaseFiles(importPath);
-          return reply.code(400).send({
-            code: "invalid_database",
-            message:
-              "The selected file is not a valid On Track database backup.",
+          staged = await stageUpload(
+            dataDirectory,
+            request.body as AsyncIterable<Uint8Array>,
+            {
+              maximumBytes:
+                DEFAULT_SQLITE_BACKUP_BUNDLE_LIMITS.maximumBundleBytes,
+            },
+          );
+          if (staged.byteSize === 0) {
+            throw new SqliteBackupBundleValidationError(
+              "Choose a non-empty On Track backup bundle.",
+            );
+          }
+          await maintenanceGate.runRestore(() => {
+            const oldStoragePaths = repository.listAllAttachmentStoragePaths();
+            const coordinator = new ManagedRestoreCoordinator({
+              dataDirectory,
+              databasePath: options.databasePath!,
+              closeDatabase: () => {
+                database.pragma("wal_checkpoint(TRUNCATE)");
+                database.close();
+              },
+              openDatabase: reopenDatabase,
+            });
+            const workspace = coordinator.createWorkspace();
+            prepareSqliteBackupBundle({
+              bundlePath: staged!.filePath,
+              workspace,
+            });
+            coordinator.activate(workspace.restoreId);
+            for (const storagePath of oldStoragePaths) {
+              try {
+                attachmentStore.remove(storagePath);
+              } catch {
+                // The restore is committed; old-sidecar cleanup is best effort.
+              }
+            }
           });
+          return reply.code(204).send();
+        } catch (error) {
+          if (
+            error instanceof SqliteBackupBundleValidationError ||
+            error instanceof StagedUploadTooLargeError ||
+            error instanceof TypeError
+          ) {
+            return reply.code(400).send({
+              code: "invalid_backup",
+              message:
+                "The selected file is not a valid supported On Track backup bundle.",
+            });
+          }
+          throw error;
+        } finally {
+          const stagedToCleanup = staged;
+          if (stagedToCleanup) {
+            cleanupBestEffort(() => stagedUploadCleanup(stagedToCleanup));
+          }
         }
       },
     );
