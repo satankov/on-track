@@ -5,11 +5,14 @@ import fastifyStatic from "@fastify/static";
 
 import { buildApp } from "./app.js";
 import { resolveDataDirectory } from "./data-directory.js";
-import { openDatabase } from "./db/database.js";
+import { openDatabaseAfterRestoreRecovery } from "./startup-database.js";
 
 const dataDirectory = resolveDataDirectory();
 const databasePath = join(dataDirectory, "on-track.sqlite");
-const database = openDatabase(databasePath);
+const database = openDatabaseAfterRestoreRecovery({
+  dataDirectory,
+  databasePath,
+});
 const app = buildApp({ database, databasePath });
 const clientRoot = resolve(process.cwd(), "dist/client");
 

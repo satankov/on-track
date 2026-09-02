@@ -90,6 +90,13 @@ Migrations are applied at startup. A database with a newer schema version or a
 newer migration marker is refused rather than opened by older code. Shipped
 migrations are never edited.
 
+Startup also checks for the fixed, owner-only managed-restore journal before
+opening SQLite. The dormant restore primitive fails closed on malformed or
+ambiguous state, rolls pre-commit states back idempotently, and validates a
+committed database plus managed attachment path safety before deleting rollback
+state. Exact generated-namespace inventory validation runs before commit. Current
+transfer routes do not create this journal yet.
+
 Message attachments are stored as SQLite BLOBs in the same database as message
 metadata. The first slice caps each file at 100 MB, stores sanitized filename and
 media-type strings as display/open metadata, and serves bytes only through a
@@ -104,6 +111,13 @@ an uploaded SQLite file, validates it as an On Track database, runs SQLite
 configured data directory, and reopens the repository against the imported file.
 Import is replacement, not merge. Export is limited to three attempts per minute
 per process; import is limited to two attempts per minute per process.
+
+The next transfer format is implemented behind unused primitives: one versioned
+SQLite `.on-track-backup` container with strict canonical-schema, integrity,
+foreign-key, count, size, hash, and attachment-inventory validation. Its staging
+primitive accepts bounded incremental input while SQLite payload access buffers
+at most one bounded attachment. The current Settings endpoints continue to use
+raw SQLite until the sidecar schema and bundle routes cut over together.
 
 ## Trust and security boundaries
 

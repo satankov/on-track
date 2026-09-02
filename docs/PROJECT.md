@@ -15,14 +15,17 @@ but does not yet fulfill the encryption or recovery parts of that promise.
 ## Current phase
 
 Version 0.0.2 is tagged on the current `main` history as the next plaintext alpha
-source release under Apache License 2.0. The active development branch is
-building the future v0.0.3 attachment and history-filter slice.
+source release under Apache License 2.0. The active development branch contains
+the future v0.0.3 attachment/history-filter slice and is replacing its unreleased
+SQLite BLOB storage with managed mutable attachment sidecars.
 
 ## Current objective
 
-Commit the v0.0.3 attachment/file-filter slice, then design managed mutable
-attachments early while storage architecture is still cheap to change. Backups
-remain readable until encryption is designed.
+Complete the approved managed-attachment plan for v0.0.3. The storage kernel and
+single-file bundle/recovery primitives are implemented; the next slice is the
+release-safe sidecar and Settings backup/import cutover, followed by native
+Open/Show in Folder actions and cross-platform E2E verification. Backups remain
+readable until encryption is designed.
 
 ## v0.0.1 outcome
 
@@ -67,12 +70,14 @@ remain readable until encryption is designed.
 
 ## Near-term priorities
 
-1. Harden backup, restore, integrity checking, recovery, and conflict-free import
-   semantics before users entrust irreplaceable data to the application.
-2. Design the encryption threat model, unlock and recovery experience, encrypted
+1. Complete managed mutable attachments: activate sidecar persistence and the
+   versioned single-file backup/import bundle, then add safe native actions and
+   cross-platform verification.
+2. Continue hardening backup, restore, integrity checking, recovery, and
+   conflict-free import semantics before users entrust irreplaceable data to the
+   application.
+3. Design the encryption threat model, unlock and recovery experience, encrypted
    database/sidecar/attachment handling, and plaintext migration.
-3. Design native mutable attachment opening, richer previews, lifecycle
-   controls, and import/security hardening beyond the first SQLite BLOB slice.
 4. Add a broad built-in label vocabulary—such as TODO, open question, decision,
    risk, and meeting note—and convenient history filtering.
 5. Evaluate native desktop packaging once the storage and key lifecycle are
