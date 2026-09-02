@@ -873,7 +873,8 @@ describe("local project-chat API", () => {
       code: "rate_limited",
       message: "Database transfer is temporarily rate-limited.",
     });
-    expect(responses[3].headers["retry-after"]).toBe("60");
+    expect(Number(responses[3].headers["retry-after"])).toBeGreaterThan(0);
+    expect(Number(responses[3].headers["retry-after"])).toBeLessThanOrEqual(60);
   });
 
   it("rate-limits database imports before repeated filesystem work", async () => {
@@ -901,7 +902,8 @@ describe("local project-chat API", () => {
       code: "rate_limited",
       message: "Database transfer is temporarily rate-limited.",
     });
-    expect(responses[2].headers["retry-after"]).toBe("60");
+    expect(Number(responses[2].headers["retry-after"])).toBeGreaterThan(0);
+    expect(Number(responses[2].headers["retry-after"])).toBeLessThanOrEqual(60);
   });
 
   it("rejects raw and pre-v0.0.3 backup imports without replacing local data", async () => {

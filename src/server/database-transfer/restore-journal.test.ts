@@ -159,8 +159,10 @@ describe("ManagedRestoreCoordinator", () => {
         `.on-track-rollback-${restoreId}.sqlite`,
       ),
     });
-    expect(statSync(workspace.stagingDirectory).mode & 0o777).toBe(0o700);
-    expect(statSync(workspace.stagedNamespacePath).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32") {
+      expect(statSync(workspace.stagingDirectory).mode & 0o777).toBe(0o700);
+      expect(statSync(workspace.stagedNamespacePath).mode & 0o777).toBe(0o700);
+    }
 
     expect(() => coordinator.createWorkspace()).toThrow(/already exists/i);
   });
@@ -256,7 +258,7 @@ describe("ManagedRestoreCoordinator", () => {
     expect(() => coordinator.activate(restoreId)).toThrow("stop");
 
     expect(journal).toEqual({ version: 1, restoreId, state: "prepared" });
-    expect(mode).toBe(0o600);
+    if (process.platform !== "win32") expect(mode).toBe(0o600);
   });
 
   it("does not overwrite or delete a colliding journal staging file", () => {
