@@ -291,6 +291,92 @@ describe("personal project chat workspace", () => {
     expect(composer).toHaveValue("");
   });
 
+  it("resizes the composer for multiline drafts and edit-prefilled messages", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const note = {
+      id: "note-1",
+      chatId: "chat-1",
+      body: "First line\nSecond line\nThird line\nFourth line",
+      createdAt: 2,
+    };
+    let simulatedScrollHeight: number | undefined;
+    const scrollHeight = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "scrollHeight",
+    );
+    Object.defineProperty(HTMLTextAreaElement.prototype, "scrollHeight", {
+      configurable: true,
+      get() {
+        return (
+          simulatedScrollHeight ?? 48 + (this.value.split("\n").length - 1) * 24
+        );
+      },
+    });
+
+    try {
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+      });
+      render(<App api={api} />);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Open Delivery" }),
+      );
+      const composer = screen.getByLabelText("Add a note");
+      expect(composer).toHaveStyle({ height: "48px" });
+
+      await user.type(composer, "One{enter}Two{enter}Three");
+      expect(composer).toHaveStyle({ height: "96px" });
+
+      await user.clear(composer);
+      expect(composer).toHaveStyle({ height: "48px" });
+
+      await user.type(
+        composer,
+        "One{enter}Two{enter}Three{enter}Four{enter}Five{enter}Six",
+      );
+      expect(composer).toHaveStyle({
+        height: "144px",
+        overflowY: "auto",
+      });
+
+      simulatedScrollHeight = 72;
+      window.dispatchEvent(new Event("resize"));
+      expect(composer).toHaveStyle({ height: "72px", overflowY: "hidden" });
+      simulatedScrollHeight = undefined;
+      await user.clear(composer);
+
+      const noteItem = screen.getByRole("article").closest("li")!;
+      await user.click(
+        within(noteItem).getByRole("button", { name: "Edit message" }),
+      );
+      expect(screen.getByRole("textbox", { name: "Edit message" })).toHaveStyle(
+        { height: "120px" },
+      );
+
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.getByLabelText("Add a note")).toHaveStyle({
+        height: "48px",
+      });
+    } finally {
+      if (scrollHeight) {
+        Object.defineProperty(
+          HTMLTextAreaElement.prototype,
+          "scrollHeight",
+          scrollHeight,
+        );
+      }
+    }
+  });
+
   it("sends a new message with an optional composer timestamp", async () => {
     const user = userEvent.setup();
     const chat = {
@@ -425,6 +511,70 @@ describe("personal project chat workspace", () => {
 
     await waitFor(() => expect(api.exportDatabase).toHaveBeenCalled());
     expect(createObjectURL).toHaveBeenCalled();
+  });
+
+  it("switches and persists appearance themes from preview radio cards", async () => {
+    const user = userEvent.setup();
+    const themeColor = document.createElement("meta");
+    themeColor.name = "theme-color";
+    document.head.append(themeColor);
+    localStorage.clear();
+    delete document.documentElement.dataset.theme;
+    document.documentElement.style.colorScheme = "";
+    const view = render(<App api={createApi()} />);
+
+    try {
+      await user.click(screen.getByRole("button", { name: /Settings/ }));
+      expect(
+        screen.getByRole("heading", { name: "Backup settings" }),
+      ).toBeVisible();
+
+      await user.click(screen.getByRole("button", { name: /Appearance/ }));
+      expect(screen.getByRole("heading", { name: "Appearance" })).toBeVisible();
+      expect(screen.getByRole("radio", { name: /Light/ })).toBeChecked();
+      expect(screen.getAllByTestId("theme-preview")).toHaveLength(3);
+
+      await user.click(screen.getByRole("radio", { name: /Neutral/ }));
+      expect(document.documentElement).toHaveAttribute("data-theme", "neutral");
+      expect(document.documentElement.style.colorScheme).toBe("dark");
+      expect(themeColor).toHaveAttribute("content", "#30343a");
+      expect(localStorage.getItem("on-track-theme")).toBe("neutral");
+      expect(screen.getByText("Selected", { selector: "small" })).toBeVisible();
+
+      await user.click(screen.getByRole("button", { name: /Backups/ }));
+      expect(
+        screen.getByRole("heading", { name: "Backup settings" }),
+      ).toBeVisible();
+    } finally {
+      view.unmount();
+      themeColor.remove();
+      localStorage.clear();
+      delete document.documentElement.dataset.theme;
+      document.documentElement.style.colorScheme = "";
+    }
+  });
+
+  it("restores a stored theme and falls back from invalid appearance values", () => {
+    const themeColor = document.createElement("meta");
+    themeColor.name = "theme-color";
+    document.head.append(themeColor);
+    localStorage.setItem("on-track-theme", "dark");
+    const darkView = render(<App api={createApi()} />);
+
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+    darkView.unmount();
+
+    localStorage.setItem("on-track-theme", "unsupported-theme");
+    const fallbackView = render(<App api={createApi()} />);
+    expect(document.documentElement).toHaveAttribute("data-theme", "light");
+    expect(document.documentElement.style.colorScheme).toBe("light");
+
+    fallbackView.unmount();
+    themeColor.remove();
+    localStorage.clear();
+    delete document.documentElement.dataset.theme;
+    document.documentElement.style.colorScheme = "";
   });
 
   it("returns from settings to projects without losing the active project", async () => {

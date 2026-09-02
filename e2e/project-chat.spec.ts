@@ -138,15 +138,23 @@ test("creates, customizes, records, and reopens a private project thread", async
     const composer = document.querySelector(".composer")!;
     return {
       bubbleRight: bubble.getBoundingClientRect().right,
+      bubbleLeft: bubble.getBoundingClientRect().left,
       actionsTop: actions.getBoundingClientRect().top,
+      actionsRight: actions.getBoundingClientRect().right,
       bubbleBottom: bubble.getBoundingClientRect().bottom,
       editRight: editButton.getBoundingClientRect().right,
       composerRight: composer.getBoundingClientRect().right,
     };
   });
-  expect(messageLayout.actionsTop).toBeGreaterThanOrEqual(
-    messageLayout.bubbleBottom,
-  );
+  if (testInfo.project.name === "mobile-webkit") {
+    expect(messageLayout.actionsTop).toBeGreaterThanOrEqual(
+      messageLayout.bubbleBottom,
+    );
+  } else {
+    expect(messageLayout.actionsRight).toBeLessThanOrEqual(
+      messageLayout.bubbleLeft,
+    );
+  }
   expect(messageLayout.bubbleRight).toBeCloseTo(messageLayout.composerRight, 0);
   expect(messageLayout.editRight).toBeCloseTo(messageLayout.composerRight, 0);
 
@@ -185,6 +193,188 @@ test("creates, customizes, records, and reopens a private project thread", async
     fullPage: true,
   });
   expect([...unexpectedHosts]).toEqual([]);
+});
+
+test("uses compact desktop chrome and an auto-growing composer", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chromium");
+
+  const project = await createProject(request, localApp.url, {
+    title: "Desktop visual density",
+    accent: "ocean",
+  });
+  await addNote(request, localApp.url, project.id, "A representative note.");
+
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  await expect(page.locator(".composer-wrap")).toBeVisible();
+
+  const geometry = await page.evaluate(() => {
+    const box = (selector: string): Box => {
+      const rect = document.querySelector(selector)!.getBoundingClientRect();
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        height: rect.height,
+        left: rect.left,
+        right: rect.right,
+        width: rect.width,
+      };
+    };
+    return {
+      header: box(".chat-header"),
+      filters: box(".history-filter"),
+      history: box(".history"),
+      composer: box(".composer-wrap"),
+    };
+  });
+
+  expect(geometry.header.height).toBeLessThanOrEqual(64);
+  expect(geometry.composer.height).toBeLessThanOrEqual(72);
+  expect(geometry.history.height).toBeGreaterThanOrEqual(672);
+  expect(geometry.filters.top).toBeCloseTo(geometry.history.top, 0);
+  expect(geometry.filters.bottom).toBeCloseTo(geometry.history.bottom, 0);
+  expect(geometry.filters.right).toBeLessThanOrEqual(geometry.history.left + 1);
+
+  const composer = page.getByLabel("Add a note");
+  await composer.fill("One line");
+  const oneLineHeight = await composer.evaluate(
+    (element) => element.getBoundingClientRect().height,
+  );
+  await composer.fill("One\nTwo\nThree\nFour\nFive");
+  const multilineHeight = await composer.evaluate(
+    (element) => element.getBoundingClientRect().height,
+  );
+  expect(multilineHeight).toBeGreaterThan(oneLineHeight);
+
+  await composer.fill("One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight");
+  await expect(composer).toHaveCSS("overflow-y", "auto");
+  const cappedHeight = await composer.evaluate(
+    (element) => element.getBoundingClientRect().height,
+  );
+  expect(cappedHeight).toBeLessThanOrEqual(144);
+
+  await composer.fill("");
+  const clearedHeight = await composer.evaluate(
+    (element) => element.getBoundingClientRect().height,
+  );
+  expect(clearedHeight).toBeCloseTo(oneLineHeight, 0);
+
+  await page.setViewportSize({ width: 1920, height: 900 });
+  const wideAlignment = await page.evaluate(() => {
+    const right = (selector: string) =>
+      document.querySelector(selector)!.getBoundingClientRect().right;
+    return {
+      bubble: right(".message-bubble"),
+      edit: right(".edit-project-button"),
+      composer: right(".composer"),
+    };
+  });
+  expect(wideAlignment.bubble).toBeCloseTo(wideAlignment.composer, 0);
+  expect(wideAlignment.edit).toBeCloseTo(wideAlignment.composer, 0);
+
+  await composer.fill(
+    "This note remains on one line in a wide workspace but should wrap after the desktop window becomes narrower.",
+  );
+  const wideComposerHeight = await composer.evaluate(
+    (element) => element.getBoundingClientRect().height,
+  );
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await expect
+    .poll(() =>
+      composer.evaluate((element) => element.getBoundingClientRect().height),
+    )
+    .toBeGreaterThan(wideComposerHeight);
+});
+
+test("switches and persists appearance themes from visual previews", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chromium");
+
+  const project = await createProject(request, localApp.url, {
+    title: "Theme review project",
+    accent: "ocean",
+  });
+  await addNote(
+    request,
+    localApp.url,
+    project.id,
+    "**Decision**\n\nKeep the reading surface quiet in every theme.",
+  );
+
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  await page.getByRole("button", { name: /Settings/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Backup settings" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /Appearance/ }).click();
+
+  const previews = page.getByTestId("theme-preview");
+  await expect(previews).toHaveCount(3);
+  const previewBox = await previews.first().boundingBox();
+  expect(previewBox?.width).toBeGreaterThan(220);
+  expect(previewBox?.height).toBeGreaterThan(120);
+  await expect(page.getByRole("radio", { name: /Light/ })).toBeChecked();
+
+  await page.getByRole("radio", { name: /Neutral/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "neutral");
+  await expect(page.getByRole("radio", { name: /Neutral/ })).toBeChecked();
+  expect(
+    await page.locator('meta[name="theme-color"]').getAttribute("content"),
+  ).toBe("#30343a");
+
+  await page.getByRole("button", { name: "Back to projects" }).click();
+  await expect(
+    page.getByRole("heading", { name: project.title }),
+  ).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "neutral");
+
+  await page.getByRole("button", { name: /Settings/ }).click();
+  await expect(page.getByRole("heading", { name: "Appearance" })).toBeVisible();
+  await page.getByRole("radio", { name: /Dark/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  await page.getByRole("button", { name: /Settings/ }).click();
+  await page.getByRole("button", { name: /Appearance/ }).click();
+  await expect(page.getByRole("radio", { name: /Dark/ })).toBeChecked();
+
+  for (const viewport of [
+    { width: 1024, height: 768 },
+    { width: 1920, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const overflow = await page.evaluate(() => ({
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+    }));
+    expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.viewportWidth);
+  }
+
+  // A 640 CSS-pixel viewport exercises the same reflow pressure as a
+  // 1280-pixel desktop window viewed at 200% zoom.
+  await page.setViewportSize({ width: 640, height: 720 });
+  await expect(page.getByRole("button", { name: /Appearance/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Backups/ })).toBeVisible();
+  await expect(page.getByRole("radio", { name: /Dark/ })).toBeVisible();
+  const zoomedOverflow = await page.evaluate(() => ({
+    documentWidth: document.documentElement.scrollWidth,
+    viewportWidth: window.innerWidth,
+  }));
+  expect(zoomedOverflow.documentWidth).toBeLessThanOrEqual(
+    zoomedOverflow.viewportWidth,
+  );
+
+  await page.getByRole("radio", { name: /Light/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 });
 
 test("manages markdown messages and database backups from the UI", async ({

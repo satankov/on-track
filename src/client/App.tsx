@@ -14,6 +14,13 @@ import remarkGfm from "remark-gfm";
 import type { Chat, ChatDetail, Note } from "../domain/types.js";
 import { ACCENTS, type Accent } from "../domain/validation.js";
 import { apiClient, type ApiClient } from "./api.js";
+import {
+  applyTheme,
+  persistTheme,
+  readStoredTheme,
+  THEMES,
+  type Theme,
+} from "./theme.js";
 
 const ACCENT_NAMES: Record<Accent, string> = {
   coral: "Coral",
@@ -61,6 +68,13 @@ function errorMessage(caught: unknown, fallback: string): string {
 
 function hasAttachments(note: Note): boolean {
   return (note.attachments?.length ?? 0) > 0;
+}
+
+function resizeComposerTextarea(textarea: HTMLTextAreaElement): void {
+  textarea.style.height = "0px";
+  const scrollHeight = textarea.scrollHeight;
+  textarea.style.height = `${Math.max(48, Math.min(scrollHeight, 144))}px`;
+  textarea.style.overflowY = scrollHeight > 144 ? "auto" : "hidden";
 }
 
 function formatFileSize(byteSize: number): string {
@@ -418,7 +432,7 @@ function ProjectRail({
     >
       <header className="rail-header">
         <div>
-          <p className="brand-mark">ON TRACK</p>
+          <p className="brand-mark">On Track</p>
           <p className="brand-subtitle">Private project threads</p>
         </div>
         <button
@@ -428,7 +442,7 @@ function ProjectRail({
           disabled={navigationDisabled}
           aria-label="New project"
         >
-          <span aria-hidden="true">+</span>
+          <PlusIcon />
         </button>
       </header>
 
@@ -460,7 +474,7 @@ function ProjectRail({
               </small>
             </span>
             <span className="project-arrow" aria-hidden="true">
-              ↗
+              <ChevronRightIcon />
             </span>
           </button>
         ))}
@@ -546,7 +560,17 @@ function EmptyWorkspace({
   );
 }
 
-function SettingsRail({ onBack }: { onBack: () => void }) {
+type SettingsSection = "appearance" | "backups";
+
+function SettingsRail({
+  activeSection,
+  onBack,
+  onSelect,
+}: {
+  activeSection: SettingsSection;
+  onBack: () => void;
+  onSelect: (section: SettingsSection) => void;
+}) {
   return (
     <aside className="project-rail settings-rail">
       <header className="rail-header settings-rail-header">
@@ -565,9 +589,30 @@ function SettingsRail({ onBack }: { onBack: () => void }) {
       </header>
       <nav aria-label="Settings sections" className="settings-section-list">
         <button
-          className="settings-section-item settings-section-item--active"
+          className={`settings-section-item ${
+            activeSection === "appearance"
+              ? "settings-section-item--active"
+              : ""
+          }`}
           type="button"
-          aria-current="page"
+          aria-current={activeSection === "appearance" ? "page" : undefined}
+          onClick={() => onSelect("appearance")}
+        >
+          <span className="settings-section-icon" aria-hidden="true">
+            <AppearanceIcon />
+          </span>
+          <span>
+            <strong>Appearance</strong>
+            <small>Theme and contrast</small>
+          </span>
+        </button>
+        <button
+          className={`settings-section-item ${
+            activeSection === "backups" ? "settings-section-item--active" : ""
+          }`}
+          type="button"
+          aria-current={activeSection === "backups" ? "page" : undefined}
+          onClick={() => onSelect("backups")}
         >
           <span className="settings-section-icon" aria-hidden="true">
             <DatabaseIcon />
@@ -582,7 +627,99 @@ function SettingsRail({ onBack }: { onBack: () => void }) {
   );
 }
 
-function SettingsWorkspace({
+const THEME_NAMES: Record<Theme, string> = {
+  light: "Light",
+  neutral: "Neutral",
+  dark: "Dark",
+};
+
+const THEME_DESCRIPTIONS: Record<Theme, string> = {
+  light: "Clear daylight",
+  neutral: "Soft graphite",
+  dark: "Low-light focus",
+};
+
+function AppearanceSettingsWorkspace({
+  theme,
+  onThemeChange,
+}: {
+  theme: Theme;
+  onThemeChange: (theme: Theme) => void;
+}) {
+  return (
+    <main className="workspace settings-workspace appearance-workspace">
+      <header className="settings-workspace-header">
+        <p className="eyebrow">Personalization</p>
+        <h1>Appearance</h1>
+      </header>
+      <section
+        className="settings-panel appearance-panel"
+        aria-labelledby="theme-choice"
+      >
+        <div className="settings-panel-copy">
+          <h2 id="theme-choice">Choose a theme</h2>
+          <p>
+            Pick the lighting that makes project notes easiest to read. Layout
+            and project color identity stay the same.
+          </p>
+        </div>
+        <fieldset className="theme-fieldset">
+          <legend>Theme</legend>
+          <div className="theme-options">
+            {THEMES.map((value) => {
+              const selected = theme === value;
+              return (
+                <label
+                  className="theme-option"
+                  data-preview-theme={value}
+                  key={value}
+                >
+                  <input
+                    type="radio"
+                    name="appearance-theme"
+                    value={value}
+                    checked={selected}
+                    onChange={() => onThemeChange(value)}
+                  />
+                  <span
+                    className="theme-preview"
+                    data-testid="theme-preview"
+                    aria-hidden="true"
+                  >
+                    <span className="theme-preview-rail">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                    <span className="theme-preview-workspace">
+                      <i className="theme-preview-header" />
+                      <span className="theme-preview-history">
+                        <i />
+                        <i />
+                      </span>
+                      <i className="theme-preview-composer" />
+                    </span>
+                  </span>
+                  <span className="theme-option-copy">
+                    <strong>{THEME_NAMES[value]}</strong>
+                    <small>
+                      {selected ? "Selected" : THEME_DESCRIPTIONS[value]}
+                    </small>
+                  </span>
+                  <span className="theme-option-check" aria-hidden="true">
+                    <CheckIcon />
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+      </section>
+    </main>
+  );
+}
+
+function BackupSettingsWorkspace({
   onExport,
   onImport,
 }: {
@@ -707,10 +844,52 @@ function SettingsIcon() {
   );
 }
 
+function AppearanceIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 3v2" />
+      <path d="M12 19v2" />
+      <path d="m4.22 4.22 1.42 1.42" />
+      <path d="m18.36 18.36 1.42 1.42" />
+      <path d="M3 12h2" />
+      <path d="M19 12h2" />
+      <path d="m4.22 19.78 1.42-1.42" />
+      <path d="m18.36 5.64 1.42-1.42" />
+      <circle cx="12" cy="12" r="4" />
+    </svg>
+  );
+}
+
 function ArrowLeftIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="m15 18-6-6 6-6" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="m9 6 6 6-6 6" />
+    </svg>
+  );
+}
+
+function SendIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="m4 12 16-8-5 16-3-6Z" />
+      <path d="m12 14 3-3" />
     </svg>
   );
 }
@@ -992,6 +1171,7 @@ function ChatWorkspace({
   navigationDisabled: boolean;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentCount = detail.notes.filter(hasAttachments).length;
   const visibleNotes =
     historyFilter === "attachments"
@@ -1003,6 +1183,38 @@ function ChatWorkspace({
     editingNote?.attachments?.filter((attachment) =>
       editingAttachmentIds.includes(attachment.id),
     ) ?? [];
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    resizeComposerTextarea(textarea);
+  }, [draft]);
+
+  useEffect(() => {
+    const resize = () => {
+      const textarea = textareaRef.current;
+      if (textarea) resizeComposerTextarea(textarea);
+    };
+    const textarea = textareaRef.current;
+    let observedWidth = textarea?.clientWidth ?? 0;
+    const observer =
+      textarea && typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver((entries) => {
+            const nextWidth = entries[0]?.contentRect.width ?? 0;
+            if (nextWidth === observedWidth) return;
+            observedWidth = nextWidth;
+            resizeComposerTextarea(textarea);
+          })
+        : undefined;
+    if (textarea) observer?.observe(textarea);
+    window.addEventListener("resize", resize);
+    window.visualViewport?.addEventListener("resize", resize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", resize);
+      window.visualViewport?.removeEventListener("resize", resize);
+    };
+  }, []);
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -1023,7 +1235,7 @@ function ChatWorkspace({
             disabled={navigationDisabled}
             aria-label="Back to projects"
           >
-            ←
+            <ArrowLeftIcon />
           </button>
           <div className="chat-heading">
             <p className="eyebrow">Project thread</p>
@@ -1034,7 +1246,8 @@ function ChatWorkspace({
             type="button"
             onClick={onCustomize}
           >
-            Edit
+            <EditIcon />
+            <span>Edit</span>
           </button>
         </div>
       </header>
@@ -1193,17 +1406,6 @@ function ChatWorkspace({
               ))}
             </div>
           )}
-          <textarea
-            data-composer-textarea
-            aria-label={editingNote ? "Edit message" : "Add a note"}
-            placeholder={
-              editingNote ? "Edit this message…" : "Add a note to this project…"
-            }
-            value={draft}
-            maxLength={10_000}
-            onChange={(event) => onDraftChange(event.target.value)}
-            onKeyDown={handleKeyDown}
-          />
           {timestampOpen && (
             <div className="composer-timestamp-row">
               <label className="field-label" htmlFor="composer-timestamp">
@@ -1218,73 +1420,100 @@ function ChatWorkspace({
               />
             </div>
           )}
-          <div className="composer-bar">
-            <span>
-              <kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd> to add
-            </span>
-            <div className="composer-tools">
-              <input
-                ref={fileInputRef}
-                className="visually-hidden-file"
-                type="file"
-                multiple
-                aria-label="Attach files"
-                onChange={(event) => {
-                  onFilesSelected(Array.from(event.target.files ?? []));
-                  event.target.value = "";
-                }}
-              />
+          <div className="composer-input-row">
+            <textarea
+              ref={textareaRef}
+              data-composer-textarea
+              aria-label={editingNote ? "Edit message" : "Add a note"}
+              placeholder={
+                editingNote
+                  ? "Edit this message…"
+                  : "Add a note to this project…"
+              }
+              value={draft}
+              maxLength={10_000}
+              onChange={(event) => onDraftChange(event.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+            <div className="composer-bar">
+              <span>
+                <kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd>
+              </span>
+              <div className="composer-tools">
+                <input
+                  ref={fileInputRef}
+                  className="visually-hidden-file"
+                  type="file"
+                  multiple
+                  aria-label="Attach files"
+                  onChange={(event) => {
+                    onFilesSelected(Array.from(event.target.files ?? []));
+                    event.target.value = "";
+                  }}
+                />
+                <button
+                  className="composer-icon-button"
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  aria-label="Open file picker"
+                  title="Attach files"
+                >
+                  <PaperclipIcon />
+                </button>
+                <button
+                  className="composer-icon-button"
+                  type="button"
+                  onClick={onToggleTimestamp}
+                  aria-label={
+                    timestampOpen ? "Hide timestamp" : "Choose timestamp"
+                  }
+                  aria-expanded={timestampOpen}
+                  title={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
+                >
+                  <ClockIcon />
+                </button>
+              </div>
+              {editingNote && (
+                <button
+                  className="composer-cancel-button"
+                  type="button"
+                  onClick={onCancelEditNote}
+                >
+                  Cancel
+                </button>
+              )}
               <button
-                className="composer-icon-button"
+                className="send-button"
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                aria-label="Open file picker"
-                title="Attach files"
-              >
-                <PaperclipIcon />
-              </button>
-              <button
-                className="composer-icon-button"
-                type="button"
-                onClick={onToggleTimestamp}
+                onClick={onSubmit}
                 aria-label={
-                  timestampOpen ? "Hide timestamp" : "Choose timestamp"
+                  saving
+                    ? editingNote
+                      ? "Saving message"
+                      : "Adding note"
+                    : editingNote
+                      ? "Save"
+                      : "Add note"
                 }
-                aria-expanded={timestampOpen}
-                title={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
+                disabled={
+                  saving ||
+                  (!draft.trim() &&
+                    pendingFiles.length === 0 &&
+                    editingAttachments.length === 0)
+                }
               >
-                <ClockIcon />
+                <span>
+                  {saving
+                    ? editingNote
+                      ? "Saving…"
+                      : "Adding…"
+                    : editingNote
+                      ? "Save"
+                      : "Add"}
+                </span>
+                <SendIcon />
               </button>
             </div>
-            {editingNote && (
-              <button
-                className="composer-cancel-button"
-                type="button"
-                onClick={onCancelEditNote}
-              >
-                Cancel
-              </button>
-            )}
-            <button
-              className="send-button"
-              type="button"
-              onClick={onSubmit}
-              disabled={
-                saving ||
-                (!draft.trim() &&
-                  pendingFiles.length === 0 &&
-                  editingAttachments.length === 0)
-              }
-            >
-              {saving
-                ? editingNote
-                  ? "Saving…"
-                  : "Adding…"
-                : editingNote
-                  ? "Save"
-                  : "Add note"}{" "}
-              <span aria-hidden="true">↑</span>
-            </button>
           </div>
         </div>
       </footer>
@@ -1302,6 +1531,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [mode, setMode] = useState<"projects" | "settings" | "projectEdit">(
     "projects",
   );
+  const [settingsSection, setSettingsSection] =
+    useState<SettingsSection>("backups");
+  const [theme, setTheme] = useState<Theme>(() => readStoredTheme());
   const [editingNote, setEditingNote] = useState<Note>();
   const [editingAttachmentIds, setEditingAttachmentIds] = useState<string[]>(
     [],
@@ -1320,6 +1552,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const activeMutationGeneration = useRef(0);
   const activeId = useRef<string | undefined>(undefined);
   const copyResetTimer = useRef<number | undefined>(undefined);
+
+  useLayoutEffect(() => {
+    applyTheme(theme);
+    persistTheme(theme);
+  }, [theme]);
 
   useEffect(() => {
     activeId.current = active?.id;
@@ -1717,7 +1954,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   return (
     <div className="app-shell">
       {mode === "settings" ? (
-        <SettingsRail onBack={() => setMode("projects")} />
+        <SettingsRail
+          activeSection={settingsSection}
+          onBack={() => setMode("projects")}
+          onSelect={setSettingsSection}
+        />
       ) : (
         <ProjectRail
           chats={chats}
@@ -1734,10 +1975,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         </p>
       )}
       {mode === "settings" ? (
-        <SettingsWorkspace
-          onExport={exportDatabase}
-          onImport={importDatabase}
-        />
+        settingsSection === "appearance" ? (
+          <AppearanceSettingsWorkspace theme={theme} onThemeChange={setTheme} />
+        ) : (
+          <BackupSettingsWorkspace
+            onExport={exportDatabase}
+            onImport={importDatabase}
+          />
+        )
       ) : mode === "projectEdit" && active ? (
         <ProjectEditWorkspace
           chat={active}

@@ -46,7 +46,9 @@ Local browser -> loopback Fastify server -> application service -> repository ->
 ## Components and dependency direction
 
 - `src/client`: React workspace, styles, and typed API client. It never imports
-  server or database modules.
+  server or database modules. A closed Light/Neutral/Dark theme preference is
+  validated in the client and stored in browser-local storage; a same-origin
+  bootstrap script applies it before React mounts to avoid a theme flash.
 - `src/domain`: shared data contracts and validation rules with no UI or
   persistence dependency.
 - `src/server/app.ts`: Fastify transport, boundary controls, safe error mapping,
@@ -161,6 +163,9 @@ be hardened before production-readiness claims.
 - Copy, edit, timestamp-adjust, and delete notes while preserving deterministic
   ordering.
 - Export and restore a versioned backup bundle through Settings with validation.
+- Choose Light, Neutral, or Dark from accessible preview radios in Appearance,
+  reload without a theme flash, and keep project data and backups independent
+  from the browser-local preference.
 - Attach a local file to a message, edit message attachments, filter the project
   history to messages with attached files, and use separate eligible Open and
   Show in Folder actions.

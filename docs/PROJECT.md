@@ -86,6 +86,8 @@ verification remains before the managed-attachment plan is complete.
 - Copy, edit, timestamp-adjust, and delete notes.
 - Export and restore one versioned `.on-track-backup` bundle containing the
   metadata database and all readable attachment files.
+- Choose Light, Neutral, or Dark appearance from large previews in Settings;
+  the browser-local preference applies immediately and persists across reloads.
 - Persist state across browser and server restarts.
 - Use a responsive, accessible browser interface served from a local process.
 
