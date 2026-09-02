@@ -844,7 +844,18 @@ describe("personal project chat workspace", () => {
     expect(
       screen.getByText(/Native file actions are not supported/),
     ).toBeVisible();
-    expect(screen.getByText(/2 KB · Modified/)).toBeVisible();
+    const attachmentMetadata = screen.getByText(/^2 KB ·/);
+    expect(attachmentMetadata).not.toHaveTextContent("Modified");
+    expect(attachmentMetadata).toHaveAttribute(
+      "title",
+      expect.stringMatching(/^Modified /),
+    );
+    expect(
+      screen.getByRole("button", { name: "Open roadmap.pptx" }),
+    ).toContainHTML("<svg");
+    expect(
+      screen.getByRole("button", { name: "Show roadmap.pptx in Folder" }),
+    ).toContainHTML("<svg");
     expect(
       screen.getByText("roadmap.pptx").closest(".attachment-card")?.tagName,
     ).toBe("DIV");
@@ -916,7 +927,10 @@ describe("personal project chat workspace", () => {
     await user.click(screen.getByRole("button", { name: "Open roadmap.pptx" }));
     expect(
       screen.getByRole("button", { name: "Open roadmap.pptx" }),
-    ).toHaveTextContent("Opening…");
+    ).toHaveAttribute("aria-busy", "true");
+    expect(
+      screen.getByRole("button", { name: "Open roadmap.pptx" }),
+    ).toHaveTextContent("…");
     await act(async () =>
       openRequest.reject(new Error("Default application is busy.")),
     );
@@ -987,7 +1001,7 @@ describe("personal project chat workspace", () => {
     await user.type(screen.getByLabelText("Add a note"), "Keep this draft");
     act(() => window.dispatchEvent(new Event("focus")));
 
-    expect(await screen.findByText(/3 KB · Modified/)).toBeVisible();
+    expect(await screen.findByText(/^3 KB ·/)).toBeVisible();
     expect(screen.getByLabelText("Add a note")).toHaveValue("Keep this draft");
   });
 

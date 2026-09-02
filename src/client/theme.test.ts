@@ -35,6 +35,26 @@ function contrastRatio(foreground: string, background: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+function mixHex(
+  foreground: string,
+  background: string,
+  weight: number,
+): string {
+  const colors = [foreground, background].map((hex) =>
+    [0, 2, 4].map((offset) =>
+      Number.parseInt(hex.slice(offset, offset + 2), 16),
+    ),
+  );
+
+  return colors[0]!
+    .map((channel, index) =>
+      Math.round(channel * weight + colors[1]![index]! * (1 - weight))
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("");
+}
+
 function readColorToken(stylesheet: string, token: string): string {
   const match = stylesheet.match(
     new RegExp(`--${token}:\\s*#([0-9a-f]{6})`, "i"),
@@ -187,6 +207,12 @@ describe("appearance theme contract", () => {
       "field",
       "code-inline",
       "code-block",
+      "attachment-ink",
+      "attachment-muted",
+      "attachment-warning",
+      "attachment-critical",
+      "message-muted",
+      "message-link",
       "ink",
       "muted",
       "line",
@@ -266,5 +292,159 @@ describe("appearance theme contract", () => {
         ).toBeGreaterThanOrEqual(3);
       }
     }
+  });
+
+  it.each(THEMES)("keeps structural dividers quiet in %s", (theme) => {
+    for (const background of ["paper", "history", "rail"]) {
+      expect(
+        contrastRatio(
+          readThemeToken(theme, "line"),
+          readThemeToken(theme, background),
+        ),
+        `--line against --${background} in ${theme}`,
+      ).toBeLessThanOrEqual(1.35);
+    }
+  });
+
+  it("uses soft geometry and a united attachment surface", () => {
+    const filterRule = stylesheet.match(
+      /\.history-filter\s*\{(?<body>[^}]+)\}/,
+    );
+    const bubbleRule = stylesheet.match(
+      /\.message-bubble\s*\{(?<body>[^}]+)\}/,
+    );
+    const attachmentListRule = stylesheet.match(
+      /\.attachment-list\s*\{(?<body>[^}]+)\}/,
+    );
+    const attachmentCardRule = stylesheet.match(
+      /\.attachment-card\s*\{(?<body>[^}]+)\}/,
+    );
+
+    expect(filterRule?.groups?.body).not.toContain("border-right");
+    expect(bubbleRule?.groups?.body).toContain(
+      "border-radius: 14px 14px 5px 14px",
+    );
+    expect(attachmentListRule?.groups?.body).toContain(
+      "background: var(--attachment-surface)",
+    );
+    expect(attachmentCardRule?.groups?.body).toContain("border: 0");
+  });
+
+  it("keeps the composer and rail icon controls visually quiet at rest", () => {
+    for (const selector of [
+      "\\.composer",
+      "\\.new-project-button",
+      "\\.settings-icon-button,\\s*\\.settings-back-button",
+    ]) {
+      const rule = stylesheet.match(
+        new RegExp(`${selector}\\s*\\{(?<body>[^}]+)\\}`),
+      );
+      expect(rule?.groups?.body).toContain(
+        "border: 1px solid var(--line-strong)",
+      );
+      expect(rule?.groups?.body).not.toContain("var(--control-border)");
+    }
+  });
+
+  it("gives Light messages a clearer project-colored surface", () => {
+    const root = themeBlock("light");
+    const bubbleRule = stylesheet.match(
+      /\.message-bubble\s*\{(?<body>[^}]+)\}/,
+    );
+
+    expect(root).toContain("--message-accent-strength: 36%");
+    expect(bubbleRule?.groups?.body).toContain(
+      "var(--accent) var(--message-accent-strength)",
+    );
+
+    for (const accent of ACCENTS) {
+      const bubble = mixHex(
+        readThemeToken("light", accent),
+        readThemeToken("light", "paper"),
+        0.36,
+      );
+      expect(
+        contrastRatio(bubble, readThemeToken("light", "history")),
+        `Light --${accent} message against --history`,
+      ).toBeGreaterThanOrEqual(1.45);
+
+      for (const foreground of ["ink", "message-muted", "message-link"]) {
+        expect(
+          contrastRatio(readThemeToken("light", foreground), bubble),
+          `Light --${foreground} on --${accent} message`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+
+    expect(stylesheet).toMatch(
+      /\.message-bubble \.note-body blockquote\s*\{[^}]*color:\s*var\(--message-muted\)/s,
+    );
+    expect(stylesheet).toMatch(
+      /\.message-bubble \.note-body a\s*\{[^}]*color:\s*var\(--message-link\)/s,
+    );
+    expect(stylesheet).toMatch(
+      /\.message-time\s*\{[^}]*color:\s*var\(--message-muted\)/s,
+    );
+  });
+
+  it.each(THEMES)(
+    "keeps project-colored attachment insets readable in %s",
+    (theme) => {
+      for (const accent of ACCENTS) {
+        const surface = `attachment-${accent}`;
+        expect(readThemeToken(theme, surface)).toMatch(/^[0-9a-f]{6}$/i);
+        for (const foreground of [
+          "attachment-ink",
+          "attachment-muted",
+          "attachment-warning",
+          "attachment-critical",
+        ]) {
+          expect(
+            contrastRatio(
+              readThemeToken(theme, foreground),
+              readThemeToken(theme, surface),
+            ),
+            `--${foreground} on --${surface} in ${theme}`,
+          ).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    },
+  );
+
+  it.each(ACCENTS)(
+    "maps the %s project accent to its attachment surface",
+    (accent) => {
+      const rule = stylesheet.match(
+        new RegExp(`\\[data-accent="${accent}"\\]\\s*\\{(?<body>[^}]+)\\}`),
+      );
+      expect(rule?.groups?.body).toContain(
+        `--attachment-surface: var(--attachment-${accent})`,
+      );
+    },
+  );
+
+  it("keeps attachment focus and forced-color grouping explicit", () => {
+    const focusRule = stylesheet.match(
+      /\.attachment-action:focus-visible\s*\{(?<body>[^}]+)\}/,
+    );
+    const forcedColors = stylesheet.match(
+      /@media \(forced-colors: active\)\s*\{(?<body>[\s\S]+)\}\s*$/,
+    );
+
+    expect(focusRule?.groups?.body).toContain(
+      "outline: 2px solid var(--attachment-ink)",
+    );
+    expect(forcedColors?.groups?.body).toMatch(
+      /\.message-bubble,\s*\.attachment-list\s*\{[^}]*border: 1px solid CanvasText/s,
+    );
+  });
+
+  it("gives the quiet new-project control clear hover feedback", () => {
+    const hoverRule = stylesheet.match(
+      /\.new-project-button:hover\s*\{(?<body>[^}]+)\}/,
+    );
+
+    expect(hoverRule?.groups?.body).toContain("background: var(--selection)");
+    expect(hoverRule?.groups?.body).toContain("color: var(--focus)");
   });
 });

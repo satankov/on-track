@@ -90,6 +90,15 @@ function formatAttachmentModified(timestamp: number): string {
   }).format(new Date(timestamp));
 }
 
+function formatAttachmentModifiedCompact(timestamp: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
+}
+
 function fileTypeLabel(filename: string, mediaType: string): string {
   const extension = filename.includes(".")
     ? filename.split(".").pop()?.toUpperCase()
@@ -968,6 +977,24 @@ function XIcon() {
   );
 }
 
+function OpenFileIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M14 4h6v6" />
+      <path d="m20 4-9 9" />
+      <path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" />
+    </svg>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+    </svg>
+  );
+}
+
 function MessageActionButton({
   label,
   children,
@@ -1053,6 +1080,7 @@ function AttachmentList({
                 : undefined;
         const openBusy = busyAction === `${attachment.id}:open`;
         const revealBusy = busyAction === `${attachment.id}:reveal`;
+        const modifiedAt = attachment.modifiedAt ?? attachment.createdAt;
         return (
           <div className="attachment-card" key={attachment.id}>
             <span className="attachment-type" aria-hidden="true">
@@ -1063,6 +1091,11 @@ function AttachmentList({
               <small
                 id={reasonId}
                 className={reason ? "attachment-status--warning" : undefined}
+                title={
+                  reason
+                    ? undefined
+                    : `Modified ${formatAttachmentModified(modifiedAt)}`
+                }
               >
                 {reason ? (
                   <>
@@ -1070,7 +1103,7 @@ function AttachmentList({
                     {reason}
                   </>
                 ) : (
-                  `${formatFileSize(attachment.byteSize)} · Modified ${formatAttachmentModified(attachment.modifiedAt ?? attachment.createdAt)}`
+                  `${formatFileSize(attachment.byteSize)} · ${formatAttachmentModifiedCompact(modifiedAt)}`
                 )}
               </small>
             </span>
@@ -1079,22 +1112,44 @@ function AttachmentList({
                 type="button"
                 className="button button-primary attachment-action"
                 aria-label={`Open ${attachment.filename}`}
+                aria-busy={openBusy}
+                title="Open"
                 aria-describedby={reason ? reasonId : undefined}
                 disabled={openCapability !== "available" || Boolean(busyAction)}
                 onClick={() => void runAction(attachment.id, "open")}
               >
-                {openBusy ? "Opening…" : "Open"}
+                {openBusy ? (
+                  <span
+                    className="attachment-action-progress"
+                    aria-hidden="true"
+                  >
+                    …
+                  </span>
+                ) : (
+                  <OpenFileIcon />
+                )}
               </button>
               <button
                 type="button"
                 className="button button-quiet attachment-action"
                 aria-label={`Show ${attachment.filename} in Folder`}
+                aria-busy={revealBusy}
+                title="Show in Folder"
                 disabled={
                   revealCapability !== "available" || Boolean(busyAction)
                 }
                 onClick={() => void runAction(attachment.id, "reveal")}
               >
-                {revealBusy ? "Showing…" : "Show in Folder"}
+                {revealBusy ? (
+                  <span
+                    className="attachment-action-progress"
+                    aria-hidden="true"
+                  >
+                    …
+                  </span>
+                ) : (
+                  <FolderIcon />
+                )}
               </button>
             </span>
           </div>
