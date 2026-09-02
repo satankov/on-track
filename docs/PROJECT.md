@@ -9,24 +9,24 @@ chat-like stream: the user writes to their own project, not to a team.
 
 The long-term product promise is user ownership. It should run locally, avoid
 third-party data services, and eventually protect copied local data well enough
-for confidential work. Version 0.0.3 adds managed mutable attachments and
+for confidential work. Version 0.0.3 added managed mutable attachments and
 complete versioned backups, but does not yet fulfill the encryption or hardened
 recovery parts of that promise.
 
 ## Current phase
 
-Version 0.0.3 is prepared as the next plaintext alpha source release under Apache
-License 2.0. It adds managed mutable attachment sidecars, complete versioned
-backup/restore, history filtering, and guarded native file actions to the
-local-only browser/server architecture.
+Version 0.0.3 is the current published plaintext alpha source release under
+Apache License 2.0. Development on `release/v0.0.4` adds a desktop-first flat
+workspace, a compact auto-growing composer, and browser-local Light, Neutral,
+and Dark appearance themes without changing the local data model.
 
 ## Current objective
 
-Release v0.0.3 without relaxing its plaintext and portability warnings. Managed
-sidecars, versioned backup/restore, native Open/Show in Folder, and fake-adapter
-external-edit/restart coverage are implemented. The project owner reported the
-native flow working on one current macOS host. Windows and Linux desktop smoke
-verification remains before the managed-attachment plan is complete.
+Prepare the visual and appearance work for the next alpha while retaining the
+v0.0.3 plaintext and portability warnings. The desktop workspace now gives notes
+more room, keeps filters vertical, and uses flatter surfaces; Settings offers
+three persisted theme previews. Mobile remains a regression-protected alpha,
+not a dedicated design target.
 
 ## v0.0.1 outcome
 
@@ -56,7 +56,7 @@ verification remains before the managed-attachment plan is complete.
 - Database transfer endpoints are rate-limited as defense in depth around local
   filesystem and database work.
 
-## v0.0.3 release-candidate outcome
+## v0.0.3 outcome
 
 - Attachment bytes live in repository-owned sidecars while SQLite retains stable
   identity and metadata without content BLOBs.
@@ -93,9 +93,8 @@ verification remains before the managed-attachment plan is complete.
 
 ## Near-term priorities
 
-1. Complete v0.0.3 managed attachments by manually smoke-testing the implemented
-   Open/Show in Folder adapters on Windows and a Linux desktop, then run the
-   release-candidate verification.
+1. Prepare the current desktop visual refresh and appearance themes for the next
+   alpha release without expanding the feature or persistence scope.
 2. Continue hardening backup, restore, integrity checking, recovery, and
    conflict-free import semantics before users entrust irreplaceable data to the
    application.
@@ -137,6 +136,7 @@ The public repository and release are:
 - [GitHub repository](https://github.com/satankov/on-track)
 - [v0.0.1 release](https://github.com/satankov/on-track/releases/tag/v0.0.1)
 - [v0.0.2 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.2)
+- [v0.0.3 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.3)
 - [Issues](https://github.com/satankov/on-track/issues)
 
 GitHub Issues is the intended backlog and ownership tracker. The near-term
@@ -151,8 +151,8 @@ priorities above still need tracker records. Durable decisions live in
   histories.
 - Source installation requires Node.js 24 and a native SQLite dependency. The
   latest published release commit passed Linux CI plus native SQLite install/test
-  coverage on Linux, macOS, and Windows; the v0.0.3 candidate must pass the same
-  gates after commit, and future dependency upgrades can still affect portability.
+  coverage on Linux, macOS, and Windows; the next candidate must pass the same
+  gates, and future dependency upgrades can still affect portability.
 - Native command construction is tested for macOS, Windows, and Linux, but real
   OS dispatch has been manually reported only on one macOS host. Windows and
   Linux desktop integration remains unverified.

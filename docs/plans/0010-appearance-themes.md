@@ -261,5 +261,23 @@ Approved and implemented on 2026-09-02. The delivered slice uses three semantic
 token maps, a validated browser-local preference, a pre-React same-origin
 bootstrap, and native radio preview cards. Component and browser tests cover
 selection, invalid-value fallback, persistence, metadata, contrast, responsive
-reflow, and the existing Backups entry point. Final repository-wide verification
-is recorded in the delivery response for this task.
+reflow, and the existing Backups entry point.
+
+The subsequent approved visual refinement quieted structural borders, increased
+Light message separation, rounded message bubbles, and consolidated attachment
+rows into compact accent-derived inset surfaces. Attachment metadata and native
+actions use shorter labels and inline icons. Theme contracts cover all six
+project accents, message foreground contrast, attachment text/status contrast,
+keyboard focus, and forced-colors grouping.
+
+- Final focused client coverage: 77 tests passed.
+- Final repository gate: `npm run verify` passed with 355 tests passed and 1
+  skipped, 10 browser tests passed and 2 intentional mobile skips, plus build,
+  typecheck, lint, format, migration, release-contract, and production audit
+  checks.
+- Coverage remained above the configured threshold at 89.67% statements and
+  91.39% lines.
+- Independent review reported no remaining actionable findings after the
+  message and attachment contrast corrections.
+- The production audit still reports the known moderate Fastify advisories; the
+  high-severity gate passes.

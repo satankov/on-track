@@ -2,8 +2,11 @@
 
 ## Status
 
-Implemented for the v0.0.3 plaintext alpha release candidate. The core decisions
-are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
+The v0.0.3 plaintext alpha is the published baseline. The current
+`release/v0.0.4` work changes only the client presentation and browser-local
+appearance preference; server, API, database, attachment, and backup boundaries
+remain unchanged. The core decisions are recorded in
+[ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
 encryption limitation in [ADR-0002](adr/0002-defer-at-rest-encryption.md),
 source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the
 current license in [ADR-0005](adr/0005-apache-2-license.md). Managed mutable
