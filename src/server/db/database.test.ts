@@ -123,6 +123,70 @@ describe("SQLite project-chat persistence", () => {
     });
   });
 
+  it("persists project label settings and scoped multi-label messages", () => {
+    const chat = repository.createChat({
+      id: "chat-a",
+      title: "Alpha",
+      accent: "coral",
+      now: 100,
+    });
+    repository.createChat({
+      id: "chat-b",
+      title: "Beta",
+      accent: "moss",
+      now: 150,
+    });
+    repository.appendNote({
+      id: "note-a",
+      chatId: "chat-a",
+      body: "Ship the plan",
+      now: 200,
+    });
+
+    expect(chat.enabledLabels).toEqual(["todo", "milestone"]);
+    expect(repository.setNoteLabel("chat-a", "note-a", "pin", true)).toEqual([
+      "pin",
+    ]);
+    expect(repository.setNoteLabel("chat-a", "note-a", "todo", true)).toEqual([
+      "pin",
+      "todo",
+    ]);
+    expect(repository.listNotes("chat-a")[0].labels).toEqual(["pin", "todo"]);
+    expect(repository.getChat("chat-a")?.updatedAt).toBe(200);
+
+    expect(repository.setNoteLabel("chat-b", "note-a", "pin", true)).toBe(
+      undefined,
+    );
+    expect(repository.setNoteLabel("chat-a", "note-a", "risk", true)).toBe(
+      null,
+    );
+
+    expect(
+      repository.updateChat("chat-a", {
+        enabledLabels: ["risk"],
+        now: 300,
+      })?.enabledLabels,
+    ).toEqual(["risk"]);
+    expect(repository.listNotes("chat-a")[0].labels).toEqual(["pin", "todo"]);
+    expect(repository.setNoteLabel("chat-a", "note-a", "todo", false)).toEqual([
+      "pin",
+    ]);
+
+    repository.deleteNote("chat-a", "note-a");
+    expect(
+      database.prepare("SELECT count(*) FROM note_labels").pluck().get(),
+    ).toBe(0);
+    repository.deleteChat("chat-a");
+    expect(
+      database
+        .prepare(
+          "SELECT count(*) FROM chat_enabled_labels WHERE chat_id = 'chat-a'",
+        )
+        .pluck()
+        .get(),
+    ).toBe(0);
+  });
+
   it("appends notes in deterministic order and advances chat activity atomically", () => {
     repository.createChat({
       id: "chat-a",

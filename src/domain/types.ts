@@ -1,9 +1,10 @@
-import type { Accent } from "./validation.js";
+import type { Accent, ConfigurableLabel, Label } from "./validation.js";
 
 export interface Chat {
   id: string;
   title: string;
   accent: Accent;
+  enabledLabels: ConfigurableLabel[];
   createdAt: number;
   updatedAt: number;
 }
@@ -13,6 +14,7 @@ export interface Note {
   chatId: string;
   body: string;
   createdAt: number;
+  labels: Label[];
   attachments?: NoteAttachment[];
 }
 

@@ -6,7 +6,15 @@ import type {
   NoteAttachment,
   StoredNoteAttachment,
 } from "../../domain/types.js";
-import type { Accent } from "../../domain/validation.js";
+import {
+  CONFIGURABLE_LABELS,
+  DEFAULT_ENABLED_LABELS,
+  LABELS,
+  PERMANENT_LABELS,
+  type Accent,
+  type ConfigurableLabel,
+  type Label,
+} from "../../domain/validation.js";
 
 interface ChatRow {
   id: string;
@@ -34,11 +42,12 @@ interface NoteAttachmentRow {
   created_at: number;
 }
 
-function toChat(row: ChatRow): Chat {
+function toChat(row: ChatRow, enabledLabels: ConfigurableLabel[] = []): Chat {
   return {
     id: row.id,
     title: row.title,
     accent: row.accent,
+    enabledLabels,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -64,12 +73,17 @@ function toStoredAttachment(row: NoteAttachmentRow): StoredNoteAttachment {
   };
 }
 
-function toNote(row: NoteRow, attachments: NoteAttachment[] = []): Note {
+function toNote(
+  row: NoteRow,
+  attachments: NoteAttachment[] = [],
+  labels: Label[] = [],
+): Note {
   return {
     id: row.id,
     chatId: row.chat_id,
     body: row.body,
     createdAt: row.created_at,
+    labels,
     attachments,
   };
 }
@@ -83,12 +97,21 @@ export class SqliteChatRepository {
     accent: Accent;
     now: number;
   }): Chat {
-    this.database
-      .prepare(
-        `INSERT INTO chats (id, title, accent, created_at, updated_at)
-         VALUES (@id, @title, @accent, @now, @now)`,
-      )
-      .run(input);
+    const create = this.database.transaction(() => {
+      this.database
+        .prepare(
+          `INSERT INTO chats (id, title, accent, created_at, updated_at)
+           VALUES (@id, @title, @accent, @now, @now)`,
+        )
+        .run(input);
+      const insertLabel = this.database.prepare(
+        `INSERT INTO chat_enabled_labels (chat_id, label) VALUES (?, ?)`,
+      );
+      for (const label of DEFAULT_ENABLED_LABELS) {
+        insertLabel.run(input.id, label);
+      }
+    });
+    create();
 
     return this.getChat(input.id)!;
   }
@@ -97,36 +120,57 @@ export class SqliteChatRepository {
     const rows = this.database
       .prepare("SELECT * FROM chats ORDER BY updated_at DESC, id ASC")
       .all() as ChatRow[];
-    return rows.map(toChat);
+    const labelsByChat = this.listEnabledLabelsForChats(
+      rows.map((row) => row.id),
+    );
+    return rows.map((row) => toChat(row, labelsByChat.get(row.id) ?? []));
   }
 
   getChat(id: string): Chat | undefined {
     const row = this.database
       .prepare("SELECT * FROM chats WHERE id = ?")
       .get(id) as ChatRow | undefined;
-    return row ? toChat(row) : undefined;
+    return row ? toChat(row, this.listEnabledLabels(id)) : undefined;
   }
 
   updateChat(
     id: string,
-    input: { title?: string; accent?: Accent; now: number },
+    input: {
+      title?: string;
+      accent?: Accent;
+      enabledLabels?: ConfigurableLabel[];
+      now: number;
+    },
   ): Chat | undefined {
-    const result = this.database
-      .prepare(
-        `UPDATE chats
-         SET title = COALESCE(@title, title),
-             accent = COALESCE(@accent, accent),
-             updated_at = @now
-         WHERE id = @id`,
-      )
-      .run({
-        id,
-        title: input.title ?? null,
-        accent: input.accent ?? null,
-        now: input.now,
-      });
+    const update = this.database.transaction(() => {
+      const result = this.database
+        .prepare(
+          `UPDATE chats
+           SET title = COALESCE(@title, title),
+               accent = COALESCE(@accent, accent),
+               updated_at = @now
+           WHERE id = @id`,
+        )
+        .run({
+          id,
+          title: input.title ?? null,
+          accent: input.accent ?? null,
+          now: input.now,
+        });
+      if (result.changes === 0) return false;
+      if (input.enabledLabels !== undefined) {
+        this.database
+          .prepare("DELETE FROM chat_enabled_labels WHERE chat_id = ?")
+          .run(id);
+        const insertLabel = this.database.prepare(
+          "INSERT INTO chat_enabled_labels (chat_id, label) VALUES (?, ?)",
+        );
+        for (const label of input.enabledLabels) insertLabel.run(id, label);
+      }
+      return true;
+    });
 
-    return result.changes === 0 ? undefined : this.getChat(id);
+    return update() ? this.getChat(id) : undefined;
   }
 
   deleteChat(id: string): { deleted: boolean; storagePaths: string[] } {
@@ -200,7 +244,9 @@ export class SqliteChatRepository {
     });
 
     const row = append();
-    return row ? toNote(row, this.listAttachments(row.id)) : undefined;
+    return row
+      ? toNote(row, this.listAttachments(row.id), this.listNoteLabels(row.id))
+      : undefined;
   }
 
   listNotes(chatId: string): Note[] {
@@ -234,9 +280,11 @@ export class SqliteChatRepository {
       current.push(toStoredAttachment(row));
       attachmentsByNote.set(row.note_id, current);
     }
+    const labelsByNote = this.listLabelsForNotes(rows.map((row) => row.id));
     return rows.map((row) => ({
       ...toNote(row),
       attachments: attachmentsByNote.get(row.id) ?? [],
+      labels: labelsByNote.get(row.id) ?? [],
     }));
   }
 
@@ -331,7 +379,11 @@ export class SqliteChatRepository {
     const result = update();
     return result
       ? {
-          note: toNote(result.row, this.listAttachments(result.row.id)),
+          note: toNote(
+            result.row,
+            this.listAttachments(result.row.id),
+            this.listNoteLabels(result.row.id),
+          ),
           removedStoragePaths: result.removedStoragePaths,
         }
       : undefined;
@@ -354,6 +406,45 @@ export class SqliteChatRepository {
     });
 
     return remove();
+  }
+
+  setNoteLabel(
+    chatId: string,
+    noteId: string,
+    label: Label,
+    applied: boolean,
+  ): Label[] | null | undefined {
+    const change = this.database.transaction(() => {
+      const noteExists = this.database
+        .prepare("SELECT 1 FROM notes WHERE id = ? AND chat_id = ?")
+        .pluck()
+        .get(noteId, chatId);
+      if (!noteExists) return undefined;
+
+      if (applied && !PERMANENT_LABELS.includes(label as never)) {
+        const enabled = this.database
+          .prepare(
+            "SELECT 1 FROM chat_enabled_labels WHERE chat_id = ? AND label = ?",
+          )
+          .pluck()
+          .get(chatId, label);
+        if (!enabled) return null;
+      }
+
+      if (applied) {
+        this.database
+          .prepare(
+            "INSERT OR IGNORE INTO note_labels (note_id, label) VALUES (?, ?)",
+          )
+          .run(noteId, label);
+      } else {
+        this.database
+          .prepare("DELETE FROM note_labels WHERE note_id = ? AND label = ?")
+          .run(noteId, label);
+      }
+      return this.listNoteLabels(noteId);
+    });
+    return change();
   }
 
   private refreshChatActivity(chatId: string, fallbackNow?: number): void {
@@ -436,5 +527,59 @@ export class SqliteChatRepository {
       )
       .all(noteId) as NoteAttachmentRow[];
     return rows.map(toStoredAttachment);
+  }
+
+  private listEnabledLabels(chatId: string): ConfigurableLabel[] {
+    return this.listEnabledLabelsForChats([chatId]).get(chatId) ?? [];
+  }
+
+  private listEnabledLabelsForChats(
+    chatIds: string[],
+  ): Map<string, ConfigurableLabel[]> {
+    const result = new Map<string, ConfigurableLabel[]>();
+    if (chatIds.length === 0) return result;
+    const placeholders = chatIds.map(() => "?").join(", ");
+    const rows = this.database
+      .prepare(
+        `SELECT chat_id, label FROM chat_enabled_labels
+         WHERE chat_id IN (${placeholders})`,
+      )
+      .all(...chatIds) as Array<{ chat_id: string; label: ConfigurableLabel }>;
+    for (const chatId of chatIds) {
+      const selected = new Set(
+        rows.filter((row) => row.chat_id === chatId).map((row) => row.label),
+      );
+      result.set(
+        chatId,
+        CONFIGURABLE_LABELS.filter((label) => selected.has(label)),
+      );
+    }
+    return result;
+  }
+
+  private listNoteLabels(noteId: string): Label[] {
+    return this.listLabelsForNotes([noteId]).get(noteId) ?? [];
+  }
+
+  private listLabelsForNotes(noteIds: string[]): Map<string, Label[]> {
+    const result = new Map<string, Label[]>();
+    if (noteIds.length === 0) return result;
+    const placeholders = noteIds.map(() => "?").join(", ");
+    const rows = this.database
+      .prepare(
+        `SELECT note_id, label FROM note_labels
+         WHERE note_id IN (${placeholders})`,
+      )
+      .all(...noteIds) as Array<{ note_id: string; label: Label }>;
+    for (const noteId of noteIds) {
+      const selected = new Set(
+        rows.filter((row) => row.note_id === noteId).map((row) => row.label),
+      );
+      result.set(
+        noteId,
+        LABELS.filter((label) => selected.has(label)),
+      );
+    }
+    return result;
   }
 }

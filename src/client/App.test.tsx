@@ -25,6 +25,7 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
       id: "chat-1",
       title: "Launch",
       accent: "coral",
+      enabledLabels: ["todo", "milestone"],
       createdAt: 1,
       updatedAt: 1,
     }),
@@ -33,6 +34,7 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
     appendNote: vi.fn(),
     updateNote: vi.fn(),
     deleteNote: vi.fn(),
+    setNoteLabel: vi.fn(),
     downloadAttachment: vi.fn(),
     openAttachment: vi.fn(),
     revealAttachment: vi.fn(),
@@ -173,10 +175,283 @@ describe("personal project chat workspace", () => {
     expect(api.updateChat).toHaveBeenCalledWith("chat-1", {
       title: "Research",
       accent: "iris",
+      enabledLabels: ["todo", "milestone"],
     });
     expect(
       await screen.findByRole("heading", { name: "Research" }),
     ).toBeVisible();
+  });
+
+  it("configures only project labels and preserves their catalog order", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Discovery",
+      accent: "moss" as const,
+      enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      updateChat: vi.fn().mockResolvedValue({
+        ...chat,
+        enabledLabels: ["todo", "decision", "milestone"],
+      }),
+    });
+    render(<App api={api} />);
+
+    await user.click(await screen.findByRole("button", { name: /Discovery/ }));
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("group", { name: "Project labels" })).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "Todo" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Milestone" })).toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: "Pin" })).toBeNull();
+    expect(screen.queryByText(/Always available/i)).toBeNull();
+    await user.click(screen.getByRole("checkbox", { name: "Decision" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(api.updateChat).toHaveBeenCalledWith("chat-1", {
+      title: "Discovery",
+      accent: "moss",
+      enabledLabels: ["todo", "decision", "milestone"],
+    });
+  });
+
+  it("shows, changes, and filters multiple labels with inactive assignments retained", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Launch",
+      accent: "ocean" as const,
+      enabledLabels: ["todo", "risk", "milestone"] as const,
+      createdAt: 100,
+      updatedAt: 200,
+    };
+    const note = {
+      id: "note-1",
+      chatId: "chat-1",
+      body: "Prepare rollout",
+      createdAt: 200,
+      labels: ["decision", "risk"] as const,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+      setNoteLabel: vi.fn().mockResolvedValue(["pin", "decision", "risk"]),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Launch" }),
+    );
+    const filters = screen.getByRole("navigation", { name: "History filters" });
+    expect(
+      within(filters)
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual([
+      "All 1",
+      "Files 0",
+      "Pin 0",
+      "Attention 0",
+      "Todo 0",
+      "Risk 1",
+      "Milestone 0",
+    ]);
+    expect(
+      within(filters).queryByRole("button", { name: /Decision/ }),
+    ).toBeNull();
+    expect(
+      screen.getByText("Decision").closest(".message-label"),
+    ).toBeVisible();
+    expect(
+      screen.getByText("⚠️", {
+        selector: '.message-label[data-label="risk"] .label-glyph--emoji',
+      }),
+    ).toBeVisible();
+
+    const message = screen.getByText("Prepare rollout").closest("li")!;
+    expect(
+      within(within(message).getByLabelText("Message actions"))
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual([
+      "Change labels",
+      "Copy message",
+      "Edit message",
+      "Delete message",
+    ]);
+    await user.click(
+      within(message).getByRole("button", { name: "Change labels" }),
+    );
+    expect(
+      within(message).getByRole("checkbox", { name: "Risk" }),
+    ).toBeChecked();
+    expect(
+      within(message).getByRole("checkbox", { name: "Decision (inactive)" }),
+    ).toBeChecked();
+    expect(
+      within(message).queryByRole("checkbox", { name: "Open question" }),
+    ).toBeNull();
+    await user.click(within(message).getByRole("checkbox", { name: "Pin" }));
+
+    await waitFor(() =>
+      expect(api.setNoteLabel).toHaveBeenCalledWith(
+        "chat-1",
+        "note-1",
+        "pin",
+        true,
+      ),
+    );
+    expect(
+      within(filters).getByRole("button", { name: "Pin 1" }),
+    ).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(
+      within(message).getByRole("button", { name: "Change labels" }),
+    ).toHaveFocus();
+    expect(
+      within(message).queryByRole("group", { name: "Message labels" }),
+    ).toBeNull();
+  });
+
+  it("uses compact icon-led filters and icon-only permanent message markers", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Launch",
+      accent: "ocean" as const,
+      enabledLabels: [
+        "todo",
+        "decision",
+        "open-question",
+        "risk",
+        "milestone",
+      ] as const,
+      createdAt: 100,
+      updatedAt: 200,
+    };
+    const note = {
+      id: "note-1",
+      chatId: "chat-1",
+      body: "Prepare rollout",
+      createdAt: 200,
+      labels: [
+        "pin",
+        "attention",
+        "todo",
+        "decision",
+        "open-question",
+      ] as const,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Launch" }),
+    );
+
+    const filters = screen.getByRole("navigation", { name: "History filters" });
+    const filesFilter = within(filters).getByRole("button", {
+      name: "Files 0",
+    });
+    const attentionFilter = within(filters).getByRole("button", {
+      name: "Attention 1",
+    });
+    const questionFilter = within(filters).getByRole("button", {
+      name: "Open question 1",
+    });
+    const decisionFilter = within(filters).getByRole("button", {
+      name: "Decision 1",
+    });
+    const milestoneFilter = within(filters).getByRole("button", {
+      name: "Milestone 0",
+    });
+
+    expect(
+      filesFilter.querySelector(".history-filter-icon svg"),
+    ).not.toBeNull();
+    expect(attentionFilter).toHaveTextContent("Alert");
+    expect(decisionFilter).toHaveTextContent("Decision");
+    expect(questionFilter).toHaveTextContent("Question");
+    expect(questionFilter).not.toHaveTextContent("Open question");
+    expect(milestoneFilter).toHaveTextContent("Milestone");
+    for (const filter of within(filters).getAllByRole("button")) {
+      expect(filter.querySelector(".history-filter-count")).not.toBeNull();
+    }
+
+    const message = screen.getByText("Prepare rollout").closest("li")!;
+    const pin = message.querySelector<HTMLElement>(
+      '.message-label[data-label="pin"]',
+    )!;
+    const attention = message.querySelector<HTMLElement>(
+      '.message-label[data-label="attention"]',
+    )!;
+    expect(pin).toHaveAccessibleName("Pin");
+    expect(attention).toHaveAccessibleName("Attention");
+    expect(pin).not.toHaveTextContent("Pin");
+    expect(attention).not.toHaveTextContent("Attention");
+    expect(pin.querySelector("svg")).not.toBeNull();
+    expect(attention).toHaveTextContent("🔴");
+
+    for (const label of ["todo", "decision", "open-question"]) {
+      expect(
+        message.querySelector(
+          `.message-label[data-label="${label}"] .label-glyph svg`,
+        ),
+      ).not.toBeNull();
+    }
+  });
+
+  it("keeps the previous label state and reports a recoverable mutation error", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Launch",
+      accent: "ocean" as const,
+      enabledLabels: ["todo"] as "todo"[],
+      createdAt: 100,
+      updatedAt: 200,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({
+        ...chat,
+        notes: [
+          {
+            id: "note-1",
+            chatId: "chat-1",
+            body: "Prepare rollout",
+            createdAt: 200,
+            labels: [],
+          },
+        ],
+      }),
+      setNoteLabel: vi.fn().mockRejectedValue(new Error("Database busy")),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Launch" }),
+    );
+    const message = screen.getByText("Prepare rollout").closest("li")!;
+    await user.click(
+      within(message).getByRole("button", { name: "Change labels" }),
+    );
+    await user.click(within(message).getByRole("checkbox", { name: "Pin" }));
+
+    expect(await within(message).findByRole("alert")).toHaveTextContent(
+      "Database busy",
+    );
+    expect(
+      within(message).getByRole("checkbox", { name: "Pin" }),
+    ).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Pin 0" })).toBeVisible();
   });
 
   it("deletes the active project from the inline edit workspace", async () => {
@@ -1297,6 +1572,7 @@ describe("personal project chat workspace", () => {
       id: "alpha",
       title: "Alpha",
       accent: "coral" as const,
+      enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
       createdAt: 1,
       updatedAt: 2,
     };
@@ -1330,6 +1606,7 @@ describe("personal project chat workspace", () => {
       id: "alpha",
       title: "Alpha",
       accent: "coral" as const,
+      enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
       createdAt: 1,
       updatedAt: 2,
     };
@@ -1344,6 +1621,7 @@ describe("personal project chat workspace", () => {
       chatId: string;
       body: string;
       createdAt: number;
+      labels: [];
     }>();
     const api = createApi({
       listChats: vi.fn().mockResolvedValue([alpha, beta]),
@@ -1366,6 +1644,7 @@ describe("personal project chat workspace", () => {
         chatId: "alpha",
         body: "Alpha note",
         createdAt: 3,
+        labels: [],
       }),
     );
 

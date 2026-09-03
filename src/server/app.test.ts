@@ -126,6 +126,70 @@ describe("local project-chat API", () => {
     });
   });
 
+  it("configures project labels and applies message labels through scoped routes", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: { title: "Launch", accent: "amber" },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: { body: "Prepare rollout" },
+    });
+
+    const configured = await app.inject({
+      method: "PATCH",
+      url: "/api/chats/id-1",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: { enabledLabels: ["decision", "risk"] },
+    });
+    expect(configured.statusCode).toBe(200);
+    expect(configured.json().enabledLabels).toEqual(["decision", "risk"]);
+
+    const applied = await app.inject({
+      method: "PUT",
+      url: "/api/chats/id-1/notes/id-2/labels/risk",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+    });
+    expect(applied.statusCode).toBe(200);
+    expect(applied.json()).toEqual(["risk"]);
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url: "/api/chats/id-1/notes/id-2/labels/todo",
+          headers: {
+            host: "localhost:4173",
+            origin: "http://localhost:4173",
+          },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url: "/api/chats/other/notes/id-2/labels/pin",
+          headers: {
+            host: "localhost:4173",
+            origin: "http://localhost:4173",
+          },
+        })
+      ).statusCode,
+    ).toBe(404);
+
+    const removed = await app.inject({
+      method: "DELETE",
+      url: "/api/chats/id-1/notes/id-2/labels/risk",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+    });
+    expect(removed.statusCode).toBe(200);
+    expect(removed.json()).toEqual([]);
+  });
+
   it("creates an attachment message through multipart and downloads file bytes", async () => {
     await app.inject({
       method: "POST",

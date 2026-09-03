@@ -40,7 +40,7 @@ describe("SQLite backup bundle", () => {
   beforeEach(() => {
     directory = mkdtempSync(join(tmpdir(), "on-track-bundle-"));
     sourcePath = join(directory, "source.sqlite");
-    sourceDatabase = createMetadataOnlySchemaV2Database(sourcePath);
+    sourceDatabase = createMetadataOnlySchemaV3Database(sourcePath);
   });
 
   afterEach(() => {
@@ -75,7 +75,7 @@ describe("SQLite backup bundle", () => {
     );
     expect(manifest).toEqual({
       formatVersion: 1,
-      schemaVersion: 2,
+      schemaVersion: 3,
       createdAt: 1_725_000_100_000,
       attachmentCount: 1,
       totalBytes: 12,
@@ -346,7 +346,7 @@ describe("SQLite backup bundle", () => {
       directory,
       `${name.replaceAll(" ", "-")}.sqlite`,
     );
-    const lookalike = createMetadataOnlySchemaV2Database(lookalikePath, schema);
+    const lookalike = createMetadataOnlySchemaV3Database(lookalikePath, schema);
     try {
       await expect(
         createSqliteBackupBundle({
@@ -716,6 +716,79 @@ describe("SQLite backup bundle", () => {
     ).toBeUndefined();
   });
 
+  it("preserves current labels and migrates an exact schema-2 bundle with defaults", async () => {
+    sourceDatabase.exec(`
+      DELETE FROM chat_enabled_labels;
+      INSERT INTO chat_enabled_labels (chat_id, label) VALUES
+        ('chat-a', 'decision'), ('chat-a', 'risk');
+      INSERT INTO note_labels (note_id, label) VALUES
+        ('note-a', 'pin'), ('note-a', 'decision');
+    `);
+    const currentPath = join(directory, "labels.on-track-backup");
+    await createSqliteBackupBundle({
+      sourceDatabase,
+      destinationPath: currentPath,
+      attachmentStore: {
+        read: () => {
+          throw new Error("no files");
+        },
+      },
+      createdAt: () => 100,
+    });
+    const currentPrepared = prepareSqliteBackupBundle({
+      bundlePath: currentPath,
+      workspace: createRestoreWorkspace(directory, "labels-current"),
+    });
+    const current = new Database(currentPrepared.candidateDatabasePath, {
+      readonly: true,
+    });
+    expect(
+      current
+        .prepare("SELECT label FROM chat_enabled_labels ORDER BY label")
+        .pluck()
+        .all(),
+    ).toEqual(["decision", "risk"]);
+    expect(
+      current
+        .prepare("SELECT label FROM note_labels ORDER BY label")
+        .pluck()
+        .all(),
+    ).toEqual(["decision", "pin"]);
+    current.close();
+
+    const legacyPath = copyBundle(currentPath, directory, "labels-legacy");
+    mutateBundle(legacyPath, (legacy) => {
+      legacy.exec(`
+        DROP TABLE note_labels;
+        DROP TABLE chat_enabled_labels;
+        UPDATE app_metadata SET schema_version = 2;
+        UPDATE _on_track_bundle SET schema_version = 2;
+        DELETE FROM __drizzle_migrations WHERE created_at = 1788356400000;
+      `);
+    });
+    expect(validateSqliteBackupBundle(legacyPath).schemaVersion).toBe(2);
+    const legacyPrepared = prepareSqliteBackupBundle({
+      bundlePath: legacyPath,
+      workspace: createRestoreWorkspace(directory, "labels-legacy"),
+    });
+    const legacy = new Database(legacyPrepared.candidateDatabasePath, {
+      readonly: true,
+    });
+    expect(
+      legacy
+        .prepare("SELECT label FROM chat_enabled_labels ORDER BY label")
+        .pluck()
+        .all(),
+    ).toEqual(["milestone", "todo"]);
+    expect(
+      legacy.prepare("SELECT count(*) FROM note_labels").pluck().get(),
+    ).toBe(0);
+    expect(
+      legacy.prepare("SELECT schema_version FROM app_metadata").pluck().get(),
+    ).toBe(3);
+    legacy.close();
+  });
+
   it("rolls back activation when the installed attachment inventory changes", async () => {
     insertAttachment(sourceDatabase, {
       id: "attachment-a",
@@ -916,6 +989,35 @@ function createMetadataOnlySchemaV2Database(
       VALUES ('chat-a', 'Roadmap', 'ocean', 1, 1);
     INSERT INTO notes (id, chat_id, body, created_at)
       VALUES ('note-a', 'chat-a', 'Plan', 1);
+  `);
+  return database;
+}
+
+function createMetadataOnlySchemaV3Database(
+  path: string,
+  options: Parameters<typeof createMetadataOnlySchemaV2Database>[1] = {},
+): Database.Database {
+  const database = createMetadataOnlySchemaV2Database(path, options);
+  database.exec(`
+    CREATE TABLE chat_enabled_labels (
+      chat_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      PRIMARY KEY(chat_id, label),
+      FOREIGN KEY (chat_id) REFERENCES chats(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+      CONSTRAINT chat_enabled_labels_label_allowed CHECK(label IN ('todo', 'decision', 'open-question', 'risk', 'milestone'))
+    );
+    CREATE TABLE note_labels (
+      note_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      PRIMARY KEY(note_id, label),
+      FOREIGN KEY (note_id) REFERENCES notes(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+      CONSTRAINT note_labels_label_allowed CHECK(label IN ('pin', 'attention', 'todo', 'decision', 'open-question', 'risk', 'milestone'))
+    );
+    INSERT INTO chat_enabled_labels (chat_id, label) VALUES
+      ('chat-a', 'todo'), ('chat-a', 'milestone');
+    UPDATE app_metadata SET schema_version = 3 WHERE id = 1;
+    INSERT INTO __drizzle_migrations (id, hash, created_at)
+      VALUES (2, 'schema-v3', 1788356400000);
   `);
   return database;
 }

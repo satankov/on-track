@@ -18,6 +18,7 @@ import {
   AttachmentOpenBlockedError,
   AttachmentUnavailableError,
   type AttachmentStore,
+  InvalidInputError,
 } from "./chat-service.js";
 import type { NativeFileActions } from "./native-file-actions.js";
 import {
@@ -69,6 +70,40 @@ describe("managed attachment service lifecycle", () => {
       actions,
     );
   }
+
+  it("applies only permanent or enabled labels and removes inactive labels", () => {
+    ids.push("chat-a", "note-a");
+    const chatService = service();
+    const chat = chatService.createChat({ title: "Launch", accent: "ocean" });
+    chatService.appendNote("chat-a", { body: "Prepare rollout" });
+
+    expect(chat.enabledLabels).toEqual(["todo", "milestone"]);
+    expect(
+      chatService.setNoteLabel("chat-a", "note-a", "attention", true),
+    ).toEqual(["attention"]);
+    expect(chatService.setNoteLabel("chat-a", "note-a", "todo", true)).toEqual([
+      "attention",
+      "todo",
+    ]);
+    expect(() =>
+      chatService.setNoteLabel("chat-a", "note-a", "risk", true),
+    ).toThrow(InvalidInputError);
+
+    chatService.updateChat("chat-a", { enabledLabels: ["risk"] });
+    expect(chatService.getChat("chat-a").notes[0].labels).toEqual([
+      "attention",
+      "todo",
+    ]);
+    expect(chatService.setNoteLabel("chat-a", "note-a", "todo", false)).toEqual(
+      ["attention"],
+    );
+    expect(() =>
+      chatService.setNoteLabel("chat-a", "note-a", "unknown", true),
+    ).toThrow();
+    expect(() =>
+      chatService.setNoteLabel("other", "note-a", "pin", true),
+    ).toThrow(/Project not found/i);
+  });
 
   it("installs sidecars before database references and cleans them after database failure", () => {
     ids.push("chat-a");

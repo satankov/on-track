@@ -20,8 +20,11 @@ import Database from "better-sqlite3";
 
 import {
   ACCENTS,
+  CONFIGURABLE_LABELS,
+  LABELS,
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "../../domain/validation.js";
+import { applyBundledMigrations } from "../db/database.js";
 import {
   isCanonicalAttachmentFilename,
   isCanonicalAttachmentMediaType,
@@ -34,7 +37,8 @@ import {
 
 export const SQL_ON_TRACK_BACKUP_APPLICATION_ID = 0x4f545242;
 export const SQL_ON_TRACK_BACKUP_FORMAT_VERSION = 1;
-export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 2;
+export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 3;
+const LEGACY_SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 2;
 
 export interface SqliteBackupBundleLimits {
   maximumBundleBytes: number;
@@ -148,7 +152,7 @@ const GENERATED_COMPONENT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const ALLOWED_ACCENTS = new Set<string>(ACCENTS);
 const SQLITE_MAGIC = Buffer.from("SQLite format 3\0", "binary");
 
-const ACTIVE_SCHEMA_OBJECTS = [
+const LEGACY_ACTIVE_SCHEMA_OBJECTS = [
   "__drizzle_migrations:table",
   "app_metadata:table",
   "chats:table",
@@ -159,13 +163,27 @@ const ACTIVE_SCHEMA_OBJECTS = [
   "notes_chat_history_idx:index",
 ] as const;
 
+const ACTIVE_SCHEMA_OBJECTS = [
+  ...LEGACY_ACTIVE_SCHEMA_OBJECTS,
+  "chat_enabled_labels:table",
+  "note_labels:table",
+].sort();
+
 const BUNDLE_SCHEMA_OBJECTS = [
   ...ACTIVE_SCHEMA_OBJECTS,
   "_on_track_bundle:table",
   "_on_track_bundle_files:table",
 ].sort();
 
-const ACTIVE_TABLE_COLUMNS: Readonly<Record<string, ColumnDescription[]>> = {
+const LEGACY_BUNDLE_SCHEMA_OBJECTS = [
+  ...LEGACY_ACTIVE_SCHEMA_OBJECTS,
+  "_on_track_bundle:table",
+  "_on_track_bundle_files:table",
+].sort();
+
+const LEGACY_ACTIVE_TABLE_COLUMNS: Readonly<
+  Record<string, ColumnDescription[]>
+> = {
   __drizzle_migrations: [
     { name: "id", type: "SERIAL", notnull: 0, pk: 1 },
     { name: "hash", type: "TEXT", notnull: 1, pk: 0 },
@@ -200,6 +218,18 @@ const ACTIVE_TABLE_COLUMNS: Readonly<Record<string, ColumnDescription[]>> = {
   ],
 };
 
+const ACTIVE_TABLE_COLUMNS: Readonly<Record<string, ColumnDescription[]>> = {
+  ...LEGACY_ACTIVE_TABLE_COLUMNS,
+  chat_enabled_labels: [
+    { name: "chat_id", type: "TEXT", notnull: 1, pk: 1 },
+    { name: "label", type: "TEXT", notnull: 1, pk: 2 },
+  ],
+  note_labels: [
+    { name: "note_id", type: "TEXT", notnull: 1, pk: 1 },
+    { name: "label", type: "TEXT", notnull: 1, pk: 2 },
+  ],
+};
+
 const BUNDLE_TABLE_COLUMNS: Readonly<Record<string, ColumnDescription[]>> = {
   _on_track_bundle: [
     { name: "id", type: "INTEGER", notnull: 0, pk: 1 },
@@ -218,12 +248,20 @@ const BUNDLE_TABLE_COLUMNS: Readonly<Record<string, ColumnDescription[]>> = {
   ],
 };
 
-const ACTIVE_FOREIGN_KEYS: Readonly<Record<string, ForeignKeyDescription[]>> = {
+const LEGACY_ACTIVE_FOREIGN_KEYS: Readonly<
+  Record<string, ForeignKeyDescription[]>
+> = {
   __drizzle_migrations: [],
   app_metadata: [],
   chats: [],
   notes: [foreignKey("chats", "chat_id", "id", "CASCADE")],
   note_attachments: [foreignKey("notes", "note_id", "id", "CASCADE")],
+};
+
+const ACTIVE_FOREIGN_KEYS: Readonly<Record<string, ForeignKeyDescription[]>> = {
+  ...LEGACY_ACTIVE_FOREIGN_KEYS,
+  chat_enabled_labels: [foreignKey("chats", "chat_id", "id", "CASCADE")],
+  note_labels: [foreignKey("notes", "note_id", "id", "CASCADE")],
 };
 
 const BUNDLE_FOREIGN_KEYS: Readonly<Record<string, ForeignKeyDescription[]>> = {
@@ -233,7 +271,7 @@ const BUNDLE_FOREIGN_KEYS: Readonly<Record<string, ForeignKeyDescription[]>> = {
   ],
 };
 
-const ACTIVE_INDEXES: Readonly<Record<string, IndexDescription[]>> = {
+const LEGACY_ACTIVE_INDEXES: Readonly<Record<string, IndexDescription[]>> = {
   __drizzle_migrations: [
     index("sqlite_autoindex___drizzle_migrations_1", 1, "pk", ["id"]),
   ],
@@ -253,6 +291,19 @@ const ACTIVE_INDEXES: Readonly<Record<string, IndexDescription[]>> = {
   ],
 };
 
+const ACTIVE_INDEXES: Readonly<Record<string, IndexDescription[]>> = {
+  ...LEGACY_ACTIVE_INDEXES,
+  chat_enabled_labels: [
+    index("sqlite_autoindex_chat_enabled_labels_1", 1, "pk", [
+      "chat_id",
+      "label",
+    ]),
+  ],
+  note_labels: [
+    index("sqlite_autoindex_note_labels_1", 1, "pk", ["note_id", "label"]),
+  ],
+};
+
 const BUNDLE_INDEXES: Readonly<Record<string, IndexDescription[]>> = {
   _on_track_bundle: [],
   _on_track_bundle_files: [
@@ -262,7 +313,7 @@ const BUNDLE_INDEXES: Readonly<Record<string, IndexDescription[]>> = {
   ],
 };
 
-const ACTIVE_TABLE_DEFINITIONS: Readonly<Record<string, string>> = {
+const LEGACY_ACTIVE_TABLE_DEFINITIONS: Readonly<Record<string, string>> = {
   __drizzle_migrations:
     "CREATE TABLE __drizzle_migrations (id SERIAL PRIMARY KEY, hash TEXT NOT NULL, created_at numeric)",
   app_metadata:
@@ -273,6 +324,14 @@ const ACTIVE_TABLE_DEFINITIONS: Readonly<Record<string, string>> = {
     "CREATE TABLE notes (id TEXT PRIMARY KEY NOT NULL, chat_id TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL, FOREIGN KEY (chat_id) REFERENCES chats(id) ON UPDATE NO ACTION ON DELETE CASCADE, CONSTRAINT notes_body_length CHECK (length(notes.body) <= 10000))",
   note_attachments:
     "CREATE TABLE note_attachments (id TEXT PRIMARY KEY NOT NULL, note_id TEXT NOT NULL, filename TEXT NOT NULL, media_type TEXT NOT NULL, storage_path TEXT NOT NULL UNIQUE, byte_size INTEGER NOT NULL, modified_at INTEGER NOT NULL, created_at INTEGER NOT NULL, FOREIGN KEY (note_id) REFERENCES notes(id) ON UPDATE NO ACTION ON DELETE CASCADE, CONSTRAINT note_attachments_filename_length CHECK (length(trim(note_attachments.filename)) BETWEEN 1 AND 255), CONSTRAINT note_attachments_media_type_length CHECK (length(trim(note_attachments.media_type)) BETWEEN 1 AND 255), CONSTRAINT note_attachments_storage_path_length CHECK (length(note_attachments.storage_path) BETWEEN 1 AND 1024), CONSTRAINT note_attachments_byte_size_nonnegative CHECK (note_attachments.byte_size >= 0), CONSTRAINT note_attachments_modified_at_nonnegative CHECK (note_attachments.modified_at >= 0))",
+};
+
+const ACTIVE_TABLE_DEFINITIONS: Readonly<Record<string, string>> = {
+  ...LEGACY_ACTIVE_TABLE_DEFINITIONS,
+  chat_enabled_labels:
+    "CREATE TABLE chat_enabled_labels (chat_id TEXT NOT NULL, label TEXT NOT NULL, PRIMARY KEY(chat_id, label), FOREIGN KEY (chat_id) REFERENCES chats(id) ON UPDATE NO ACTION ON DELETE CASCADE, CONSTRAINT chat_enabled_labels_label_allowed CHECK(label IN ('todo', 'decision', 'open-question', 'risk', 'milestone')))",
+  note_labels:
+    "CREATE TABLE note_labels (note_id TEXT NOT NULL, label TEXT NOT NULL, PRIMARY KEY(note_id, label), FOREIGN KEY (note_id) REFERENCES notes(id) ON UPDATE NO ACTION ON DELETE CASCADE, CONSTRAINT note_labels_label_allowed CHECK(label IN ('pin', 'attention', 'todo', 'decision', 'open-question', 'risk', 'milestone')))",
 };
 
 const BUNDLE_TABLE_DEFINITIONS: Readonly<Record<string, string>> = {
@@ -420,16 +479,20 @@ export function validateSqliteBackupBundle(
       );
     }
     validateIntegrity(database);
+    const bundleSchemaVersion = detectKnownSchemaVersion(database, true);
+    const activeSchema = schemaDescriptor(bundleSchemaVersion);
     validateExactSchema(
       database,
-      BUNDLE_SCHEMA_OBJECTS,
-      Object.assign({}, ACTIVE_TABLE_COLUMNS, BUNDLE_TABLE_COLUMNS),
-      Object.assign({}, ACTIVE_FOREIGN_KEYS, BUNDLE_FOREIGN_KEYS),
-      Object.assign({}, ACTIVE_INDEXES, BUNDLE_INDEXES),
-      Object.assign({}, ACTIVE_TABLE_DEFINITIONS, BUNDLE_TABLE_DEFINITIONS),
+      bundleSchemaVersion === SQL_ON_TRACK_BACKUP_SCHEMA_VERSION
+        ? BUNDLE_SCHEMA_OBJECTS
+        : LEGACY_BUNDLE_SCHEMA_OBJECTS,
+      Object.assign({}, activeSchema.columns, BUNDLE_TABLE_COLUMNS),
+      Object.assign({}, activeSchema.foreignKeys, BUNDLE_FOREIGN_KEYS),
+      Object.assign({}, activeSchema.indexes, BUNDLE_INDEXES),
+      Object.assign({}, activeSchema.definitions, BUNDLE_TABLE_DEFINITIONS),
     );
-    validateSchemaVersion(database);
-    validateApplicationData(database, limits);
+    validateSchemaVersion(database, bundleSchemaVersion);
+    validateApplicationData(database, limits, bundleSchemaVersion);
 
     const rows = database
       .prepare(
@@ -457,7 +520,7 @@ export function validateSqliteBackupBundle(
     const row = rows[0];
     if (
       row.format_version !== SQL_ON_TRACK_BACKUP_FORMAT_VERSION ||
-      row.schema_version !== SQL_ON_TRACK_BACKUP_SCHEMA_VERSION
+      row.schema_version !== bundleSchemaVersion
     ) {
       throw validationError("The backup bundle version is unsupported.");
     }
@@ -687,6 +750,11 @@ export function prepareSqliteBackupBundle(
       DROP TABLE _on_track_bundle;
     `);
     candidate.pragma("application_id = 0");
+    if (
+      copiedManifest.schemaVersion === LEGACY_SQL_ON_TRACK_BACKUP_SCHEMA_VERSION
+    ) {
+      applyBundledMigrations(candidate);
+    }
     candidate.exec("VACUUM");
     candidate.close();
     candidate = undefined;
@@ -736,8 +804,12 @@ export function validatePreparedSqliteBackupDatabase(
       ACTIVE_INDEXES,
       ACTIVE_TABLE_DEFINITIONS,
     );
-    validateSchemaVersion(database);
-    validateApplicationData(database, DEFAULT_SQLITE_BACKUP_BUNDLE_LIMITS);
+    validateSchemaVersion(database, SQL_ON_TRACK_BACKUP_SCHEMA_VERSION);
+    validateApplicationData(
+      database,
+      DEFAULT_SQLITE_BACKUP_BUNDLE_LIMITS,
+      SQL_ON_TRACK_BACKUP_SCHEMA_VERSION,
+    );
   } catch (error) {
     throw asValidationError(error);
   } finally {
@@ -857,13 +929,60 @@ function validateActiveDatabase(
     ACTIVE_INDEXES,
     ACTIVE_TABLE_DEFINITIONS,
   );
-  validateSchemaVersion(database);
-  validateApplicationData(database, limits);
+  validateSchemaVersion(database, SQL_ON_TRACK_BACKUP_SCHEMA_VERSION);
+  validateApplicationData(database, limits, SQL_ON_TRACK_BACKUP_SCHEMA_VERSION);
+}
+
+function schemaDescriptor(schemaVersion: number) {
+  if (schemaVersion === SQL_ON_TRACK_BACKUP_SCHEMA_VERSION) {
+    return {
+      columns: ACTIVE_TABLE_COLUMNS,
+      foreignKeys: ACTIVE_FOREIGN_KEYS,
+      indexes: ACTIVE_INDEXES,
+      definitions: ACTIVE_TABLE_DEFINITIONS,
+    };
+  }
+  if (schemaVersion === LEGACY_SQL_ON_TRACK_BACKUP_SCHEMA_VERSION) {
+    return {
+      columns: LEGACY_ACTIVE_TABLE_COLUMNS,
+      foreignKeys: LEGACY_ACTIVE_FOREIGN_KEYS,
+      indexes: LEGACY_ACTIVE_INDEXES,
+      definitions: LEGACY_ACTIVE_TABLE_DEFINITIONS,
+    };
+  }
+  throw validationError("The backup bundle version is unsupported.");
+}
+
+function detectKnownSchemaVersion(
+  database: Database.Database,
+  bundle: boolean,
+): number {
+  const objects = database
+    .prepare(
+      `SELECT name || ':' || type
+       FROM sqlite_schema
+       WHERE name NOT LIKE 'sqlite_%'
+       ORDER BY name`,
+    )
+    .pluck()
+    .all() as string[];
+  const current = bundle ? BUNDLE_SCHEMA_OBJECTS : ACTIVE_SCHEMA_OBJECTS;
+  const legacy = bundle
+    ? LEGACY_BUNDLE_SCHEMA_OBJECTS
+    : LEGACY_ACTIVE_SCHEMA_OBJECTS;
+  if (JSON.stringify(objects) === JSON.stringify([...current].sort())) {
+    return SQL_ON_TRACK_BACKUP_SCHEMA_VERSION;
+  }
+  if (JSON.stringify(objects) === JSON.stringify([...legacy].sort())) {
+    return LEGACY_SQL_ON_TRACK_BACKUP_SCHEMA_VERSION;
+  }
+  throw validationError("The SQLite schema objects are not exactly allowed.");
 }
 
 function validateApplicationData(
   database: Database.Database,
   limits: SqliteBackupBundleLimits,
+  schemaVersion: number,
 ): void {
   const chats = database
     .prepare("SELECT id, title, accent, created_at, updated_at FROM chats")
@@ -950,16 +1069,53 @@ function validateApplicationData(
       "A message exceeds the attachments per message limit.",
     );
   }
+  if (schemaVersion === SQL_ON_TRACK_BACKUP_SCHEMA_VERSION) {
+    validateLabelData(database);
+  }
 }
 
-function validateSchemaVersion(database: Database.Database): void {
+function validateLabelData(database: Database.Database): void {
+  const configurable = new Set<string>(CONFIGURABLE_LABELS);
+  const labels = new Set<string>(LABELS);
+  const enabledRows = database
+    .prepare("SELECT chat_id, label FROM chat_enabled_labels")
+    .all() as Array<{ chat_id: unknown; label: unknown }>;
+  for (const row of enabledRows) {
+    if (
+      typeof row.chat_id !== "string" ||
+      !GENERATED_COMPONENT.test(row.chat_id) ||
+      typeof row.label !== "string" ||
+      !configurable.has(row.label)
+    ) {
+      throw validationError("Project label metadata is invalid.");
+    }
+  }
+  const noteRows = database
+    .prepare("SELECT note_id, label FROM note_labels")
+    .all() as Array<{ note_id: unknown; label: unknown }>;
+  for (const row of noteRows) {
+    if (
+      typeof row.note_id !== "string" ||
+      !GENERATED_COMPONENT.test(row.note_id) ||
+      typeof row.label !== "string" ||
+      !labels.has(row.label)
+    ) {
+      throw validationError("Message label metadata is invalid.");
+    }
+  }
+}
+
+function validateSchemaVersion(
+  database: Database.Database,
+  expectedSchemaVersion: number,
+): void {
   const rows = database
     .prepare("SELECT id, schema_version FROM app_metadata")
     .all() as Array<{ id: number; schema_version: number }>;
   if (
     rows.length !== 1 ||
     rows[0].id !== 1 ||
-    rows[0].schema_version !== SQL_ON_TRACK_BACKUP_SCHEMA_VERSION
+    rows[0].schema_version !== expectedSchemaVersion
   ) {
     throw validationError("The database schema version is unsupported.");
   }
@@ -1333,7 +1489,10 @@ function normalizeSchemaSql(sql: string): string {
   return sql
     .toLowerCase()
     .replace(/["`[\]\s;]/g, "")
-    .replace(/\b(?:app_metadata|chats|notes|note_attachments)\./g, "")
+    .replace(
+      /\b(?:app_metadata|chats|notes|note_attachments|chat_enabled_labels|note_labels)\./g,
+      "",
+    )
     .replace(/constraint[a-z0-9_]+/g, "");
 }
 

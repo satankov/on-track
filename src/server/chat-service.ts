@@ -5,6 +5,7 @@ import type {
   NoteAttachment,
   StoredNoteAttachment,
 } from "../domain/types.js";
+import type { Label } from "../domain/validation.js";
 import {
   MAX_ATTACHMENTS_PER_MESSAGE,
   MAX_ATTACHMENT_BYTES,
@@ -12,6 +13,7 @@ import {
   createNoteInputSchema,
   updateNoteInputSchema,
   updateChatInputSchema,
+  labelSchema,
 } from "../domain/validation.js";
 import type { SqliteChatRepository } from "./db/repository.js";
 import {
@@ -271,6 +273,19 @@ export class ChatService {
       throw new ProjectNotFoundError();
     }
     this.cleanup(result.storagePaths);
+  }
+
+  setNoteLabel(
+    chatId: string,
+    noteId: string,
+    input: unknown,
+    applied: boolean,
+  ): Label[] {
+    const label = labelSchema.parse(input);
+    const labels = this.repository.setNoteLabel(chatId, noteId, label, applied);
+    if (labels === undefined) throw new ProjectNotFoundError();
+    if (labels === null) throw new InvalidInputError();
+    return labels;
   }
 
   downloadAttachment(

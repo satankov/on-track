@@ -646,6 +646,98 @@ test("adds an attachment message and filters history by files", async ({
   ).toHaveLength(2);
 });
 
+test("configures, applies, filters, and retains project message labels", async ({
+  page,
+  localApp,
+}, testInfo) => {
+  const suffix = `${viewportName(testInfo.project.name)}-${Date.now()}`;
+  const projectTitle = `Labels ${suffix}`;
+
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: "New project" }).click();
+  await page.getByLabel("Project name").fill(projectTitle);
+  await page.getByRole("button", { name: "Create project" }).click();
+  await page.getByLabel("Add a note").fill("Escalate the rollout risk");
+  await page.getByRole("button", { name: /Add note/ }).click();
+
+  await expect(page.getByRole("button", { name: "Todo 0" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Milestone 0" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Risk/ })).toHaveCount(0);
+  const filesFilter = page.getByRole("button", { name: "Files 0" });
+  await expect(filesFilter.locator(".history-filter-icon svg")).toBeVisible();
+  await expect(filesFilter.locator(".history-filter-count")).toHaveText("0");
+
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await expect(
+    page.getByRole("group", { name: "Project labels" }),
+  ).toBeVisible();
+  await page.getByRole("checkbox", { name: "Risk" }).check();
+  await page.getByRole("button", { name: "Save changes" }).click();
+
+  const message = page.locator(".message-row").first();
+  await message.getByRole("button", { name: "Change labels" }).click();
+  await message.getByRole("checkbox", { name: "Pin" }).click();
+  await expect(message.getByRole("checkbox", { name: "Pin" })).toBeChecked();
+  await message.getByRole("checkbox", { name: "Attention" }).click();
+  await expect(
+    message.getByRole("checkbox", { name: "Attention" }),
+  ).toBeChecked();
+  await message.getByRole("checkbox", { name: "Risk" }).click();
+  await expect(message.getByRole("checkbox", { name: "Risk" })).toBeChecked();
+  const pinLabel = message.locator('.message-label[data-label="pin"]');
+  const attentionLabel = message.locator(
+    '.message-label[data-label="attention"]',
+  );
+  await expect(pinLabel).toBeVisible();
+  await expect(pinLabel).toHaveAttribute("aria-label", "Pin");
+  await expect(pinLabel).toHaveText("");
+  await expect(attentionLabel).toHaveAttribute("aria-label", "Attention");
+  await expect(attentionLabel).toHaveText("🔴");
+  await expect(
+    message.locator('.message-label[data-label="risk"]'),
+  ).toContainText("⚠️Risk");
+  await expect(page.getByRole("button", { name: "Pin 1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Attention 1" })).toContainText(
+    "Alert",
+  );
+  await expect(page.getByRole("button", { name: "Risk 1" })).toBeVisible();
+  await page.getByRole("button", { name: "Risk 1" }).click();
+  await expect(page.getByText("Escalate the rollout risk")).toBeVisible();
+
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Risk" }).uncheck();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("button", { name: /Risk/ })).toHaveCount(0);
+  await expect(
+    message.locator('.message-label[data-label="risk"]'),
+  ).toBeVisible();
+  await message.getByRole("button", { name: "Change labels" }).click();
+  await expect(
+    message.getByRole("checkbox", { name: "Risk (inactive)" }),
+  ).toBeChecked();
+
+  await localApp.restart();
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${projectTitle}` }).click();
+  await expect(page.getByRole("button", { name: "Pin 1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Risk/ })).toHaveCount(0);
+  await expect(page.locator('.message-label[data-label="risk"]')).toBeVisible();
+  await page.getByRole("button", { name: "Change labels" }).click();
+  await expect(
+    page.getByRole("checkbox", { name: "Risk (inactive)" }),
+  ).toBeChecked();
+  await page.mouse.move(1, 1);
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  await expect(page.locator(".message-actions").first()).toHaveCSS(
+    "opacity",
+    "1",
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("labels-workspace.png"),
+    fullPage: true,
+  });
+});
+
 test("keeps project and note collections inside their own scroll panes", async ({
   page,
   request,

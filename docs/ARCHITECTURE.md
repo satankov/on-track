@@ -3,9 +3,10 @@
 ## Status
 
 The v0.0.3 plaintext alpha is the published baseline. The current
-`release/v0.0.4` work changes only the client presentation and browser-local
-appearance preference; server, API, database, attachment, and backup boundaries
-remain unchanged. The core decisions are recorded in
+`release/v0.0.4` work adds browser-local appearance preferences and durable
+project/message label relations while preserving the existing local
+server/service/repository and versioned-backup boundaries. The core decisions
+are recorded in
 [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
 encryption limitation in [ADR-0002](adr/0002-defer-at-rest-encryption.md),
 source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the
@@ -52,8 +53,8 @@ Local browser -> loopback Fastify server -> application service -> repository ->
   server or database modules. A closed Light/Neutral/Dark theme preference is
   validated in the client and stored in browser-local storage; a same-origin
   bootstrap script applies it before React mounts to avoid a theme flash.
-- `src/domain`: shared data contracts and validation rules with no UI or
-  persistence dependency.
+- `src/domain`: shared data contracts, closed built-in label vocabularies, and
+  validation rules with no UI or persistence dependency.
 - `src/server/app.ts`: Fastify transport, boundary controls, safe error mapping,
   and route wiring.
 - `src/server/chat-service.ts`: use cases and transactional project/note behavior.
@@ -71,14 +72,17 @@ the local API; raw SQL and filesystem paths never cross that boundary.
 
 ## Data design and location
 
-The migrations create `chats`, `notes`, `note_attachments`, and single-row
-`app_metadata` tables. Foreign keys and check constraints enforce ownership,
+The migrations create `chats`, `notes`, `note_attachments`,
+`chat_enabled_labels`, `note_labels`, and single-row `app_metadata` tables.
+Foreign keys and checks enforce ownership, closed label vocabularies,
 length/accent rules, unique repository-owned attachment paths, and nonnegative
-last-known byte sizes and modification times. Indexed `(chat_id, created_at, id)` ordering makes note
-history stable; chat activity is ordered using timestamps with a deterministic ID
-tie-breaker. Appending, editing, timestamp-adjusting, and deleting notes keep
-chat activity consistent with the newest remaining note in a transaction.
-Attachment rows cascade with their owning note.
+last-known byte sizes and modification times. Composite primary keys prevent
+duplicate label settings and assignments. Indexed `(chat_id, created_at, id)`
+ordering makes note history stable; chat activity is ordered using timestamps
+with a deterministic ID tie-breaker. Appending, editing, timestamp-adjusting,
+and deleting notes keep chat activity consistent with the newest remaining note
+in a transaction. Label changes do not alter message time or project activity.
+All child relations cascade with their owning project or message.
 
 Default data directories:
 
@@ -121,16 +125,18 @@ reveal remains independent. Browser focus refreshes attachment metadata after a
 user returns from an external application. The scoped download route remains for
 compatibility.
 
-Settings exports one versioned SQLite `.on-track-backup` container. An online
-snapshot temporarily gains reserved payload tables containing every readable
+Settings exports one versioned SQLite `.on-track-backup` container, including
+project label configuration and message assignments. An online snapshot
+temporarily gains reserved payload tables containing every readable
 managed file plus size, time, and SHA-256 metadata; strict canonical-schema,
 integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw/pre-v0.0.3 SQLite and unsupported bundles, generates fresh
-managed paths, removes bundle payload tables and compacts the candidate, then
-uses the maintenance gate and restore journal to replace live state. Restore is
-replacement, not merge. Export is limited to three attempts per minute per
-process; restore is limited to two attempts per minute per process.
+managed paths, removes bundle payload tables, migrates a strictly validated
+schema-2 bundle to schema 3 in private staging, and compacts the candidate. It
+then uses the maintenance gate and restore journal to replace live state.
+Restore is replacement, not merge. Export is limited to three attempts per
+minute per process; restore is limited to two attempts per minute per process.
 
 ## Trust and security boundaries
 
@@ -172,6 +178,9 @@ be hardened before production-readiness claims.
 - Attach a local file to a message, edit message attachments, filter the project
   history to messages with attached files, and use separate eligible Open and
   Show in Folder actions.
+- Enable project labels, apply several labels to one message, filter by active
+  labels, deactivate a label without deleting assignments, and reopen the
+  persisted state after restart.
 - Stop and restart the server against the same isolated data directory and
   recover all state.
 - Complete the flow at desktop and mobile widths with keyboard/focus behavior and

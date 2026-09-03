@@ -411,6 +411,30 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       return reply.code(204).send();
     },
   );
+  app.put<{ Params: { id: string; noteId: string; label: string } }>(
+    "/api/chats/:id/notes/:noteId/labels/:label",
+    async (request) =>
+      maintenanceGate.runMutation(() =>
+        service.setNoteLabel(
+          request.params.id,
+          request.params.noteId,
+          request.params.label,
+          true,
+        ),
+      ),
+  );
+  app.delete<{ Params: { id: string; noteId: string; label: string } }>(
+    "/api/chats/:id/notes/:noteId/labels/:label",
+    async (request) =>
+      maintenanceGate.runMutation(() =>
+        service.setNoteLabel(
+          request.params.id,
+          request.params.noteId,
+          request.params.label,
+          false,
+        ),
+      ),
+  );
 
   void app.register(async (nativeApp) => {
     await nativeApp.register(rateLimit, {

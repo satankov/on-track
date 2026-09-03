@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -12,7 +13,15 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import type { Chat, ChatDetail, Note } from "../domain/types.js";
-import { ACCENTS, type Accent } from "../domain/validation.js";
+import {
+  ACCENTS,
+  CONFIGURABLE_LABELS,
+  LABELS,
+  PERMANENT_LABELS,
+  type Accent,
+  type ConfigurableLabel,
+  type Label,
+} from "../domain/validation.js";
 import { apiClient, type ApiClient } from "./api.js";
 import {
   applyTheme,
@@ -30,6 +39,32 @@ const ACCENT_NAMES: Record<Accent, string> = {
   iris: "Iris",
   slate: "Slate",
 };
+
+const LABEL_NAMES: Record<Label, string> = {
+  pin: "Pin",
+  attention: "Attention",
+  todo: "Todo",
+  decision: "Decision",
+  "open-question": "Open question",
+  risk: "Risk",
+  milestone: "Milestone",
+};
+
+const LABEL_MARKS: Partial<Record<Label, string>> = {
+  attention: "🔴",
+  risk: "⚠️",
+  milestone: "🎖️",
+};
+
+const FILTER_LABEL_NAMES: Record<Label, string> = {
+  ...LABEL_NAMES,
+  attention: "Alert",
+  "open-question": "Question",
+};
+
+const ICON_ONLY_MESSAGE_LABELS = new Set<Label>(["pin", "attention"]);
+
+type HistoryFilter = "all" | "attachments" | Label;
 
 function sortChats(chats: Chat[]): Chat[] {
   return [...chats].sort(
@@ -302,11 +337,18 @@ function ProjectEditWorkspace({
 }: {
   chat: ChatDetail;
   onBack: () => void;
-  onSubmit: (input: { title: string; accent: Accent }) => Promise<void>;
+  onSubmit: (input: {
+    title: string;
+    accent: Accent;
+    enabledLabels: ConfigurableLabel[];
+  }) => Promise<void>;
   onDelete: () => Promise<void>;
 }) {
   const [title, setTitle] = useState(chat.title);
   const [accent, setAccent] = useState<Accent>(chat.accent);
+  const [enabledLabels, setEnabledLabels] = useState<ConfigurableLabel[]>(
+    chat.enabledLabels ?? ["todo", "milestone"],
+  );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -316,7 +358,7 @@ function ProjectEditWorkspace({
     setSaving(true);
     setError("");
     try {
-      await onSubmit({ title, accent });
+      await onSubmit({ title, accent, enabledLabels });
     } catch (caught) {
       setError(errorMessage(caught, "The project could not be saved."));
       setSaving(false);
@@ -379,6 +421,36 @@ function ProjectEditWorkspace({
                   />
                   <span className="accent-swatch" aria-hidden="true" />
                   <span>{ACCENT_NAMES[value]}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <fieldset className="project-label-fieldset">
+            <legend>Project labels</legend>
+            <p className="field-help">
+              Choose which labels are useful in this project. Existing message
+              labels stay in place if you turn one off.
+            </p>
+            <div className="project-label-options">
+              {CONFIGURABLE_LABELS.map((label) => (
+                <label className="project-label-option" key={label}>
+                  <input
+                    type="checkbox"
+                    checked={enabledLabels.includes(label)}
+                    onChange={(event) =>
+                      setEnabledLabels((current) =>
+                        event.target.checked
+                          ? CONFIGURABLE_LABELS.filter(
+                              (candidate) =>
+                                current.includes(candidate) ||
+                                candidate === label,
+                            )
+                          : current.filter((candidate) => candidate !== label),
+                      )
+                    }
+                  />
+                  <span>{LABEL_NAMES[label]}</span>
+                  <LabelGlyph label={label} />
                 </label>
               ))}
             </div>
@@ -968,6 +1040,96 @@ function PaperclipIcon() {
   );
 }
 
+function ListIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M8 6h12" />
+      <path d="M8 12h12" />
+      <path d="M8 18h12" />
+      <circle cx="4" cy="6" r="1" />
+      <circle cx="4" cy="12" r="1" />
+      <circle cx="4" cy="18" r="1" />
+    </svg>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="m14 4 6 6-3 1-4 4 1 4-1 1-9-9 1-1 4 1 4-4Z" />
+      <path d="m9 15-5 5" />
+    </svg>
+  );
+}
+
+function TodoIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="3" y="3" width="18" height="18" rx="4" />
+      <path d="m7.5 12 3 3 6-7" />
+    </svg>
+  );
+}
+
+function DecisionIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M6 3v18" />
+      <path d="M6 7h8l3-3" />
+      <path d="M6 15h8l3 3" />
+      <path d="m15 4 2-2 2 2" />
+      <path d="m15 18 2 2 2-2" />
+    </svg>
+  );
+}
+
+function QuestionIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.7 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1.2.9-1.2 1.7" />
+      <path d="M12 17h.01" />
+    </svg>
+  );
+}
+
+function LabelGlyph({ label }: { label: Label }) {
+  const mark = LABEL_MARKS[label];
+  if (mark) {
+    return (
+      <span className="label-glyph label-glyph--emoji" aria-hidden="true">
+        {mark}
+      </span>
+    );
+  }
+
+  const icon =
+    label === "pin" ? (
+      <PinIcon />
+    ) : label === "todo" ? (
+      <TodoIcon />
+    ) : label === "decision" ? (
+      <DecisionIcon />
+    ) : (
+      <QuestionIcon />
+    );
+
+  return (
+    <span className="label-glyph label-glyph--svg" aria-hidden="true">
+      {icon}
+    </span>
+  );
+}
+
+function LabelIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M20 13 13 20 4 11V4h7Z" />
+      <circle cx="8.5" cy="8.5" r="1.25" />
+    </svg>
+  );
+}
+
 function XIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -1016,6 +1178,146 @@ function MessageActionButton({
     >
       {children}
     </button>
+  );
+}
+
+function MessageLabels({ labels }: { labels: Label[] }) {
+  if (labels.length === 0) return null;
+  return (
+    <span className="message-labels" aria-label="Message labels" role="list">
+      {LABELS.filter((label) => labels.includes(label)).map((label) => {
+        const iconOnly = ICON_ONLY_MESSAGE_LABELS.has(label);
+        return (
+          <span
+            className={`message-label ${iconOnly ? "message-label--icon-only" : ""}`}
+            data-label={label}
+            aria-label={iconOnly ? LABEL_NAMES[label] : undefined}
+            title={iconOnly ? LABEL_NAMES[label] : undefined}
+            role="listitem"
+            key={label}
+          >
+            <LabelGlyph label={label} />
+            {!iconOnly && (
+              <span className="message-label-name">{LABEL_NAMES[label]}</span>
+            )}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+function MessageLabelPicker({
+  note,
+  enabledLabels,
+  onToggle,
+}: {
+  note: Note;
+  enabledLabels: ConfigurableLabel[];
+  onToggle: (note: Note, label: Label, applied: boolean) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busyLabel, setBusyLabel] = useState<Label>();
+  const [error, setError] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverId = useId();
+  const appliedLabels = note.labels ?? [];
+  const permanent = new Set<Label>(PERMANENT_LABELS);
+  const availableLabels = LABELS.filter(
+    (label) =>
+      permanent.has(label) ||
+      enabledLabels.includes(label as ConfigurableLabel) ||
+      appliedLabels.includes(label),
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", dismiss);
+    return () => document.removeEventListener("mousedown", dismiss);
+  }, [open]);
+
+  async function changeLabel(label: Label, applied: boolean) {
+    setBusyLabel(label);
+    setError("");
+    try {
+      await onToggle(note, label, applied);
+    } catch (caught) {
+      setError(errorMessage(caught, "The label could not be changed."));
+    } finally {
+      setBusyLabel(undefined);
+    }
+  }
+
+  return (
+    <div
+      className={`message-label-picker ${open ? "message-label-picker--open" : ""}`}
+      ref={rootRef}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && open) {
+          event.preventDefault();
+          setOpen(false);
+          triggerRef.current?.focus();
+        }
+      }}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        className="message-action"
+        aria-label="Change labels"
+        title="Change labels"
+        aria-expanded={open}
+        aria-controls={popoverId}
+        onClick={() => {
+          setOpen((current) => !current);
+          setError("");
+        }}
+      >
+        <LabelIcon />
+      </button>
+      {open && (
+        <div className="message-label-popover" id={popoverId}>
+          <fieldset>
+            <legend>Message labels</legend>
+            {availableLabels.map((label) => {
+              const applied = appliedLabels.includes(label);
+              const inactive =
+                !permanent.has(label) &&
+                !enabledLabels.includes(label as ConfigurableLabel);
+              return (
+                <label
+                  className={`message-label-choice ${inactive ? "message-label-choice--inactive" : ""}`}
+                  key={label}
+                >
+                  <input
+                    type="checkbox"
+                    checked={applied}
+                    disabled={busyLabel !== undefined || (inactive && !applied)}
+                    onChange={(event) =>
+                      void changeLabel(label, event.target.checked)
+                    }
+                  />
+                  <span>
+                    <LabelGlyph label={label} />
+                    {LABEL_NAMES[label]}
+                    {inactive ? " (inactive)" : ""}
+                  </span>
+                </label>
+              );
+            })}
+          </fieldset>
+          {error && (
+            <p className="message-label-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1188,6 +1490,7 @@ function ChatWorkspace({
   onHistoryFilterChange,
   onRemoveEditingAttachment,
   onRemovePendingFile,
+  onSetNoteLabel,
   onSubmit,
   onToggleTimestamp,
   copiedNoteId,
@@ -1200,7 +1503,7 @@ function ChatWorkspace({
   editingNote?: Note;
   editingAttachmentIds: string[];
   pendingFiles: File[];
-  historyFilter: "all" | "attachments";
+  historyFilter: HistoryFilter;
   saving: boolean;
   timestampOpen: boolean;
   onBack: () => void;
@@ -1217,9 +1520,10 @@ function ChatWorkspace({
   onDraftChange: (value: string) => void;
   onDraftTimestampChange: (value: string) => void;
   onFilesSelected: (files: File[]) => void;
-  onHistoryFilterChange: (filter: "all" | "attachments") => void;
+  onHistoryFilterChange: (filter: HistoryFilter) => void;
   onRemoveEditingAttachment: (attachmentId: string) => void;
   onRemovePendingFile: (index: number) => void;
+  onSetNoteLabel: (note: Note, label: Label, applied: boolean) => Promise<void>;
   onSubmit: () => void;
   onToggleTimestamp: () => void;
   copiedNoteId?: string;
@@ -1228,12 +1532,15 @@ function ChatWorkspace({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentCount = detail.notes.filter(hasAttachments).length;
-  const visibleNotes =
-    historyFilter === "attachments"
-      ? detail.notes.filter(hasAttachments)
-      : detail.notes;
+  const enabledLabels = detail.enabledLabels ?? ["todo", "milestone"];
+  const filterLabels = [...PERMANENT_LABELS, ...enabledLabels];
+  const visibleNotes = detail.notes.filter((note) => {
+    if (historyFilter === "all") return true;
+    if (historyFilter === "attachments") return hasAttachments(note);
+    return (note.labels ?? []).includes(historyFilter);
+  });
   const showingEmptyFilter =
-    historyFilter === "attachments" && visibleNotes.length === 0;
+    historyFilter !== "all" && visibleNotes.length === 0;
   const editingAttachments =
     editingNote?.attachments?.filter((attachment) =>
       editingAttachmentIds.includes(attachment.id),
@@ -1312,19 +1619,53 @@ function ChatWorkspace({
           <button
             type="button"
             className={`history-filter-button ${historyFilter === "all" ? "history-filter-button--active" : ""}`}
+            aria-label={`All ${detail.notes.length}`}
             aria-pressed={historyFilter === "all"}
             onClick={() => onHistoryFilterChange("all")}
           >
-            All {detail.notes.length}
+            <span className="history-filter-icon" aria-hidden="true">
+              <ListIcon />
+            </span>
+            <span className="history-filter-label">All</span>
+            <span className="history-filter-count">{detail.notes.length}</span>
           </button>
           <button
             type="button"
             className={`history-filter-button ${historyFilter === "attachments" ? "history-filter-button--active" : ""}`}
+            aria-label={`Files ${attachmentCount}`}
             aria-pressed={historyFilter === "attachments"}
             onClick={() => onHistoryFilterChange("attachments")}
           >
-            Files {attachmentCount}
+            <span className="history-filter-icon" aria-hidden="true">
+              <PaperclipIcon />
+            </span>
+            <span className="history-filter-label">Files</span>
+            <span className="history-filter-count">{attachmentCount}</span>
           </button>
+          {filterLabels.map((label) => {
+            const count = detail.notes.filter((note) =>
+              (note.labels ?? []).includes(label),
+            ).length;
+            return (
+              <button
+                type="button"
+                className={`history-filter-button ${historyFilter === label ? "history-filter-button--active" : ""}`}
+                aria-label={`${LABEL_NAMES[label]} ${count}`}
+                title={LABEL_NAMES[label]}
+                aria-pressed={historyFilter === label}
+                onClick={() => onHistoryFilterChange(label)}
+                key={label}
+              >
+                <span className="history-filter-icon">
+                  <LabelGlyph label={label} />
+                </span>
+                <span className="history-filter-label">
+                  {FILTER_LABEL_NAMES[label]}
+                </span>
+                <span className="history-filter-count">{count}</span>
+              </button>
+            );
+          })}
         </div>
       </nav>
 
@@ -1342,10 +1683,20 @@ function ChatWorkspace({
         ) : showingEmptyFilter ? (
           <div className="message-groups">
             <div className="no-notes no-notes--filtered">
-              <p className="eyebrow">Files</p>
-              <h2>No attached files yet.</h2>
+              <p className="eyebrow">
+                {historyFilter === "attachments"
+                  ? "Files"
+                  : LABEL_NAMES[historyFilter]}
+              </p>
+              <h2>
+                No{" "}
+                {historyFilter === "attachments"
+                  ? "attached files"
+                  : "matching messages"}{" "}
+                yet.
+              </h2>
               <p>
-                Messages with attachments will appear in this project slice.
+                This project slice will update when a matching message appears.
               </p>
             </div>
           </div>
@@ -1372,6 +1723,7 @@ function ChatWorkspace({
                               <MarkdownMessage body={note.body} />
                             </div>
                             <footer className="message-footer">
+                              <MessageLabels labels={note.labels ?? []} />
                               <time
                                 className="message-time"
                                 dateTime={new Date(
@@ -1386,6 +1738,11 @@ function ChatWorkspace({
                             className="message-actions"
                             aria-label="Message actions"
                           >
+                            <MessageLabelPicker
+                              note={note}
+                              enabledLabels={enabledLabels}
+                              onToggle={onSetNoteLabel}
+                            />
                             <MessageActionButton
                               label={copied ? "Message copied" : "Copy message"}
                               onClick={() => onCopyNote(note)}
@@ -1596,9 +1953,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [copiedNoteId, setCopiedNoteId] = useState<string>();
   const [draft, setDraft] = useState("");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [historyFilter, setHistoryFilter] = useState<"all" | "attachments">(
-    "all",
-  );
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
   const [draftTimestamp, setDraftTimestamp] = useState("");
   const [composerTimestampOpen, setComposerTimestampOpen] = useState(false);
   const [error, setError] = useState("");
@@ -1712,7 +2067,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     focusMobileBackButton();
   }
 
-  async function updateChat(input: { title: string; accent: Accent }) {
+  async function updateChat(input: {
+    title: string;
+    accent: Accent;
+    enabledLabels: ConfigurableLabel[];
+  }) {
     if (!active) return;
     const projectId = active.id;
     const chat = await api.updateChat(active.id, input);
@@ -1723,6 +2082,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setActive((current) =>
       current?.id === chat.id ? { ...current, ...chat } : current,
     );
+    if (
+      historyFilter !== "all" &&
+      historyFilter !== "attachments" &&
+      !PERMANENT_LABELS.includes(historyFilter as never) &&
+      !chat.enabledLabels.includes(historyFilter as ConfigurableLabel)
+    ) {
+      setHistoryFilter("all");
+    }
     setDialog(undefined);
     setMode("projects");
     if (activeId.current === projectId) focusMobileBackButton();
@@ -1958,6 +2325,23 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     );
   }
 
+  async function setNoteLabel(note: Note, label: Label, applied: boolean) {
+    if (!active) return;
+    const projectId = active.id;
+    const labels = await api.setNoteLabel(projectId, note.id, label, applied);
+    activeMutationGeneration.current += 1;
+    setActive((current) =>
+      current?.id === projectId
+        ? {
+            ...current,
+            notes: current.notes.map((item) =>
+              item.id === note.id ? { ...item, labels } : item,
+            ),
+          }
+        : current,
+    );
+  }
+
   async function exportDatabase() {
     const blob = await api.exportDatabase();
     const url = URL.createObjectURL(blob);
@@ -2070,6 +2454,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           onHistoryFilterChange={setHistoryFilter}
           onRemoveEditingAttachment={removeEditingAttachment}
           onRemovePendingFile={removePendingFile}
+          onSetNoteLabel={setNoteLabel}
           onSubmit={appendNote}
           onToggleTimestamp={() => {
             setComposerTimestampOpen((current) => {

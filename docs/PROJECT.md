@@ -17,16 +17,16 @@ recovery parts of that promise.
 
 Version 0.0.3 is the current published plaintext alpha source release under
 Apache License 2.0. Development on `release/v0.0.4` adds a desktop-first flat
-workspace, a compact auto-growing composer, and browser-local Light, Neutral,
-and Dark appearance themes without changing the local data model.
+workspace, browser-local Light, Neutral, and Dark appearance themes, and durable
+project message labels with project-specific filtering.
 
 ## Current objective
 
-Prepare the visual and appearance work for the next alpha while retaining the
-v0.0.3 plaintext and portability warnings. The desktop workspace now gives notes
-more room, keeps filters vertical, and uses flatter surfaces; Settings offers
-three persisted theme previews. Mobile remains a regression-protected alpha,
-not a dedicated design target.
+Prepare the refreshed workspace and project-label workflow for the next alpha
+while retaining the v0.0.3 plaintext and portability warnings. Projects enable
+the configurable labels they need, messages can carry several labels, and the
+history rail exposes only useful active filters. Mobile remains a
+regression-protected alpha, not a dedicated design target.
 
 ## v0.0.1 outcome
 
@@ -80,6 +80,9 @@ not a dedicated design target.
 - Add local files to project messages with optional text context, including
   attachment add/remove while editing a message.
 - Filter the open project history to messages with attached files.
+- Apply permanent Pin and Attention labels plus project-enabled Todo, Decision,
+  Open question, Risk, and Milestone labels to messages, then filter history by
+  active labels.
 - Open eligible managed files with the operating system's default association,
   or show their safe managed folder; risky executable/launcher types are blocked
   from Open.
@@ -93,15 +96,15 @@ not a dedicated design target.
 
 ## Near-term priorities
 
-1. Prepare the current desktop visual refresh and appearance themes for the next
-   alpha release without expanding the feature or persistence scope.
+1. Prepare the current desktop visual refresh, appearance themes, and durable
+   label workflow for the next alpha release.
 2. Continue hardening backup, restore, integrity checking, recovery, and
    conflict-free import semantics before users entrust irreplaceable data to the
    application.
 3. Design the encryption threat model, unlock and recovery experience, encrypted
    database/sidecar/attachment handling, and plaintext migration.
-4. Add a broad built-in label vocabulary—such as TODO, open question, decision,
-   risk, and meeting note—and convenient history filtering.
+4. Evaluate richer label workflows only after observing the fixed built-in
+   vocabulary in planning, decision, risk, and milestone use.
 5. Evaluate native desktop packaging once the storage and key lifecycle are
    credible.
 
@@ -116,9 +119,9 @@ options without pretending those choices are solved.
 
 ## Non-goals for current plaintext alpha
 
-Collaboration, accounts, labels, search, encryption, NDA-safe claims, native
-installers, mobile apps, peer-to-peer sync, public hosting, analytics, and
-telemetry.
+Collaboration, accounts, user-created label definitions, search, encryption,
+NDA-safe claims, native installers, mobile apps, peer-to-peer sync, public
+hosting, analytics, and telemetry.
 
 ## Product decisions
 

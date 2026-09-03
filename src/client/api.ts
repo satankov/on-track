@@ -1,4 +1,5 @@
 import type { Chat, ChatDetail, Note } from "../domain/types.js";
+import type { Label } from "../domain/validation.js";
 import type {
   CreateChatInput,
   CreateNoteInput,
@@ -19,6 +20,12 @@ export interface ApiClient {
     input: UpdateNoteInput,
   ): Promise<Note>;
   deleteNote(chatId: string, noteId: string): Promise<void>;
+  setNoteLabel(
+    chatId: string,
+    noteId: string,
+    label: Label,
+    applied: boolean,
+  ): Promise<Label[]>;
   downloadAttachment(
     chatId: string,
     noteId: string,
@@ -126,6 +133,11 @@ export const apiClient: ApiClient = {
       { method: "DELETE" },
     );
   },
+  setNoteLabel: (chatId, noteId, label, applied) =>
+    request<Label[]>(
+      `/api/chats/${encodeURIComponent(chatId)}/notes/${encodeURIComponent(noteId)}/labels/${encodeURIComponent(label)}`,
+      { method: applied ? "PUT" : "DELETE" },
+    ),
   downloadAttachment: async (chatId, noteId, attachmentId) => {
     const response = await fetch(
       `/api/chats/${encodeURIComponent(chatId)}/notes/${encodeURIComponent(noteId)}/attachments/${encodeURIComponent(attachmentId)}`,

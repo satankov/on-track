@@ -115,6 +115,36 @@ describe("browser API client", () => {
     });
   });
 
+  it("applies and removes encoded message labels", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify(["open-question"]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiClient.setNoteLabel(
+      "project/one",
+      "note/two",
+      "open-question",
+      true,
+    );
+    await apiClient.setNoteLabel(
+      "project/one",
+      "note/two",
+      "open-question",
+      false,
+    );
+
+    const path =
+      "/api/chats/project%2Fone/notes/note%2Ftwo/labels/open-question";
+    expect(fetchMock).toHaveBeenNthCalledWith(1, path, { method: "PUT" });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, path, { method: "DELETE" });
+  });
+
   it("uploads note attachments with multipart form data and downloads attachment bytes", async () => {
     const fetchMock = vi
       .fn()

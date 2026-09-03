@@ -5,9 +5,15 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 // Keep in sync with the newest `when` value in drizzle/meta/_journal.json.
-export const LATEST_BUNDLED_MIGRATION_AT = 1_788_270_000_000;
+export const LATEST_BUNDLED_MIGRATION_AT = 1_788_356_400_000;
+
+export function applyBundledMigrations(sqlite: Database.Database): void {
+  migrate(drizzle(sqlite), {
+    migrationsFolder: resolve(process.cwd(), "drizzle"),
+  });
+}
 
 export function openDatabase(filename: string): Database.Database {
   const directory = dirname(filename);
@@ -51,9 +57,7 @@ export function openDatabase(filename: string): Database.Database {
       }
     }
 
-    migrate(drizzle(sqlite), {
-      migrationsFolder: resolve(process.cwd(), "drizzle"),
-    });
+    applyBundledMigrations(sqlite);
     const schemaVersion = sqlite
       .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
       .pluck()
