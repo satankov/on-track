@@ -37,8 +37,8 @@ issue/design -> branch -> RED/GREEN tests -> npm run verify -> pull request
 lint/format, coverage, migration integration, real-browser E2E, and production
 dependency audit. GitHub CI repeats it on clean Linux runners using Node 22.16
 and 24, then checks native SQLite dependency installation/tests for both
-runtimes on Linux, macOS, and Windows. Native desktop launcher smoke tests
-remain separate manual release evidence.
+runtimes on Linux and macOS and for Node 24 on Windows. Native desktop launcher
+smoke tests remain separate manual release evidence.
 
 ## Prepare a version
 
@@ -66,9 +66,9 @@ git push origin v0.0.4
 
 The release workflow checks out that exact revision, validates the version/tag,
 runtime, and tracked-data contracts, verifies that the tagged commit belongs to
-`main`, installs from the lockfile, runs the complete suite on Node 22.16 and 24,
-and creates a GitHub Release with generated notes. A failed gate creates no
-release. Never move or reuse a published version tag; fix the issue in a new
+`main`, installs from the lockfile, runs the complete Linux suite on Node 22.16
+and 24, and creates a GitHub Release with generated notes. A failed gate creates
+no release. Never move or reuse a published version tag; fix the issue in a new
 version.
 
 ## Rollback and incident response

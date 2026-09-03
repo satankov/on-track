@@ -15,8 +15,8 @@ Thank you for helping improve a private-by-design personal project tracker.
 ## Development setup
 
 Use Node.js 24 LTS as the preferred maintainer runtime and the locked dependency
-tree. Node.js 22 is also supported from version 22.16.0 and is exercised at its
-exact floor in CI:
+tree. On macOS and Linux, Node.js 22 is also supported from version 22.16.0 and
+is exercised at its exact floor in CI. Windows development requires Node.js 24:
 
 ```sh
 npm ci

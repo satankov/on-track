@@ -14,18 +14,25 @@ The compatibility correction uses BigInt file identities and normalizes only
 the documented low 32 bits of the Windows volume serial number, mirroring the
 later libuv fix while preserving inode, symlink, containment, and race checks.
 
+Final support correction on 2026-09-03: exact Node 22.16 passed full Linux
+verification and macOS portability but continued to fail the broad Windows
+filesystem suite. The approved release boundary therefore supports Node 22.16+
+on macOS and Linux and requires Node 24 on Windows. A startup preflight enforces
+the platform-specific rule, and CI no longer schedules the unsupported pair.
+
 Local completion evidence on Node 22.18/macOS arm64:
 
 - `npm run verify` passed: release contract, build, typecheck, lint, formatting,
-  380 tests passed with 1 intentional skip, 17 migration tests passed, 12 browser
+  386 tests passed with 1 intentional skip, 17 migration tests passed, 12 browser
   tests passed with 2 viewport-specific skips, and the high-severity production
   dependency gate passed.
 - Native `better-sqlite3` loaded and executed an in-memory query.
 - The independent correctness/security review findings were fixed and covered by
   regression tests, including maximum multipart edits, empty-note prevention,
   cross-project mutation races, index DDL tampering, and migration metadata.
-- Exact Node 22.16 and Node 24 clean-install/OS evidence is configured in CI and
-  remains pending until the branch runs on GitHub Actions.
+- Exact Node 22.16 and Node 24 clean-install evidence passed on Linux and macOS;
+  Node 24 passed on Windows. The corrected platform-scoped matrix remains
+  pending until the branch runs again on GitHub Actions.
 - The production audit still reports one moderate Fastify advisory; its known
   schema-coercion and `trustProxy` paths are not used here, but dependency
   remediation remains separate release work.

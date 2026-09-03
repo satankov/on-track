@@ -19,7 +19,8 @@ Version 0.0.3 is the current published plaintext alpha source release under
 Apache License 2.0. Version 0.0.4 is prepared as the next release candidate: it
 adds a desktop-first flat workspace, browser-local Light, Neutral, and Dark
 appearance themes, durable project message labels with project-specific
-filtering, and Node.js support from 22.16.0 alongside Node.js 24.
+filtering, Node.js support from 22.16.0 on macOS and Linux, and Node.js 24 support
+on Windows, macOS, and Linux.
 
 ## Current objective
 
@@ -80,8 +81,9 @@ regression-protected alpha, not a dedicated design target.
   and remain browser-local rather than entering project data or backups.
 - Messages support several durable built-in labels, and each project controls
   which optional labels appear in its composer and history filters.
-- Node.js 22 is supported from 22.16.0 alongside Node.js 24, with exact-floor and
-  cross-platform native SQLite CI coverage.
+- Node.js 22 is supported from 22.16.0 on macOS and Linux; Windows requires
+  Node.js 24. Startup enforces that platform-specific policy, and CI exercises
+  each supported runtime/operating-system pair.
 - Note writes and client project-state updates have one canonical path; backup
   schema validation is derived from checked-in migrations; the unused attachment
   download route and obsolete schema-2 backup restore path are removed.
@@ -110,7 +112,8 @@ regression-protected alpha, not a dedicated design target.
 
 ## Near-term priorities
 
-1. Publish v0.0.4 after review and the Node 22.16/24 release matrix pass.
+1. Publish v0.0.4 after review and the platform-scoped Node 22.16/24 release
+   matrix passes.
 2. Continue hardening backup, restore, integrity checking, recovery, and
    conflict-free import semantics before users entrust irreplaceable data to the
    application.
@@ -141,8 +144,9 @@ hosting, analytics, and telemetry.
 - A chat is a private project notebook, not a cooperative messenger.
 - Data is local by default and stored outside the Git checkout.
 - Plaintext alpha limitations must be prominent; locality is not encryption.
-- Distribution is a GitHub source release supporting Node.js 22 from 22.16.0
-  and Node.js 24, not an npm package or native installer.
+- Distribution is a GitHub source release supporting Node.js 22 from 22.16.0 on
+  macOS and Linux and Node.js 24 on Windows, macOS, and Linux, not an npm package
+  or native installer.
 - The project is open source under Apache License 2.0, including commercial use.
 
 ## Roadmap and tracker
@@ -168,8 +172,9 @@ priorities above still need tracker records. Durable decisions live in
 - Source installation requires a supported Node.js LTS line and a native SQLite
   dependency. Node 22 support ends no later than upstream support, currently
   2027-04-30. The next candidate must pass full verification on Node 22.16 and
-  24 plus native SQLite install/test coverage on Linux, macOS, and Windows;
-  future dependency upgrades can still affect portability.
+  24 on Linux, plus native SQLite install/test coverage on macOS for both lines
+  and on Windows for Node 24; future dependency upgrades can still affect
+  portability.
 - v0.0.4 deliberately does not restore v0.0.3/schema-2 backup bundles. Live
   v0.0.3 databases still migrate at startup, and this compatibility break is
   acceptable only under the current no-user alpha assumption.

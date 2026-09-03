@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -20,7 +22,18 @@ const requiredFiles = [
   ".github/workflows/release.yml",
 ];
 
+const ciWorkflow = readFileSync(
+  new URL("../.github/workflows/ci.yml", import.meta.url),
+  "utf8",
+);
+
 describe("release contract", () => {
+  it("excludes Node 22.16 from the Windows portability matrix", () => {
+    expect(ciWorkflow).toMatch(
+      /exclude:\s*\n\s*- os: windows-latest\s*\n\s*node: 22\.16\.0/,
+    );
+  });
+
   it("accepts the exact Node 22.16 and Node 24 LTS support contract", () => {
     expect(
       validateReleaseContract({
