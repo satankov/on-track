@@ -4,7 +4,7 @@
 
 The v0.0.3 plaintext alpha is the published baseline. Version 0.0.4 is prepared
 as the next release candidate with browser-local appearance preferences,
-durable project/message label relations, Node.js 22.13/24 support, and simpler
+durable project/message label relations, Node.js 22.16/24 support, and simpler
 note-write, client-state, and backup-validation paths. It preserves the existing
 local server/service/repository and versioned-backup boundaries. The core
 decisions are recorded in
@@ -14,7 +14,7 @@ source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the
 current license in [ADR-0005](adr/0005-apache-2-license.md). Managed mutable
 attachments and guarded native actions are recorded in
 [ADR-0006](adr/0006-managed-mutable-attachments-and-native-file-actions.md), and
-Node 22.13/24 support in
+Node 22.16/24 support in
 [ADR-0007](adr/0007-node-22-and-24-runtime-support.md).
 
 ## System context
@@ -48,7 +48,7 @@ Local browser -> loopback Fastify server -> application service -> repository ->
 - Vitest and Testing Library cover domain, database, API, client, and component
   behavior; Playwright covers the persisted browser journey.
 - npm lockfile installation and GitHub source releases are the current packaging
-  model. Node.js 22 is supported from 22.13.0 and Node.js 24 remains supported;
+  model. Node.js 22 is supported from 22.16.0 and Node.js 24 remains supported;
   odd-numbered and unknown future majors are excluded.
 
 ## Components and dependency direction
@@ -214,7 +214,7 @@ be hardened before production-readiness claims.
   contract.
 - `npm run verify`: authoritative aggregate local/release gate.
 
-GitHub Actions repeats full verification on Node 22.13 and 24, exercises native
+GitHub Actions repeats full verification on Node 22.16 and 24, exercises native
 SQLite dependency installation/tests for both runtimes on Linux, macOS, and
 Windows, performs dependency review and CodeQL analysis, and publishes only a
 matching tag whose commit is already on `main`. Unit tests cover every native

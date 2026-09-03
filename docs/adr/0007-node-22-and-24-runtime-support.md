@@ -1,4 +1,4 @@
-# ADR-0007: Support Node.js 22.13 and 24 LTS lines
+# ADR-0007: Support Node.js 22.16 and 24 LTS lines
 
 ## Status
 
@@ -9,8 +9,17 @@ choice; source delivery and the tag-gated release pipeline remain unchanged.
 
 The initial release selected Node.js 24 as one conservative supported runtime,
 but the application does not use Node-24-only APIs. The locked source-build tree
-supports Node 22 from 22.13.0: ESLint and jsdom establish that minimum, Vite's
-minimum is 22.12.0, and `better-sqlite3` declares Node 22 and 24 support.
+dependency floor permits Node 22 from 22.13.0, but the first cross-platform run
+exposed Windows filesystem failures at that version. The supported floor is
+therefore 22.16.0, subject to exact-floor CI on every supported operating
+system. Vite's minimum is 22.12.0, and `better-sqlite3` declares Node 22 and 24
+support.
+
+Node 22.16 embeds libuv 1.49.2, whose Windows path-stat and descriptor-fstat
+implementations can expose different upper bits for the same volume serial
+number. On Track's attachment and staged-upload safety checks compare those two
+views to prevent path replacement, so the runtime difference must be normalized
+without discarding file identity.
 
 On Track remains a source release, so development dependencies used by
 `npm run quickstart` are part of the end-user runtime floor. Native SQLite must
@@ -18,12 +27,15 @@ also install and execute on every supported operating system.
 
 ## Decision
 
-- Support the explicit npm engine range `^22.13.0 || ^24.0.0`.
-- Exclude Node 22.0-22.12, odd-numbered majors, and unknown future majors.
+- Support the explicit npm engine range `^22.16.0 || ^24.0.0`.
+- Exclude Node 22.0-22.15, odd-numbered majors, and unknown future majors.
 - Keep Node 24 as the preferred maintainer runtime in `.nvmrc` while testing the
-  exact Node 22.13 floor.
+  exact Node 22.16 floor.
 - Typecheck against Node 22 declarations so application code does not
   intentionally depend on a later major.
+- Use exact BigInt device and inode values for file-identity checks. On Windows,
+  compare the documented low 32 bits of the volume serial number while retaining
+  exact inode equality, matching the correction shipped by later libuv versions.
 - Run full Linux verification and clean native-install coverage on Linux,
   macOS, and Windows for both supported Node lines. Release publication waits
   for full verification on both lines.
@@ -34,9 +46,9 @@ also install and execute on every supported operating system.
 
 - Keep Node 24 only: smallest CI matrix, but imposes a newer runtime without a
   technical requirement.
-- Declare `>=22.13`: concise, but silently claims support for EOL odd majors and
+- Declare `>=22.16`: concise, but silently claims support for EOL odd majors and
   untested future releases.
-- Declare `>=22`: incorrectly includes dependency-incompatible Node 22 minors.
+- Declare `>=22`: incorrectly includes unverified Node 22 minors.
 - Support Node 20 as well: some runtime dependencies permit it, but the current
   source-build toolchain does not, and expanding the matrix further has no
   demonstrated alpha benefit.
@@ -47,12 +59,14 @@ Node 22 users can install and run v0.0.4, while Node 24 remains supported. CI an
 release verification take longer, and dependency upgrades must preserve both
 lines or explicitly revise this ADR. Node 22 reaches upstream end of life before
 Node 24, so documentation and future releases must not imply indefinite support.
+The Windows compatibility normalization keeps symlink, regular-file, canonical
+containment, inode, and before/after identity checks intact.
 
 ## Verification
 
 - Release-contract tests enforce the exact manifest and lockfile engine range.
 - CI performs clean installs, native SQLite loading, build, typecheck, and tests
-  on Node 22.13 and 24 across Linux, macOS, and Windows.
+  on Node 22.16 and 24 across Linux, macOS, and Windows.
 - Full Linux verification, including browser E2E and dependency audit, runs on
   both supported Node lines in CI and before tagged publication.
 
@@ -60,3 +74,6 @@ Node 24, so documentation and future releases must not imply indefinite support.
 
 - [Node.js release schedule](https://github.com/nodejs/Release)
 - [npm package engine metadata](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/#engines)
+- [Node 22.16 bundled libuv version](https://raw.githubusercontent.com/nodejs/node/v22.16.0/deps/uv/include/uv/version.h)
+- [libuv Windows volume-serial consistency fix](https://github.com/libuv/libuv/commit/82cdfb75ff9bbd0dc65820ca418b7c5d412ff4d7)
+- [Windows volume information](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddk/ns-ntddk-_file_fs_volume_information)

@@ -17,7 +17,7 @@ below `1.0.0`, releases may contain breaking changes.
 - Permanent Pin and Attention labels plus project-enabled Todo, Decision, Open
   question, Risk, and Milestone labels, with multi-label message filtering and
   persistence in the current backup format.
-- Node.js 22 support from version 22.13.0 while retaining Node.js 24 support,
+- Node.js 22 support from version 22.16.0 while retaining Node.js 24 support,
   with dual-runtime CI, native SQLite portability, and release verification.
 
 ### Changed

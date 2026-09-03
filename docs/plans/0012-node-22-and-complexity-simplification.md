@@ -5,17 +5,26 @@
 Completed on 2026-09-03 as approved Slices A+B+C+D, including both breaking
 compatibility choices.
 
+Post-completion correction on 2026-09-03: the first exact-floor CI run disproved
+Node 22.13 support on Windows while install, native SQLite loading, build, and
+typecheck passed. The user revised the required floor to Node 22.16. All 22.13
+references below preserve the originally approved plan; ADR-0007 and current
+release documentation define the corrected 22.16/24 support contract.
+The compatibility correction uses BigInt file identities and normalizes only
+the documented low 32 bits of the Windows volume serial number, mirroring the
+later libuv fix while preserving inode, symlink, containment, and race checks.
+
 Local completion evidence on Node 22.18/macOS arm64:
 
 - `npm run verify` passed: release contract, build, typecheck, lint, formatting,
-  376 tests passed with 1 intentional skip, 17 migration tests passed, 12 browser
+  380 tests passed with 1 intentional skip, 17 migration tests passed, 12 browser
   tests passed with 2 viewport-specific skips, and the high-severity production
   dependency gate passed.
 - Native `better-sqlite3` loaded and executed an in-memory query.
 - The independent correctness/security review findings were fixed and covered by
   regression tests, including maximum multipart edits, empty-note prevention,
   cross-project mutation races, index DDL tampering, and migration metadata.
-- Exact Node 22.13 and Node 24 clean-install/OS evidence is configured in CI and
+- Exact Node 22.16 and Node 24 clean-install/OS evidence is configured in CI and
   remains pending until the branch runs on GitHub Actions.
 - The production audit still reports one moderate Fastify advisory; its known
   schema-coercion and `trustProxy` paths are not used here, but dependency

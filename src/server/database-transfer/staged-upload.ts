@@ -15,6 +15,12 @@ import {
 } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 
+import {
+  fileIdentity,
+  isSameFileIdentity,
+  type FileIdentity,
+} from "../file-identity.js";
+
 const STAGING_DIRECTORY_NAME = ".transfer-staging";
 const GENERATED_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
@@ -67,7 +73,7 @@ export async function stageUpload(
   const descriptorWrite = options.descriptorWrite ?? writeSync;
   const descriptorSync = options.descriptorSync ?? fsyncSync;
   let descriptor: number | undefined;
-  let createdIdentity: { device: number; inode: number } | undefined;
+  let createdIdentity: FileIdentity | undefined;
   let byteSize = 0;
 
   try {
@@ -79,11 +85,7 @@ export async function stageUpload(
         (constants.O_NOFOLLOW ?? 0),
       0o600,
     );
-    const openedIdentity = fstatSync(descriptor);
-    createdIdentity = {
-      device: openedIdentity.dev,
-      inode: openedIdentity.ino,
-    };
+    createdIdentity = fileIdentity(fstatSync(descriptor, { bigint: true }));
 
     for await (const chunk of source) {
       if (!(chunk instanceof Uint8Array)) {
@@ -114,30 +116,27 @@ export async function stageUpload(
 
     fchmodSync(descriptor, 0o600);
     descriptorSync(descriptor);
-    const descriptorIdentity = fstatSync(descriptor);
+    const descriptorIdentity = fileIdentity(
+      fstatSync(descriptor, { bigint: true }),
+    );
     closeSync(descriptor);
     descriptor = undefined;
-    const identity = lstatSync(filePath);
+    const identity = lstatSync(filePath, { bigint: true });
     if (
       identity.isSymbolicLink() ||
       !identity.isFile() ||
-      identity.dev !== descriptorIdentity.dev ||
-      identity.ino !== descriptorIdentity.ino ||
+      !isSameFileIdentity(fileIdentity(identity), descriptorIdentity) ||
       realpathSync(filePath) !==
         join(canonicalStagingDirectory, `upload-${generatedName}.tmp`)
     ) {
       throw new Error("The staged upload file is unsafe.");
     }
 
-    return createStagedUpload(filePath, byteSize, identity.dev, identity.ino);
+    return createStagedUpload(filePath, byteSize, fileIdentity(identity));
   } catch (error) {
     if (descriptor !== undefined) closeIgnoringErrors(descriptor);
     if (createdIdentity) {
-      unlinkIfIdentityMatches(
-        filePath,
-        createdIdentity.device,
-        createdIdentity.inode,
-      );
+      unlinkIfIdentityMatches(filePath, createdIdentity);
     }
     throw error;
   }
@@ -194,8 +193,7 @@ function ensurePrivateStagingDirectory(dataDirectory: string): {
 function createStagedUpload(
   filePath: string,
   byteSize: number,
-  device: number,
-  inode: number,
+  identity: FileIdentity,
 ): StagedUpload {
   let disposed = false;
   return {
@@ -204,12 +202,11 @@ function createStagedUpload(
     dispose() {
       if (disposed) return;
       try {
-        const current = lstatSync(filePath);
+        const current = lstatSync(filePath, { bigint: true });
         if (
           !current.isSymbolicLink() &&
           current.isFile() &&
-          current.dev === device &&
-          current.ino === inode
+          isSameFileIdentity(fileIdentity(current), identity)
         ) {
           unlinkSync(filePath);
         }
@@ -232,16 +229,14 @@ function closeIgnoringErrors(descriptor: number): void {
 
 function unlinkIfIdentityMatches(
   filePath: string,
-  device: number,
-  inode: number,
+  identity: FileIdentity,
 ): void {
   try {
-    const current = lstatSync(filePath);
+    const current = lstatSync(filePath, { bigint: true });
     if (
       !current.isSymbolicLink() &&
       current.isFile() &&
-      current.dev === device &&
-      current.ino === inode
+      isSameFileIdentity(fileIdentity(current), identity)
     ) {
       unlinkSync(filePath);
     }

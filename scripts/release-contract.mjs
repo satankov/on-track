@@ -14,8 +14,8 @@ export const requiredReleaseFiles = [
 ];
 
 export const expectedLicense = "Apache-2.0";
-export const expectedNodeEngine = "^22.13.0 || ^24.0.0";
-export const supportedNvmrcVersions = new Set(["22.13.0", "24"]);
+export const expectedNodeEngine = "^22.16.0 || ^24.0.0";
+export const supportedNvmrcVersions = new Set(["22.16.0", "24"]);
 
 const semverPattern =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;

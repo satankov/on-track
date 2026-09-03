@@ -41,7 +41,7 @@ not provide embedded PowerPoint or document editing.
 
 ### Prerequisite
 
-Install [Node.js](https://nodejs.org/) 22.13 or newer on the Node 22 LTS line, or
+Install [Node.js](https://nodejs.org/) 22.16 or newer on the Node 22 LTS line, or
 Node.js 24 LTS (npm is included). Then download or clone this repository and
 open a terminal in its folder. Odd-numbered Node releases are not supported.
 
