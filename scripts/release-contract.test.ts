@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -20,7 +22,65 @@ const requiredFiles = [
   ".github/workflows/release.yml",
 ];
 
+const ciWorkflow = readFileSync(
+  new URL("../.github/workflows/ci.yml", import.meta.url),
+  "utf8",
+);
+
 describe("release contract", () => {
+  it("excludes Node 22.16 from the Windows portability matrix", () => {
+    expect(ciWorkflow).toMatch(
+      /exclude:\s*\n\s*- os: windows-latest\s*\n\s*node: 22\.16\.0/,
+    );
+  });
+
+  it("accepts the exact Node 22.16 and Node 24 LTS support contract", () => {
+    expect(
+      validateReleaseContract({
+        packageVersion: "0.0.1",
+        lockfileVersion: "0.0.1",
+        packageNodeEngine: "^22.16.0 || ^24.0.0",
+        lockfileRootNodeEngine: "^22.16.0 || ^24.0.0",
+        nvmrcVersion: "24",
+        existingFiles: requiredFiles,
+        trackedFiles: [],
+      }),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ["an unsupported package engine", { packageNodeEngine: ">=22" }],
+    [
+      "the disproved Node 22.13 floor",
+      { packageNodeEngine: "^22.13.0 || ^24.0.0" },
+    ],
+    [
+      "a stale lockfile engine",
+      {
+        packageNodeEngine: "^22.16.0 || ^24.0.0",
+        lockfileRootNodeEngine: ">=24 <25",
+      },
+    ],
+    [
+      "an unsupported preferred runtime",
+      {
+        packageNodeEngine: "^22.16.0 || ^24.0.0",
+        lockfileRootNodeEngine: "^22.16.0 || ^24.0.0",
+        nvmrcVersion: "26",
+      },
+    ],
+  ])("rejects %s", (_name, override) => {
+    const errors = validateReleaseContract({
+      packageVersion: "0.0.1",
+      lockfileVersion: "0.0.1",
+      existingFiles: requiredFiles,
+      trackedFiles: [],
+      ...override,
+    });
+
+    expect(errors.join("\n")).toContain("Node.js support contract");
+  });
+
   it("accepts matching package, lockfile, and SemVer tag metadata", () => {
     expect(
       validateReleaseContract({

@@ -25,6 +25,7 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
       id: "chat-1",
       title: "Launch",
       accent: "coral",
+      enabledLabels: ["todo", "milestone"],
       createdAt: 1,
       updatedAt: 1,
     }),
@@ -33,7 +34,7 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
     appendNote: vi.fn(),
     updateNote: vi.fn(),
     deleteNote: vi.fn(),
-    downloadAttachment: vi.fn(),
+    setNoteLabel: vi.fn(),
     openAttachment: vi.fn(),
     revealAttachment: vi.fn(),
     exportDatabase: vi.fn(),
@@ -173,10 +174,283 @@ describe("personal project chat workspace", () => {
     expect(api.updateChat).toHaveBeenCalledWith("chat-1", {
       title: "Research",
       accent: "iris",
+      enabledLabels: ["todo", "milestone"],
     });
     expect(
       await screen.findByRole("heading", { name: "Research" }),
     ).toBeVisible();
+  });
+
+  it("configures only project labels and preserves their catalog order", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Discovery",
+      accent: "moss" as const,
+      enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      updateChat: vi.fn().mockResolvedValue({
+        ...chat,
+        enabledLabels: ["todo", "decision", "milestone"],
+      }),
+    });
+    render(<App api={api} />);
+
+    await user.click(await screen.findByRole("button", { name: /Discovery/ }));
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("group", { name: "Project labels" })).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "Todo" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Milestone" })).toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: "Pin" })).toBeNull();
+    expect(screen.queryByText(/Always available/i)).toBeNull();
+    await user.click(screen.getByRole("checkbox", { name: "Decision" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(api.updateChat).toHaveBeenCalledWith("chat-1", {
+      title: "Discovery",
+      accent: "moss",
+      enabledLabels: ["todo", "decision", "milestone"],
+    });
+  });
+
+  it("shows, changes, and filters multiple labels with inactive assignments retained", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Launch",
+      accent: "ocean" as const,
+      enabledLabels: ["todo", "risk", "milestone"] as const,
+      createdAt: 100,
+      updatedAt: 200,
+    };
+    const note = {
+      id: "note-1",
+      chatId: "chat-1",
+      body: "Prepare rollout",
+      createdAt: 200,
+      labels: ["decision", "risk"] as const,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+      setNoteLabel: vi.fn().mockResolvedValue(["pin", "decision", "risk"]),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Launch" }),
+    );
+    const filters = screen.getByRole("navigation", { name: "History filters" });
+    expect(
+      within(filters)
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual([
+      "All 1",
+      "Files 0",
+      "Pin 0",
+      "Attention 0",
+      "Todo 0",
+      "Risk 1",
+      "Milestone 0",
+    ]);
+    expect(
+      within(filters).queryByRole("button", { name: /Decision/ }),
+    ).toBeNull();
+    expect(
+      screen.getByText("Decision").closest(".message-label"),
+    ).toBeVisible();
+    expect(
+      screen.getByText("⚠️", {
+        selector: '.message-label[data-label="risk"] .label-glyph--emoji',
+      }),
+    ).toBeVisible();
+
+    const message = screen.getByText("Prepare rollout").closest("li")!;
+    expect(
+      within(within(message).getByLabelText("Message actions"))
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual([
+      "Change labels",
+      "Copy message",
+      "Edit message",
+      "Delete message",
+    ]);
+    await user.click(
+      within(message).getByRole("button", { name: "Change labels" }),
+    );
+    expect(
+      within(message).getByRole("checkbox", { name: "Risk" }),
+    ).toBeChecked();
+    expect(
+      within(message).getByRole("checkbox", { name: "Decision (inactive)" }),
+    ).toBeChecked();
+    expect(
+      within(message).queryByRole("checkbox", { name: "Open question" }),
+    ).toBeNull();
+    await user.click(within(message).getByRole("checkbox", { name: "Pin" }));
+
+    await waitFor(() =>
+      expect(api.setNoteLabel).toHaveBeenCalledWith(
+        "chat-1",
+        "note-1",
+        "pin",
+        true,
+      ),
+    );
+    expect(
+      within(filters).getByRole("button", { name: "Pin 1" }),
+    ).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(
+      within(message).getByRole("button", { name: "Change labels" }),
+    ).toHaveFocus();
+    expect(
+      within(message).queryByRole("group", { name: "Message labels" }),
+    ).toBeNull();
+  });
+
+  it("uses compact icon-led filters and icon-only permanent message markers", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Launch",
+      accent: "ocean" as const,
+      enabledLabels: [
+        "todo",
+        "decision",
+        "open-question",
+        "risk",
+        "milestone",
+      ] as const,
+      createdAt: 100,
+      updatedAt: 200,
+    };
+    const note = {
+      id: "note-1",
+      chatId: "chat-1",
+      body: "Prepare rollout",
+      createdAt: 200,
+      labels: [
+        "pin",
+        "attention",
+        "todo",
+        "decision",
+        "open-question",
+      ] as const,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Launch" }),
+    );
+
+    const filters = screen.getByRole("navigation", { name: "History filters" });
+    const filesFilter = within(filters).getByRole("button", {
+      name: "Files 0",
+    });
+    const attentionFilter = within(filters).getByRole("button", {
+      name: "Attention 1",
+    });
+    const questionFilter = within(filters).getByRole("button", {
+      name: "Open question 1",
+    });
+    const decisionFilter = within(filters).getByRole("button", {
+      name: "Decision 1",
+    });
+    const milestoneFilter = within(filters).getByRole("button", {
+      name: "Milestone 0",
+    });
+
+    expect(
+      filesFilter.querySelector(".history-filter-icon svg"),
+    ).not.toBeNull();
+    expect(attentionFilter).toHaveTextContent("Alert");
+    expect(decisionFilter).toHaveTextContent("Decision");
+    expect(questionFilter).toHaveTextContent("Question");
+    expect(questionFilter).not.toHaveTextContent("Open question");
+    expect(milestoneFilter).toHaveTextContent("Milestone");
+    for (const filter of within(filters).getAllByRole("button")) {
+      expect(filter.querySelector(".history-filter-count")).not.toBeNull();
+    }
+
+    const message = screen.getByText("Prepare rollout").closest("li")!;
+    const pin = message.querySelector<HTMLElement>(
+      '.message-label[data-label="pin"]',
+    )!;
+    const attention = message.querySelector<HTMLElement>(
+      '.message-label[data-label="attention"]',
+    )!;
+    expect(pin).toHaveAccessibleName("Pin");
+    expect(attention).toHaveAccessibleName("Attention");
+    expect(pin).not.toHaveTextContent("Pin");
+    expect(attention).not.toHaveTextContent("Attention");
+    expect(pin.querySelector("svg")).not.toBeNull();
+    expect(attention).toHaveTextContent("🔴");
+
+    for (const label of ["todo", "decision", "open-question"]) {
+      expect(
+        message.querySelector(
+          `.message-label[data-label="${label}"] .label-glyph svg`,
+        ),
+      ).not.toBeNull();
+    }
+  });
+
+  it("keeps the previous label state and reports a recoverable mutation error", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Launch",
+      accent: "ocean" as const,
+      enabledLabels: ["todo"] as "todo"[],
+      createdAt: 100,
+      updatedAt: 200,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({
+        ...chat,
+        notes: [
+          {
+            id: "note-1",
+            chatId: "chat-1",
+            body: "Prepare rollout",
+            createdAt: 200,
+            labels: [],
+          },
+        ],
+      }),
+      setNoteLabel: vi.fn().mockRejectedValue(new Error("Database busy")),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Launch" }),
+    );
+    const message = screen.getByText("Prepare rollout").closest("li")!;
+    await user.click(
+      within(message).getByRole("button", { name: "Change labels" }),
+    );
+    await user.click(within(message).getByRole("checkbox", { name: "Pin" }));
+
+    expect(await within(message).findByRole("alert")).toHaveTextContent(
+      "Database busy",
+    );
+    expect(
+      within(message).getByRole("checkbox", { name: "Pin" }),
+    ).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Pin 0" })).toBeVisible();
   });
 
   it("deletes the active project from the inline edit workspace", async () => {
@@ -289,6 +563,92 @@ describe("personal project chat workspace", () => {
     expect(screen.getByText("Decision").tagName).toBe("STRONG");
     expect(document.querySelector("img")).toBeNull();
     expect(composer).toHaveValue("");
+  });
+
+  it("resizes the composer for multiline drafts and edit-prefilled messages", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const note = {
+      id: "note-1",
+      chatId: "chat-1",
+      body: "First line\nSecond line\nThird line\nFourth line",
+      createdAt: 2,
+    };
+    let simulatedScrollHeight: number | undefined;
+    const scrollHeight = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "scrollHeight",
+    );
+    Object.defineProperty(HTMLTextAreaElement.prototype, "scrollHeight", {
+      configurable: true,
+      get() {
+        return (
+          simulatedScrollHeight ?? 48 + (this.value.split("\n").length - 1) * 24
+        );
+      },
+    });
+
+    try {
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+      });
+      render(<App api={api} />);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Open Delivery" }),
+      );
+      const composer = screen.getByLabelText("Add a note");
+      expect(composer).toHaveStyle({ height: "48px" });
+
+      await user.type(composer, "One{enter}Two{enter}Three");
+      expect(composer).toHaveStyle({ height: "96px" });
+
+      await user.clear(composer);
+      expect(composer).toHaveStyle({ height: "48px" });
+
+      await user.type(
+        composer,
+        "One{enter}Two{enter}Three{enter}Four{enter}Five{enter}Six",
+      );
+      expect(composer).toHaveStyle({
+        height: "144px",
+        overflowY: "auto",
+      });
+
+      simulatedScrollHeight = 72;
+      window.dispatchEvent(new Event("resize"));
+      expect(composer).toHaveStyle({ height: "72px", overflowY: "hidden" });
+      simulatedScrollHeight = undefined;
+      await user.clear(composer);
+
+      const noteItem = screen.getByRole("article").closest("li")!;
+      await user.click(
+        within(noteItem).getByRole("button", { name: "Edit message" }),
+      );
+      expect(screen.getByRole("textbox", { name: "Edit message" })).toHaveStyle(
+        { height: "120px" },
+      );
+
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.getByLabelText("Add a note")).toHaveStyle({
+        height: "48px",
+      });
+    } finally {
+      if (scrollHeight) {
+        Object.defineProperty(
+          HTMLTextAreaElement.prototype,
+          "scrollHeight",
+          scrollHeight,
+        );
+      }
+    }
   });
 
   it("sends a new message with an optional composer timestamp", async () => {
@@ -425,6 +785,70 @@ describe("personal project chat workspace", () => {
 
     await waitFor(() => expect(api.exportDatabase).toHaveBeenCalled());
     expect(createObjectURL).toHaveBeenCalled();
+  });
+
+  it("switches and persists appearance themes from preview radio cards", async () => {
+    const user = userEvent.setup();
+    const themeColor = document.createElement("meta");
+    themeColor.name = "theme-color";
+    document.head.append(themeColor);
+    localStorage.clear();
+    delete document.documentElement.dataset.theme;
+    document.documentElement.style.colorScheme = "";
+    const view = render(<App api={createApi()} />);
+
+    try {
+      await user.click(screen.getByRole("button", { name: /Settings/ }));
+      expect(
+        screen.getByRole("heading", { name: "Backup settings" }),
+      ).toBeVisible();
+
+      await user.click(screen.getByRole("button", { name: /Appearance/ }));
+      expect(screen.getByRole("heading", { name: "Appearance" })).toBeVisible();
+      expect(screen.getByRole("radio", { name: /Light/ })).toBeChecked();
+      expect(screen.getAllByTestId("theme-preview")).toHaveLength(3);
+
+      await user.click(screen.getByRole("radio", { name: /Neutral/ }));
+      expect(document.documentElement).toHaveAttribute("data-theme", "neutral");
+      expect(document.documentElement.style.colorScheme).toBe("dark");
+      expect(themeColor).toHaveAttribute("content", "#30343a");
+      expect(localStorage.getItem("on-track-theme")).toBe("neutral");
+      expect(screen.getByText("Selected", { selector: "small" })).toBeVisible();
+
+      await user.click(screen.getByRole("button", { name: /Backups/ }));
+      expect(
+        screen.getByRole("heading", { name: "Backup settings" }),
+      ).toBeVisible();
+    } finally {
+      view.unmount();
+      themeColor.remove();
+      localStorage.clear();
+      delete document.documentElement.dataset.theme;
+      document.documentElement.style.colorScheme = "";
+    }
+  });
+
+  it("restores a stored theme and falls back from invalid appearance values", () => {
+    const themeColor = document.createElement("meta");
+    themeColor.name = "theme-color";
+    document.head.append(themeColor);
+    localStorage.setItem("on-track-theme", "dark");
+    const darkView = render(<App api={createApi()} />);
+
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+    darkView.unmount();
+
+    localStorage.setItem("on-track-theme", "unsupported-theme");
+    const fallbackView = render(<App api={createApi()} />);
+    expect(document.documentElement).toHaveAttribute("data-theme", "light");
+    expect(document.documentElement.style.colorScheme).toBe("light");
+
+    fallbackView.unmount();
+    themeColor.remove();
+    localStorage.clear();
+    delete document.documentElement.dataset.theme;
+    document.documentElement.style.colorScheme = "";
   });
 
   it("returns from settings to projects without losing the active project", async () => {
@@ -694,7 +1118,18 @@ describe("personal project chat workspace", () => {
     expect(
       screen.getByText(/Native file actions are not supported/),
     ).toBeVisible();
-    expect(screen.getByText(/2 KB · Modified/)).toBeVisible();
+    const attachmentMetadata = screen.getByText(/^2 KB ·/);
+    expect(attachmentMetadata).not.toHaveTextContent("Modified");
+    expect(attachmentMetadata).toHaveAttribute(
+      "title",
+      expect.stringMatching(/^Modified /),
+    );
+    expect(
+      screen.getByRole("button", { name: "Open roadmap.pptx" }),
+    ).toContainHTML("<svg");
+    expect(
+      screen.getByRole("button", { name: "Show roadmap.pptx in Folder" }),
+    ).toContainHTML("<svg");
     expect(
       screen.getByText("roadmap.pptx").closest(".attachment-card")?.tagName,
     ).toBe("DIV");
@@ -766,7 +1201,10 @@ describe("personal project chat workspace", () => {
     await user.click(screen.getByRole("button", { name: "Open roadmap.pptx" }));
     expect(
       screen.getByRole("button", { name: "Open roadmap.pptx" }),
-    ).toHaveTextContent("Opening…");
+    ).toHaveAttribute("aria-busy", "true");
+    expect(
+      screen.getByRole("button", { name: "Open roadmap.pptx" }),
+    ).toHaveTextContent("…");
     await act(async () =>
       openRequest.reject(new Error("Default application is busy.")),
     );
@@ -837,7 +1275,7 @@ describe("personal project chat workspace", () => {
     await user.type(screen.getByLabelText("Add a note"), "Keep this draft");
     act(() => window.dispatchEvent(new Event("focus")));
 
-    expect(await screen.findByText(/3 KB · Modified/)).toBeVisible();
+    expect(await screen.findByText(/^3 KB ·/)).toBeVisible();
     expect(screen.getByLabelText("Add a note")).toHaveValue("Keep this draft");
   });
 
@@ -1133,6 +1571,7 @@ describe("personal project chat workspace", () => {
       id: "alpha",
       title: "Alpha",
       accent: "coral" as const,
+      enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
       createdAt: 1,
       updatedAt: 2,
     };
@@ -1160,12 +1599,160 @@ describe("personal project chat workspace", () => {
     expect(screen.getByRole("heading", { name: "Beta" })).toBeVisible();
   });
 
+  it("commits a pending project update to the sidebar after navigation", async () => {
+    const user = userEvent.setup();
+    const alpha = {
+      id: "alpha",
+      title: "Alpha",
+      accent: "coral" as const,
+      enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const beta = {
+      ...alpha,
+      id: "beta",
+      title: "Beta",
+      accent: "moss" as const,
+      updatedAt: 1,
+    };
+    const updateRequest = deferred<typeof alpha>();
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([alpha, beta]),
+      getChat: vi.fn(async (id: string) => ({
+        ...(id === "alpha" ? alpha : beta),
+        notes: [],
+      })),
+      updateChat: vi.fn(() => updateRequest.promise),
+    });
+    render(<App api={api} />);
+
+    await user.click(await screen.findByRole("button", { name: "Open Alpha" }));
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const input = screen.getByLabelText("Project name");
+    await user.clear(input);
+    await user.type(input, "Alpha updated");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await user.click(screen.getByRole("button", { name: "Open Beta" }));
+    expect(await screen.findByRole("heading", { name: "Beta" })).toBeVisible();
+
+    await act(async () =>
+      updateRequest.resolve({
+        ...alpha,
+        title: "Alpha updated",
+        updatedAt: 3,
+      }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Open Alpha updated" }),
+    ).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Beta" })).toBeVisible();
+  });
+
+  it("commits a pending note deletion to the sidebar after navigation", async () => {
+    const user = userEvent.setup();
+    const alpha = {
+      id: "alpha",
+      title: "Alpha",
+      accent: "coral" as const,
+      enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      createdAt: 1,
+      updatedAt: 3,
+    };
+    const beta = {
+      ...alpha,
+      id: "beta",
+      title: "Beta",
+      accent: "moss" as const,
+      updatedAt: 2,
+    };
+    const deleteRequest = deferred<void>();
+    const note = {
+      id: "note-alpha",
+      chatId: "alpha",
+      body: "Remove me",
+      createdAt: 3,
+      labels: [],
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([alpha, beta]),
+      getChat: vi.fn(async (id: string) => ({
+        ...(id === "alpha" ? alpha : beta),
+        notes: id === "alpha" ? [note] : [],
+      })),
+      deleteNote: vi.fn(() => deleteRequest.promise),
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App api={api} />);
+
+    await user.click(await screen.findByRole("button", { name: "Open Alpha" }));
+    const noteItem = (await screen.findByText("Remove me")).closest("li")!;
+    await user.click(
+      within(noteItem).getByRole("button", { name: "Delete message" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Open Beta" }));
+    expect(await screen.findByRole("heading", { name: "Beta" })).toBeVisible();
+
+    await act(async () => deleteRequest.resolve());
+
+    const projectButtons = within(
+      screen.getByRole("navigation", { name: "Projects" }),
+    )
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"));
+    expect(projectButtons).toEqual(["Open Beta", "Open Alpha"]);
+    expect(screen.getByRole("heading", { name: "Beta" })).toBeVisible();
+  });
+
+  it("preserves the active project when another project deletion resolves", async () => {
+    const user = userEvent.setup();
+    const alpha = {
+      id: "alpha",
+      title: "Alpha",
+      accent: "coral" as const,
+      enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const beta = {
+      ...alpha,
+      id: "beta",
+      title: "Beta",
+      accent: "moss" as const,
+      updatedAt: 1,
+    };
+    const deleteRequest = deferred<void>();
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([alpha, beta]),
+      getChat: vi.fn(async (id: string) => ({
+        ...(id === "alpha" ? alpha : beta),
+        notes: [],
+      })),
+      deleteChat: vi.fn(() => deleteRequest.promise),
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App api={api} />);
+
+    await user.click(await screen.findByRole("button", { name: "Open Alpha" }));
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("button", { name: "Delete project" }));
+    await user.click(screen.getByRole("button", { name: "Open Beta" }));
+    expect(await screen.findByRole("heading", { name: "Beta" })).toBeVisible();
+
+    await act(async () => deleteRequest.resolve());
+
+    expect(screen.queryByRole("button", { name: "Open Alpha" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Beta" })).toBeVisible();
+  });
+
   it("keeps navigation stable while a note save is pending", async () => {
     const user = userEvent.setup();
     const alpha = {
       id: "alpha",
       title: "Alpha",
       accent: "coral" as const,
+      enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
       createdAt: 1,
       updatedAt: 2,
     };
@@ -1180,6 +1767,7 @@ describe("personal project chat workspace", () => {
       chatId: string;
       body: string;
       createdAt: number;
+      labels: [];
     }>();
     const api = createApi({
       listChats: vi.fn().mockResolvedValue([alpha, beta]),
@@ -1202,6 +1790,7 @@ describe("personal project chat workspace", () => {
         chatId: "alpha",
         body: "Alpha note",
         createdAt: 3,
+        labels: [],
       }),
     );
 

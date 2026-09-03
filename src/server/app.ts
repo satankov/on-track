@@ -56,7 +56,7 @@ interface BuildAppOptions {
   database: Database.Database;
   databasePath?: string;
   dataDirectory?: string;
-  attachmentStore?: AttachmentStore;
+  attachmentStore?: AttachmentStore & Pick<ManagedAttachmentStore, "read">;
   maintenanceGate?: MaintenanceGate;
   exportDirectoryCleanup?: (path: string) => void;
   stagedUploadCleanup?: (staged: StagedUpload) => void;
@@ -146,25 +146,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     limits: {
       fileSize: MAX_ATTACHMENT_BYTES,
       files: MAX_ATTACHMENTS_PER_MESSAGE,
-      parts: MAX_ATTACHMENTS_PER_MESSAGE + 2,
+      parts: MAX_ATTACHMENTS_PER_MESSAGE + 3,
     },
   });
-
-  function isUnsafeHeaderCharacter(character: string): boolean {
-    const code = character.charCodeAt(0);
-    return (
-      code <= 31 || code === 127 || character === '"' || character === "\\"
-    );
-  }
-
-  function attachmentDispositionFilename(filename: string): string {
-    return filename
-      .split("")
-      .map((character) =>
-        isUnsafeHeaderCharacter(character) ? "_" : character,
-      )
-      .join("");
-  }
 
   async function parseMultipartNote(request: {
     parts: () => AsyncIterableIterator<
@@ -179,7 +163,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   }): Promise<{
     body?: string;
     createdAt?: number;
-    keepAttachmentIds: string[];
+    keepAttachmentIds?: string[];
+    replaceAttachments?: true;
     attachments: {
       filename: string;
       mediaType: string;
@@ -189,7 +174,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   }> {
     let body: string | undefined;
     let createdAt: number | undefined;
-    const keepAttachmentIds: string[] = [];
+    let keepAttachmentIds: string[] | undefined;
+    let replaceAttachments: true | undefined;
     const attachments = [];
     try {
       for await (const part of request.parts()) {
@@ -204,7 +190,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
           continue;
         }
         if (part.fieldname === "body" && typeof part.value === "string") {
-          body = part.value;
+          body = part.value.replace(/\r\n?/g, "\n");
         }
         if (part.fieldname === "createdAt") {
           const timestamp = Number(part.value);
@@ -217,13 +203,23 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
           part.fieldname === "keepAttachmentIds" &&
           typeof part.value === "string"
         ) {
-          keepAttachmentIds.push(part.value);
+          (keepAttachmentIds ??= []).push(part.value);
+        }
+        if (part.fieldname === "replaceAttachments") {
+          if (part.value !== "true") throw new InvalidInputError();
+          replaceAttachments = true;
         }
       }
     } catch {
       throw new InvalidInputError();
     }
-    return { body, createdAt, keepAttachmentIds, attachments };
+    return {
+      body,
+      createdAt,
+      keepAttachmentIds,
+      replaceAttachments,
+      attachments,
+    };
   }
 
   app.addHook("onRequest", async (request, reply) => {
@@ -346,59 +342,21 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   app.post<{ Params: { id: string } }>(
     "/api/chats/:id/notes",
     async (request, reply) => {
-      const multipart = request.isMultipart();
-      const parsed = multipart
-        ? await parseMultipartNote(request)
-        : request.body;
+      if (!request.isMultipart()) throw new InvalidInputError();
+      const parsed = await parseMultipartNote(request);
       const note = await maintenanceGate.runMutation(() =>
-        multipart
-          ? service.appendNoteWithAttachments(
-              request.params.id,
-              parsed as Awaited<ReturnType<typeof parseMultipartNote>>,
-            )
-          : service.appendNote(request.params.id, parsed),
+        service.appendNote(request.params.id, parsed),
       );
       return reply.code(201).send(note);
-    },
-  );
-  app.get<{ Params: { id: string; noteId: string; attachmentId: string } }>(
-    "/api/chats/:id/notes/:noteId/attachments/:attachmentId",
-    async (request, reply) => {
-      const { attachment, content } = await maintenanceGate.runMutation(() =>
-        service.downloadAttachment(
-          request.params.id,
-          request.params.noteId,
-          request.params.attachmentId,
-        ),
-      );
-      return reply
-        .header("Content-Type", attachment.mediaType)
-        .header(
-          "Content-Disposition",
-          `attachment; filename="${attachmentDispositionFilename(attachment.filename)}"`,
-        )
-        .send(content);
     },
   );
   app.patch<{ Params: { id: string; noteId: string } }>(
     "/api/chats/:id/notes/:noteId",
     async (request) => {
-      const multipart = request.isMultipart();
-      const parsed = multipart
-        ? await parseMultipartNote(request)
-        : request.body;
+      if (!request.isMultipart()) throw new InvalidInputError();
+      const parsed = await parseMultipartNote(request);
       return maintenanceGate.runMutation(() =>
-        multipart
-          ? service.updateNoteWithAttachments(
-              request.params.id,
-              request.params.noteId,
-              parsed as Awaited<ReturnType<typeof parseMultipartNote>>,
-            )
-          : service.updateNote(
-              request.params.id,
-              request.params.noteId,
-              parsed,
-            ),
+        service.updateNote(request.params.id, request.params.noteId, parsed),
       );
     },
   );
@@ -410,6 +368,30 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       );
       return reply.code(204).send();
     },
+  );
+  app.put<{ Params: { id: string; noteId: string; label: string } }>(
+    "/api/chats/:id/notes/:noteId/labels/:label",
+    async (request) =>
+      maintenanceGate.runMutation(() =>
+        service.setNoteLabel(
+          request.params.id,
+          request.params.noteId,
+          request.params.label,
+          true,
+        ),
+      ),
+  );
+  app.delete<{ Params: { id: string; noteId: string; label: string } }>(
+    "/api/chats/:id/notes/:noteId/labels/:label",
+    async (request) =>
+      maintenanceGate.runMutation(() =>
+        service.setNoteLabel(
+          request.params.id,
+          request.params.noteId,
+          request.params.label,
+          false,
+        ),
+      ),
   );
 
   void app.register(async (nativeApp) => {

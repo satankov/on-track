@@ -2,6 +2,7 @@ import {
   check,
   index,
   integer,
+  primaryKey,
   sqliteTable,
   text,
 } from "drizzle-orm/sqlite-core";
@@ -96,6 +97,40 @@ export const noteAttachments = sqliteTable(
       table.noteId,
       table.createdAt,
       table.id,
+    ),
+  ],
+);
+
+export const chatEnabledLabels = sqliteTable(
+  "chat_enabled_labels",
+  {
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.chatId, table.label] }),
+    check(
+      "chat_enabled_labels_label_allowed",
+      sql`${table.label} IN ('todo', 'decision', 'open-question', 'risk', 'milestone')`,
+    ),
+  ],
+);
+
+export const noteLabels = sqliteTable(
+  "note_labels",
+  {
+    noteId: text("note_id")
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.noteId, table.label] }),
+    check(
+      "note_labels_label_allowed",
+      sql`${table.label} IN ('pin', 'attention', 'todo', 'decision', 'open-question', 'risk', 'milestone')`,
     ),
   ],
 );

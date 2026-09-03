@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   ACCENTS,
+  CONFIGURABLE_LABELS,
+  DEFAULT_ENABLED_LABELS,
+  LABELS,
   createChatInputSchema,
   createNoteInputSchema,
+  labelSchema,
   updateChatInputSchema,
   updateNoteInputSchema,
 } from "./validation.js";
@@ -36,6 +40,34 @@ describe("chat input validation", () => {
 
   it("requires at least one customization field", () => {
     expect(() => updateChatInputSchema.parse({})).toThrow();
+  });
+
+  it("accepts a complete unique configurable-label selection", () => {
+    expect(CONFIGURABLE_LABELS).toEqual([
+      "todo",
+      "decision",
+      "open-question",
+      "risk",
+      "milestone",
+    ]);
+    expect(DEFAULT_ENABLED_LABELS).toEqual(["todo", "milestone"]);
+    expect(
+      updateChatInputSchema.parse({
+        enabledLabels: ["decision", "risk"],
+      }),
+    ).toEqual({ enabledLabels: ["decision", "risk"] });
+  });
+
+  it("rejects unknown and duplicated project labels", () => {
+    expect(LABELS).toEqual(["pin", "attention", ...CONFIGURABLE_LABELS]);
+    expect(labelSchema.parse("open-question")).toBe("open-question");
+    expect(() => labelSchema.parse("urgent")).toThrow();
+    expect(() =>
+      updateChatInputSchema.parse({ enabledLabels: ["todo", "todo"] }),
+    ).toThrow();
+    expect(() =>
+      updateChatInputSchema.parse({ enabledLabels: ["pin"] }),
+    ).toThrow();
   });
 });
 

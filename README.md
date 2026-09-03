@@ -41,8 +41,10 @@ not provide embedded PowerPoint or document editing.
 
 ### Prerequisite
 
-Install [Node.js 24 LTS](https://nodejs.org/) (npm is included), then download or
-clone this repository and open a terminal in its folder.
+On Windows, install [Node.js](https://nodejs.org/) 24 LTS. On macOS or Linux,
+install Node.js 22.16 or newer on the Node 22 LTS line, or Node.js 24 LTS (npm is
+included). Then download or clone this repository and open a terminal in its
+folder. Odd-numbered Node releases are not supported.
 
 ### First run — one command
 
@@ -81,7 +83,9 @@ SQLite databases, journals, backups, exports, and common local development
 artifacts are ignored by Git. The release check also fails if a database file is
 ever tracked. Use the Settings button at the bottom of the sidebar to export or
 restore a versioned backup bundle. Restore replaces current local projects and
-files rather than merging them. You can isolate evaluation data with an absolute
+files rather than merging them. The v0.0.4 alpha accepts only backups created by
+v0.0.4; it does not restore v0.0.3/schema-2 bundles. A live v0.0.3 database is
+still migrated during startup. You can isolate evaluation data with an absolute
 disposable path:
 
 ```sh
@@ -108,6 +112,7 @@ application-data directory can currently read the database and attachments.
 - [Source release decision](docs/adr/0003-source-release-pipeline.md)
 - [Apache-2.0 license decision](docs/adr/0005-apache-2-license.md)
 - [Managed attachment and native-action decision](docs/adr/0006-managed-mutable-attachments-and-native-file-actions.md)
+- [Node 22/24 runtime decision](docs/adr/0007-node-22-and-24-runtime-support.md)
 - [Security policy](SECURITY.md)
 
 ## License

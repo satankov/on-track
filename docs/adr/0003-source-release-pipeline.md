@@ -3,8 +3,8 @@
 ## Status
 
 Accepted for v0.0.1. Its original MIT-license choice was superseded first by
-ADR-0004 and finally by ADR-0005; the source-delivery and tag-gated pipeline
-decisions remain current.
+ADR-0004 and finally by ADR-0005; its Node-24-only runtime choice was superseded
+by ADR-0007. The source-delivery and tag-gated pipeline decisions remain current.
 
 ## Context
 

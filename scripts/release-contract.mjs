@@ -14,6 +14,8 @@ export const requiredReleaseFiles = [
 ];
 
 export const expectedLicense = "Apache-2.0";
+export const expectedNodeEngine = "^22.16.0 || ^24.0.0";
+export const supportedNvmrcVersions = new Set(["22.16.0", "24"]);
 
 const semverPattern =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
@@ -32,6 +34,31 @@ export function findForbiddenTrackedDataFiles(trackedFiles) {
 
 export function validateReleaseContract(input) {
   const errors = [];
+
+  if (
+    input.packageNodeEngine !== undefined &&
+    input.packageNodeEngine !== expectedNodeEngine
+  ) {
+    errors.push(
+      `Node.js support contract in package.json must be ${expectedNodeEngine}: ${String(input.packageNodeEngine)}`,
+    );
+  }
+  if (
+    input.lockfileRootNodeEngine !== undefined &&
+    input.lockfileRootNodeEngine !== expectedNodeEngine
+  ) {
+    errors.push(
+      `Node.js support contract in package-lock.json must be ${expectedNodeEngine}: ${String(input.lockfileRootNodeEngine)}`,
+    );
+  }
+  if (
+    input.nvmrcVersion !== undefined &&
+    !supportedNvmrcVersions.has(input.nvmrcVersion)
+  ) {
+    errors.push(
+      `Node.js support contract in .nvmrc must select a supported runtime: ${String(input.nvmrcVersion)}`,
+    );
+  }
 
   if (
     input.packageLicense !== undefined &&

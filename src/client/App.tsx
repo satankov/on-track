@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -12,8 +13,23 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import type { Chat, ChatDetail, Note } from "../domain/types.js";
-import { ACCENTS, type Accent } from "../domain/validation.js";
+import {
+  ACCENTS,
+  CONFIGURABLE_LABELS,
+  LABELS,
+  PERMANENT_LABELS,
+  type Accent,
+  type ConfigurableLabel,
+  type Label,
+} from "../domain/validation.js";
 import { apiClient, type ApiClient } from "./api.js";
+import {
+  applyTheme,
+  persistTheme,
+  readStoredTheme,
+  THEMES,
+  type Theme,
+} from "./theme.js";
 
 const ACCENT_NAMES: Record<Accent, string> = {
   coral: "Coral",
@@ -23,6 +39,37 @@ const ACCENT_NAMES: Record<Accent, string> = {
   iris: "Iris",
   slate: "Slate",
 };
+
+const LABEL_NAMES: Record<Label, string> = {
+  pin: "Pin",
+  attention: "Attention",
+  todo: "Todo",
+  decision: "Decision",
+  "open-question": "Open question",
+  risk: "Risk",
+  milestone: "Milestone",
+};
+
+const LABEL_MARKS: Partial<Record<Label, string>> = {
+  attention: "🔴",
+  risk: "⚠️",
+  milestone: "🎖️",
+};
+
+const FILTER_LABEL_NAMES: Record<Label, string> = {
+  ...LABEL_NAMES,
+  attention: "Alert",
+  "open-question": "Question",
+};
+
+const ICON_ONLY_MESSAGE_LABELS = new Set<Label>(["pin", "attention"]);
+
+type HistoryFilter = "all" | "attachments" | Label;
+
+interface WorkspaceServerState {
+  chats: Chat[];
+  active?: ChatDetail;
+}
 
 function sortChats(chats: Chat[]): Chat[] {
   return [...chats].sort(
@@ -55,12 +102,52 @@ function chatActivityFromNotes(chat: ChatDetail, notes: Note[]): number {
   );
 }
 
+function chatFromDetail(detail: ChatDetail): Chat {
+  return {
+    id: detail.id,
+    title: detail.title,
+    accent: detail.accent,
+    enabledLabels: detail.enabledLabels,
+    createdAt: detail.createdAt,
+    updatedAt: detail.updatedAt,
+  };
+}
+
+function commitProjectUpdate(
+  state: WorkspaceServerState,
+  projectId: string,
+  updateSummary: (chat: Chat) => Chat,
+  updateActive: (active: ChatDetail) => ChatDetail,
+): WorkspaceServerState {
+  const active =
+    state.active?.id === projectId ? updateActive(state.active) : state.active;
+  return {
+    active,
+    chats: sortChats(
+      state.chats.map((chat) =>
+        chat.id !== projectId
+          ? chat
+          : active?.id === projectId
+            ? chatFromDetail(active)
+            : updateSummary(chat),
+      ),
+    ),
+  };
+}
+
 function errorMessage(caught: unknown, fallback: string): string {
   return caught instanceof Error ? caught.message : fallback;
 }
 
 function hasAttachments(note: Note): boolean {
   return (note.attachments?.length ?? 0) > 0;
+}
+
+function resizeComposerTextarea(textarea: HTMLTextAreaElement): void {
+  textarea.style.height = "0px";
+  const scrollHeight = textarea.scrollHeight;
+  textarea.style.height = `${Math.max(48, Math.min(scrollHeight, 144))}px`;
+  textarea.style.overflowY = scrollHeight > 144 ? "auto" : "hidden";
 }
 
 function formatFileSize(byteSize: number): string {
@@ -73,6 +160,15 @@ function formatAttachmentModified(timestamp: number): string {
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
+  }).format(new Date(timestamp));
+}
+
+function formatAttachmentModifiedCompact(timestamp: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(new Date(timestamp));
 }
 
@@ -279,11 +375,18 @@ function ProjectEditWorkspace({
 }: {
   chat: ChatDetail;
   onBack: () => void;
-  onSubmit: (input: { title: string; accent: Accent }) => Promise<void>;
+  onSubmit: (input: {
+    title: string;
+    accent: Accent;
+    enabledLabels: ConfigurableLabel[];
+  }) => Promise<void>;
   onDelete: () => Promise<void>;
 }) {
   const [title, setTitle] = useState(chat.title);
   const [accent, setAccent] = useState<Accent>(chat.accent);
+  const [enabledLabels, setEnabledLabels] = useState<ConfigurableLabel[]>(
+    chat.enabledLabels ?? ["todo", "milestone"],
+  );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -293,7 +396,7 @@ function ProjectEditWorkspace({
     setSaving(true);
     setError("");
     try {
-      await onSubmit({ title, accent });
+      await onSubmit({ title, accent, enabledLabels });
     } catch (caught) {
       setError(errorMessage(caught, "The project could not be saved."));
       setSaving(false);
@@ -360,6 +463,36 @@ function ProjectEditWorkspace({
               ))}
             </div>
           </fieldset>
+          <fieldset className="project-label-fieldset">
+            <legend>Project labels</legend>
+            <p className="field-help">
+              Choose which labels are useful in this project. Existing message
+              labels stay in place if you turn one off.
+            </p>
+            <div className="project-label-options">
+              {CONFIGURABLE_LABELS.map((label) => (
+                <label className="project-label-option" key={label}>
+                  <input
+                    type="checkbox"
+                    checked={enabledLabels.includes(label)}
+                    onChange={(event) =>
+                      setEnabledLabels((current) =>
+                        event.target.checked
+                          ? CONFIGURABLE_LABELS.filter(
+                              (candidate) =>
+                                current.includes(candidate) ||
+                                candidate === label,
+                            )
+                          : current.filter((candidate) => candidate !== label),
+                      )
+                    }
+                  />
+                  <span>{LABEL_NAMES[label]}</span>
+                  <LabelGlyph label={label} />
+                </label>
+              ))}
+            </div>
+          </fieldset>
           {error && (
             <p role="alert" className="form-error">
               {error}
@@ -418,7 +551,7 @@ function ProjectRail({
     >
       <header className="rail-header">
         <div>
-          <p className="brand-mark">ON TRACK</p>
+          <p className="brand-mark">On Track</p>
           <p className="brand-subtitle">Private project threads</p>
         </div>
         <button
@@ -428,7 +561,7 @@ function ProjectRail({
           disabled={navigationDisabled}
           aria-label="New project"
         >
-          <span aria-hidden="true">+</span>
+          <PlusIcon />
         </button>
       </header>
 
@@ -460,7 +593,7 @@ function ProjectRail({
               </small>
             </span>
             <span className="project-arrow" aria-hidden="true">
-              ↗
+              <ChevronRightIcon />
             </span>
           </button>
         ))}
@@ -546,7 +679,17 @@ function EmptyWorkspace({
   );
 }
 
-function SettingsRail({ onBack }: { onBack: () => void }) {
+type SettingsSection = "appearance" | "backups";
+
+function SettingsRail({
+  activeSection,
+  onBack,
+  onSelect,
+}: {
+  activeSection: SettingsSection;
+  onBack: () => void;
+  onSelect: (section: SettingsSection) => void;
+}) {
   return (
     <aside className="project-rail settings-rail">
       <header className="rail-header settings-rail-header">
@@ -565,9 +708,30 @@ function SettingsRail({ onBack }: { onBack: () => void }) {
       </header>
       <nav aria-label="Settings sections" className="settings-section-list">
         <button
-          className="settings-section-item settings-section-item--active"
+          className={`settings-section-item ${
+            activeSection === "appearance"
+              ? "settings-section-item--active"
+              : ""
+          }`}
           type="button"
-          aria-current="page"
+          aria-current={activeSection === "appearance" ? "page" : undefined}
+          onClick={() => onSelect("appearance")}
+        >
+          <span className="settings-section-icon" aria-hidden="true">
+            <AppearanceIcon />
+          </span>
+          <span>
+            <strong>Appearance</strong>
+            <small>Theme and contrast</small>
+          </span>
+        </button>
+        <button
+          className={`settings-section-item ${
+            activeSection === "backups" ? "settings-section-item--active" : ""
+          }`}
+          type="button"
+          aria-current={activeSection === "backups" ? "page" : undefined}
+          onClick={() => onSelect("backups")}
         >
           <span className="settings-section-icon" aria-hidden="true">
             <DatabaseIcon />
@@ -582,7 +746,99 @@ function SettingsRail({ onBack }: { onBack: () => void }) {
   );
 }
 
-function SettingsWorkspace({
+const THEME_NAMES: Record<Theme, string> = {
+  light: "Light",
+  neutral: "Neutral",
+  dark: "Dark",
+};
+
+const THEME_DESCRIPTIONS: Record<Theme, string> = {
+  light: "Clear daylight",
+  neutral: "Soft graphite",
+  dark: "Low-light focus",
+};
+
+function AppearanceSettingsWorkspace({
+  theme,
+  onThemeChange,
+}: {
+  theme: Theme;
+  onThemeChange: (theme: Theme) => void;
+}) {
+  return (
+    <main className="workspace settings-workspace appearance-workspace">
+      <header className="settings-workspace-header">
+        <p className="eyebrow">Personalization</p>
+        <h1>Appearance</h1>
+      </header>
+      <section
+        className="settings-panel appearance-panel"
+        aria-labelledby="theme-choice"
+      >
+        <div className="settings-panel-copy">
+          <h2 id="theme-choice">Choose a theme</h2>
+          <p>
+            Pick the lighting that makes project notes easiest to read. Layout
+            and project color identity stay the same.
+          </p>
+        </div>
+        <fieldset className="theme-fieldset">
+          <legend>Theme</legend>
+          <div className="theme-options">
+            {THEMES.map((value) => {
+              const selected = theme === value;
+              return (
+                <label
+                  className="theme-option"
+                  data-preview-theme={value}
+                  key={value}
+                >
+                  <input
+                    type="radio"
+                    name="appearance-theme"
+                    value={value}
+                    checked={selected}
+                    onChange={() => onThemeChange(value)}
+                  />
+                  <span
+                    className="theme-preview"
+                    data-testid="theme-preview"
+                    aria-hidden="true"
+                  >
+                    <span className="theme-preview-rail">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                    <span className="theme-preview-workspace">
+                      <i className="theme-preview-header" />
+                      <span className="theme-preview-history">
+                        <i />
+                        <i />
+                      </span>
+                      <i className="theme-preview-composer" />
+                    </span>
+                  </span>
+                  <span className="theme-option-copy">
+                    <strong>{THEME_NAMES[value]}</strong>
+                    <small>
+                      {selected ? "Selected" : THEME_DESCRIPTIONS[value]}
+                    </small>
+                  </span>
+                  <span className="theme-option-check" aria-hidden="true">
+                    <CheckIcon />
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+      </section>
+    </main>
+  );
+}
+
+function BackupSettingsWorkspace({
   onExport,
   onImport,
 }: {
@@ -707,10 +963,52 @@ function SettingsIcon() {
   );
 }
 
+function AppearanceIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 3v2" />
+      <path d="M12 19v2" />
+      <path d="m4.22 4.22 1.42 1.42" />
+      <path d="m18.36 18.36 1.42 1.42" />
+      <path d="M3 12h2" />
+      <path d="M19 12h2" />
+      <path d="m4.22 19.78 1.42-1.42" />
+      <path d="m18.36 5.64 1.42-1.42" />
+      <circle cx="12" cy="12" r="4" />
+    </svg>
+  );
+}
+
 function ArrowLeftIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="m15 18-6-6 6-6" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="m9 6 6 6-6 6" />
+    </svg>
+  );
+}
+
+function SendIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="m4 12 16-8-5 16-3-6Z" />
+      <path d="m12 14 3-3" />
     </svg>
   );
 }
@@ -780,11 +1078,119 @@ function PaperclipIcon() {
   );
 }
 
+function ListIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M8 6h12" />
+      <path d="M8 12h12" />
+      <path d="M8 18h12" />
+      <circle cx="4" cy="6" r="1" />
+      <circle cx="4" cy="12" r="1" />
+      <circle cx="4" cy="18" r="1" />
+    </svg>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="m14 4 6 6-3 1-4 4 1 4-1 1-9-9 1-1 4 1 4-4Z" />
+      <path d="m9 15-5 5" />
+    </svg>
+  );
+}
+
+function TodoIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="3" y="3" width="18" height="18" rx="4" />
+      <path d="m7.5 12 3 3 6-7" />
+    </svg>
+  );
+}
+
+function DecisionIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M6 3v18" />
+      <path d="M6 7h8l3-3" />
+      <path d="M6 15h8l3 3" />
+      <path d="m15 4 2-2 2 2" />
+      <path d="m15 18 2 2 2-2" />
+    </svg>
+  );
+}
+
+function QuestionIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.7 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1.2.9-1.2 1.7" />
+      <path d="M12 17h.01" />
+    </svg>
+  );
+}
+
+function LabelGlyph({ label }: { label: Label }) {
+  const mark = LABEL_MARKS[label];
+  if (mark) {
+    return (
+      <span className="label-glyph label-glyph--emoji" aria-hidden="true">
+        {mark}
+      </span>
+    );
+  }
+
+  const icon =
+    label === "pin" ? (
+      <PinIcon />
+    ) : label === "todo" ? (
+      <TodoIcon />
+    ) : label === "decision" ? (
+      <DecisionIcon />
+    ) : (
+      <QuestionIcon />
+    );
+
+  return (
+    <span className="label-glyph label-glyph--svg" aria-hidden="true">
+      {icon}
+    </span>
+  );
+}
+
+function LabelIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M20 13 13 20 4 11V4h7Z" />
+      <circle cx="8.5" cy="8.5" r="1.25" />
+    </svg>
+  );
+}
+
 function XIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="M18 6 6 18" />
       <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
+function OpenFileIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M14 4h6v6" />
+      <path d="m20 4-9 9" />
+      <path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" />
+    </svg>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
     </svg>
   );
 }
@@ -810,6 +1216,146 @@ function MessageActionButton({
     >
       {children}
     </button>
+  );
+}
+
+function MessageLabels({ labels }: { labels: Label[] }) {
+  if (labels.length === 0) return null;
+  return (
+    <span className="message-labels" aria-label="Message labels" role="list">
+      {LABELS.filter((label) => labels.includes(label)).map((label) => {
+        const iconOnly = ICON_ONLY_MESSAGE_LABELS.has(label);
+        return (
+          <span
+            className={`message-label ${iconOnly ? "message-label--icon-only" : ""}`}
+            data-label={label}
+            aria-label={iconOnly ? LABEL_NAMES[label] : undefined}
+            title={iconOnly ? LABEL_NAMES[label] : undefined}
+            role="listitem"
+            key={label}
+          >
+            <LabelGlyph label={label} />
+            {!iconOnly && (
+              <span className="message-label-name">{LABEL_NAMES[label]}</span>
+            )}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+function MessageLabelPicker({
+  note,
+  enabledLabels,
+  onToggle,
+}: {
+  note: Note;
+  enabledLabels: ConfigurableLabel[];
+  onToggle: (note: Note, label: Label, applied: boolean) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busyLabel, setBusyLabel] = useState<Label>();
+  const [error, setError] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverId = useId();
+  const appliedLabels = note.labels ?? [];
+  const permanent = new Set<Label>(PERMANENT_LABELS);
+  const availableLabels = LABELS.filter(
+    (label) =>
+      permanent.has(label) ||
+      enabledLabels.includes(label as ConfigurableLabel) ||
+      appliedLabels.includes(label),
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", dismiss);
+    return () => document.removeEventListener("mousedown", dismiss);
+  }, [open]);
+
+  async function changeLabel(label: Label, applied: boolean) {
+    setBusyLabel(label);
+    setError("");
+    try {
+      await onToggle(note, label, applied);
+    } catch (caught) {
+      setError(errorMessage(caught, "The label could not be changed."));
+    } finally {
+      setBusyLabel(undefined);
+    }
+  }
+
+  return (
+    <div
+      className={`message-label-picker ${open ? "message-label-picker--open" : ""}`}
+      ref={rootRef}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && open) {
+          event.preventDefault();
+          setOpen(false);
+          triggerRef.current?.focus();
+        }
+      }}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        className="message-action"
+        aria-label="Change labels"
+        title="Change labels"
+        aria-expanded={open}
+        aria-controls={popoverId}
+        onClick={() => {
+          setOpen((current) => !current);
+          setError("");
+        }}
+      >
+        <LabelIcon />
+      </button>
+      {open && (
+        <div className="message-label-popover" id={popoverId}>
+          <fieldset>
+            <legend>Message labels</legend>
+            {availableLabels.map((label) => {
+              const applied = appliedLabels.includes(label);
+              const inactive =
+                !permanent.has(label) &&
+                !enabledLabels.includes(label as ConfigurableLabel);
+              return (
+                <label
+                  className={`message-label-choice ${inactive ? "message-label-choice--inactive" : ""}`}
+                  key={label}
+                >
+                  <input
+                    type="checkbox"
+                    checked={applied}
+                    disabled={busyLabel !== undefined || (inactive && !applied)}
+                    onChange={(event) =>
+                      void changeLabel(label, event.target.checked)
+                    }
+                  />
+                  <span>
+                    <LabelGlyph label={label} />
+                    {LABEL_NAMES[label]}
+                    {inactive ? " (inactive)" : ""}
+                  </span>
+                </label>
+              );
+            })}
+          </fieldset>
+          {error && (
+            <p className="message-label-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -874,6 +1420,7 @@ function AttachmentList({
                 : undefined;
         const openBusy = busyAction === `${attachment.id}:open`;
         const revealBusy = busyAction === `${attachment.id}:reveal`;
+        const modifiedAt = attachment.modifiedAt ?? attachment.createdAt;
         return (
           <div className="attachment-card" key={attachment.id}>
             <span className="attachment-type" aria-hidden="true">
@@ -884,6 +1431,11 @@ function AttachmentList({
               <small
                 id={reasonId}
                 className={reason ? "attachment-status--warning" : undefined}
+                title={
+                  reason
+                    ? undefined
+                    : `Modified ${formatAttachmentModified(modifiedAt)}`
+                }
               >
                 {reason ? (
                   <>
@@ -891,7 +1443,7 @@ function AttachmentList({
                     {reason}
                   </>
                 ) : (
-                  `${formatFileSize(attachment.byteSize)} · Modified ${formatAttachmentModified(attachment.modifiedAt ?? attachment.createdAt)}`
+                  `${formatFileSize(attachment.byteSize)} · ${formatAttachmentModifiedCompact(modifiedAt)}`
                 )}
               </small>
             </span>
@@ -900,22 +1452,44 @@ function AttachmentList({
                 type="button"
                 className="button button-primary attachment-action"
                 aria-label={`Open ${attachment.filename}`}
+                aria-busy={openBusy}
+                title="Open"
                 aria-describedby={reason ? reasonId : undefined}
                 disabled={openCapability !== "available" || Boolean(busyAction)}
                 onClick={() => void runAction(attachment.id, "open")}
               >
-                {openBusy ? "Opening…" : "Open"}
+                {openBusy ? (
+                  <span
+                    className="attachment-action-progress"
+                    aria-hidden="true"
+                  >
+                    …
+                  </span>
+                ) : (
+                  <OpenFileIcon />
+                )}
               </button>
               <button
                 type="button"
                 className="button button-quiet attachment-action"
                 aria-label={`Show ${attachment.filename} in Folder`}
+                aria-busy={revealBusy}
+                title="Show in Folder"
                 disabled={
                   revealCapability !== "available" || Boolean(busyAction)
                 }
                 onClick={() => void runAction(attachment.id, "reveal")}
               >
-                {revealBusy ? "Showing…" : "Show in Folder"}
+                {revealBusy ? (
+                  <span
+                    className="attachment-action-progress"
+                    aria-hidden="true"
+                  >
+                    …
+                  </span>
+                ) : (
+                  <FolderIcon />
+                )}
               </button>
             </span>
           </div>
@@ -954,6 +1528,7 @@ function ChatWorkspace({
   onHistoryFilterChange,
   onRemoveEditingAttachment,
   onRemovePendingFile,
+  onSetNoteLabel,
   onSubmit,
   onToggleTimestamp,
   copiedNoteId,
@@ -966,7 +1541,7 @@ function ChatWorkspace({
   editingNote?: Note;
   editingAttachmentIds: string[];
   pendingFiles: File[];
-  historyFilter: "all" | "attachments";
+  historyFilter: HistoryFilter;
   saving: boolean;
   timestampOpen: boolean;
   onBack: () => void;
@@ -983,26 +1558,63 @@ function ChatWorkspace({
   onDraftChange: (value: string) => void;
   onDraftTimestampChange: (value: string) => void;
   onFilesSelected: (files: File[]) => void;
-  onHistoryFilterChange: (filter: "all" | "attachments") => void;
+  onHistoryFilterChange: (filter: HistoryFilter) => void;
   onRemoveEditingAttachment: (attachmentId: string) => void;
   onRemovePendingFile: (index: number) => void;
+  onSetNoteLabel: (note: Note, label: Label, applied: boolean) => Promise<void>;
   onSubmit: () => void;
   onToggleTimestamp: () => void;
   copiedNoteId?: string;
   navigationDisabled: boolean;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentCount = detail.notes.filter(hasAttachments).length;
-  const visibleNotes =
-    historyFilter === "attachments"
-      ? detail.notes.filter(hasAttachments)
-      : detail.notes;
+  const enabledLabels = detail.enabledLabels ?? ["todo", "milestone"];
+  const filterLabels = [...PERMANENT_LABELS, ...enabledLabels];
+  const visibleNotes = detail.notes.filter((note) => {
+    if (historyFilter === "all") return true;
+    if (historyFilter === "attachments") return hasAttachments(note);
+    return (note.labels ?? []).includes(historyFilter);
+  });
   const showingEmptyFilter =
-    historyFilter === "attachments" && visibleNotes.length === 0;
+    historyFilter !== "all" && visibleNotes.length === 0;
   const editingAttachments =
     editingNote?.attachments?.filter((attachment) =>
       editingAttachmentIds.includes(attachment.id),
     ) ?? [];
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    resizeComposerTextarea(textarea);
+  }, [draft]);
+
+  useEffect(() => {
+    const resize = () => {
+      const textarea = textareaRef.current;
+      if (textarea) resizeComposerTextarea(textarea);
+    };
+    const textarea = textareaRef.current;
+    let observedWidth = textarea?.clientWidth ?? 0;
+    const observer =
+      textarea && typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver((entries) => {
+            const nextWidth = entries[0]?.contentRect.width ?? 0;
+            if (nextWidth === observedWidth) return;
+            observedWidth = nextWidth;
+            resizeComposerTextarea(textarea);
+          })
+        : undefined;
+    if (textarea) observer?.observe(textarea);
+    window.addEventListener("resize", resize);
+    window.visualViewport?.addEventListener("resize", resize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", resize);
+      window.visualViewport?.removeEventListener("resize", resize);
+    };
+  }, []);
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -1023,7 +1635,7 @@ function ChatWorkspace({
             disabled={navigationDisabled}
             aria-label="Back to projects"
           >
-            ←
+            <ArrowLeftIcon />
           </button>
           <div className="chat-heading">
             <p className="eyebrow">Project thread</p>
@@ -1034,7 +1646,8 @@ function ChatWorkspace({
             type="button"
             onClick={onCustomize}
           >
-            Edit
+            <EditIcon />
+            <span>Edit</span>
           </button>
         </div>
       </header>
@@ -1044,19 +1657,53 @@ function ChatWorkspace({
           <button
             type="button"
             className={`history-filter-button ${historyFilter === "all" ? "history-filter-button--active" : ""}`}
+            aria-label={`All ${detail.notes.length}`}
             aria-pressed={historyFilter === "all"}
             onClick={() => onHistoryFilterChange("all")}
           >
-            All {detail.notes.length}
+            <span className="history-filter-icon" aria-hidden="true">
+              <ListIcon />
+            </span>
+            <span className="history-filter-label">All</span>
+            <span className="history-filter-count">{detail.notes.length}</span>
           </button>
           <button
             type="button"
             className={`history-filter-button ${historyFilter === "attachments" ? "history-filter-button--active" : ""}`}
+            aria-label={`Files ${attachmentCount}`}
             aria-pressed={historyFilter === "attachments"}
             onClick={() => onHistoryFilterChange("attachments")}
           >
-            Files {attachmentCount}
+            <span className="history-filter-icon" aria-hidden="true">
+              <PaperclipIcon />
+            </span>
+            <span className="history-filter-label">Files</span>
+            <span className="history-filter-count">{attachmentCount}</span>
           </button>
+          {filterLabels.map((label) => {
+            const count = detail.notes.filter((note) =>
+              (note.labels ?? []).includes(label),
+            ).length;
+            return (
+              <button
+                type="button"
+                className={`history-filter-button ${historyFilter === label ? "history-filter-button--active" : ""}`}
+                aria-label={`${LABEL_NAMES[label]} ${count}`}
+                title={LABEL_NAMES[label]}
+                aria-pressed={historyFilter === label}
+                onClick={() => onHistoryFilterChange(label)}
+                key={label}
+              >
+                <span className="history-filter-icon">
+                  <LabelGlyph label={label} />
+                </span>
+                <span className="history-filter-label">
+                  {FILTER_LABEL_NAMES[label]}
+                </span>
+                <span className="history-filter-count">{count}</span>
+              </button>
+            );
+          })}
         </div>
       </nav>
 
@@ -1074,10 +1721,20 @@ function ChatWorkspace({
         ) : showingEmptyFilter ? (
           <div className="message-groups">
             <div className="no-notes no-notes--filtered">
-              <p className="eyebrow">Files</p>
-              <h2>No attached files yet.</h2>
+              <p className="eyebrow">
+                {historyFilter === "attachments"
+                  ? "Files"
+                  : LABEL_NAMES[historyFilter]}
+              </p>
+              <h2>
+                No{" "}
+                {historyFilter === "attachments"
+                  ? "attached files"
+                  : "matching messages"}{" "}
+                yet.
+              </h2>
               <p>
-                Messages with attachments will appear in this project slice.
+                This project slice will update when a matching message appears.
               </p>
             </div>
           </div>
@@ -1104,6 +1761,7 @@ function ChatWorkspace({
                               <MarkdownMessage body={note.body} />
                             </div>
                             <footer className="message-footer">
+                              <MessageLabels labels={note.labels ?? []} />
                               <time
                                 className="message-time"
                                 dateTime={new Date(
@@ -1118,6 +1776,11 @@ function ChatWorkspace({
                             className="message-actions"
                             aria-label="Message actions"
                           >
+                            <MessageLabelPicker
+                              note={note}
+                              enabledLabels={enabledLabels}
+                              onToggle={onSetNoteLabel}
+                            />
                             <MessageActionButton
                               label={copied ? "Message copied" : "Copy message"}
                               onClick={() => onCopyNote(note)}
@@ -1193,17 +1856,6 @@ function ChatWorkspace({
               ))}
             </div>
           )}
-          <textarea
-            data-composer-textarea
-            aria-label={editingNote ? "Edit message" : "Add a note"}
-            placeholder={
-              editingNote ? "Edit this message…" : "Add a note to this project…"
-            }
-            value={draft}
-            maxLength={10_000}
-            onChange={(event) => onDraftChange(event.target.value)}
-            onKeyDown={handleKeyDown}
-          />
           {timestampOpen && (
             <div className="composer-timestamp-row">
               <label className="field-label" htmlFor="composer-timestamp">
@@ -1218,73 +1870,100 @@ function ChatWorkspace({
               />
             </div>
           )}
-          <div className="composer-bar">
-            <span>
-              <kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd> to add
-            </span>
-            <div className="composer-tools">
-              <input
-                ref={fileInputRef}
-                className="visually-hidden-file"
-                type="file"
-                multiple
-                aria-label="Attach files"
-                onChange={(event) => {
-                  onFilesSelected(Array.from(event.target.files ?? []));
-                  event.target.value = "";
-                }}
-              />
+          <div className="composer-input-row">
+            <textarea
+              ref={textareaRef}
+              data-composer-textarea
+              aria-label={editingNote ? "Edit message" : "Add a note"}
+              placeholder={
+                editingNote
+                  ? "Edit this message…"
+                  : "Add a note to this project…"
+              }
+              value={draft}
+              maxLength={10_000}
+              onChange={(event) => onDraftChange(event.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+            <div className="composer-bar">
+              <span>
+                <kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd>
+              </span>
+              <div className="composer-tools">
+                <input
+                  ref={fileInputRef}
+                  className="visually-hidden-file"
+                  type="file"
+                  multiple
+                  aria-label="Attach files"
+                  onChange={(event) => {
+                    onFilesSelected(Array.from(event.target.files ?? []));
+                    event.target.value = "";
+                  }}
+                />
+                <button
+                  className="composer-icon-button"
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  aria-label="Open file picker"
+                  title="Attach files"
+                >
+                  <PaperclipIcon />
+                </button>
+                <button
+                  className="composer-icon-button"
+                  type="button"
+                  onClick={onToggleTimestamp}
+                  aria-label={
+                    timestampOpen ? "Hide timestamp" : "Choose timestamp"
+                  }
+                  aria-expanded={timestampOpen}
+                  title={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
+                >
+                  <ClockIcon />
+                </button>
+              </div>
+              {editingNote && (
+                <button
+                  className="composer-cancel-button"
+                  type="button"
+                  onClick={onCancelEditNote}
+                >
+                  Cancel
+                </button>
+              )}
               <button
-                className="composer-icon-button"
+                className="send-button"
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                aria-label="Open file picker"
-                title="Attach files"
-              >
-                <PaperclipIcon />
-              </button>
-              <button
-                className="composer-icon-button"
-                type="button"
-                onClick={onToggleTimestamp}
+                onClick={onSubmit}
                 aria-label={
-                  timestampOpen ? "Hide timestamp" : "Choose timestamp"
+                  saving
+                    ? editingNote
+                      ? "Saving message"
+                      : "Adding note"
+                    : editingNote
+                      ? "Save"
+                      : "Add note"
                 }
-                aria-expanded={timestampOpen}
-                title={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
+                disabled={
+                  saving ||
+                  (!draft.trim() &&
+                    pendingFiles.length === 0 &&
+                    editingAttachments.length === 0)
+                }
               >
-                <ClockIcon />
+                <span>
+                  {saving
+                    ? editingNote
+                      ? "Saving…"
+                      : "Adding…"
+                    : editingNote
+                      ? "Save"
+                      : "Add"}
+                </span>
+                <SendIcon />
               </button>
             </div>
-            {editingNote && (
-              <button
-                className="composer-cancel-button"
-                type="button"
-                onClick={onCancelEditNote}
-              >
-                Cancel
-              </button>
-            )}
-            <button
-              className="send-button"
-              type="button"
-              onClick={onSubmit}
-              disabled={
-                saving ||
-                (!draft.trim() &&
-                  pendingFiles.length === 0 &&
-                  editingAttachments.length === 0)
-              }
-            >
-              {saving
-                ? editingNote
-                  ? "Saving…"
-                  : "Adding…"
-                : editingNote
-                  ? "Save"
-                  : "Add note"}{" "}
-              <span aria-hidden="true">↑</span>
-            </button>
           </div>
         </div>
       </footer>
@@ -1293,8 +1972,10 @@ function ChatWorkspace({
 }
 
 export function App({ api = apiClient }: { api?: ApiClient }) {
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [active, setActive] = useState<ChatDetail>();
+  const [workspace, setWorkspace] = useState<WorkspaceServerState>({
+    chats: [],
+  });
+  const { chats, active } = workspace;
   const [loadState, setLoadState] = useState<"loading" | "loaded" | "error">(
     "loading",
   );
@@ -1302,6 +1983,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [mode, setMode] = useState<"projects" | "settings" | "projectEdit">(
     "projects",
   );
+  const [settingsSection, setSettingsSection] =
+    useState<SettingsSection>("backups");
+  const [theme, setTheme] = useState<Theme>(() => readStoredTheme());
   const [editingNote, setEditingNote] = useState<Note>();
   const [editingAttachmentIds, setEditingAttachmentIds] = useState<string[]>(
     [],
@@ -1309,9 +1993,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [copiedNoteId, setCopiedNoteId] = useState<string>();
   const [draft, setDraft] = useState("");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [historyFilter, setHistoryFilter] = useState<"all" | "attachments">(
-    "all",
-  );
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
   const [draftTimestamp, setDraftTimestamp] = useState("");
   const [composerTimestampOpen, setComposerTimestampOpen] = useState(false);
   const [error, setError] = useState("");
@@ -1320,6 +2002,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const activeMutationGeneration = useRef(0);
   const activeId = useRef<string | undefined>(undefined);
   const copyResetTimer = useRef<number | undefined>(undefined);
+
+  useLayoutEffect(() => {
+    applyTheme(theme);
+    persistTheme(theme);
+  }, [theme]);
 
   useEffect(() => {
     activeId.current = active?.id;
@@ -1344,7 +2031,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ) {
             return;
           }
-          setActive(detail);
+          setWorkspace((current) =>
+            commitProjectUpdate(
+              current,
+              projectId,
+              () => chatFromDetail(detail),
+              () => detail,
+            ),
+          );
         })
         .catch(() => {
           // Focus refresh is best effort; explicit actions surface their errors.
@@ -1360,7 +2054,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       .listChats()
       .then((result) => {
         if (!current) return;
-        setChats(result);
+        setWorkspace((current) => ({ ...current, chats: result }));
         setLoadState("loaded");
       })
       .catch(() => {
@@ -1390,7 +2084,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     try {
       const detail = await api.getChat(id);
       if (request !== selectionRequest.current) return;
-      setActive(detail);
+      setWorkspace((current) => ({ ...current, active: detail }));
       setDraft("");
       setPendingFiles([]);
       setHistoryFilter("all");
@@ -1408,8 +2102,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function createChat(input: { title: string; accent: Accent }) {
     const chat = await api.createChat(input);
     selectionRequest.current += 1;
-    setChats((current) => [chat, ...current]);
-    setActive({ ...chat, notes: [] });
+    setWorkspace((current) => ({
+      chats: [chat, ...current.chats],
+      active: { ...chat, notes: [] },
+    }));
     setDialog(undefined);
     setPendingFiles([]);
     setHistoryFilter("all");
@@ -1420,17 +2116,34 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     focusMobileBackButton();
   }
 
-  async function updateChat(input: { title: string; accent: Accent }) {
+  async function updateChat(input: {
+    title: string;
+    accent: Accent;
+    enabledLabels: ConfigurableLabel[];
+  }) {
     if (!active) return;
     const projectId = active.id;
     const chat = await api.updateChat(active.id, input);
     activeMutationGeneration.current += 1;
-    setChats((current) =>
-      sortChats(current.map((item) => (item.id === chat.id ? chat : item))),
+    setWorkspace((current) =>
+      commitProjectUpdate(
+        current,
+        chat.id,
+        () => chat,
+        (detail) => ({
+          ...detail,
+          ...chat,
+        }),
+      ),
     );
-    setActive((current) =>
-      current?.id === chat.id ? { ...current, ...chat } : current,
-    );
+    if (
+      historyFilter !== "all" &&
+      historyFilter !== "attachments" &&
+      !PERMANENT_LABELS.includes(historyFilter as never) &&
+      !chat.enabledLabels.includes(historyFilter as ConfigurableLabel)
+    ) {
+      setHistoryFilter("all");
+    }
     setDialog(undefined);
     setMode("projects");
     if (activeId.current === projectId) focusMobileBackButton();
@@ -1439,19 +2152,26 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function deleteChat() {
     if (!active) return;
     const projectId = active.id;
+    const selectionAtStart = selectionRequest.current;
     await api.deleteChat(projectId);
-    selectionRequest.current += 1;
-    setChats((current) => current.filter((chat) => chat.id !== projectId));
-    setActive(undefined);
-    setDraft("");
-    setPendingFiles([]);
-    setHistoryFilter("all");
-    setDraftTimestamp("");
-    setComposerTimestampOpen(false);
-    setError("");
-    setEditingNote(undefined);
-    setEditingAttachmentIds([]);
-    setMode("projects");
+    const navigationUnchanged = selectionRequest.current === selectionAtStart;
+    if (navigationUnchanged) selectionRequest.current += 1;
+    activeMutationGeneration.current += 1;
+    setWorkspace((current) => ({
+      chats: current.chats.filter((chat) => chat.id !== projectId),
+      active: current.active?.id === projectId ? undefined : current.active,
+    }));
+    if (navigationUnchanged) {
+      setDraft("");
+      setPendingFiles([]);
+      setHistoryFilter("all");
+      setDraftTimestamp("");
+      setComposerTimestampOpen(false);
+      setError("");
+      setEditingNote(undefined);
+      setEditingAttachmentIds([]);
+      setMode("projects");
+    }
   }
 
   async function appendNote() {
@@ -1485,24 +2205,24 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ...(submittedFiles.length === 0 ? {} : { files: submittedFiles }),
         });
         activeMutationGeneration.current += 1;
-        setActive((current) =>
-          current?.id === projectId
-            ? { ...current, notes: sortNotes([...current.notes, note]) }
-            : current,
+        const submittedNotes = sortNotes([...active.notes, note]);
+        const submittedUpdatedAt = chatActivityFromNotes(
+          active,
+          submittedNotes,
         );
-        setChats((current) =>
-          sortChats(
-            current.map((chat) =>
-              chat.id === projectId
-                ? {
-                    ...chat,
-                    updatedAt: chatActivityFromNotes(active, [
-                      ...active.notes,
-                      note,
-                    ]),
-                  }
-                : chat,
-            ),
+        setWorkspace((current) =>
+          commitProjectUpdate(
+            current,
+            projectId,
+            (chat) => ({ ...chat, updatedAt: submittedUpdatedAt }),
+            (detail) => {
+              const notes = sortNotes([...detail.notes, note]);
+              return {
+                ...detail,
+                notes,
+                updatedAt: chatActivityFromNotes(detail, notes),
+              };
+            },
           ),
         );
       }
@@ -1611,34 +2331,27 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     const projectId = active.id;
     const updated = await api.updateNote(projectId, noteToUpdate.id, input);
     activeMutationGeneration.current += 1;
-    setActive((current) => {
-      if (!current) return current;
-      const notes = sortNotes(
-        current.notes.map((note) => (note.id === updated.id ? updated : note)),
-      );
-      return {
-        ...current,
-        notes,
-        updatedAt: chatActivityFromNotes(current, notes),
-      };
-    });
-    setChats((current) =>
-      sortChats(
-        current.map((chat) =>
-          chat.id === projectId
-            ? {
-                ...chat,
-                updatedAt: chatActivityFromNotes(
-                  active,
-                  sortNotes(
-                    active.notes.map((note) =>
-                      note.id === updated.id ? updated : note,
-                    ),
-                  ),
-                ),
-              }
-            : chat,
-        ),
+    const submittedNotes = sortNotes(
+      active.notes.map((note) => (note.id === updated.id ? updated : note)),
+    );
+    const submittedUpdatedAt = chatActivityFromNotes(active, submittedNotes);
+    setWorkspace((current) =>
+      commitProjectUpdate(
+        current,
+        projectId,
+        (chat) => ({ ...chat, updatedAt: submittedUpdatedAt }),
+        (detail) => {
+          const notes = sortNotes(
+            detail.notes.map((note) =>
+              note.id === updated.id ? updated : note,
+            ),
+          );
+          return {
+            ...detail,
+            notes,
+            updatedAt: chatActivityFromNotes(detail, notes),
+          };
+        },
       ),
     );
     setEditingNote(undefined);
@@ -1648,20 +2361,44 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function deleteNote(note: Note) {
     if (!active) return;
     if (!window.confirm("Delete this message?")) return;
-    await api.deleteNote(active.id, note.id);
+    const projectId = active.id;
+    await api.deleteNote(projectId, note.id);
     activeMutationGeneration.current += 1;
-    const remaining = active.notes.filter((item) => item.id !== note.id);
-    const updatedAt = chatActivityFromNotes(active, remaining);
-    setActive((current) =>
-      current?.id === active.id
-        ? { ...current, notes: remaining, updatedAt }
-        : current,
+    const submittedNotes = active.notes.filter((item) => item.id !== note.id);
+    const submittedUpdatedAt = chatActivityFromNotes(active, submittedNotes);
+    setWorkspace((current) =>
+      commitProjectUpdate(
+        current,
+        projectId,
+        (chat) => ({ ...chat, updatedAt: submittedUpdatedAt }),
+        (detail) => {
+          const notes = detail.notes.filter((item) => item.id !== note.id);
+          return {
+            ...detail,
+            notes,
+            updatedAt: chatActivityFromNotes(detail, notes),
+          };
+        },
+      ),
     );
-    setChats((current) =>
-      sortChats(
-        current.map((chat) =>
-          chat.id === active.id ? { ...chat, updatedAt } : chat,
-        ),
+  }
+
+  async function setNoteLabel(note: Note, label: Label, applied: boolean) {
+    if (!active) return;
+    const projectId = active.id;
+    const labels = await api.setNoteLabel(projectId, note.id, label, applied);
+    activeMutationGeneration.current += 1;
+    setWorkspace((current) =>
+      commitProjectUpdate(
+        current,
+        projectId,
+        (chat) => chat,
+        (detail) => ({
+          ...detail,
+          notes: detail.notes.map((item) =>
+            item.id === note.id ? { ...item, labels } : item,
+          ),
+        }),
       ),
     );
   }
@@ -1681,8 +2418,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     const importedChats = await api.listChats();
     selectionRequest.current += 1;
     activeMutationGeneration.current += 1;
-    setChats(importedChats);
-    setActive(undefined);
+    setWorkspace({ chats: importedChats });
     setDraftTimestamp("");
     setPendingFiles([]);
     setHistoryFilter("all");
@@ -1696,7 +2432,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     if (savingNote) return;
     const projectId = active?.id;
     selectionRequest.current += 1;
-    setActive(undefined);
+    setWorkspace((current) => ({ ...current, active: undefined }));
     setEditingNote(undefined);
     setEditingAttachmentIds([]);
     setDraft("");
@@ -1717,7 +2453,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   return (
     <div className="app-shell">
       {mode === "settings" ? (
-        <SettingsRail onBack={() => setMode("projects")} />
+        <SettingsRail
+          activeSection={settingsSection}
+          onBack={() => setMode("projects")}
+          onSelect={setSettingsSection}
+        />
       ) : (
         <ProjectRail
           chats={chats}
@@ -1734,10 +2474,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         </p>
       )}
       {mode === "settings" ? (
-        <SettingsWorkspace
-          onExport={exportDatabase}
-          onImport={importDatabase}
-        />
+        settingsSection === "appearance" ? (
+          <AppearanceSettingsWorkspace theme={theme} onThemeChange={setTheme} />
+        ) : (
+          <BackupSettingsWorkspace
+            onExport={exportDatabase}
+            onImport={importDatabase}
+          />
+        )
       ) : mode === "projectEdit" && active ? (
         <ProjectEditWorkspace
           chat={active}
@@ -1770,6 +2514,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           onHistoryFilterChange={setHistoryFilter}
           onRemoveEditingAttachment={removeEditingAttachment}
           onRemovePendingFile={removePendingFile}
+          onSetNoteLabel={setNoteLabel}
           onSubmit={appendNote}
           onToggleTimestamp={() => {
             setComposerTimestampOpen((current) => {

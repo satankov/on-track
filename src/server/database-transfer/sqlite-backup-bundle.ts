@@ -20,8 +20,11 @@ import Database from "better-sqlite3";
 
 import {
   ACCENTS,
+  CONFIGURABLE_LABELS,
+  LABELS,
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "../../domain/validation.js";
+import { applyBundledMigrations } from "../db/database.js";
 import {
   isCanonicalAttachmentFilename,
   isCanonicalAttachmentMediaType,
@@ -34,7 +37,7 @@ import {
 
 export const SQL_ON_TRACK_BACKUP_APPLICATION_ID = 0x4f545242;
 export const SQL_ON_TRACK_BACKUP_FORMAT_VERSION = 1;
-export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 2;
+export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 3;
 
 export interface SqliteBackupBundleLimits {
   maximumBundleBytes: number;
@@ -144,61 +147,23 @@ interface ForeignKeyDescription {
   match: string;
 }
 
+interface SchemaDescriptor {
+  objects: string[];
+  columns: Record<string, ColumnDescription[]>;
+  foreignKeys: Record<string, ForeignKeyDescription[]>;
+  indexes: Record<string, IndexDescription[]>;
+  definitions: Record<string, string>;
+  migrationTimestamps: number[];
+}
+
 const GENERATED_COMPONENT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const ALLOWED_ACCENTS = new Set<string>(ACCENTS);
 const SQLITE_MAGIC = Buffer.from("SQLite format 3\0", "binary");
 
-const ACTIVE_SCHEMA_OBJECTS = [
-  "__drizzle_migrations:table",
-  "app_metadata:table",
-  "chats:table",
-  "chats_activity_idx:index",
-  "note_attachments:table",
-  "note_attachments_note_idx:index",
-  "notes:table",
-  "notes_chat_history_idx:index",
-] as const;
-
 const BUNDLE_SCHEMA_OBJECTS = [
-  ...ACTIVE_SCHEMA_OBJECTS,
   "_on_track_bundle:table",
   "_on_track_bundle_files:table",
-].sort();
-
-const ACTIVE_TABLE_COLUMNS: Readonly<Record<string, ColumnDescription[]>> = {
-  __drizzle_migrations: [
-    { name: "id", type: "SERIAL", notnull: 0, pk: 1 },
-    { name: "hash", type: "TEXT", notnull: 1, pk: 0 },
-    { name: "created_at", type: "numeric", notnull: 0, pk: 0 },
-  ],
-  app_metadata: [
-    { name: "id", type: "INTEGER", notnull: 1, pk: 1 },
-    { name: "schema_version", type: "INTEGER", notnull: 1, pk: 0 },
-  ],
-  chats: [
-    { name: "id", type: "TEXT", notnull: 1, pk: 1 },
-    { name: "title", type: "TEXT", notnull: 1, pk: 0 },
-    { name: "accent", type: "TEXT", notnull: 1, pk: 0 },
-    { name: "created_at", type: "INTEGER", notnull: 1, pk: 0 },
-    { name: "updated_at", type: "INTEGER", notnull: 1, pk: 0 },
-  ],
-  notes: [
-    { name: "id", type: "TEXT", notnull: 1, pk: 1 },
-    { name: "chat_id", type: "TEXT", notnull: 1, pk: 0 },
-    { name: "body", type: "TEXT", notnull: 1, pk: 0 },
-    { name: "created_at", type: "INTEGER", notnull: 1, pk: 0 },
-  ],
-  note_attachments: [
-    { name: "id", type: "TEXT", notnull: 1, pk: 1 },
-    { name: "note_id", type: "TEXT", notnull: 1, pk: 0 },
-    { name: "filename", type: "TEXT", notnull: 1, pk: 0 },
-    { name: "media_type", type: "TEXT", notnull: 1, pk: 0 },
-    { name: "storage_path", type: "TEXT", notnull: 1, pk: 0 },
-    { name: "byte_size", type: "INTEGER", notnull: 1, pk: 0 },
-    { name: "modified_at", type: "INTEGER", notnull: 1, pk: 0 },
-    { name: "created_at", type: "INTEGER", notnull: 1, pk: 0 },
-  ],
-};
+] as const;
 
 const BUNDLE_TABLE_COLUMNS: Readonly<Record<string, ColumnDescription[]>> = {
   _on_track_bundle: [
@@ -218,38 +183,10 @@ const BUNDLE_TABLE_COLUMNS: Readonly<Record<string, ColumnDescription[]>> = {
   ],
 };
 
-const ACTIVE_FOREIGN_KEYS: Readonly<Record<string, ForeignKeyDescription[]>> = {
-  __drizzle_migrations: [],
-  app_metadata: [],
-  chats: [],
-  notes: [foreignKey("chats", "chat_id", "id", "CASCADE")],
-  note_attachments: [foreignKey("notes", "note_id", "id", "CASCADE")],
-};
-
 const BUNDLE_FOREIGN_KEYS: Readonly<Record<string, ForeignKeyDescription[]>> = {
   _on_track_bundle: [],
   _on_track_bundle_files: [
     foreignKey("note_attachments", "attachment_id", "id", "CASCADE"),
-  ],
-};
-
-const ACTIVE_INDEXES: Readonly<Record<string, IndexDescription[]>> = {
-  __drizzle_migrations: [
-    index("sqlite_autoindex___drizzle_migrations_1", 1, "pk", ["id"]),
-  ],
-  app_metadata: [],
-  chats: [
-    index("chats_activity_idx", 0, "c", ["updated_at", "id"]),
-    index("sqlite_autoindex_chats_1", 1, "pk", ["id"]),
-  ],
-  notes: [
-    index("notes_chat_history_idx", 0, "c", ["chat_id", "created_at", "id"]),
-    index("sqlite_autoindex_notes_1", 1, "pk", ["id"]),
-  ],
-  note_attachments: [
-    index("note_attachments_note_idx", 0, "c", ["note_id", "created_at", "id"]),
-    index("sqlite_autoindex_note_attachments_1", 1, "pk", ["id"]),
-    index("sqlite_autoindex_note_attachments_2", 1, "u", ["storage_path"]),
   ],
 };
 
@@ -260,19 +197,6 @@ const BUNDLE_INDEXES: Readonly<Record<string, IndexDescription[]>> = {
       "attachment_id",
     ]),
   ],
-};
-
-const ACTIVE_TABLE_DEFINITIONS: Readonly<Record<string, string>> = {
-  __drizzle_migrations:
-    "CREATE TABLE __drizzle_migrations (id SERIAL PRIMARY KEY, hash TEXT NOT NULL, created_at numeric)",
-  app_metadata:
-    "CREATE TABLE app_metadata (id INTEGER PRIMARY KEY NOT NULL, schema_version INTEGER NOT NULL, CONSTRAINT app_metadata_single_row CHECK (app_metadata.id = 1), CONSTRAINT app_metadata_version_positive CHECK (app_metadata.schema_version >= 1))",
-  chats:
-    "CREATE TABLE chats (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, accent TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, CONSTRAINT chats_title_length CHECK (length(trim(chats.title)) BETWEEN 1 AND 80), CONSTRAINT chats_accent_allowed CHECK (accent IN ('coral', 'amber', 'moss', 'ocean', 'iris', 'slate')))",
-  notes:
-    "CREATE TABLE notes (id TEXT PRIMARY KEY NOT NULL, chat_id TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL, FOREIGN KEY (chat_id) REFERENCES chats(id) ON UPDATE NO ACTION ON DELETE CASCADE, CONSTRAINT notes_body_length CHECK (length(notes.body) <= 10000))",
-  note_attachments:
-    "CREATE TABLE note_attachments (id TEXT PRIMARY KEY NOT NULL, note_id TEXT NOT NULL, filename TEXT NOT NULL, media_type TEXT NOT NULL, storage_path TEXT NOT NULL UNIQUE, byte_size INTEGER NOT NULL, modified_at INTEGER NOT NULL, created_at INTEGER NOT NULL, FOREIGN KEY (note_id) REFERENCES notes(id) ON UPDATE NO ACTION ON DELETE CASCADE, CONSTRAINT note_attachments_filename_length CHECK (length(trim(note_attachments.filename)) BETWEEN 1 AND 255), CONSTRAINT note_attachments_media_type_length CHECK (length(trim(note_attachments.media_type)) BETWEEN 1 AND 255), CONSTRAINT note_attachments_storage_path_length CHECK (length(note_attachments.storage_path) BETWEEN 1 AND 1024), CONSTRAINT note_attachments_byte_size_nonnegative CHECK (note_attachments.byte_size >= 0), CONSTRAINT note_attachments_modified_at_nonnegative CHECK (note_attachments.modified_at >= 0))",
 };
 
 const BUNDLE_TABLE_DEFINITIONS: Readonly<Record<string, string>> = {
@@ -420,15 +344,9 @@ export function validateSqliteBackupBundle(
       );
     }
     validateIntegrity(database);
-    validateExactSchema(
-      database,
-      BUNDLE_SCHEMA_OBJECTS,
-      Object.assign({}, ACTIVE_TABLE_COLUMNS, BUNDLE_TABLE_COLUMNS),
-      Object.assign({}, ACTIVE_FOREIGN_KEYS, BUNDLE_FOREIGN_KEYS),
-      Object.assign({}, ACTIVE_INDEXES, BUNDLE_INDEXES),
-      Object.assign({}, ACTIVE_TABLE_DEFINITIONS, BUNDLE_TABLE_DEFINITIONS),
-    );
-    validateSchemaVersion(database);
+    requireCurrentBundleSchemaVersion(database);
+    validateExactSchema(database, currentBundleSchemaDescriptor());
+    validateSchemaVersion(database, SQL_ON_TRACK_BACKUP_SCHEMA_VERSION);
     validateApplicationData(database, limits);
 
     const rows = database
@@ -728,15 +646,8 @@ export function validatePreparedSqliteBackupDatabase(
       throw validationError("A prepared database retains the bundle identity.");
     }
     validateIntegrity(database);
-    validateExactSchema(
-      database,
-      ACTIVE_SCHEMA_OBJECTS,
-      ACTIVE_TABLE_COLUMNS,
-      ACTIVE_FOREIGN_KEYS,
-      ACTIVE_INDEXES,
-      ACTIVE_TABLE_DEFINITIONS,
-    );
-    validateSchemaVersion(database);
+    validateExactSchema(database, trustedActiveSchemaDescriptor());
+    validateSchemaVersion(database, SQL_ON_TRACK_BACKUP_SCHEMA_VERSION);
     validateApplicationData(database, DEFAULT_SQLITE_BACKUP_BUNDLE_LIMITS);
   } catch (error) {
     throw asValidationError(error);
@@ -849,15 +760,8 @@ function validateActiveDatabase(
   limits: SqliteBackupBundleLimits,
 ): void {
   validateIntegrity(database);
-  validateExactSchema(
-    database,
-    ACTIVE_SCHEMA_OBJECTS,
-    ACTIVE_TABLE_COLUMNS,
-    ACTIVE_FOREIGN_KEYS,
-    ACTIVE_INDEXES,
-    ACTIVE_TABLE_DEFINITIONS,
-  );
-  validateSchemaVersion(database);
+  validateExactSchema(database, trustedActiveSchemaDescriptor());
+  validateSchemaVersion(database, SQL_ON_TRACK_BACKUP_SCHEMA_VERSION);
   validateApplicationData(database, limits);
 }
 
@@ -950,16 +854,51 @@ function validateApplicationData(
       "A message exceeds the attachments per message limit.",
     );
   }
+  validateLabelData(database);
 }
 
-function validateSchemaVersion(database: Database.Database): void {
+function validateLabelData(database: Database.Database): void {
+  const configurable = new Set<string>(CONFIGURABLE_LABELS);
+  const labels = new Set<string>(LABELS);
+  const enabledRows = database
+    .prepare("SELECT chat_id, label FROM chat_enabled_labels")
+    .all() as Array<{ chat_id: unknown; label: unknown }>;
+  for (const row of enabledRows) {
+    if (
+      typeof row.chat_id !== "string" ||
+      !GENERATED_COMPONENT.test(row.chat_id) ||
+      typeof row.label !== "string" ||
+      !configurable.has(row.label)
+    ) {
+      throw validationError("Project label metadata is invalid.");
+    }
+  }
+  const noteRows = database
+    .prepare("SELECT note_id, label FROM note_labels")
+    .all() as Array<{ note_id: unknown; label: unknown }>;
+  for (const row of noteRows) {
+    if (
+      typeof row.note_id !== "string" ||
+      !GENERATED_COMPONENT.test(row.note_id) ||
+      typeof row.label !== "string" ||
+      !labels.has(row.label)
+    ) {
+      throw validationError("Message label metadata is invalid.");
+    }
+  }
+}
+
+function validateSchemaVersion(
+  database: Database.Database,
+  expectedSchemaVersion: number,
+): void {
   const rows = database
     .prepare("SELECT id, schema_version FROM app_metadata")
     .all() as Array<{ id: number; schema_version: number }>;
   if (
     rows.length !== 1 ||
     rows[0].id !== 1 ||
-    rows[0].schema_version !== SQL_ON_TRACK_BACKUP_SCHEMA_VERSION
+    rows[0].schema_version !== expectedSchemaVersion
   ) {
     throw validationError("The database schema version is unsupported.");
   }
@@ -977,15 +916,52 @@ function validateIntegrity(database: Database.Database): void {
   }
 }
 
-function validateExactSchema(
-  database: Database.Database,
-  allowedObjects: readonly string[],
-  allowedColumns: Readonly<Record<string, ColumnDescription[]>>,
-  allowedForeignKeys: Readonly<Record<string, ForeignKeyDescription[]>>,
-  allowedIndexes: Readonly<Record<string, IndexDescription[]>>,
-  allowedDefinitions: Readonly<Record<string, string>>,
-): void {
-  const objects = database
+let trustedActiveSchema: SchemaDescriptor | undefined;
+
+function trustedActiveSchemaDescriptor(): SchemaDescriptor {
+  if (trustedActiveSchema) return trustedActiveSchema;
+  const database = new Database(":memory:");
+  try {
+    database.pragma("foreign_keys = ON");
+    applyBundledMigrations(database);
+    trustedActiveSchema = describeSchema(database);
+    return trustedActiveSchema;
+  } finally {
+    database.close();
+  }
+}
+
+function currentBundleSchemaDescriptor(): SchemaDescriptor {
+  const active = trustedActiveSchemaDescriptor();
+  return {
+    objects: [...active.objects, ...BUNDLE_SCHEMA_OBJECTS].sort(),
+    columns: { ...active.columns, ...BUNDLE_TABLE_COLUMNS },
+    foreignKeys: { ...active.foreignKeys, ...BUNDLE_FOREIGN_KEYS },
+    indexes: { ...active.indexes, ...BUNDLE_INDEXES },
+    definitions: { ...active.definitions, ...BUNDLE_TABLE_DEFINITIONS },
+    migrationTimestamps: active.migrationTimestamps,
+  };
+}
+
+function requireCurrentBundleSchemaVersion(database: Database.Database): void {
+  let rows: Array<{ id: unknown; schema_version: unknown }>;
+  try {
+    rows = database
+      .prepare("SELECT id, schema_version FROM _on_track_bundle LIMIT 2")
+      .all() as Array<{ id: unknown; schema_version: unknown }>;
+  } catch {
+    throw validationError("The backup bundle version is unsupported.");
+  }
+  if (rows.length !== 1 || rows[0].id !== 1) {
+    throw validationError("The backup manifest must contain exactly one row.");
+  }
+  if (rows[0].schema_version !== SQL_ON_TRACK_BACKUP_SCHEMA_VERSION) {
+    throw validationError("The backup bundle version is unsupported.");
+  }
+}
+
+function schemaObjects(database: Database.Database): string[] {
+  return database
     .prepare(
       `SELECT name || ':' || type
        FROM sqlite_schema
@@ -994,22 +970,55 @@ function validateExactSchema(
     )
     .pluck()
     .all() as string[];
-  const expectedObjects = [...allowedObjects].sort();
-  if (JSON.stringify(objects) !== JSON.stringify(expectedObjects)) {
-    throw validationError("The SQLite schema objects are not exactly allowed.");
-  }
+}
 
-  for (const [table, expected] of Object.entries(allowedColumns)) {
-    const columns = (
+function schemaObjectCount(database: Database.Database): number {
+  return database
+    .prepare(
+      `SELECT count(*)
+       FROM sqlite_schema
+       WHERE name NOT LIKE 'sqlite_%'`,
+    )
+    .pluck()
+    .get() as number;
+}
+
+function migrationCount(database: Database.Database): number {
+  return database
+    .prepare("SELECT count(*) FROM __drizzle_migrations")
+    .pluck()
+    .get() as number;
+}
+
+function describeSchema(
+  database: Database.Database,
+  objects: string[] = schemaObjects(database),
+): SchemaDescriptor {
+  const columns: Record<string, ColumnDescription[]> = {};
+  const foreignKeys: Record<string, ForeignKeyDescription[]> = {};
+  const indexes: Record<string, IndexDescription[]> = {};
+  const definitions = Object.fromEntries(
+    (
+      database
+        .prepare(
+          `SELECT name, sql
+           FROM sqlite_schema
+           WHERE name NOT LIKE 'sqlite_%'
+           ORDER BY name`,
+        )
+        .all() as Array<{ name: string; sql: string }>
+    ).map((row) => [row.name, row.sql]),
+  );
+
+  for (const object of objects) {
+    if (!object.endsWith(":table")) continue;
+    const table = object.slice(0, -":table".length);
+    columns[table] = (
       database
         .prepare("SELECT * FROM pragma_table_xinfo(?) ORDER BY cid")
         .all(table) as Array<ColumnDescription & { cid: number }>
     ).map(({ name, type, notnull, pk }) => ({ name, type, notnull, pk }));
-    if (JSON.stringify(columns) !== JSON.stringify(expected)) {
-      throw validationError(`The columns for table ${table} are not allowed.`);
-    }
-
-    const foreignKeys = (
+    foreignKeys[table] = (
       database
         .prepare("SELECT * FROM pragma_foreign_key_list(?) ORDER BY id, seq")
         .all(table) as Array<{
@@ -1028,16 +1037,7 @@ function validateExactSchema(
       onDelete: row.on_delete,
       match: row.match,
     }));
-    if (
-      JSON.stringify(foreignKeys) !==
-      JSON.stringify(allowedForeignKeys[table] ?? [])
-    ) {
-      throw validationError(
-        `The foreign keys for table ${table} are not allowed.`,
-      );
-    }
-
-    const indexes = (
+    indexes[table] = (
       database
         .prepare(
           "SELECT name, [unique], origin FROM pragma_index_list(?) ORDER BY name",
@@ -1052,25 +1052,89 @@ function validateExactSchema(
         .pluck()
         .all(row.name) as string[],
     }));
+  }
+
+  const migrationRows = database
+    .prepare(
+      `SELECT hash, created_at AS createdAt
+       FROM __drizzle_migrations
+       ORDER BY created_at, hash`,
+    )
+    .all() as Array<{ hash: unknown; createdAt: unknown }>;
+  if (
+    migrationRows.some(
+      (row) =>
+        typeof row.hash !== "string" ||
+        !/^[a-f0-9]{64}$/.test(row.hash) ||
+        typeof row.createdAt !== "number" ||
+        !Number.isSafeInteger(row.createdAt) ||
+        row.createdAt < 0,
+    )
+  ) {
+    throw validationError("The migration metadata is not exactly allowed.");
+  }
+  const migrationTimestamps = migrationRows.map(
+    (row) => row.createdAt as number,
+  );
+
+  return {
+    objects,
+    columns,
+    foreignKeys,
+    indexes,
+    definitions,
+    migrationTimestamps,
+  };
+}
+
+function validateExactSchema(
+  database: Database.Database,
+  allowed: SchemaDescriptor,
+): void {
+  if (schemaObjectCount(database) !== allowed.objects.length) {
+    throw validationError("The SQLite schema objects are not exactly allowed.");
+  }
+  const objects = schemaObjects(database);
+  if (JSON.stringify(objects) !== JSON.stringify(allowed.objects)) {
+    throw validationError("The SQLite schema objects are not exactly allowed.");
+  }
+  if (migrationCount(database) !== allowed.migrationTimestamps.length) {
+    throw validationError("The migration metadata is not exactly allowed.");
+  }
+  const actual = describeSchema(database, objects);
+  if (
+    JSON.stringify(actual.migrationTimestamps) !==
+    JSON.stringify(allowed.migrationTimestamps)
+  ) {
+    throw validationError("The migration metadata is not exactly allowed.");
+  }
+
+  for (const [table, expected] of Object.entries(allowed.columns)) {
+    if (JSON.stringify(actual.columns[table]) !== JSON.stringify(expected)) {
+      throw validationError(`The columns for table ${table} are not allowed.`);
+    }
     if (
-      JSON.stringify(indexes) !== JSON.stringify(allowedIndexes[table] ?? [])
+      JSON.stringify(actual.foreignKeys[table]) !==
+      JSON.stringify(allowed.foreignKeys[table] ?? [])
+    ) {
+      throw validationError(
+        `The foreign keys for table ${table} are not allowed.`,
+      );
+    }
+    if (
+      JSON.stringify(actual.indexes[table]) !==
+      JSON.stringify(allowed.indexes[table] ?? [])
     ) {
       throw validationError(`The indexes for table ${table} are not allowed.`);
     }
+  }
 
-    const tableSql = database
-      .prepare(
-        "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?",
-      )
-      .pluck()
-      .get(table) as string;
+  for (const [object, expected] of Object.entries(allowed.definitions)) {
     if (
-      normalizeSchemaSql(tableSql) !==
-      normalizeSchemaSql(allowedDefinitions[table] ?? "")
+      normalizeSchemaSql(actual.definitions[object] ?? "") !==
+      normalizeSchemaSql(expected)
     ) {
-      throw validationError(
-        `The definition for table ${table} is not allowed.`,
-      );
+      throw validationError(`The definition for ${object} is not allowed.`);
     }
   }
 }
@@ -1333,7 +1397,10 @@ function normalizeSchemaSql(sql: string): string {
   return sql
     .toLowerCase()
     .replace(/["`[\]\s;]/g, "")
-    .replace(/\b(?:app_metadata|chats|notes|note_attachments)\./g, "")
+    .replace(
+      /\b(?:app_metadata|chats|notes|note_attachments|chat_enabled_labels|note_labels)\./g,
+      "",
+    )
     .replace(/constraint[a-z0-9_]+/g, "");
 }
 

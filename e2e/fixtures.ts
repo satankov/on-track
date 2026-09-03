@@ -23,23 +23,27 @@ interface WorkerFixtures {
   localApp: LocalApp;
 }
 
+function hasExited(child: ChildProcess): boolean {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
 async function waitForExit(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null) return;
+  if (hasExited(child)) return;
   await new Promise<void>((resolve) => child.once("exit", () => resolve()));
 }
 
-async function stopServer(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null) return;
+export async function stopServer(child: ChildProcess): Promise<void> {
+  if (hasExited(child)) return;
+  const exit = waitForExit(child);
   child.kill("SIGTERM");
-  await Promise.race([
-    waitForExit(child),
-    new Promise<void>((resolve) =>
-      setTimeout(() => {
-        if (child.exitCode === null) child.kill("SIGKILL");
-        resolve();
-      }, 3_000),
-    ),
-  ]);
+  const forceKillTimer = setTimeout(() => {
+    if (!hasExited(child)) child.kill("SIGKILL");
+  }, 3_000);
+  try {
+    await exit;
+  } finally {
+    clearTimeout(forceKillTimer);
+  }
 }
 
 async function startServer(
@@ -48,7 +52,7 @@ async function startServer(
 ): Promise<ChildProcess> {
   const child = spawn(
     process.execPath,
-    ["node_modules/tsx/dist/cli.mjs", "e2e/native-actions-server.ts"],
+    ["--import", "tsx", "e2e/native-actions-server.ts"],
     {
       cwd: process.cwd(),
       env: {
@@ -67,7 +71,7 @@ async function startServer(
   const url = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null)
+    if (hasExited(child))
       throw new Error(`Local server exited early:\n${output}`);
     try {
       const response = await fetch(`${url}/api/health`);

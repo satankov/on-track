@@ -19,6 +19,11 @@ import {
 import { dirname, isAbsolute, join, posix, relative, win32 } from "node:path";
 
 import { MAX_ATTACHMENT_BYTES } from "../../domain/validation.js";
+import {
+  fileIdentity,
+  isSameFileIdentity,
+  type FileIdentity,
+} from "../file-identity.js";
 
 const STORAGE_PREFIX = ["attachments", "v1"] as const;
 const MAX_MANAGED_FILENAME_BYTES = 180;
@@ -73,8 +78,7 @@ interface OpenedManagedFile extends ParsedStoragePath {
   canonicalPath: string;
   changedAt: number;
   descriptor: number;
-  device: number;
-  inode: number;
+  identity: FileIdentity;
   modifiedAt: number;
   modifiedAtPrecise: number;
   byteSize: number;
@@ -272,10 +276,12 @@ export class ManagedAttachmentStore {
         opened.byteSize,
       );
       const finalStat = fstatSync(opened.descriptor);
+      const finalIdentity = fileIdentity(
+        fstatSync(opened.descriptor, { bigint: true }),
+      );
       if (
         !finalStat.isFile() ||
-        finalStat.dev !== opened.device ||
-        finalStat.ino !== opened.inode ||
+        !isSameFileIdentity(finalIdentity, opened.identity) ||
         finalStat.size !== opened.byteSize ||
         finalStat.mtimeMs !== opened.modifiedAtPrecise ||
         finalStat.ctimeMs !== opened.changedAt ||
@@ -285,13 +291,13 @@ export class ManagedAttachmentStore {
         throw new ManagedAttachmentChangedError();
       }
       try {
-        const currentTarget = lstatSync(opened.absolutePath);
+        const currentTarget = lstatSync(opened.absolutePath, { bigint: true });
+        const currentIdentity = fileIdentity(currentTarget);
         const currentCanonicalPath = realpathSync(opened.absolutePath);
         if (
           currentTarget.isSymbolicLink() ||
           !currentTarget.isFile() ||
-          currentTarget.dev !== opened.device ||
-          currentTarget.ino !== opened.inode ||
+          !isSameFileIdentity(currentIdentity, opened.identity) ||
           !isContainedPath(this.canonicalManagedRoot, currentCanonicalPath)
         ) {
           throw new ManagedAttachmentChangedError();
@@ -407,16 +413,19 @@ export class ManagedAttachmentStore {
       );
       try {
         const stat = fstatSync(descriptor);
+        const descriptorIdentity = fileIdentity(
+          fstatSync(descriptor, { bigint: true }),
+        );
         if (!stat.isFile()) {
           throw new ManagedAttachmentUnavailableError("unsafe", storagePath);
         }
-        const finalTarget = lstatSync(parsed.absolutePath);
+        const finalTarget = lstatSync(parsed.absolutePath, { bigint: true });
+        const finalIdentity = fileIdentity(finalTarget);
         const canonicalPath = realpathSync(parsed.absolutePath);
         if (
           finalTarget.isSymbolicLink() ||
           !finalTarget.isFile() ||
-          finalTarget.dev !== stat.dev ||
-          finalTarget.ino !== stat.ino ||
+          !isSameFileIdentity(finalIdentity, descriptorIdentity) ||
           !isContainedPath(this.canonicalManagedRoot, canonicalPath)
         ) {
           throw new ManagedAttachmentUnavailableError("unsafe", storagePath);
@@ -426,8 +435,7 @@ export class ManagedAttachmentStore {
           canonicalPath,
           changedAt: stat.ctimeMs,
           descriptor,
-          device: stat.dev,
-          inode: stat.ino,
+          identity: descriptorIdentity,
           byteSize: stat.size,
           modifiedAt: Math.trunc(stat.mtimeMs),
           modifiedAtPrecise: stat.mtimeMs,

@@ -35,9 +35,10 @@ issue/design -> branch -> RED/GREEN tests -> npm run verify -> pull request
 
 `npm run verify` is the local source of truth: release contract, build, types,
 lint/format, coverage, migration integration, real-browser E2E, and production
-dependency audit. GitHub CI repeats it on a clean Linux runner and checks native
-SQLite dependency installation/tests on Linux, macOS, and Windows. Native desktop
-launcher smoke tests remain separate manual release evidence.
+dependency audit. GitHub CI repeats it on clean Linux runners using Node 22.16
+and 24, then checks native SQLite dependency installation/tests for both
+runtimes on Linux and macOS and for Node 24 on Windows. Native desktop launcher
+smoke tests remain separate manual release evidence.
 
 ## Prepare a version
 
@@ -46,11 +47,11 @@ launcher smoke tests remain separate manual release evidence.
 3. Update both manifest versions without creating a tag:
 
    ```sh
-   npm version 0.0.3 --no-git-tag-version
+   npm version 0.0.4 --no-git-tag-version
    ```
 
-4. Run `RELEASE_TAG=v0.0.3 npm run release:check` and `npm run verify`.
-5. Open a release pull request titled `chore: release v0.0.3` and merge only
+4. Run `RELEASE_TAG=v0.0.4 npm run release:check` and `npm run verify`.
+5. Open a release pull request titled `chore: release v0.0.4` and merge only
    after all required checks and review pass.
 
 ## Publish after merge
@@ -59,15 +60,16 @@ From an up-to-date, clean `main` checkout, verify the commit and then create and
 push an annotated matching tag:
 
 ```sh
-git tag -a v0.0.3 -m "On Track v0.0.3"
-git push origin v0.0.3
+git tag -a v0.0.4 -m "On Track v0.0.4"
+git push origin v0.0.4
 ```
 
-The release workflow checks out that exact revision, validates the version/tag
-and tracked-data contract, verifies that the tagged commit belongs to `main`,
-installs from the lockfile, runs the complete suite, and creates a GitHub Release
-with generated notes. A failed gate creates no release. Never move or reuse a
-published version tag; fix the issue in a new version.
+The release workflow checks out that exact revision, validates the version/tag,
+runtime, and tracked-data contracts, verifies that the tagged commit belongs to
+`main`, installs from the lockfile, runs the complete Linux suite on Node 22.16
+and 24, and creates a GitHub Release with generated notes. A failed gate creates
+no release. Never move or reuse a published version tag; fix the issue in a new
+version.
 
 ## Rollback and incident response
 

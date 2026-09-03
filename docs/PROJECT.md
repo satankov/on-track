@@ -9,24 +9,24 @@ chat-like stream: the user writes to their own project, not to a team.
 
 The long-term product promise is user ownership. It should run locally, avoid
 third-party data services, and eventually protect copied local data well enough
-for confidential work. Version 0.0.3 adds managed mutable attachments and
+for confidential work. Version 0.0.3 added managed mutable attachments and
 complete versioned backups, but does not yet fulfill the encryption or hardened
 recovery parts of that promise.
 
 ## Current phase
 
-Version 0.0.3 is prepared as the next plaintext alpha source release under Apache
-License 2.0. It adds managed mutable attachment sidecars, complete versioned
-backup/restore, history filtering, and guarded native file actions to the
-local-only browser/server architecture.
+Version 0.0.3 is the current published plaintext alpha source release under
+Apache License 2.0. Version 0.0.4 is prepared as the next release candidate: it
+adds a desktop-first flat workspace, browser-local Light, Neutral, and Dark
+appearance themes, durable project message labels with project-specific
+filtering, Node.js support from 22.16.0 on macOS and Linux, and Node.js 24 support
+on Windows, macOS, and Linux.
 
 ## Current objective
 
-Release v0.0.3 without relaxing its plaintext and portability warnings. Managed
-sidecars, versioned backup/restore, native Open/Show in Folder, and fake-adapter
-external-edit/restart coverage are implemented. The project owner reported the
-native flow working on one current macOS host. Windows and Linux desktop smoke
-verification remains before the managed-attachment plan is complete.
+Complete review, CI, and publication of the v0.0.4 alpha release candidate while
+retaining the plaintext and portability warnings. Mobile remains a
+regression-protected alpha, not a dedicated design target.
 
 ## v0.0.1 outcome
 
@@ -56,7 +56,7 @@ verification remains before the managed-attachment plan is complete.
 - Database transfer endpoints are rate-limited as defense in depth around local
   filesystem and database work.
 
-## v0.0.3 release-candidate outcome
+## v0.0.3 outcome
 
 - Attachment bytes live in repository-owned sidecars while SQLite retains stable
   identity and metadata without content BLOBs.
@@ -72,6 +72,22 @@ verification remains before the managed-attachment plan is complete.
   requests, external edits, stable identity, focus refresh, and restart without
   launching desktop applications.
 
+## v0.0.4 release candidate
+
+- The main workspace uses a flatter desktop-first hierarchy, compact auto-growing
+  composer, and vertical history filters without losing mobile regression
+  coverage.
+- Light, Neutral, and Dark themes are accessible, apply before React renders,
+  and remain browser-local rather than entering project data or backups.
+- Messages support several durable built-in labels, and each project controls
+  which optional labels appear in its composer and history filters.
+- Node.js 22 is supported from 22.16.0 on macOS and Linux; Windows requires
+  Node.js 24. Startup enforces that platform-specific policy, and CI exercises
+  each supported runtime/operating-system pair.
+- Note writes and client project-state updates have one canonical path; backup
+  schema validation is derived from checked-in migrations; the unused attachment
+  download route and obsolete schema-2 backup restore path are removed.
+
 ## Current capabilities
 
 - Create and switch between personal project chats.
@@ -80,27 +96,31 @@ verification remains before the managed-attachment plan is complete.
 - Add local files to project messages with optional text context, including
   attachment add/remove while editing a message.
 - Filter the open project history to messages with attached files.
+- Apply permanent Pin and Attention labels plus project-enabled Todo, Decision,
+  Open question, Risk, and Milestone labels to messages, then filter history by
+  active labels.
 - Open eligible managed files with the operating system's default association,
   or show their safe managed folder; risky executable/launcher types are blocked
   from Open.
 - Copy, edit, timestamp-adjust, and delete notes.
 - Export and restore one versioned `.on-track-backup` bundle containing the
   metadata database and all readable attachment files.
+- Choose Light, Neutral, or Dark appearance from large previews in Settings;
+  the browser-local preference applies immediately and persists across reloads.
 - Persist state across browser and server restarts.
 - Use a responsive, accessible browser interface served from a local process.
 
 ## Near-term priorities
 
-1. Complete v0.0.3 managed attachments by manually smoke-testing the implemented
-   Open/Show in Folder adapters on Windows and a Linux desktop, then run the
-   release-candidate verification.
+1. Publish v0.0.4 after review and the platform-scoped Node 22.16/24 release
+   matrix passes.
 2. Continue hardening backup, restore, integrity checking, recovery, and
    conflict-free import semantics before users entrust irreplaceable data to the
    application.
 3. Design the encryption threat model, unlock and recovery experience, encrypted
    database/sidecar/attachment handling, and plaintext migration.
-4. Add a broad built-in label vocabulary—such as TODO, open question, decision,
-   risk, and meeting note—and convenient history filtering.
+4. Evaluate richer label workflows only after observing the fixed built-in
+   vocabulary in planning, decision, risk, and milestone use.
 5. Evaluate native desktop packaging once the storage and key lifecycle are
    credible.
 
@@ -115,17 +135,18 @@ options without pretending those choices are solved.
 
 ## Non-goals for current plaintext alpha
 
-Collaboration, accounts, labels, search, encryption, NDA-safe claims, native
-installers, mobile apps, peer-to-peer sync, public hosting, analytics, and
-telemetry.
+Collaboration, accounts, user-created label definitions, search, encryption,
+NDA-safe claims, native installers, mobile apps, peer-to-peer sync, public
+hosting, analytics, and telemetry.
 
 ## Product decisions
 
 - A chat is a private project notebook, not a cooperative messenger.
 - Data is local by default and stored outside the Git checkout.
 - Plaintext alpha limitations must be prominent; locality is not encryption.
-- Distribution is a GitHub source release requiring Node.js 24, not an npm
-  package or native installer.
+- Distribution is a GitHub source release supporting Node.js 22 from 22.16.0 on
+  macOS and Linux and Node.js 24 on Windows, macOS, and Linux, not an npm package
+  or native installer.
 - The project is open source under Apache License 2.0, including commercial use.
 
 ## Roadmap and tracker
@@ -135,6 +156,7 @@ The public repository and release are:
 - [GitHub repository](https://github.com/satankov/on-track)
 - [v0.0.1 release](https://github.com/satankov/on-track/releases/tag/v0.0.1)
 - [v0.0.2 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.2)
+- [v0.0.3 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.3)
 - [Issues](https://github.com/satankov/on-track/issues)
 
 GitHub Issues is the intended backlog and ownership tracker. The near-term
@@ -147,10 +169,15 @@ priorities above still need tracker records. Durable decisions live in
 - Plaintext backup bundles contain readable database metadata and attached file
   bytes; restoring replaces current local projects and files rather than merging
   histories.
-- Source installation requires Node.js 24 and a native SQLite dependency. The
-  latest published release commit passed Linux CI plus native SQLite install/test
-  coverage on Linux, macOS, and Windows; the v0.0.3 candidate must pass the same
-  gates after commit, and future dependency upgrades can still affect portability.
+- Source installation requires a supported Node.js LTS line and a native SQLite
+  dependency. Node 22 support ends no later than upstream support, currently
+  2027-04-30. The next candidate must pass full verification on Node 22.16 and
+  24 on Linux, plus native SQLite install/test coverage on macOS for both lines
+  and on Windows for Node 24; future dependency upgrades can still affect
+  portability.
+- v0.0.4 deliberately does not restore v0.0.3/schema-2 backup bundles. Live
+  v0.0.3 databases still migrate at startup, and this compatibility break is
+  acceptable only under the current no-user alpha assumption.
 - Native command construction is tested for macOS, Windows, and Linux, but real
   OS dispatch has been manually reported only on one macOS host. Windows and
   Linux desktop integration remains unverified.

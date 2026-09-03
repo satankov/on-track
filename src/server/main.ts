@@ -1,3 +1,6 @@
-import { startLocalServer } from "./local-server.js";
+import { assertSupportedRuntime } from "./runtime-support.js";
 
+assertSupportedRuntime();
+
+const { startLocalServer } = await import("./local-server.js");
 await startLocalServer();

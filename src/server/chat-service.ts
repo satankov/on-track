@@ -5,15 +5,19 @@ import type {
   NoteAttachment,
   StoredNoteAttachment,
 } from "../domain/types.js";
+import { z } from "zod";
+import type { Label } from "../domain/validation.js";
 import {
   MAX_ATTACHMENTS_PER_MESSAGE,
   MAX_ATTACHMENT_BYTES,
   createChatInputSchema,
-  createNoteInputSchema,
-  updateNoteInputSchema,
   updateChatInputSchema,
+  labelSchema,
 } from "../domain/validation.js";
-import type { SqliteChatRepository } from "./db/repository.js";
+import {
+  InvalidAttachmentSelectionError,
+  type SqliteChatRepository,
+} from "./db/repository.js";
 import {
   ManagedAttachmentUnavailableError,
   type ManagedAttachmentStore,
@@ -53,7 +57,7 @@ export class AttachmentOpenBlockedError extends Error {
 
 export type AttachmentStore = Pick<
   ManagedAttachmentStore,
-  "create" | "observe" | "read" | "remove"
+  "create" | "observe" | "remove"
 > &
   Partial<
     Pick<
@@ -61,6 +65,97 @@ export type AttachmentStore = Pick<
       "resolveAvailableTarget" | "resolveSafeContainingDirectory"
     >
   >;
+
+const noteWriteAttachmentSchema = z
+  .object({
+    filename: z.string().min(1).max(255),
+    mediaType: z.string().min(1).max(255),
+    byteSize: z.number().int().min(1).max(MAX_ATTACHMENT_BYTES),
+    content: z.custom<Uint8Array>(
+      (value) => value instanceof Uint8Array,
+      "Attachment content must be bytes",
+    ),
+  })
+  .refine(
+    (attachment) => attachment.content.byteLength === attachment.byteSize,
+    {
+      message: "Attachment size does not match its content",
+    },
+  );
+
+const noteBodySchema = z.string().trim().max(10_000);
+const noteTimestampSchema = z
+  .number()
+  .int()
+  .min(0)
+  .max(Number.MAX_SAFE_INTEGER);
+
+const appendNoteCommandSchema = z
+  .object({
+    body: noteBodySchema.optional().default(""),
+    createdAt: noteTimestampSchema.optional(),
+    attachments: z
+      .array(noteWriteAttachmentSchema)
+      .max(MAX_ATTACHMENTS_PER_MESSAGE)
+      .optional()
+      .default([]),
+  })
+  .refine((input) => input.body.length > 0 || input.attachments.length > 0, {
+    message: "Provide note text or an attachment",
+  });
+
+const updateNoteCommandSchema = z
+  .object({
+    body: noteBodySchema.optional(),
+    createdAt: noteTimestampSchema.optional(),
+    keepAttachmentIds: z
+      .array(z.string())
+      .max(MAX_ATTACHMENTS_PER_MESSAGE)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: "Attachment IDs must be unique",
+      })
+      .optional(),
+    attachments: z
+      .array(noteWriteAttachmentSchema)
+      .max(MAX_ATTACHMENTS_PER_MESSAGE)
+      .optional()
+      .default([]),
+    replaceAttachments: z.boolean().optional(),
+  })
+  .superRefine((input, context) => {
+    const attachmentCount =
+      (input.keepAttachmentIds?.length ?? 0) + input.attachments.length;
+    const replacingAttachments =
+      input.replaceAttachments === true ||
+      input.keepAttachmentIds !== undefined ||
+      input.attachments.length > 0;
+    if (
+      input.body === undefined &&
+      input.createdAt === undefined &&
+      !replacingAttachments
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Provide note text, timestamp, or attachment changes",
+      });
+    }
+    if (
+      (input.body !== undefined || replacingAttachments) &&
+      (input.body?.length ?? 0) === 0 &&
+      attachmentCount === 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "An empty message must keep or add an attachment",
+      });
+    }
+    if (attachmentCount > MAX_ATTACHMENTS_PER_MESSAGE) {
+      context.addIssue({
+        code: "custom",
+        message: "A message has too many attachments",
+      });
+    }
+  });
 
 export class ChatService {
   constructor(
@@ -115,68 +210,26 @@ export class ChatService {
   }
 
   appendNote(chatId: string, input: unknown): Note {
-    const values = createNoteInputSchema.parse(input);
-    const note = this.repository.appendNote({
-      id: this.idFactory(),
-      chatId,
-      body: values.body,
-      createdAt: values.createdAt,
-      now: this.clock(),
-    });
-    if (!note) throw new ProjectNotFoundError();
-    return note;
-  }
-
-  appendNoteWithAttachments(
-    chatId: string,
-    input: {
-      body?: string;
-      createdAt?: number;
-      attachments: {
-        filename: string;
-        mediaType: string;
-        byteSize: number;
-        content: Uint8Array;
-      }[];
-    },
-  ): Note {
-    const body = input.body?.trim() ?? "";
-    if (body.length === 0 && input.attachments.length === 0) {
-      createNoteInputSchema.parse(input);
-    }
-    if (body.length > 10_000) createNoteInputSchema.parse({ body });
-    if (input.attachments.length > MAX_ATTACHMENTS_PER_MESSAGE) {
-      throw new InvalidInputError();
-    }
-    for (const attachment of input.attachments) {
-      if (
-        attachment.byteSize < 1 ||
-        attachment.byteSize > MAX_ATTACHMENT_BYTES ||
-        attachment.content.byteLength !== attachment.byteSize
-      ) {
-        throw new InvalidInputError();
-      }
-    }
-
+    const values = appendNoteCommandSchema.parse(input);
     const now = this.clock();
     const noteId = this.idFactory();
     const installed = this.installAttachments(
-      input.attachments,
-      input.createdAt ?? now,
+      values.attachments,
+      values.createdAt ?? now,
     );
     try {
       const note = this.repository.appendNote({
         id: noteId,
         chatId,
-        body,
-        createdAt: input.createdAt,
+        body: values.body,
+        createdAt: values.createdAt,
         now,
         attachments: installed,
       });
       if (!note) throw new ProjectNotFoundError();
       return {
         ...note,
-        body,
+        body: values.body,
         attachments: installed.map((attachment) =>
           this.toPublicAttachment({
             ...attachment,
@@ -192,69 +245,29 @@ export class ChatService {
   }
 
   updateNote(chatId: string, noteId: string, input: unknown): Note {
-    const values = updateNoteInputSchema.parse(input);
-    const result = this.repository.updateNote(chatId, noteId, {
-      ...values,
-      now: this.clock(),
-    });
-    if (!result) throw new ProjectNotFoundError();
-    this.cleanup(result.removedStoragePaths);
-    return this.refreshedNote(chatId, noteId);
-  }
-
-  updateNoteWithAttachments(
-    chatId: string,
-    noteId: string,
-    input: {
-      body?: string;
-      createdAt?: number;
-      keepAttachmentIds: string[];
-      attachments: {
-        filename: string;
-        mediaType: string;
-        byteSize: number;
-        content: Uint8Array;
-      }[];
-    },
-  ): Note {
-    const body = input.body?.trim() ?? "";
-    if (
-      body.length === 0 &&
-      input.keepAttachmentIds.length === 0 &&
-      input.attachments.length === 0
-    ) {
-      throw new InvalidInputError();
-    }
-    if (body.length > 10_000) createNoteInputSchema.parse({ body });
-    if (
-      input.keepAttachmentIds.length + input.attachments.length >
-      MAX_ATTACHMENTS_PER_MESSAGE
-    ) {
-      throw new InvalidInputError();
-    }
-    for (const attachment of input.attachments) {
-      if (
-        attachment.byteSize < 1 ||
-        attachment.byteSize > MAX_ATTACHMENT_BYTES ||
-        attachment.content.byteLength !== attachment.byteSize
-      ) {
-        throw new InvalidInputError();
-      }
-    }
-
+    const values = updateNoteCommandSchema.parse(input);
+    const replaceAttachments =
+      values.replaceAttachments === true ||
+      values.keepAttachmentIds !== undefined ||
+      values.attachments.length > 0;
     const now = this.clock();
-    const installed = this.installAttachments(input.attachments, now);
+    const installed = this.installAttachments(values.attachments, now);
     let result: ReturnType<SqliteChatRepository["updateNote"]>;
     try {
       result = this.repository.updateNote(chatId, noteId, {
-        body,
-        createdAt: input.createdAt,
+        body: values.body,
+        createdAt: values.createdAt,
         now,
-        keepAttachmentIds: input.keepAttachmentIds,
-        attachments: installed,
+        keepAttachmentIds: replaceAttachments
+          ? (values.keepAttachmentIds ?? [])
+          : undefined,
+        attachments: replaceAttachments ? installed : undefined,
       });
     } catch (error) {
       this.cleanup(installed.map((attachment) => attachment.storagePath));
+      if (error instanceof InvalidAttachmentSelectionError) {
+        throw new InvalidInputError();
+      }
       throw error;
     }
     if (!result) {
@@ -273,45 +286,17 @@ export class ChatService {
     this.cleanup(result.storagePaths);
   }
 
-  downloadAttachment(
+  setNoteLabel(
     chatId: string,
     noteId: string,
-    attachmentId: string,
-  ): { attachment: NoteAttachment; content: Buffer } {
-    const attachment = this.repository.getAttachment(
-      chatId,
-      noteId,
-      attachmentId,
-    );
-    if (!attachment) throw new ProjectNotFoundError();
-    const store = this.requireAttachmentStore();
-    try {
-      const read = store.read(attachment.storagePath);
-      if (
-        read.byteSize !== attachment.byteSize ||
-        read.modifiedAt !== attachment.modifiedAt
-      ) {
-        this.repository.updateAttachmentMetadata(
-          attachment.id,
-          read.byteSize,
-          read.modifiedAt,
-        );
-      }
-      return {
-        attachment: {
-          ...this.toPublicAttachment(attachment),
-          byteSize: read.byteSize,
-          modifiedAt: read.modifiedAt,
-          status: "available",
-        },
-        content: read.content,
-      };
-    } catch (error) {
-      if (error instanceof ManagedAttachmentUnavailableError) {
-        throw new AttachmentUnavailableError(error.status);
-      }
-      throw error;
-    }
+    input: unknown,
+    applied: boolean,
+  ): Label[] {
+    const label = labelSchema.parse(input);
+    const labels = this.repository.setNoteLabel(chatId, noteId, label, applied);
+    if (labels === undefined) throw new ProjectNotFoundError();
+    if (labels === null) throw new InvalidInputError();
+    return labels;
   }
 
   async openAttachment(

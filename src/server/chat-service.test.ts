@@ -16,8 +16,8 @@ import { ManagedAttachmentStore } from "./attachments/managed-attachment-store.j
 import {
   ChatService,
   AttachmentOpenBlockedError,
-  AttachmentUnavailableError,
   type AttachmentStore,
+  InvalidInputError,
 } from "./chat-service.js";
 import type { NativeFileActions } from "./native-file-actions.js";
 import {
@@ -70,6 +70,153 @@ describe("managed attachment service lifecycle", () => {
     );
   }
 
+  it("does not expose attachment bytes through the service", () => {
+    expect(service()).not.toHaveProperty("downloadAttachment");
+  });
+
+  it("uses the public append and update use cases for attachment writes", () => {
+    ids.push("chat-a", "note-a", "attachment-a", "attachment-b");
+    const chatService = service();
+    chatService.createChat({ title: "Files", accent: "ocean" });
+
+    const created = chatService.appendNote("chat-a", {
+      body: "Context",
+      attachments: [
+        {
+          filename: "roadmap.txt",
+          mediaType: "text/plain",
+          byteSize: 4,
+          content: Buffer.from("road"),
+        },
+      ],
+    });
+    const updated = chatService.updateNote("chat-a", "note-a", {
+      body: "Updated",
+      keepAttachmentIds: ["attachment-a"],
+      attachments: [
+        {
+          filename: "notes.txt",
+          mediaType: "text/plain",
+          byteSize: 5,
+          content: Buffer.from("notes"),
+        },
+      ],
+    });
+
+    expect(created.attachments).toHaveLength(1);
+    expect(updated.attachments).toMatchObject([
+      { id: "attachment-a", filename: "roadmap.txt" },
+      { id: "attachment-b", filename: "notes.txt" },
+    ]);
+  });
+
+  it("rejects foreign kept attachments without changing records or files", () => {
+    ids.push(
+      "chat-a",
+      "note-a",
+      "attachment-a",
+      "chat-b",
+      "note-b",
+      "attachment-b",
+      "attachment-new",
+    );
+    const chatService = service();
+    chatService.createChat({ title: "Alpha", accent: "ocean" });
+    chatService.appendNote("chat-a", {
+      body: "",
+      attachments: [
+        {
+          filename: "alpha.txt",
+          mediaType: "text/plain",
+          byteSize: 5,
+          content: Buffer.from("alpha"),
+        },
+      ],
+    });
+    chatService.createChat({ title: "Beta", accent: "moss" });
+    chatService.appendNote("chat-b", {
+      body: "Beta",
+      attachments: [
+        {
+          filename: "beta.txt",
+          mediaType: "text/plain",
+          byteSize: 4,
+          content: Buffer.from("beta"),
+        },
+      ],
+    });
+
+    expect(() =>
+      chatService.updateNote("chat-a", "note-a", {
+        body: "",
+        keepAttachmentIds: ["attachment-b"],
+        attachments: [
+          {
+            filename: "new.txt",
+            mediaType: "text/plain",
+            byteSize: 3,
+            content: Buffer.from("new"),
+          },
+        ],
+      }),
+    ).toThrow(InvalidInputError);
+
+    expect(repository.listNotes("chat-a")[0]).toMatchObject({
+      body: "",
+      attachments: [{ id: "attachment-a" }],
+    });
+    expect(repository.listNotes("chat-b")[0]).toMatchObject({
+      body: "Beta",
+      attachments: [{ id: "attachment-b" }],
+    });
+    expect(
+      existsSync(
+        join(
+          directory,
+          "attachments",
+          "v1",
+          "namespace-a",
+          "attachment-new",
+          "new.txt",
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("applies only permanent or enabled labels and removes inactive labels", () => {
+    ids.push("chat-a", "note-a");
+    const chatService = service();
+    const chat = chatService.createChat({ title: "Launch", accent: "ocean" });
+    chatService.appendNote("chat-a", { body: "Prepare rollout" });
+
+    expect(chat.enabledLabels).toEqual(["todo", "milestone"]);
+    expect(
+      chatService.setNoteLabel("chat-a", "note-a", "attention", true),
+    ).toEqual(["attention"]);
+    expect(chatService.setNoteLabel("chat-a", "note-a", "todo", true)).toEqual([
+      "attention",
+      "todo",
+    ]);
+    expect(() =>
+      chatService.setNoteLabel("chat-a", "note-a", "risk", true),
+    ).toThrow(InvalidInputError);
+
+    chatService.updateChat("chat-a", { enabledLabels: ["risk"] });
+    expect(chatService.getChat("chat-a").notes[0].labels).toEqual([
+      "attention",
+      "todo",
+    ]);
+    expect(chatService.setNoteLabel("chat-a", "note-a", "todo", false)).toEqual(
+      ["attention"],
+    );
+    expect(() =>
+      chatService.setNoteLabel("chat-a", "note-a", "unknown", true),
+    ).toThrow();
+    expect(() =>
+      chatService.setNoteLabel("other", "note-a", "pin", true),
+    ).toThrow(/Project not found/i);
+  });
+
   it("installs sidecars before database references and cleans them after database failure", () => {
     ids.push("chat-a");
     const chatService = service();
@@ -84,7 +231,7 @@ describe("managed attachment service lifecycle", () => {
     ids.push("note-a", "attachment-a");
 
     expect(() =>
-      chatService.appendNoteWithAttachments("chat-a", {
+      chatService.appendNote("chat-a", {
         body: "Context",
         attachments: [
           {
@@ -116,7 +263,7 @@ describe("managed attachment service lifecycle", () => {
     ids.push("chat-a", "note-a", "attachment-a");
     const chatService = service();
     chatService.createChat({ title: "Files", accent: "ocean" });
-    const created = chatService.appendNoteWithAttachments("chat-a", {
+    const created = chatService.appendNote("chat-a", {
       body: "Context",
       attachments: [
         {
@@ -153,7 +300,7 @@ describe("managed attachment service lifecycle", () => {
     ids.push("chat-a", "note-a", "attachment-a");
     const chatService = service();
     chatService.createChat({ title: "Files", accent: "ocean" });
-    chatService.appendNoteWithAttachments("chat-a", {
+    chatService.appendNote("chat-a", {
       body: "Context",
       attachments: [
         {
@@ -193,7 +340,7 @@ describe("managed attachment service lifecycle", () => {
     ids.push("chat-a", "note-a", "attachment-a");
     const chatService = service();
     chatService.createChat({ title: "Files", accent: "ocean" });
-    chatService.appendNoteWithAttachments("chat-a", {
+    chatService.appendNote("chat-a", {
       body: "Original",
       attachments: [
         {
@@ -220,44 +367,6 @@ describe("managed attachment service lifecycle", () => {
     ]);
   });
 
-  it("downloads only the scoped sidecar and refreshes its metadata", () => {
-    ids.push("chat-a", "note-a", "attachment-a");
-    const chatService = service();
-    chatService.createChat({ title: "Files", accent: "ocean" });
-    chatService.appendNoteWithAttachments("chat-a", {
-      body: "Context",
-      attachments: [
-        {
-          filename: "roadmap.txt",
-          mediaType: "text/plain",
-          byteSize: 4,
-          content: Buffer.from("road"),
-        },
-      ],
-    });
-    const stored = repository.getAttachment(
-      "chat-a",
-      "note-a",
-      "attachment-a",
-    )!;
-    writeFileSync(store.resolveAvailablePath(stored.storagePath), "updated");
-
-    const download = chatService.downloadAttachment(
-      "chat-a",
-      "note-a",
-      "attachment-a",
-    );
-
-    expect(download.content).toEqual(Buffer.from("updated"));
-    expect(download.attachment.id).toBe("attachment-a");
-    expect(
-      repository.getAttachment("chat-a", "note-a", "attachment-a")?.byteSize,
-    ).toBe(7);
-    expect(() =>
-      chatService.downloadAttachment("other", "note-a", "attachment-a"),
-    ).toThrow(/Project not found/i);
-  });
-
   it("commits reference deletion before best-effort sidecar cleanup", () => {
     ids.push("chat-a", "note-a", "attachment-a");
     const remove = vi.fn(() => {
@@ -266,12 +375,11 @@ describe("managed attachment service lifecycle", () => {
     const attachmentStore = {
       create: store.create.bind(store),
       observe: store.observe.bind(store),
-      read: store.read.bind(store),
       remove,
     };
     const chatService = service(attachmentStore);
     chatService.createChat({ title: "Files", accent: "ocean" });
-    chatService.appendNoteWithAttachments("chat-a", {
+    chatService.appendNote("chat-a", {
       body: "Context",
       attachments: [
         {
@@ -298,11 +406,10 @@ describe("managed attachment service lifecycle", () => {
     const chatService = service({
       create: store.create.bind(store),
       observe: store.observe.bind(store),
-      read: store.read.bind(store),
       remove,
     });
     chatService.createChat({ title: "Files", accent: "ocean" });
-    chatService.appendNoteWithAttachments("chat-a", {
+    chatService.appendNote("chat-a", {
       body: "Context",
       attachments: [
         {
@@ -324,7 +431,7 @@ describe("managed attachment service lifecycle", () => {
     ids.push("chat-a", "note-a", "attachment-a");
     const chatService = service();
     chatService.createChat({ title: "Files", accent: "ocean" });
-    chatService.appendNoteWithAttachments("chat-a", {
+    chatService.appendNote("chat-a", {
       body: "Original",
       attachments: [
         {
@@ -348,7 +455,7 @@ describe("managed attachment service lifecycle", () => {
     ids.push("attachment-new");
 
     expect(() =>
-      chatService.updateNoteWithAttachments("chat-a", "note-a", {
+      chatService.updateNote("chat-a", "note-a", {
         body: "Changed",
         keepAttachmentIds: [],
         attachments: [
@@ -381,39 +488,12 @@ describe("managed attachment service lifecycle", () => {
     ).toBe(false);
   });
 
-  it("returns a typed recoverable error for unavailable downloads", () => {
-    ids.push("chat-a", "note-a", "attachment-a");
-    const chatService = service();
-    chatService.createChat({ title: "Files", accent: "ocean" });
-    chatService.appendNoteWithAttachments("chat-a", {
-      body: "Context",
-      attachments: [
-        {
-          filename: "roadmap.txt",
-          mediaType: "text/plain",
-          byteSize: 4,
-          content: Buffer.from("road"),
-        },
-      ],
-    });
-    const stored = repository.getAttachment(
-      "chat-a",
-      "note-a",
-      "attachment-a",
-    )!;
-    unlinkSync(store.resolveAvailablePath(stored.storagePath));
-
-    expect(() =>
-      chatService.downloadAttachment("chat-a", "note-a", "attachment-a"),
-    ).toThrow(AttachmentUnavailableError);
-  });
-
   it("opens only a scoped safe managed file after refreshing metadata", async () => {
     ids.push("chat-a", "note-a", "attachment-a");
     const open = vi.fn(async () => undefined);
     const chatService = service(store, { ...nativeActions, open });
     chatService.createChat({ title: "Files", accent: "ocean" });
-    chatService.appendNoteWithAttachments("chat-a", {
+    chatService.appendNote("chat-a", {
       body: "Context",
       attachments: [
         {
@@ -449,7 +529,7 @@ describe("managed attachment service lifecycle", () => {
     const reveal = vi.fn(async () => undefined);
     const chatService = service(store, { ...nativeActions, open, reveal });
     chatService.createChat({ title: "Files", accent: "ocean" });
-    chatService.appendNoteWithAttachments("chat-a", {
+    chatService.appendNote("chat-a", {
       body: "Context",
       attachments: [
         {
@@ -481,7 +561,7 @@ describe("managed attachment service lifecycle", () => {
     const reveal = vi.fn(async () => undefined);
     const chatService = service(store, { ...nativeActions, reveal });
     chatService.createChat({ title: "Files", accent: "ocean" });
-    chatService.appendNoteWithAttachments("chat-a", {
+    chatService.appendNote("chat-a", {
       body: "Context",
       attachments: [
         {
@@ -523,7 +603,7 @@ describe("managed attachment service lifecycle", () => {
       }),
     });
     chatService.createChat({ title: "Files", accent: "ocean" });
-    chatService.appendNoteWithAttachments("chat-a", {
+    chatService.appendNote("chat-a", {
       body: "Context",
       attachments: [
         {
@@ -550,7 +630,7 @@ describe("managed attachment service lifecycle", () => {
       platform: "aix",
     });
     chatService.createChat({ title: "Files", accent: "ocean" });
-    chatService.appendNoteWithAttachments("chat-a", {
+    chatService.appendNote("chat-a", {
       body: "Context",
       attachments: [
         {
