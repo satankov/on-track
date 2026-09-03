@@ -31,6 +31,7 @@ import {
   validateSqliteBackupBundle,
 } from "./sqlite-backup-bundle.js";
 import { ManagedRestoreCoordinator } from "./restore-journal.js";
+import { applyBundledMigrations, openDatabase } from "../db/database.js";
 
 describe("SQLite backup bundle", () => {
   let directory: string;
@@ -40,7 +41,15 @@ describe("SQLite backup bundle", () => {
   beforeEach(() => {
     directory = mkdtempSync(join(tmpdir(), "on-track-bundle-"));
     sourcePath = join(directory, "source.sqlite");
-    sourceDatabase = createMetadataOnlySchemaV3Database(sourcePath);
+    sourceDatabase = openDatabase(sourcePath);
+    sourceDatabase.exec(`
+      INSERT INTO chats (id, title, accent, created_at, updated_at)
+        VALUES ('chat-a', 'Roadmap', 'ocean', 1, 1);
+      INSERT INTO notes (id, chat_id, body, created_at)
+        VALUES ('note-a', 'chat-a', 'Plan', 1);
+      INSERT INTO chat_enabled_labels (chat_id, label) VALUES
+        ('chat-a', 'todo'), ('chat-a', 'milestone');
+    `);
   });
 
   afterEach(() => {
@@ -230,6 +239,52 @@ describe("SQLite backup bundle", () => {
       /columns.*notes/i,
     );
 
+    const alteredIndexPath = copyBundle(
+      originalPath,
+      directory,
+      "altered-index",
+    );
+    mutateBundle(alteredIndexPath, (database) =>
+      database.exec(`
+        DROP INDEX chats_activity_idx;
+        CREATE INDEX chats_activity_idx ON chats(updated_at, id)
+          WHERE updated_at >= 0;
+      `),
+    );
+    expect(() => validateSqliteBackupBundle(alteredIndexPath)).toThrow(
+      /definition.*chats_activity_idx/i,
+    );
+
+    const alteredMigrationPath = copyBundle(
+      originalPath,
+      directory,
+      "altered-migration",
+    );
+    mutateBundle(alteredMigrationPath, (database) =>
+      database.exec(`
+        UPDATE __drizzle_migrations
+        SET created_at = created_at + 1
+        WHERE created_at = (SELECT max(created_at) FROM __drizzle_migrations);
+      `),
+    );
+    expect(() => validateSqliteBackupBundle(alteredMigrationPath)).toThrow(
+      /migration metadata/i,
+    );
+
+    const malformedMigrationPath = copyBundle(
+      originalPath,
+      directory,
+      "malformed-migration",
+    );
+    mutateBundle(malformedMigrationPath, (database) =>
+      database.exec(
+        "UPDATE __drizzle_migrations SET hash = 'not-a-sha256' WHERE created_at = (SELECT max(created_at) FROM __drizzle_migrations)",
+      ),
+    );
+    expect(() => validateSqliteBackupBundle(malformedMigrationPath)).toThrow(
+      /migration metadata/i,
+    );
+
     const missingPayloadPath = copyBundle(originalPath, directory, "missing");
     mutateBundle(missingPayloadPath, (database) =>
       database.exec("DELETE FROM _on_track_bundle_files"),
@@ -336,33 +391,59 @@ describe("SQLite backup bundle", () => {
   );
 
   it.each([
-    { name: "missing foreign key", schema: { attachmentForeignKey: false } },
-    { name: "misdirected index", schema: { attachmentIndexColumns: "id" } },
-    { name: "missing checks", schema: { includeChecks: false } },
-    { name: "fake default checks", schema: { fakeMetadataChecks: true } },
-    { name: "missing path uniqueness", schema: { uniqueStoragePath: false } },
-  ])("rejects a lookalike schema with $name", async ({ name, schema }) => {
-    const lookalikePath = join(
-      directory,
-      `${name.replaceAll(" ", "-")}.sqlite`,
-    );
-    const lookalike = createMetadataOnlySchemaV3Database(lookalikePath, schema);
-    try {
-      await expect(
-        createSqliteBackupBundle({
-          sourceDatabase: lookalike,
-          destinationPath: join(directory, `${name}.on-track-backup`),
-          attachmentStore: {
-            read: () => {
-              throw new Error("an empty snapshot must not read attachments");
+    {
+      name: "missing foreign key",
+      schema: { attachmentForeignKey: false },
+      expected: /foreign keys.*note_attachments/i,
+    },
+    {
+      name: "misdirected index",
+      schema: { attachmentIndexColumns: "id" },
+      expected: /indexes.*note_attachments/i,
+    },
+    {
+      name: "missing checks",
+      schema: { includeChecks: false },
+      expected: /definition/i,
+    },
+    {
+      name: "fake default checks",
+      schema: { fakeMetadataChecks: true },
+      expected: /definition/i,
+    },
+    {
+      name: "missing path uniqueness",
+      schema: { uniqueStoragePath: false },
+      expected: /indexes.*note_attachments/i,
+    },
+  ])(
+    "rejects a lookalike schema with $name",
+    async ({ name, schema, expected }) => {
+      const lookalikePath = join(
+        directory,
+        `${name.replaceAll(" ", "-")}.sqlite`,
+      );
+      const lookalike = createMetadataOnlySchemaV3Database(
+        lookalikePath,
+        schema,
+      );
+      try {
+        await expect(
+          createSqliteBackupBundle({
+            sourceDatabase: lookalike,
+            destinationPath: join(directory, `${name}.on-track-backup`),
+            attachmentStore: {
+              read: () => {
+                throw new Error("an empty snapshot must not read attachments");
+              },
             },
-          },
-        }),
-      ).rejects.toBeInstanceOf(SqliteBackupBundleValidationError);
-    } finally {
-      lookalike.close();
-    }
-  });
+          }),
+        ).rejects.toThrow(expected);
+      } finally {
+        lookalike.close();
+      }
+    },
+  );
 
   it("rejects unsupported manifests, foreign-key damage, and inconsistent managed reads", async () => {
     insertAttachment(sourceDatabase, {
@@ -716,7 +797,7 @@ describe("SQLite backup bundle", () => {
     ).toBeUndefined();
   });
 
-  it("preserves current labels and migrates an exact schema-2 bundle with defaults", async () => {
+  it("preserves current labels and rejects an exact schema-2 bundle", async () => {
     sourceDatabase.exec(`
       DELETE FROM chat_enabled_labels;
       INSERT INTO chat_enabled_labels (chat_id, label) VALUES
@@ -766,27 +847,17 @@ describe("SQLite backup bundle", () => {
         DELETE FROM __drizzle_migrations WHERE created_at = 1788356400000;
       `);
     });
-    expect(validateSqliteBackupBundle(legacyPath).schemaVersion).toBe(2);
-    const legacyPrepared = prepareSqliteBackupBundle({
-      bundlePath: legacyPath,
-      workspace: createRestoreWorkspace(directory, "labels-legacy"),
-    });
-    const legacy = new Database(legacyPrepared.candidateDatabasePath, {
-      readonly: true,
-    });
-    expect(
-      legacy
-        .prepare("SELECT label FROM chat_enabled_labels ORDER BY label")
-        .pluck()
-        .all(),
-    ).toEqual(["milestone", "todo"]);
-    expect(
-      legacy.prepare("SELECT count(*) FROM note_labels").pluck().get(),
-    ).toBe(0);
-    expect(
-      legacy.prepare("SELECT schema_version FROM app_metadata").pluck().get(),
-    ).toBe(3);
-    legacy.close();
+    expect(() => validateSqliteBackupBundle(legacyPath)).toThrow(
+      /unsupported/i,
+    );
+    const legacyWorkspace = createRestoreWorkspace(directory, "labels-legacy");
+    expect(() =>
+      prepareSqliteBackupBundle({
+        bundlePath: legacyPath,
+        workspace: legacyWorkspace,
+      }),
+    ).toThrow(/unsupported/i);
+    expect(existsSync(legacyWorkspace.stagingDirectory)).toBe(false);
   });
 
   it("rolls back activation when the installed attachment inventory changes", async () => {
@@ -1019,6 +1090,24 @@ function createMetadataOnlySchemaV3Database(
     INSERT INTO __drizzle_migrations (id, hash, created_at)
       VALUES (2, 'schema-v3', 1788356400000);
   `);
+  const trusted = new Database(":memory:");
+  try {
+    applyBundledMigrations(trusted);
+    const migrations = trusted
+      .prepare(
+        "SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at, hash",
+      )
+      .all() as Array<{ hash: string; created_at: number }>;
+    database.exec("DELETE FROM __drizzle_migrations");
+    const insert = database.prepare(
+      "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
+    );
+    for (const migration of migrations) {
+      insert.run(migration.hash, migration.created_at);
+    }
+  } finally {
+    trusted.close();
+  }
   return database;
 }
 

@@ -1,11 +1,11 @@
 {
   "name": "on-track",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
-    "node": ">=24 <25"
+    "node": "^22.13.0 || ^24.0.0"
   },
   "overrides": {
     "@esbuild-kit/core-utils": {
@@ -52,7 +52,7 @@
     "@testing-library/react": "16.3.3",
     "@testing-library/user-event": "14.6.6",
     "@types/better-sqlite3": "9.6.0",
-    "@types/node": "26.4.0",
+    "@types/node": "22.20.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5",
     "@vitejs/plugin-react": "6.1.1",

@@ -53,7 +53,10 @@ async function addNote(
   createdAt?: number,
 ): Promise<void> {
   const response = await request.post(`${url}/api/chats/${chatId}/notes`, {
-    data: { body, ...(createdAt === undefined ? {} : { createdAt }) },
+    multipart: {
+      body,
+      ...(createdAt === undefined ? {} : { createdAt: String(createdAt) }),
+    },
   });
   expect(response.ok()).toBe(true);
 }

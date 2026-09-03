@@ -5,7 +5,11 @@ import { apiClient } from "./api.js";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("browser API client", () => {
-  it("sends JSON mutations and encodes project identifiers", async () => {
+  it("does not expose the removed browser attachment download API", () => {
+    expect(apiClient).not.toHaveProperty("downloadAttachment");
+  });
+
+  it("sends body-only note writes as multipart and encodes project identifiers", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ id: "note-1" }), {
         status: 201,
@@ -19,11 +23,15 @@ describe("browser API client", () => {
       createdAt: 123,
     });
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/chats/project%2Fone/notes", {
-      method: "POST",
-      body: JSON.stringify({ body: "Decision", createdAt: 123 }),
-      headers: { "Content-Type": "application/json" },
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/chats/project%2Fone/notes",
+      expect.objectContaining({ method: "POST", body: expect.any(FormData) }),
+    );
+    const form = fetchMock.mock.calls[0][1].body as FormData;
+    expect(form.get("body")).toBe("Decision");
+    expect(form.get("createdAt")).toBe("123");
+    expect(form.get("replaceAttachments")).toBeNull();
+    expect(fetchMock.mock.calls[0][1].headers).toBeUndefined();
   });
 
   it("covers project mutations and successful database export", async () => {
@@ -88,6 +96,8 @@ describe("browser API client", () => {
     await apiClient.updateNote("project/one", "note/two", {
       body: "Revised",
       createdAt: 123,
+      keepAttachmentIds: undefined,
+      files: [],
     });
     await apiClient.deleteNote("project/one", "note/two");
     await apiClient.importDatabase(new Blob(["SQLite format 3"]));
@@ -97,10 +107,14 @@ describe("browser API client", () => {
       "/api/chats/project%2Fone/notes/note%2Ftwo",
       {
         method: "PATCH",
-        body: JSON.stringify({ body: "Revised", createdAt: 123 }),
-        headers: { "Content-Type": "application/json" },
+        body: expect.any(FormData),
       },
     );
+    const form = fetchMock.mock.calls[0][1].body as FormData;
+    expect(form.get("body")).toBe("Revised");
+    expect(form.get("createdAt")).toBe("123");
+    expect(form.get("replaceAttachments")).toBeNull();
+    expect(fetchMock.mock.calls[0][1].headers).toBeUndefined();
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       "/api/chats/project%2Fone/notes/note%2Ftwo",
@@ -145,21 +159,13 @@ describe("browser API client", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(2, path, { method: "DELETE" });
   });
 
-  it("uploads note attachments with multipart form data and downloads attachment bytes", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ id: "note-1" }), {
-          status: 201,
-          headers: { "Content-Type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response("deck", {
-          status: 200,
-          headers: { "Content-Type": "application/vnd.ms-powerpoint" },
-        }),
-      );
+  it("uploads note attachments with multipart form data", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ id: "note-1" }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const file = new File(["deck"], "roadmap.ppt", {
       type: "application/vnd.ms-powerpoint",
@@ -170,12 +176,6 @@ describe("browser API client", () => {
       createdAt: 250,
       files: [file],
     });
-    const downloaded = await apiClient.downloadAttachment(
-      "project/one",
-      "note/two",
-      "attachment/three",
-    );
-
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       "/api/chats/project%2Fone/notes",
@@ -185,11 +185,6 @@ describe("browser API client", () => {
       }),
     );
     expect(fetchMock.mock.calls[0][1].headers).toBeUndefined();
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      "/api/chats/project%2Fone/notes/note%2Ftwo/attachments/attachment%2Fthree",
-    );
-    expect(await downloaded.text()).toBe("deck");
   });
 
   it("updates note attachments with multipart form data", async () => {
@@ -217,17 +212,9 @@ describe("browser API client", () => {
       }),
     );
     expect(fetchMock.mock.calls[0][1].headers).toBeUndefined();
-  });
-
-  it("reports attachment read failures safely", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response("missing", { status: 404 })),
-    );
-
-    await expect(
-      apiClient.downloadAttachment("project/one", "note/two", "attachment"),
-    ).rejects.toThrow("The attachment could not be downloaded.");
+    const form = fetchMock.mock.calls[0][1].body as FormData;
+    expect(form.get("replaceAttachments")).toBe("true");
+    expect(form.getAll("keepAttachmentIds")).toEqual(["attachment/keep"]);
   });
 
   it("posts empty JSON to scoped native attachment action routes", async () => {

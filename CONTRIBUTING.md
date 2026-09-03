@@ -14,7 +14,9 @@ Thank you for helping improve a private-by-design personal project tracker.
 
 ## Development setup
 
-Use Node.js 24 LTS and the locked dependency tree:
+Use Node.js 24 LTS as the preferred maintainer runtime and the locked dependency
+tree. Node.js 22 is also supported from version 22.13.0 and is exercised at its
+exact floor in CI:
 
 ```sh
 npm ci

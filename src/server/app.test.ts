@@ -20,6 +20,20 @@ import { MaintenanceGate } from "./database-transfer/maintenance-gate.js";
 import type { StagedUpload } from "./database-transfer/staged-upload.js";
 import type { NativeFileActions } from "./native-file-actions.js";
 
+function noteForm(input: {
+  body?: string;
+  createdAt?: number;
+  replaceAttachments?: boolean;
+}): FormData {
+  const form = new FormData();
+  if (input.body !== undefined) form.set("body", input.body);
+  if (input.createdAt !== undefined) {
+    form.set("createdAt", String(input.createdAt));
+  }
+  if (input.replaceAttachments) form.set("replaceAttachments", "true");
+  return form;
+}
+
 describe("local project-chat API", () => {
   let directory: string;
   let app: FastifyInstance;
@@ -59,7 +73,7 @@ describe("local project-chat API", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  it("creates, customizes, and appends a note through JSON contracts", async () => {
+  it("creates and customizes through JSON and appends through multipart", async () => {
     const created = await app.inject({
       method: "POST",
       url: "/api/chats",
@@ -86,7 +100,7 @@ describe("local project-chat API", () => {
       method: "POST",
       url: "/api/chats/id-1/notes",
       headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
-      payload: { body: "Decision:\nShip the thin slice." },
+      payload: noteForm({ body: "Decision:\nShip the thin slice." }),
     });
     expect(note.statusCode).toBe(201);
 
@@ -115,7 +129,7 @@ describe("local project-chat API", () => {
       method: "POST",
       url: "/api/chats/id-1/notes",
       headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
-      payload: { body: "From the past", createdAt: 250 },
+      payload: noteForm({ body: "From the past", createdAt: 250 }),
     });
 
     expect(note.statusCode).toBe(201);
@@ -137,7 +151,7 @@ describe("local project-chat API", () => {
       method: "POST",
       url: "/api/chats/id-1/notes",
       headers: { host: "localhost:4173", origin: "http://localhost:4173" },
-      payload: { body: "Prepare rollout" },
+      payload: noteForm({ body: "Prepare rollout" }),
     });
 
     const configured = await app.inject({
@@ -190,7 +204,7 @@ describe("local project-chat API", () => {
     expect(removed.json()).toEqual([]);
   });
 
-  it("creates an attachment message through multipart and downloads file bytes", async () => {
+  it("creates an attachment message without exposing a download route", async () => {
     await app.inject({
       method: "POST",
       url: "/api/chats",
@@ -235,11 +249,7 @@ describe("local project-chat API", () => {
       headers: { host: "localhost:4173" },
     });
 
-    expect(attachment.statusCode).toBe(200);
-    expect(attachment.headers["content-disposition"]).toContain(
-      'filename="roadmap.pptx"',
-    );
-    expect(attachment.rawPayload).toEqual(Buffer.from([1, 2, 3]));
+    expect(attachment.statusCode).toBe(404);
   });
 
   it("opens and reveals scoped managed attachments through privileged routes", async () => {
@@ -506,6 +516,43 @@ describe("local project-chat API", () => {
     });
   });
 
+  it("accepts an edit that keeps the maximum attachment count", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
+      payload: { title: "Maximum files", accent: "amber" },
+    });
+    const createForm = new FormData();
+    createForm.set("body", "Original");
+    for (let index = 0; index < 10; index += 1) {
+      createForm.append("files", new File([String(index)], `${index}.txt`));
+    }
+    await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes",
+      headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
+      payload: createForm,
+    });
+
+    const updateForm = new FormData();
+    updateForm.set("body", "Updated");
+    updateForm.set("createdAt", "500");
+    updateForm.set("replaceAttachments", "true");
+    for (let id = 3; id <= 12; id += 1) {
+      updateForm.append("keepAttachmentIds", `id-${id}`);
+    }
+    const updated = await app.inject({
+      method: "PATCH",
+      url: "/api/chats/id-1/notes/id-2",
+      headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
+      payload: updateForm,
+    });
+
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().attachments).toHaveLength(10);
+  });
+
   it("rejects invalid attachment edits without partially changing the message", async () => {
     await app.inject({
       method: "POST",
@@ -534,6 +581,38 @@ describe("local project-chat API", () => {
             origin: "http://127.0.0.1:4173",
           },
           payload: emptyEdit,
+        })
+      ).statusCode,
+    ).toBe(400);
+
+    const emptyReplacement = new FormData();
+    emptyReplacement.set("replaceAttachments", "true");
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: "/api/chats/id-1/notes/id-2",
+          headers: {
+            host: "127.0.0.1:4173",
+            origin: "http://127.0.0.1:4173",
+          },
+          payload: emptyReplacement,
+        })
+      ).statusCode,
+    ).toBe(400);
+
+    const blankBodyOnly = new FormData();
+    blankBodyOnly.set("body", "   ");
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: "/api/chats/id-1/notes/id-2",
+          headers: {
+            host: "127.0.0.1:4173",
+            origin: "http://127.0.0.1:4173",
+          },
+          payload: blankBodyOnly,
         })
       ).statusCode,
     ).toBe(400);
@@ -652,7 +731,7 @@ describe("local project-chat API", () => {
       method: "POST",
       url: "/api/chats/missing/notes",
       headers: { host: "localhost:4173", origin: "http://localhost:4173" },
-      payload: { body: "Keep this draft" },
+      payload: noteForm({ body: "Keep this draft" }),
     });
 
     expect(response.statusCode).toBe(404);
@@ -660,6 +739,48 @@ describe("local project-chat API", () => {
       code: "not_found",
       message: "Project not found.",
     });
+  });
+
+  it("rejects JSON note writes now that multipart is the sole contract", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: { title: "Multipart only", accent: "coral" },
+    });
+    const note = await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: noteForm({ body: "Existing" }),
+    });
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: { body: "Legacy JSON" },
+    });
+    const updated = await app.inject({
+      method: "PATCH",
+      url: `/api/chats/id-1/notes/${note.json().id as string}`,
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: { body: "Legacy JSON update" },
+    });
+
+    for (const response of [created, updated]) {
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({
+        code: "invalid_input",
+        message: "Please check the submitted values.",
+      });
+    }
+    const detail = await app.inject({
+      method: "GET",
+      url: "/api/chats/id-1",
+      headers: { host: "localhost:4173" },
+    });
+    expect(detail.json().notes).toMatchObject([{ body: "Existing" }]);
   });
 
   it("returns not found for missing project reads and updates", async () => {
@@ -696,7 +817,7 @@ describe("local project-chat API", () => {
       method: "POST",
       url: "/api/chats/id-1/notes",
       headers: { host: "localhost:4173", origin: "http://localhost:4173" },
-      payload: { body: "Remove me too" },
+      payload: noteForm({ body: "Remove me too" }),
     });
 
     const removed = await app.inject({
@@ -731,14 +852,14 @@ describe("local project-chat API", () => {
       method: "POST",
       url: "/api/chats/id-1/notes",
       headers: { host: "localhost:4173", origin: "http://localhost:4173" },
-      payload: { body: "Original" },
+      payload: noteForm({ body: "Original" }),
     });
 
     const updated = await app.inject({
       method: "PATCH",
       url: "/api/chats/id-1/notes/id-2",
       headers: { host: "localhost:4173", origin: "http://localhost:4173" },
-      payload: { body: "Revised", createdAt: 750 },
+      payload: noteForm({ body: "Revised", createdAt: 750 }),
     });
     expect(updated.statusCode).toBe(200);
     expect(updated.json()).toMatchObject({ body: "Revised", createdAt: 750 });
@@ -770,7 +891,7 @@ describe("local project-chat API", () => {
       method: "PATCH",
       url: "/api/chats/id-1/notes/missing",
       headers: { host: "localhost:4173", origin: "http://localhost:4173" },
-      payload: { body: "Still missing" },
+      payload: noteForm({ body: "Still missing" }),
     });
     const deleted = await app.inject({
       method: "DELETE",
@@ -840,19 +961,28 @@ describe("local project-chat API", () => {
         headers: { host: "localhost:4173" },
       });
       expect(list.json()).toMatchObject([{ title: "Exported" }]);
-      const attachment = await importedApp.inject({
+      const detail = await importedApp.inject({
         method: "GET",
-        url: "/api/chats/id-1/notes/id-2/attachments/id-3",
+        url: "/api/chats/id-1",
         headers: { host: "localhost:4173" },
       });
-      expect(attachment.statusCode).toBe(200);
-      expect(attachment.rawPayload).toEqual(Buffer.from("sidecar bytes"));
+      expect(detail.statusCode).toBe(200);
+      expect(detail.json().notes[0].attachments).toMatchObject([
+        { id: "id-3", filename: "roadmap.txt", status: "available" },
+      ]);
 
       const inspected = new Database(importedPath, {
         readonly: true,
         fileMustExist: true,
       });
       try {
+        const restoredStoragePath = inspected
+          .prepare("SELECT storage_path FROM note_attachments WHERE id = ?")
+          .pluck()
+          .get("id-3") as string;
+        expect(
+          readFileSync(join(importedDirectory, restoredStoragePath)),
+        ).toEqual(Buffer.from("sidecar bytes"));
         expect(
           inspected
             .prepare("SELECT name FROM pragma_table_info('note_attachments')")

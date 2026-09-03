@@ -2,17 +2,20 @@
 
 ## Status
 
-The v0.0.3 plaintext alpha is the published baseline. The current
-`release/v0.0.4` work adds browser-local appearance preferences and durable
-project/message label relations while preserving the existing local
-server/service/repository and versioned-backup boundaries. The core decisions
-are recorded in
+The v0.0.3 plaintext alpha is the published baseline. Version 0.0.4 is prepared
+as the next release candidate with browser-local appearance preferences,
+durable project/message label relations, Node.js 22.13/24 support, and simpler
+note-write, client-state, and backup-validation paths. It preserves the existing
+local server/service/repository and versioned-backup boundaries. The core
+decisions are recorded in
 [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
 encryption limitation in [ADR-0002](adr/0002-defer-at-rest-encryption.md),
 source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the
 current license in [ADR-0005](adr/0005-apache-2-license.md). Managed mutable
 attachments and guarded native actions are recorded in
-[ADR-0006](adr/0006-managed-mutable-attachments-and-native-file-actions.md).
+[ADR-0006](adr/0006-managed-mutable-attachments-and-native-file-actions.md), and
+Node 22.13/24 support in
+[ADR-0007](adr/0007-node-22-and-24-runtime-support.md).
 
 ## System context
 
@@ -45,7 +48,8 @@ Local browser -> loopback Fastify server -> application service -> repository ->
 - Vitest and Testing Library cover domain, database, API, client, and component
   behavior; Playwright covers the persisted browser journey.
 - npm lockfile installation and GitHub source releases are the current packaging
-  model. Node.js 24 is the supported runtime.
+  model. Node.js 22 is supported from 22.13.0 and Node.js 24 remains supported;
+  odd-numbered and unknown future majors are excluded.
 
 ## Components and dependency direction
 
@@ -114,7 +118,7 @@ Message attachments are owner-only files under
 SQLite stores metadata, a unique repository-owned POSIX relative path, and
 last-known size/modified time, but no attachment BLOB. Creation installs files
 before committing references; deletion commits reference removal before
-best-effort file cleanup. Project reads and scoped downloads refresh metadata
+best-effort file cleanup. Project reads and scoped native actions refresh metadata
 after external edits and preserve missing, unreadable, or unsafe rows as
 recoverable DTO states. DTOs also expose server-derived Open/Show capability
 states. Scoped POST routes resolve IDs to canonical managed targets and dispatch
@@ -122,8 +126,13 @@ eligible files through fixed, shell-free macOS, Windows, or Linux commands.
 Known executable, installer, script, shortcut, application, and desktop-launcher
 types—and executable POSIX files—cannot be opened from On Track; safe folder
 reveal remains independent. Browser focus refreshes attachment metadata after a
-user returns from an external application. The scoped download route remains for
-compatibility.
+user returns from an external application. Attachment bytes are not exposed by a
+browser download route.
+
+All browser note creation and editing uses the same bounded multipart contract,
+whether or not files are attached. The client keeps project summaries and the
+active project detail in one canonical server-state value so mutations update
+both views atomically without duplicated synchronization branches.
 
 Settings exports one versioned SQLite `.on-track-backup` container, including
 project label configuration and message assignments. An online snapshot
@@ -131,10 +140,12 @@ temporarily gains reserved payload tables containing every readable
 managed file plus size, time, and SHA-256 metadata; strict canonical-schema,
 integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
-upload, rejects raw/pre-v0.0.3 SQLite and unsupported bundles, generates fresh
-managed paths, removes bundle payload tables, migrates a strictly validated
-schema-2 bundle to schema 3 in private staging, and compacts the candidate. It
-then uses the maintenance gate and restore journal to replace live state.
+upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
+fresh managed paths, removes bundle payload tables, and compacts the current-
+schema candidate. It then uses the maintenance gate and restore journal to
+replace live state. Exact active-schema expectations come from a trusted in-
+memory database built with checked-in migrations; imported SQL never defines
+its own validation baseline.
 Restore is replacement, not merge. Export is limited to three attempts per
 minute per process; restore is limited to two attempts per minute per process.
 
@@ -203,10 +214,11 @@ be hardened before production-readiness claims.
   contract.
 - `npm run verify`: authoritative aggregate local/release gate.
 
-GitHub Actions repeats these checks, exercises native SQLite dependency
-installation/tests on Linux, macOS, and Windows, performs dependency review and
-CodeQL analysis, and publishes only a matching tag whose commit is already on
-`main`. Unit tests cover every native command shape; current manual dispatch
+GitHub Actions repeats full verification on Node 22.13 and 24, exercises native
+SQLite dependency installation/tests for both runtimes on Linux, macOS, and
+Windows, performs dependency review and CodeQL analysis, and publishes only a
+matching tag whose commit is already on `main`. Unit tests cover every native
+command shape; current manual dispatch
 evidence is limited to one user-reported macOS host, with Windows and Linux
 desktop smoke tests pending.
 

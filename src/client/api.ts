@@ -26,11 +26,6 @@ export interface ApiClient {
     label: Label,
     applied: boolean,
   ): Promise<Label[]>;
-  downloadAttachment(
-    chatId: string,
-    noteId: string,
-    attachmentId: string,
-  ): Promise<Blob>;
   openAttachment(
     chatId: string,
     noteId: string,
@@ -88,43 +83,17 @@ export const apiClient: ApiClient = {
     });
   },
   appendNote: (id, input) => {
-    if (input.files?.length) {
-      const form = new FormData();
-      form.set("body", input.body);
-      if (input.createdAt !== undefined) {
-        form.set("createdAt", String(input.createdAt));
-      }
-      for (const file of input.files) form.append("files", file);
-      return request<Note>(`/api/chats/${encodeURIComponent(id)}/notes`, {
-        method: "POST",
-        body: form,
-      });
-    }
+    const form = noteFormData(input);
     return request<Note>(`/api/chats/${encodeURIComponent(id)}/notes`, {
       method: "POST",
-      body: JSON.stringify(input),
+      body: form,
     });
   },
   updateNote: (chatId, noteId, input) => {
     const path = `/api/chats/${encodeURIComponent(chatId)}/notes/${encodeURIComponent(noteId)}`;
-    if (input.files?.length || input.keepAttachmentIds) {
-      const form = new FormData();
-      if (input.body !== undefined) form.set("body", input.body);
-      if (input.createdAt !== undefined) {
-        form.set("createdAt", String(input.createdAt));
-      }
-      for (const id of input.keepAttachmentIds ?? []) {
-        form.append("keepAttachmentIds", id);
-      }
-      for (const file of input.files ?? []) form.append("files", file);
-      return request<Note>(path, {
-        method: "PATCH",
-        body: form,
-      });
-    }
     return request<Note>(path, {
       method: "PATCH",
-      body: JSON.stringify(input),
+      body: noteFormData(input),
     });
   },
   deleteNote: async (chatId, noteId) => {
@@ -138,15 +107,6 @@ export const apiClient: ApiClient = {
       `/api/chats/${encodeURIComponent(chatId)}/notes/${encodeURIComponent(noteId)}/labels/${encodeURIComponent(label)}`,
       { method: applied ? "PUT" : "DELETE" },
     ),
-  downloadAttachment: async (chatId, noteId, attachmentId) => {
-    const response = await fetch(
-      `/api/chats/${encodeURIComponent(chatId)}/notes/${encodeURIComponent(noteId)}/attachments/${encodeURIComponent(attachmentId)}`,
-    );
-    if (!response.ok) {
-      throw new Error("The attachment could not be downloaded.");
-    }
-    return response.blob();
-  },
   openAttachment: async (chatId, noteId, attachmentId) => {
     await request<void>(
       attachmentActionPath(chatId, noteId, attachmentId, "open"),
@@ -185,6 +145,24 @@ export const apiClient: ApiClient = {
     }
   },
 };
+
+function noteFormData(input: CreateNoteInput | UpdateNoteInput): FormData {
+  const form = new FormData();
+  if (input.body !== undefined) form.set("body", input.body);
+  if (input.createdAt !== undefined) {
+    form.set("createdAt", String(input.createdAt));
+  }
+  if ("keepAttachmentIds" in input) {
+    if (input.keepAttachmentIds !== undefined) {
+      form.set("replaceAttachments", "true");
+    }
+    for (const id of input.keepAttachmentIds ?? []) {
+      form.append("keepAttachmentIds", id);
+    }
+  }
+  for (const file of input.files ?? []) form.append("files", file);
+  return form;
+}
 
 function attachmentActionPath(
   chatId: string,

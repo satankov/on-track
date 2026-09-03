@@ -2,9 +2,42 @@
 
 All notable changes to On Track are documented here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). While the version is
-below `1.0.0`, minor versions may contain breaking changes.
+below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
+
+## [0.0.4] - 2026-09-03
+
+### Added
+
+- A flatter desktop-first workspace with a compact auto-growing composer and a
+  vertical project-history filter rail.
+- Browser-local Light, Neutral, and Dark appearance themes with accessible
+  controls and pre-render application to avoid a theme flash.
+- Permanent Pin and Attention labels plus project-enabled Todo, Decision, Open
+  question, Risk, and Milestone labels, with multi-label message filtering and
+  persistence in the current backup format.
+- Node.js 22 support from version 22.13.0 while retaining Node.js 24 support,
+  with dual-runtime CI, native SQLite portability, and release verification.
+
+### Changed
+
+- Unified text-only and attachment note writes behind one bounded multipart and
+  service path.
+- Centralized project-list and active-project client state commits to remove
+  duplicated mutation synchronization.
+- Derived strict current-database schema validation from a trusted database
+  built with checked-in migrations instead of a handwritten duplicate schema.
+
+### Breaking
+
+- Current-format backup restore no longer accepts v0.0.3/schema-2 bundles. Live
+  v0.0.3 databases still migrate at startup.
+
+### Removed
+
+- Removed the unused browser attachment-download API. Managed Open and Show in
+  Folder remain available subject to their existing platform and safety checks.
 
 ## [0.0.3] - 2026-09-02
 

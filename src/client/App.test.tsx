@@ -35,7 +35,6 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
     updateNote: vi.fn(),
     deleteNote: vi.fn(),
     setNoteLabel: vi.fn(),
-    downloadAttachment: vi.fn(),
     openAttachment: vi.fn(),
     revealAttachment: vi.fn(),
     exportDatabase: vi.fn(),
@@ -1597,6 +1596,153 @@ describe("personal project chat workspace", () => {
     await act(async () => betaRequest.resolve({ ...beta, notes: [] }));
     expect(await screen.findByRole("heading", { name: "Beta" })).toBeVisible();
     await act(async () => alphaRequest.resolve({ ...alpha, notes: [] }));
+    expect(screen.getByRole("heading", { name: "Beta" })).toBeVisible();
+  });
+
+  it("commits a pending project update to the sidebar after navigation", async () => {
+    const user = userEvent.setup();
+    const alpha = {
+      id: "alpha",
+      title: "Alpha",
+      accent: "coral" as const,
+      enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const beta = {
+      ...alpha,
+      id: "beta",
+      title: "Beta",
+      accent: "moss" as const,
+      updatedAt: 1,
+    };
+    const updateRequest = deferred<typeof alpha>();
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([alpha, beta]),
+      getChat: vi.fn(async (id: string) => ({
+        ...(id === "alpha" ? alpha : beta),
+        notes: [],
+      })),
+      updateChat: vi.fn(() => updateRequest.promise),
+    });
+    render(<App api={api} />);
+
+    await user.click(await screen.findByRole("button", { name: "Open Alpha" }));
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const input = screen.getByLabelText("Project name");
+    await user.clear(input);
+    await user.type(input, "Alpha updated");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await user.click(screen.getByRole("button", { name: "Open Beta" }));
+    expect(await screen.findByRole("heading", { name: "Beta" })).toBeVisible();
+
+    await act(async () =>
+      updateRequest.resolve({
+        ...alpha,
+        title: "Alpha updated",
+        updatedAt: 3,
+      }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Open Alpha updated" }),
+    ).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Beta" })).toBeVisible();
+  });
+
+  it("commits a pending note deletion to the sidebar after navigation", async () => {
+    const user = userEvent.setup();
+    const alpha = {
+      id: "alpha",
+      title: "Alpha",
+      accent: "coral" as const,
+      enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      createdAt: 1,
+      updatedAt: 3,
+    };
+    const beta = {
+      ...alpha,
+      id: "beta",
+      title: "Beta",
+      accent: "moss" as const,
+      updatedAt: 2,
+    };
+    const deleteRequest = deferred<void>();
+    const note = {
+      id: "note-alpha",
+      chatId: "alpha",
+      body: "Remove me",
+      createdAt: 3,
+      labels: [],
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([alpha, beta]),
+      getChat: vi.fn(async (id: string) => ({
+        ...(id === "alpha" ? alpha : beta),
+        notes: id === "alpha" ? [note] : [],
+      })),
+      deleteNote: vi.fn(() => deleteRequest.promise),
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App api={api} />);
+
+    await user.click(await screen.findByRole("button", { name: "Open Alpha" }));
+    const noteItem = (await screen.findByText("Remove me")).closest("li")!;
+    await user.click(
+      within(noteItem).getByRole("button", { name: "Delete message" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Open Beta" }));
+    expect(await screen.findByRole("heading", { name: "Beta" })).toBeVisible();
+
+    await act(async () => deleteRequest.resolve());
+
+    const projectButtons = within(
+      screen.getByRole("navigation", { name: "Projects" }),
+    )
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"));
+    expect(projectButtons).toEqual(["Open Beta", "Open Alpha"]);
+    expect(screen.getByRole("heading", { name: "Beta" })).toBeVisible();
+  });
+
+  it("preserves the active project when another project deletion resolves", async () => {
+    const user = userEvent.setup();
+    const alpha = {
+      id: "alpha",
+      title: "Alpha",
+      accent: "coral" as const,
+      enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const beta = {
+      ...alpha,
+      id: "beta",
+      title: "Beta",
+      accent: "moss" as const,
+      updatedAt: 1,
+    };
+    const deleteRequest = deferred<void>();
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([alpha, beta]),
+      getChat: vi.fn(async (id: string) => ({
+        ...(id === "alpha" ? alpha : beta),
+        notes: [],
+      })),
+      deleteChat: vi.fn(() => deleteRequest.promise),
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App api={api} />);
+
+    await user.click(await screen.findByRole("button", { name: "Open Alpha" }));
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("button", { name: "Delete project" }));
+    await user.click(screen.getByRole("button", { name: "Open Beta" }));
+    expect(await screen.findByRole("heading", { name: "Beta" })).toBeVisible();
+
+    await act(async () => deleteRequest.resolve());
+
+    expect(screen.queryByRole("button", { name: "Open Alpha" })).toBeNull();
     expect(screen.getByRole("heading", { name: "Beta" })).toBeVisible();
   });
 

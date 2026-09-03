@@ -16,16 +16,15 @@ recovery parts of that promise.
 ## Current phase
 
 Version 0.0.3 is the current published plaintext alpha source release under
-Apache License 2.0. Development on `release/v0.0.4` adds a desktop-first flat
-workspace, browser-local Light, Neutral, and Dark appearance themes, and durable
-project message labels with project-specific filtering.
+Apache License 2.0. Version 0.0.4 is prepared as the next release candidate: it
+adds a desktop-first flat workspace, browser-local Light, Neutral, and Dark
+appearance themes, durable project message labels with project-specific
+filtering, and Node.js support from 22.13.0 alongside Node.js 24.
 
 ## Current objective
 
-Prepare the refreshed workspace and project-label workflow for the next alpha
-while retaining the v0.0.3 plaintext and portability warnings. Projects enable
-the configurable labels they need, messages can carry several labels, and the
-history rail exposes only useful active filters. Mobile remains a
+Complete review, CI, and publication of the v0.0.4 alpha release candidate while
+retaining the plaintext and portability warnings. Mobile remains a
 regression-protected alpha, not a dedicated design target.
 
 ## v0.0.1 outcome
@@ -72,6 +71,21 @@ regression-protected alpha, not a dedicated design target.
   requests, external edits, stable identity, focus refresh, and restart without
   launching desktop applications.
 
+## v0.0.4 release candidate
+
+- The main workspace uses a flatter desktop-first hierarchy, compact auto-growing
+  composer, and vertical history filters without losing mobile regression
+  coverage.
+- Light, Neutral, and Dark themes are accessible, apply before React renders,
+  and remain browser-local rather than entering project data or backups.
+- Messages support several durable built-in labels, and each project controls
+  which optional labels appear in its composer and history filters.
+- Node.js 22 is supported from 22.13.0 alongside Node.js 24, with exact-floor and
+  cross-platform native SQLite CI coverage.
+- Note writes and client project-state updates have one canonical path; backup
+  schema validation is derived from checked-in migrations; the unused attachment
+  download route and obsolete schema-2 backup restore path are removed.
+
 ## Current capabilities
 
 - Create and switch between personal project chats.
@@ -96,8 +110,7 @@ regression-protected alpha, not a dedicated design target.
 
 ## Near-term priorities
 
-1. Prepare the current desktop visual refresh, appearance themes, and durable
-   label workflow for the next alpha release.
+1. Publish v0.0.4 after review and the Node 22.13/24 release matrix pass.
 2. Continue hardening backup, restore, integrity checking, recovery, and
    conflict-free import semantics before users entrust irreplaceable data to the
    application.
@@ -128,8 +141,8 @@ hosting, analytics, and telemetry.
 - A chat is a private project notebook, not a cooperative messenger.
 - Data is local by default and stored outside the Git checkout.
 - Plaintext alpha limitations must be prominent; locality is not encryption.
-- Distribution is a GitHub source release requiring Node.js 24, not an npm
-  package or native installer.
+- Distribution is a GitHub source release supporting Node.js 22 from 22.13.0
+  and Node.js 24, not an npm package or native installer.
 - The project is open source under Apache License 2.0, including commercial use.
 
 ## Roadmap and tracker
@@ -152,10 +165,14 @@ priorities above still need tracker records. Durable decisions live in
 - Plaintext backup bundles contain readable database metadata and attached file
   bytes; restoring replaces current local projects and files rather than merging
   histories.
-- Source installation requires Node.js 24 and a native SQLite dependency. The
-  latest published release commit passed Linux CI plus native SQLite install/test
-  coverage on Linux, macOS, and Windows; the next candidate must pass the same
-  gates, and future dependency upgrades can still affect portability.
+- Source installation requires a supported Node.js LTS line and a native SQLite
+  dependency. Node 22 support ends no later than upstream support, currently
+  2027-04-30. The next candidate must pass full verification on Node 22.13 and
+  24 plus native SQLite install/test coverage on Linux, macOS, and Windows;
+  future dependency upgrades can still affect portability.
+- v0.0.4 deliberately does not restore v0.0.3/schema-2 backup bundles. Live
+  v0.0.3 databases still migrate at startup, and this compatibility break is
+  acceptable only under the current no-user alpha assumption.
 - Native command construction is tested for macOS, Windows, and Linux, but real
   OS dispatch has been manually reported only on one macOS host. Windows and
   Linux desktop integration remains unverified.

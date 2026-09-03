@@ -66,6 +66,11 @@ const ICON_ONLY_MESSAGE_LABELS = new Set<Label>(["pin", "attention"]);
 
 type HistoryFilter = "all" | "attachments" | Label;
 
+interface WorkspaceServerState {
+  chats: Chat[];
+  active?: ChatDetail;
+}
+
 function sortChats(chats: Chat[]): Chat[] {
   return [...chats].sort(
     (a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id),
@@ -95,6 +100,39 @@ function chatActivityFromNotes(chat: ChatDetail, notes: Note[]): number {
     (newest, note) => Math.max(newest, note.createdAt),
     chat.createdAt,
   );
+}
+
+function chatFromDetail(detail: ChatDetail): Chat {
+  return {
+    id: detail.id,
+    title: detail.title,
+    accent: detail.accent,
+    enabledLabels: detail.enabledLabels,
+    createdAt: detail.createdAt,
+    updatedAt: detail.updatedAt,
+  };
+}
+
+function commitProjectUpdate(
+  state: WorkspaceServerState,
+  projectId: string,
+  updateSummary: (chat: Chat) => Chat,
+  updateActive: (active: ChatDetail) => ChatDetail,
+): WorkspaceServerState {
+  const active =
+    state.active?.id === projectId ? updateActive(state.active) : state.active;
+  return {
+    active,
+    chats: sortChats(
+      state.chats.map((chat) =>
+        chat.id !== projectId
+          ? chat
+          : active?.id === projectId
+            ? chatFromDetail(active)
+            : updateSummary(chat),
+      ),
+    ),
+  };
 }
 
 function errorMessage(caught: unknown, fallback: string): string {
@@ -1934,8 +1972,10 @@ function ChatWorkspace({
 }
 
 export function App({ api = apiClient }: { api?: ApiClient }) {
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [active, setActive] = useState<ChatDetail>();
+  const [workspace, setWorkspace] = useState<WorkspaceServerState>({
+    chats: [],
+  });
+  const { chats, active } = workspace;
   const [loadState, setLoadState] = useState<"loading" | "loaded" | "error">(
     "loading",
   );
@@ -1991,7 +2031,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ) {
             return;
           }
-          setActive(detail);
+          setWorkspace((current) =>
+            commitProjectUpdate(
+              current,
+              projectId,
+              () => chatFromDetail(detail),
+              () => detail,
+            ),
+          );
         })
         .catch(() => {
           // Focus refresh is best effort; explicit actions surface their errors.
@@ -2007,7 +2054,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       .listChats()
       .then((result) => {
         if (!current) return;
-        setChats(result);
+        setWorkspace((current) => ({ ...current, chats: result }));
         setLoadState("loaded");
       })
       .catch(() => {
@@ -2037,7 +2084,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     try {
       const detail = await api.getChat(id);
       if (request !== selectionRequest.current) return;
-      setActive(detail);
+      setWorkspace((current) => ({ ...current, active: detail }));
       setDraft("");
       setPendingFiles([]);
       setHistoryFilter("all");
@@ -2055,8 +2102,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function createChat(input: { title: string; accent: Accent }) {
     const chat = await api.createChat(input);
     selectionRequest.current += 1;
-    setChats((current) => [chat, ...current]);
-    setActive({ ...chat, notes: [] });
+    setWorkspace((current) => ({
+      chats: [chat, ...current.chats],
+      active: { ...chat, notes: [] },
+    }));
     setDialog(undefined);
     setPendingFiles([]);
     setHistoryFilter("all");
@@ -2076,11 +2125,16 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     const projectId = active.id;
     const chat = await api.updateChat(active.id, input);
     activeMutationGeneration.current += 1;
-    setChats((current) =>
-      sortChats(current.map((item) => (item.id === chat.id ? chat : item))),
-    );
-    setActive((current) =>
-      current?.id === chat.id ? { ...current, ...chat } : current,
+    setWorkspace((current) =>
+      commitProjectUpdate(
+        current,
+        chat.id,
+        () => chat,
+        (detail) => ({
+          ...detail,
+          ...chat,
+        }),
+      ),
     );
     if (
       historyFilter !== "all" &&
@@ -2098,19 +2152,26 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function deleteChat() {
     if (!active) return;
     const projectId = active.id;
+    const selectionAtStart = selectionRequest.current;
     await api.deleteChat(projectId);
-    selectionRequest.current += 1;
-    setChats((current) => current.filter((chat) => chat.id !== projectId));
-    setActive(undefined);
-    setDraft("");
-    setPendingFiles([]);
-    setHistoryFilter("all");
-    setDraftTimestamp("");
-    setComposerTimestampOpen(false);
-    setError("");
-    setEditingNote(undefined);
-    setEditingAttachmentIds([]);
-    setMode("projects");
+    const navigationUnchanged = selectionRequest.current === selectionAtStart;
+    if (navigationUnchanged) selectionRequest.current += 1;
+    activeMutationGeneration.current += 1;
+    setWorkspace((current) => ({
+      chats: current.chats.filter((chat) => chat.id !== projectId),
+      active: current.active?.id === projectId ? undefined : current.active,
+    }));
+    if (navigationUnchanged) {
+      setDraft("");
+      setPendingFiles([]);
+      setHistoryFilter("all");
+      setDraftTimestamp("");
+      setComposerTimestampOpen(false);
+      setError("");
+      setEditingNote(undefined);
+      setEditingAttachmentIds([]);
+      setMode("projects");
+    }
   }
 
   async function appendNote() {
@@ -2144,24 +2205,24 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ...(submittedFiles.length === 0 ? {} : { files: submittedFiles }),
         });
         activeMutationGeneration.current += 1;
-        setActive((current) =>
-          current?.id === projectId
-            ? { ...current, notes: sortNotes([...current.notes, note]) }
-            : current,
+        const submittedNotes = sortNotes([...active.notes, note]);
+        const submittedUpdatedAt = chatActivityFromNotes(
+          active,
+          submittedNotes,
         );
-        setChats((current) =>
-          sortChats(
-            current.map((chat) =>
-              chat.id === projectId
-                ? {
-                    ...chat,
-                    updatedAt: chatActivityFromNotes(active, [
-                      ...active.notes,
-                      note,
-                    ]),
-                  }
-                : chat,
-            ),
+        setWorkspace((current) =>
+          commitProjectUpdate(
+            current,
+            projectId,
+            (chat) => ({ ...chat, updatedAt: submittedUpdatedAt }),
+            (detail) => {
+              const notes = sortNotes([...detail.notes, note]);
+              return {
+                ...detail,
+                notes,
+                updatedAt: chatActivityFromNotes(detail, notes),
+              };
+            },
           ),
         );
       }
@@ -2270,34 +2331,27 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     const projectId = active.id;
     const updated = await api.updateNote(projectId, noteToUpdate.id, input);
     activeMutationGeneration.current += 1;
-    setActive((current) => {
-      if (!current) return current;
-      const notes = sortNotes(
-        current.notes.map((note) => (note.id === updated.id ? updated : note)),
-      );
-      return {
-        ...current,
-        notes,
-        updatedAt: chatActivityFromNotes(current, notes),
-      };
-    });
-    setChats((current) =>
-      sortChats(
-        current.map((chat) =>
-          chat.id === projectId
-            ? {
-                ...chat,
-                updatedAt: chatActivityFromNotes(
-                  active,
-                  sortNotes(
-                    active.notes.map((note) =>
-                      note.id === updated.id ? updated : note,
-                    ),
-                  ),
-                ),
-              }
-            : chat,
-        ),
+    const submittedNotes = sortNotes(
+      active.notes.map((note) => (note.id === updated.id ? updated : note)),
+    );
+    const submittedUpdatedAt = chatActivityFromNotes(active, submittedNotes);
+    setWorkspace((current) =>
+      commitProjectUpdate(
+        current,
+        projectId,
+        (chat) => ({ ...chat, updatedAt: submittedUpdatedAt }),
+        (detail) => {
+          const notes = sortNotes(
+            detail.notes.map((note) =>
+              note.id === updated.id ? updated : note,
+            ),
+          );
+          return {
+            ...detail,
+            notes,
+            updatedAt: chatActivityFromNotes(detail, notes),
+          };
+        },
       ),
     );
     setEditingNote(undefined);
@@ -2307,20 +2361,24 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function deleteNote(note: Note) {
     if (!active) return;
     if (!window.confirm("Delete this message?")) return;
-    await api.deleteNote(active.id, note.id);
+    const projectId = active.id;
+    await api.deleteNote(projectId, note.id);
     activeMutationGeneration.current += 1;
-    const remaining = active.notes.filter((item) => item.id !== note.id);
-    const updatedAt = chatActivityFromNotes(active, remaining);
-    setActive((current) =>
-      current?.id === active.id
-        ? { ...current, notes: remaining, updatedAt }
-        : current,
-    );
-    setChats((current) =>
-      sortChats(
-        current.map((chat) =>
-          chat.id === active.id ? { ...chat, updatedAt } : chat,
-        ),
+    const submittedNotes = active.notes.filter((item) => item.id !== note.id);
+    const submittedUpdatedAt = chatActivityFromNotes(active, submittedNotes);
+    setWorkspace((current) =>
+      commitProjectUpdate(
+        current,
+        projectId,
+        (chat) => ({ ...chat, updatedAt: submittedUpdatedAt }),
+        (detail) => {
+          const notes = detail.notes.filter((item) => item.id !== note.id);
+          return {
+            ...detail,
+            notes,
+            updatedAt: chatActivityFromNotes(detail, notes),
+          };
+        },
       ),
     );
   }
@@ -2330,15 +2388,18 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     const projectId = active.id;
     const labels = await api.setNoteLabel(projectId, note.id, label, applied);
     activeMutationGeneration.current += 1;
-    setActive((current) =>
-      current?.id === projectId
-        ? {
-            ...current,
-            notes: current.notes.map((item) =>
-              item.id === note.id ? { ...item, labels } : item,
-            ),
-          }
-        : current,
+    setWorkspace((current) =>
+      commitProjectUpdate(
+        current,
+        projectId,
+        (chat) => chat,
+        (detail) => ({
+          ...detail,
+          notes: detail.notes.map((item) =>
+            item.id === note.id ? { ...item, labels } : item,
+          ),
+        }),
+      ),
     );
   }
 
@@ -2357,8 +2418,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     const importedChats = await api.listChats();
     selectionRequest.current += 1;
     activeMutationGeneration.current += 1;
-    setChats(importedChats);
-    setActive(undefined);
+    setWorkspace({ chats: importedChats });
     setDraftTimestamp("");
     setPendingFiles([]);
     setHistoryFilter("all");
@@ -2372,7 +2432,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     if (savingNote) return;
     const projectId = active?.id;
     selectionRequest.current += 1;
-    setActive(undefined);
+    setWorkspace((current) => ({ ...current, active: undefined }));
     setEditingNote(undefined);
     setEditingAttachmentIds([]);
     setDraft("");

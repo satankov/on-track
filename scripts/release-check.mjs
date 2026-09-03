@@ -45,6 +45,14 @@ function requireLockfileRootVersion(lockfile) {
   return version;
 }
 
+function requireNodeEngine(manifest, path) {
+  const engine = manifest.engines?.node;
+  if (typeof engine !== "string") {
+    throw new Error(`${path} engines.node must be a string`);
+  }
+  return engine;
+}
+
 function releaseTag() {
   if (process.env.RELEASE_TAG) {
     return process.env.RELEASE_TAG;
@@ -59,6 +67,7 @@ try {
   const packageManifest = readManifest("package.json");
   const packageVersion = requireVersion(packageManifest, "package.json");
   const packageLicense = requireLicense(packageManifest, "package.json");
+  const packageNodeEngine = requireNodeEngine(packageManifest, "package.json");
   const lockfile = readManifest("package-lock.json");
   const lockfileVersion = requireVersion(lockfile, "package-lock.json");
   const lockfileRootVersion = requireLockfileRootVersion(lockfile);
@@ -66,13 +75,20 @@ try {
     lockfile.packages?.[""] ?? {},
     'package-lock.json packages[""]',
   );
+  const lockfileRootNodeEngine = requireNodeEngine(
+    lockfile.packages?.[""] ?? {},
+    'package-lock.json packages[""]',
+  );
   const tag = releaseTag();
   const errors = validateReleaseContract({
     packageVersion,
     packageLicense,
+    packageNodeEngine,
     lockfileVersion,
     lockfileRootVersion,
     lockfileLicense,
+    lockfileRootNodeEngine,
+    nvmrcVersion: readFileSync(".nvmrc", "utf8").trim(),
     changelogContent: readFileSync("CHANGELOG.md", "utf8"),
     tag,
     existingFiles: requiredReleaseFiles.filter((path) => existsSync(path)),

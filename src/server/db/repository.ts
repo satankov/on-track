@@ -88,6 +88,13 @@ function toNote(
   };
 }
 
+export class InvalidAttachmentSelectionError extends Error {
+  constructor() {
+    super("An attachment selection does not belong to this message.");
+    this.name = "InvalidAttachmentSelectionError";
+  }
+}
+
 export class SqliteChatRepository {
   constructor(private readonly database: Database.Database) {}
 
@@ -313,6 +320,18 @@ export class SqliteChatRepository {
         .get(noteId, chatId) as NoteRow | undefined;
       if (!existing) return undefined;
       const existingAttachments = this.listStoredAttachments(noteId);
+      if (input.keepAttachmentIds !== undefined) {
+        const existingAttachmentIds = new Set(
+          existingAttachments.map((attachment) => attachment.id),
+        );
+        if (
+          input.keepAttachmentIds.some(
+            (attachmentId) => !existingAttachmentIds.has(attachmentId),
+          )
+        ) {
+          throw new InvalidAttachmentSelectionError();
+        }
+      }
 
       this.database
         .prepare(
