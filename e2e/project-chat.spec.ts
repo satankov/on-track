@@ -510,6 +510,12 @@ test("adds an attachment message and filters history by files", async ({
   await page.getByLabel("Project name").fill(projectTitle);
   await page.getByRole("button", { name: "Create project" }).click();
 
+  await expect(page.getByRole("heading", { name: projectTitle })).toBeVisible();
+  if (testInfo.project.name === "mobile-webkit") {
+    await expect(
+      page.getByRole("button", { name: "Back to projects" }),
+    ).toBeFocused();
+  }
   await page.getByLabel("Add a note").fill("Plain status");
   await page.getByRole("button", { name: /Add note/ }).click();
   await expect(page.getByText("Plain status")).toBeVisible();
