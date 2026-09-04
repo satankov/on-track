@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -1005,6 +1012,167 @@ describe("personal project chat workspace", () => {
     expect(screen.getAllByRole("listitem")).toHaveLength(3);
     expect(document.querySelectorAll(".message-row--own")).toHaveLength(3);
     expect(document.querySelectorAll(".message-time")).toHaveLength(3);
+  });
+
+  it("places future messages in one silent region without repeating a same-day date", async () => {
+    const now = new Date("2026-09-04T12:00:00").getTime();
+    const dateNow = vi.spyOn(Date, "now").mockReturnValue(now);
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: now - 10_000,
+      updatedAt: now + 86_400_000,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({
+        ...chat,
+        notes: [
+          {
+            id: "note-past",
+            chatId: "chat-1",
+            body: "Earlier today",
+            createdAt: now - 3_600_000,
+          },
+          {
+            id: "note-future-today",
+            chatId: "chat-1",
+            body: "Later today",
+            createdAt: now + 3_600_000,
+          },
+          {
+            id: "note-future-tomorrow",
+            chatId: "chat-1",
+            body: "Tomorrow",
+            createdAt: now + 86_400_000,
+          },
+        ],
+      }),
+    });
+
+    try {
+      render(<App api={api} />);
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Open Delivery" }),
+      );
+
+      const futureBoundary = screen.getByRole("separator", {
+        name: "Future messages",
+      });
+      const laterToday = screen.getByText("Later today");
+      expect(
+        futureBoundary.compareDocumentPosition(laterToday) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(screen.queryByText("Future messages")).toBeNull();
+      expect(document.querySelectorAll(".message-date-separator")).toHaveLength(
+        2,
+      );
+    } finally {
+      dateNow.mockRestore();
+    }
+  });
+
+  it("removes the future region when its next message timestamp arrives", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-09-04T12:00:00").getTime();
+    vi.setSystemTime(now);
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: now,
+      updatedAt: now + 1_000,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({
+        ...chat,
+        notes: [
+          {
+            id: "note-future",
+            chatId: "chat-1",
+            body: "Arrives shortly",
+            createdAt: now + 1_000,
+          },
+        ],
+      }),
+    });
+
+    try {
+      render(<App api={api} />);
+      await act(async () => Promise.resolve());
+      fireEvent.click(screen.getByRole("button", { name: "Open Delivery" }));
+      await act(async () => Promise.resolve());
+      expect(
+        screen.getByRole("separator", { name: "Future messages" }),
+      ).toBeVisible();
+      const futureMessage = screen.getByText("Arrives shortly").closest("li")!;
+      fireEvent.click(
+        within(futureMessage).getByRole("button", { name: "Change labels" }),
+      );
+      const todo = within(futureMessage).getByRole("checkbox", {
+        name: "Todo",
+      });
+      todo.focus();
+      expect(todo).toHaveFocus();
+
+      act(() => vi.advanceTimersByTime(1_001));
+
+      expect(
+        screen.queryByRole("separator", { name: "Future messages" }),
+      ).toBeNull();
+      expect(screen.getByText("Arrives shortly")).toBeVisible();
+      expect(todo).toBeVisible();
+      expect(todo).toHaveFocus();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not classify a newly added present-time message using a stale clock", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-09-04T12:00:00").getTime();
+    vi.setSystemTime(now);
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      appendNote: vi.fn().mockResolvedValue({
+        id: "note-now",
+        chatId: "chat-1",
+        body: "Written now",
+        createdAt: now + 60_000,
+      }),
+    });
+
+    try {
+      render(<App api={api} />);
+      await act(async () => Promise.resolve());
+      fireEvent.click(screen.getByRole("button", { name: "Open Delivery" }));
+      await act(async () => Promise.resolve());
+      act(() => vi.advanceTimersByTime(60_000));
+
+      fireEvent.change(screen.getByLabelText("Add a note"), {
+        target: { value: "Written now" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Add note" }));
+      await act(async () => Promise.resolve());
+
+      expect(screen.getByText("Written now")).toBeVisible();
+      expect(
+        screen.queryByRole("separator", { name: "Future messages" }),
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("renders attachment cards and filters history to messages with files", async () => {

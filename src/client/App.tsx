@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useId,
   useLayoutEffect,
@@ -249,6 +250,41 @@ function groupNotesByDay(
     },
     [],
   );
+}
+
+const MAX_TIMELINE_TIMEOUT_MS = 2_147_483_647;
+
+function useTimelineNow(notes: Note[]): number {
+  const [renderedAt, setRenderedAt] = useState(() => Date.now());
+  const timelineKey = notes
+    .map((note) => `${note.id}:${note.createdAt}`)
+    .join("\u0000");
+  const previousTimelineKey = useRef(timelineKey);
+  const now = renderedAt;
+  const nextFutureTimestamp = notes.find(
+    (note) => note.createdAt > now,
+  )?.createdAt;
+
+  useEffect(() => {
+    if (nextFutureTimestamp === undefined) return;
+    const delay = Math.min(
+      Math.max(0, nextFutureTimestamp - Date.now()) + 1,
+      MAX_TIMELINE_TIMEOUT_MS,
+    );
+    const timeout = window.setTimeout(() => {
+      setRenderedAt(Math.max(Date.now(), nextFutureTimestamp));
+    }, delay);
+    return () => window.clearTimeout(timeout);
+  }, [nextFutureTimestamp, renderedAt]);
+
+  useLayoutEffect(() => {
+    if (previousTimelineKey.current === timelineKey) return;
+    previousTimelineKey.current = timelineKey;
+    // Synchronize the external wall clock before paint when the visible timeline changes.
+    setRenderedAt(Date.now());
+  }, [timelineKey]);
+
+  return now;
 }
 
 interface ProjectFormProps {
@@ -1504,6 +1540,145 @@ function AttachmentList({
   );
 }
 
+function MessageGroups({
+  notes,
+  futureStartId,
+  enabledLabels,
+  copiedNoteId,
+  onAttachmentAction,
+  onCopyNote,
+  onDeleteNote,
+  onEditNote,
+  onSetNoteLabel,
+}: {
+  notes: Note[];
+  futureStartId?: string;
+  enabledLabels: ConfigurableLabel[];
+  copiedNoteId?: string;
+  onAttachmentAction: (
+    note: Note,
+    attachmentId: string,
+    action: "open" | "reveal",
+  ) => Promise<void>;
+  onCopyNote: (note: Note) => void;
+  onDeleteNote: (note: Note) => void;
+  onEditNote: (note: Note) => void;
+  onSetNoteLabel: (note: Note, label: Label, applied: boolean) => Promise<void>;
+}) {
+  return (
+    <div className="message-groups">
+      {groupNotesByDay(notes).map((group) => {
+        const futureStartIndex = group.notes.findIndex(
+          (note) => note.id === futureStartId,
+        );
+        const futureStartsGroup = futureStartIndex === 0;
+        return (
+          <section className="message-day" key={group.key}>
+            {futureStartsGroup && (
+              <div
+                className="future-message-boundary future-message-boundary--day"
+                role="separator"
+                aria-label="Future messages"
+              >
+                <span
+                  className="future-message-boundary-surface"
+                  aria-hidden="true"
+                />
+              </div>
+            )}
+            <div className="message-date-separator">{group.label}</div>
+            <ol
+              className="message-list"
+              style={{
+                gridTemplateRows: `repeat(${group.notes.length}, auto)`,
+              }}
+            >
+              {group.notes.map((note, noteIndex) => {
+                const copied = copiedNoteId === note.id;
+                return (
+                  <Fragment key={note.id}>
+                    {!futureStartsGroup && note.id === futureStartId && (
+                      <li
+                        key="future-boundary"
+                        className="future-message-boundary"
+                        role="separator"
+                        aria-label="Future messages"
+                        style={{
+                          gridRow: `${noteIndex + 1} / ${group.notes.length + 1}`,
+                        }}
+                      >
+                        <span
+                          className="future-message-boundary-surface"
+                          aria-hidden="true"
+                        />
+                      </li>
+                    )}
+                    <li
+                      key="message"
+                      className="message-row message-row--own"
+                      style={{ gridRow: noteIndex + 1 }}
+                    >
+                      <div className="message-stack">
+                        <article className="message-bubble">
+                          <AttachmentList
+                            note={note}
+                            onAction={onAttachmentAction}
+                          />
+                          <div className="message-body note-body">
+                            <MarkdownMessage body={note.body} />
+                          </div>
+                          <footer className="message-footer">
+                            <MessageLabels labels={note.labels ?? []} />
+                            <time
+                              className="message-time"
+                              dateTime={new Date(note.createdAt).toISOString()}
+                            >
+                              {formatMessageTime(note.createdAt)}
+                            </time>
+                          </footer>
+                        </article>
+                        <div
+                          className="message-actions"
+                          aria-label="Message actions"
+                        >
+                          <MessageLabelPicker
+                            note={note}
+                            enabledLabels={enabledLabels}
+                            onToggle={onSetNoteLabel}
+                          />
+                          <MessageActionButton
+                            label={copied ? "Message copied" : "Copy message"}
+                            onClick={() => onCopyNote(note)}
+                          >
+                            {copied ? <CheckIcon /> : <CopyIcon />}
+                          </MessageActionButton>
+                          <MessageActionButton
+                            label="Edit message"
+                            onClick={() => onEditNote(note)}
+                          >
+                            <EditIcon />
+                          </MessageActionButton>
+                          <MessageActionButton
+                            label="Delete message"
+                            danger
+                            onClick={() => onDeleteNote(note)}
+                          >
+                            <TrashIcon />
+                          </MessageActionButton>
+                        </div>
+                      </div>
+                    </li>
+                  </Fragment>
+                );
+              })}
+            </ol>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 function ChatWorkspace({
   detail,
   draft,
@@ -1577,6 +1752,10 @@ function ChatWorkspace({
     if (historyFilter === "attachments") return hasAttachments(note);
     return (note.labels ?? []).includes(historyFilter);
   });
+  const timelineNow = useTimelineNow(visibleNotes);
+  const futureStartId = visibleNotes.find(
+    (note) => note.createdAt > timelineNow,
+  )?.id;
   const showingEmptyFilter =
     historyFilter !== "all" && visibleNotes.length === 0;
   const editingAttachments =
@@ -1739,76 +1918,17 @@ function ChatWorkspace({
             </div>
           </div>
         ) : (
-          <div className="message-groups">
-            {groupNotesByDay(visibleNotes).map((group) => (
-              <section className="message-day" key={group.key}>
-                <div className="message-date-separator">{group.label}</div>
-                <ol className="message-list">
-                  {group.notes.map((note) => {
-                    const copied = copiedNoteId === note.id;
-                    return (
-                      <li
-                        className="message-row message-row--own"
-                        key={note.id}
-                      >
-                        <div className="message-stack">
-                          <article className="message-bubble">
-                            <AttachmentList
-                              note={note}
-                              onAction={onAttachmentAction}
-                            />
-                            <div className="message-body note-body">
-                              <MarkdownMessage body={note.body} />
-                            </div>
-                            <footer className="message-footer">
-                              <MessageLabels labels={note.labels ?? []} />
-                              <time
-                                className="message-time"
-                                dateTime={new Date(
-                                  note.createdAt,
-                                ).toISOString()}
-                              >
-                                {formatMessageTime(note.createdAt)}
-                              </time>
-                            </footer>
-                          </article>
-                          <div
-                            className="message-actions"
-                            aria-label="Message actions"
-                          >
-                            <MessageLabelPicker
-                              note={note}
-                              enabledLabels={enabledLabels}
-                              onToggle={onSetNoteLabel}
-                            />
-                            <MessageActionButton
-                              label={copied ? "Message copied" : "Copy message"}
-                              onClick={() => onCopyNote(note)}
-                            >
-                              {copied ? <CheckIcon /> : <CopyIcon />}
-                            </MessageActionButton>
-                            <MessageActionButton
-                              label="Edit message"
-                              onClick={() => onEditNote(note)}
-                            >
-                              <EditIcon />
-                            </MessageActionButton>
-                            <MessageActionButton
-                              label="Delete message"
-                              danger
-                              onClick={() => onDeleteNote(note)}
-                            >
-                              <TrashIcon />
-                            </MessageActionButton>
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ol>
-              </section>
-            ))}
-          </div>
+          <MessageGroups
+            notes={visibleNotes}
+            futureStartId={futureStartId}
+            enabledLabels={enabledLabels}
+            copiedNoteId={copiedNoteId}
+            onAttachmentAction={onAttachmentAction}
+            onCopyNote={onCopyNote}
+            onDeleteNote={onDeleteNote}
+            onEditNote={onEditNote}
+            onSetNoteLabel={onSetNoteLabel}
+          />
         )}
       </section>
 

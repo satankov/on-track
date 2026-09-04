@@ -330,6 +330,35 @@ describe("appearance theme contract", () => {
     expect(attachmentCardRule?.groups?.body).toContain("border: 0");
   });
 
+  it("uses a square full-width fade for future messages", () => {
+    const historyRule = stylesheet.match(/\.history\s*\{(?<body>[^}]+)\}/);
+    const futureSurfaceRule = stylesheet.match(
+      /\.future-message-boundary-surface\s*\{(?<body>[^}]+)\}/,
+    );
+    const futureBoundaryRule = stylesheet.match(
+      /\.future-message-boundary\s*\{(?<body>[^}]+)\}/,
+    );
+
+    expect(historyRule?.groups?.body).toContain("--history-inline-padding");
+    expect(historyRule?.groups?.body).toContain("overflow-x: hidden");
+    expect(futureSurfaceRule?.groups?.body).toContain("linear-gradient");
+    expect(futureSurfaceRule?.groups?.body).toContain("var(--accent)");
+    expect(futureSurfaceRule?.groups?.body).toContain("left: -100vw");
+    expect(futureSurfaceRule?.groups?.body).toContain("inset-block: 0");
+    expect(futureSurfaceRule?.groups?.body).toContain(
+      "background-size: 100% min(320px, 100%)",
+    );
+    expect(futureSurfaceRule?.groups?.body).not.toContain("height: 320px");
+    expect(futureSurfaceRule?.groups?.body).toContain(
+      "border-block-start: 1px solid",
+    );
+    expect(futureSurfaceRule?.groups?.body).not.toContain("border-radius");
+    expect(futureBoundaryRule?.groups?.body).toContain("align-self: stretch");
+    expect(stylesheet).toMatch(
+      /@media \(forced-colors: active\)[\s\S]*\.future-message-boundary-surface\s*\{[^}]*border-block-start-color:\s*CanvasText/,
+    );
+  });
+
   it("keeps the composer and rail icon controls visually quiet at rest", () => {
     for (const selector of [
       "\\.composer",

@@ -293,6 +293,130 @@ test("uses compact desktop chrome and an auto-growing composer", async ({
     .toBeGreaterThan(wideComposerHeight);
 });
 
+test("shows future messages in a silent full-width fade", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  const now = Date.now();
+  const project = await createProject(request, localApp.url, {
+    title: `Future boundary ${testInfo.project.name}`,
+    accent: "ocean",
+  });
+  await addNote(
+    request,
+    localApp.url,
+    project.id,
+    "Already happened",
+    now - 86_400_000,
+  );
+  await addNote(
+    request,
+    localApp.url,
+    project.id,
+    "Scheduled for tomorrow",
+    now + 86_400_000,
+  );
+
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+
+  const futureBoundary = page.getByRole("separator", {
+    name: "Future messages",
+  });
+  await expect(futureBoundary).toBeAttached();
+  await expect(page.getByText("Scheduled for tomorrow")).toBeVisible();
+  await expect(page.getByText("Already happened")).toBeVisible();
+  await expect(page.getByText("Future messages")).toHaveCount(0);
+
+  const geometry = await page.evaluate(() => {
+    const history = document.querySelector(".history")!;
+    const future = document.querySelector(".future-message-boundary-surface")!;
+    const historyBox = history.getBoundingClientRect();
+    const futureBox = future.getBoundingClientRect();
+    const style = getComputedStyle(future);
+    return {
+      historyLeft: historyBox.left,
+      historyRight: historyBox.right,
+      futureLeft: futureBox.left,
+      futureRight: futureBox.right,
+      borderRadius: style.borderRadius,
+      borderTopStyle: style.borderTopStyle,
+      backgroundImage: style.backgroundImage,
+      historyOverflowX: getComputedStyle(history).overflowX,
+    };
+  });
+  expect(geometry.futureLeft).toBeLessThanOrEqual(geometry.historyLeft);
+  expect(geometry.futureRight).toBeGreaterThanOrEqual(geometry.historyRight);
+  expect(geometry.borderRadius).toBe("0px");
+  expect(geometry.borderTopStyle).toBe("solid");
+  expect(geometry.backgroundImage).toContain("linear-gradient");
+  expect(geometry.historyOverflowX).toBe("hidden");
+
+  const shortFeedScroll = await page.locator(".history").evaluate((history) => {
+    const element = history as HTMLElement;
+    element.style.height = "300px";
+    element.style.minHeight = "300px";
+    element.style.maxHeight = "300px";
+    const overflow = element.scrollHeight - element.clientHeight;
+    element.scrollTop = element.scrollHeight;
+    const historyBottom = element.getBoundingClientRect().bottom;
+    const messageRows = element.querySelectorAll(".message-row");
+    const lastMessageBottom =
+      messageRows[messageRows.length - 1].getBoundingClientRect().bottom;
+    const trailingGap = historyBottom - lastMessageBottom;
+    element.style.removeProperty("height");
+    element.style.removeProperty("min-height");
+    element.style.removeProperty("max-height");
+    element.scrollTop = 0;
+    return { overflow, trailingGap };
+  });
+  expect(
+    shortFeedScroll.overflow === 0 || shortFeedScroll.trailingGap <= 37,
+  ).toBe(true);
+
+  const pastMessage = page.locator(".message-row", {
+    hasText: "Already happened",
+  });
+  await pastMessage.getByRole("button", { name: "Change labels" }).click();
+  const todoCheckbox = pastMessage.getByRole("checkbox", { name: "Todo" });
+  await expect(todoCheckbox).toBeVisible();
+  await todoCheckbox.scrollIntoViewIfNeeded();
+  const popoverIsTopmost = await todoCheckbox.evaluate((checkbox) => {
+    const box = checkbox.getBoundingClientRect();
+    const topmost = document.elementFromPoint(
+      box.left + box.width / 2,
+      box.top + box.height / 2,
+    );
+    return (
+      checkbox.closest(".message-label-popover")?.contains(topmost) ?? false
+    );
+  });
+  expect(popoverIsTopmost).toBe(true);
+  await todoCheckbox.click();
+  await expect(todoCheckbox).toBeChecked();
+  await pastMessage.getByRole("button", { name: "Change labels" }).click();
+
+  await page.emulateMedia({ forcedColors: "active" });
+  const forcedColorsBoundary = await page
+    .locator(".future-message-boundary-surface")
+    .evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        borderTopStyle: style.borderTopStyle,
+        borderTopWidth: style.borderTopWidth,
+      };
+    });
+  expect(forcedColorsBoundary.borderTopStyle).toBe("solid");
+  expect(forcedColorsBoundary.borderTopWidth).toBe("1px");
+  await page.emulateMedia({ forcedColors: "none" });
+
+  await page.screenshot({
+    path: testInfo.outputPath("future-message-boundary.png"),
+    fullPage: true,
+  });
+});
+
 test("switches and persists appearance themes from visual previews", async ({
   page,
   request,
