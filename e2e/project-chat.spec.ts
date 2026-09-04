@@ -358,6 +358,10 @@ test("collapses long messages using the persisted project default", async ({
   const clippedLink = page.getByRole("link", { name: "Clipped reference" });
   await expect(showMore).toHaveAttribute("aria-expanded", "false");
   await expect(viewport).toHaveClass(/message-body-viewport--collapsed/);
+  await expect(showMore).toHaveCSS("padding-left", "0px");
+  await expect(showMore).toHaveCSS("border-radius", "0px");
+  await showMore.hover();
+  await expect(showMore).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(visibleLink).not.toHaveAttribute("tabindex", "-1");
   await expect(clippedLink).toHaveAttribute("tabindex", "-1");
   const collapsedHeight = await viewport.evaluate(
