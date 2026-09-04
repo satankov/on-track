@@ -2,12 +2,12 @@
 
 ## Status
 
-The v0.0.4 plaintext alpha is the published baseline. Version 0.0.5 development
-adds a client-side live boundary for future-dated messages and extends the
-project rail with persistent pins, current-time previews, and Attention status.
-It also adds quiet pin presentation and per-project collapsible-message defaults
-without changing the existing local server/service/repository or
-versioned-backup boundaries. The core decisions are recorded in
+The v0.0.4 plaintext alpha is the published baseline. Version 0.0.5 is prepared
+as the next release candidate with a client-side live boundary for future-dated
+messages, persistent project pins, current-time previews, Attention status,
+quiet pin presentation, and per-project collapsible-message defaults. It does
+not change the existing local server/service/repository or versioned-backup
+boundaries. The core decisions are recorded in
 [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
 encryption limitation in [ADR-0002](adr/0002-defer-at-rest-encryption.md),
 source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the

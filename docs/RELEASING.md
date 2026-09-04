@@ -47,11 +47,11 @@ smoke tests remain separate manual release evidence.
 3. Update both manifest versions without creating a tag:
 
    ```sh
-   npm version 0.0.4 --no-git-tag-version
+   npm version 0.0.5 --no-git-tag-version
    ```
 
-4. Run `RELEASE_TAG=v0.0.4 npm run release:check` and `npm run verify`.
-5. Open a release pull request titled `chore: release v0.0.4` and merge only
+4. Run `RELEASE_TAG=v0.0.5 npm run release:check` and `npm run verify`.
+5. Open a release pull request titled `chore: release v0.0.5` and merge only
    after all required checks and review pass.
 
 ## Publish after merge
@@ -60,8 +60,8 @@ From an up-to-date, clean `main` checkout, verify the commit and then create and
 push an annotated matching tag:
 
 ```sh
-git tag -a v0.0.4 -m "On Track v0.0.4"
-git push origin v0.0.4
+git tag -a v0.0.5 -m "On Track v0.0.5"
+git push origin v0.0.5
 ```
 
 The release workflow checks out that exact revision, validates the version/tag,

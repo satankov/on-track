@@ -16,15 +16,14 @@ recovery parts of that promise.
 ## Current phase
 
 Version 0.0.4 is the current published plaintext alpha source release under
-Apache License 2.0. Version 0.0.5 is in development: its first committed slice
-adds a silent live boundary between current and future-dated messages, while the
-current feature slices add project sidebar pins, current-time previews,
-Attention status, quiet pin controls, and collapsible long messages with a
-per-project default.
+Apache License 2.0. Version 0.0.5 is prepared as the next release candidate with
+a silent live boundary between current and future-dated messages, project
+sidebar pins, current-time previews, Attention status, quiet pin controls, and
+collapsible long messages with a per-project default.
 
 ## Current objective
 
-Complete, review, and prepare the v0.0.5 feature slices for publication while
+Complete review, CI, and publication of the v0.0.5 alpha release candidate while
 retaining the plaintext and portability warnings. Mobile remains a
 regression-protected alpha, not a dedicated design target.
 
@@ -88,7 +87,7 @@ regression-protected alpha, not a dedicated design target.
   schema validation is derived from checked-in migrations; the unused attachment
   download route and obsolete schema-2 backup restore path are removed.
 
-## v0.0.5 development
+## v0.0.5 release candidate
 
 - Chronological history marks the first future-dated message with a silent,
   square-edged, full-width accent fade and accessible separator. The boundary
@@ -133,8 +132,8 @@ regression-protected alpha, not a dedicated design target.
 
 ## Near-term priorities
 
-1. Finish and publish v0.0.5 after its future-message and project-rail slices
-   pass review and the platform-scoped Node 22.16/24 release matrix.
+1. Publish v0.0.5 after review and the platform-scoped Node 22.16/24 release
+   matrix passes.
 2. Continue hardening backup, restore, integrity checking, recovery, and
    conflict-free import semantics before users entrust irreplaceable data to the
    application.
@@ -178,6 +177,7 @@ The public repository and release are:
 - [v0.0.1 release](https://github.com/satankov/on-track/releases/tag/v0.0.1)
 - [v0.0.2 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.2)
 - [v0.0.3 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.3)
+- [v0.0.4 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.4)
 - [Issues](https://github.com/satankov/on-track/issues)
 
 GitHub Issues is the intended backlog and ownership tracker. The near-term
@@ -194,8 +194,8 @@ priorities above still need tracker records. Durable decisions live in
   dependency. Node 22 support ends no later than upstream support, currently
   2027-04-30. The next candidate must pass full verification on Node 22.16 and
   24 on Linux, plus native SQLite install/test coverage on macOS for both lines
-  and on Windows for Node 24; future dependency upgrades can still affect
-  portability.
+  and on Windows for Node 24; the v0.0.5 candidate must pass those gates, and
+  future dependency upgrades can still affect portability.
 - v0.0.4 deliberately does not restore v0.0.3/schema-2 backup bundles. Live
   v0.0.3 databases still migrate at startup, and this compatibility break is
   acceptable only under the current no-user alpha assumption.

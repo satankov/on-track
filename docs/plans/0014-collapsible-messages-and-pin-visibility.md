@@ -344,17 +344,26 @@ and strict import/export validation at an existing trust boundary.
 - **Migration rollback:** retain fail-closed newer-schema refusal and document
   that rollback requires a pre-upgrade backup.
 
-## Open decisions
+## Resolved decisions
 
-No blocking decision is required if the assumptions above are accepted. The
-`12rem` threshold is the deliberate proposed default and can be revised before
-implementation without changing the persistence design.
+- Long messages use the approved `12rem` collapsed-height threshold.
+- The collapse preference remains per project and controls each long message's
+  initial state; individual disclosure state is not persisted.
+- Pin controls remain visible for keyboard focus and touch input while staying
+  quiet at rest on hover-capable layouts.
 
-## Approval request
+## Completion evidence
 
-Please approve one option:
+Implemented after approval on 2026-09-04. Final release-candidate verification
+produced:
 
-- Implement Phases 1-6 as proposed.
-- Revise the plan with specific changes, especially the `12rem` threshold or
-  setting behavior.
-- Stop here.
+- 422 passing automated tests with one intentional skip;
+- 91.25% statement, 85.51% branch, 93.67% function, and 92.60% line coverage;
+- 19 passing live-migration tests;
+- 20 passing desktop Chromium and mobile WebKit scenarios with two
+  platform-scoped skips; and
+- passing release contract, production build, typecheck, lint, formatting,
+  high-severity dependency-audit threshold, and diff checks.
+
+The dependency audit continues to report the existing moderate Fastify
+advisories below the configured failure threshold. No new dependency was added.

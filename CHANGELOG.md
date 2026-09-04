@@ -6,6 +6,8 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-09-04
+
 ### Added
 
 - Per-project long-message display preferences, with accessible Show more/Show
@@ -24,6 +26,8 @@ below `1.0.0`, releases may contain breaking changes.
   for pinned projects, while preserving keyboard-focus and touch visibility.
 - Replaced sidebar accent dots, generic update copy, and trailing chevrons with
   project previews, dedicated pin controls, and accessible Attention status.
+- Kept message labels within the visible history area and made attachment cards
+  use the available message width across desktop, narrow, and mobile layouts.
 - Advanced the live and backup database schema to version 5. Exact schema-4
   development and schema-3 v0.0.4 backups migrate during guarded restore
   staging; schema 2 remains unsupported.

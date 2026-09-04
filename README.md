@@ -23,6 +23,8 @@ services, analytics, or remote runtime assets.
 - Pin important projects above the activity-sorted project list.
 - Customize each project's title and accent.
 - Add multiline Markdown notes with keyboard-friendly controls.
+- Apply permanent Pin and Attention labels plus project-enabled Todo, Decision,
+  Open question, Risk, and Milestone labels, then filter history by label.
 - Expand and collapse long Markdown notes, with a persisted per-project default
   configured from Edit project.
 - Copy, edit, timestamp-adjust, and delete notes.
@@ -39,10 +41,10 @@ services, analytics, or remote runtime assets.
 - Run without accounts, telemetry, or an internet connection after installation.
 
 Native Open/Show in Folder has been manually reported working on one macOS host.
-Windows and Linux native-action smoke verification, built-in TODO/open-question/
-decision labels, encryption, native installers, and peer-to-peer iPhone sync are
-roadmap work. Open delegates to an installed default application; On Track does
-not provide embedded PowerPoint or document editing.
+Windows and Linux native-action smoke verification, encryption, native
+installers, and peer-to-peer iPhone sync are roadmap work. Open delegates to an
+installed default application; On Track does not provide embedded PowerPoint or
+document editing.
 
 ## Quick start
 
@@ -90,11 +92,11 @@ SQLite databases, journals, backups, exports, and common local development
 artifacts are ignored by Git. The release check also fails if a database file is
 ever tracked. Use the Settings button at the bottom of the sidebar to export or
 restore a versioned backup bundle. Restore replaces current local projects and
-files rather than merging them. The current checkout accepts its schema-5
-backups plus strictly validated schema-4 development and v0.0.4/schema-3
-backups; it does not restore v0.0.3/schema-2 bundles. Live schema-3 and schema-4
-databases migrate during startup. You can isolate evaluation data with an
-absolute disposable path:
+files rather than merging them. Version 0.0.5 accepts schema-5 backups plus
+strictly validated schema-4 development and v0.0.4/schema-3 backups; it does not
+restore v0.0.3/schema-2 bundles. Live schema-3 and schema-4 databases migrate
+during startup. You can isolate evaluation data with an absolute disposable
+path:
 
 ```sh
 ON_TRACK_DATA_DIR=/absolute/path/to/on-track-data npm start
