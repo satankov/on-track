@@ -77,6 +77,38 @@ describe("SQLite project-chat persistence", () => {
     );
   });
 
+  it("migrates an existing schema-3 database with project defaults intact", () => {
+    const databasePath = join(directory, "on-track.sqlite");
+    repository.createChat({
+      id: "chat-a",
+      title: "Alpha",
+      accent: "coral",
+      now: 100,
+    });
+    database.close();
+    const legacy = new Database(databasePath);
+    legacy.exec(`
+      ALTER TABLE chats DROP COLUMN collapse_long_messages;
+      ALTER TABLE chats DROP COLUMN pinned_at;
+      UPDATE app_metadata SET schema_version = 3 WHERE id = 1;
+      DELETE FROM __drizzle_migrations
+      WHERE created_at IN (1788516961034, 1788523044823);
+    `);
+    legacy.close();
+
+    database = openDatabase(databasePath);
+    repository = new SqliteChatRepository(database);
+
+    expect(
+      database
+        .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
+        .pluck()
+        .get(),
+    ).toBe(5);
+    expect(repository.getChat("chat-a")?.pinnedAt).toBeNull();
+    expect(repository.getChat("chat-a")?.collapseLongMessages).toBe(true);
+  });
+
   it.runIf(process.platform !== "win32")(
     "restricts the database file to the current user",
     () => {
@@ -86,6 +118,55 @@ describe("SQLite project-chat persistence", () => {
   );
 
   it("creates, customizes, orders, and reopens persisted chats", () => {
+    const created = repository.createChat({
+      id: "chat-a",
+      title: "Alpha",
+      accent: "coral",
+      now: 100,
+    });
+    expect(created.collapseLongMessages).toBe(true);
+    repository.createChat({
+      id: "chat-b",
+      title: "Beta",
+      accent: "moss",
+      now: 200,
+    });
+    repository.updateChat("chat-a", {
+      title: "Alpha launch",
+      accent: "ocean",
+      collapseLongMessages: false,
+      now: 300,
+    });
+
+    expect(repository.listChats().map((chat) => chat.id)).toEqual([
+      "chat-a",
+      "chat-b",
+    ]);
+    expect(repository.getChat("chat-a")).toMatchObject({
+      title: "Alpha launch",
+      accent: "ocean",
+      collapseLongMessages: false,
+    });
+
+    database.close();
+    database = openDatabase(join(directory, "on-track.sqlite"));
+    repository = new SqliteChatRepository(database);
+
+    expect(repository.getChat("chat-a")).toMatchObject({
+      title: "Alpha launch",
+      accent: "ocean",
+      collapseLongMessages: false,
+    });
+    expect(() =>
+      database
+        .prepare(
+          "UPDATE chats SET collapse_long_messages = 2 WHERE id = 'chat-a'",
+        )
+        .run(),
+    ).toThrow(/CHECK constraint/);
+  });
+
+  it("persists stable project pins and batches sidebar message and Attention summaries", () => {
     repository.createChat({
       id: "chat-a",
       title: "Alpha",
@@ -98,29 +179,103 @@ describe("SQLite project-chat persistence", () => {
       accent: "moss",
       now: 200,
     });
-    repository.updateChat("chat-a", {
-      title: "Alpha launch",
+    repository.createChat({
+      id: "chat-c",
+      title: "Gamma",
       accent: "ocean",
       now: 300,
     });
+    repository.appendNote({
+      id: "note-a",
+      chatId: "chat-a",
+      body: "Earlier preview",
+      createdAt: 400,
+      now: 400,
+    });
+    repository.appendNote({
+      id: "note-b",
+      chatId: "chat-a",
+      body: `${"Latest preview ".repeat(50)}end`,
+      createdAt: 400,
+      now: 400,
+    });
+    repository.appendNote({
+      id: "note-old-attention",
+      chatId: "chat-b",
+      body: "Old attention",
+      createdAt: 250,
+      now: 500,
+    });
+    repository.appendNote({
+      id: "note-future-attention",
+      chatId: "chat-b",
+      body: "Future attention",
+      createdAt: 1_500,
+      now: 500,
+    });
+    repository.setNoteLabel("chat-b", "note-old-attention", "attention", true);
+    repository.setNoteLabel(
+      "chat-b",
+      "note-future-attention",
+      "attention",
+      true,
+    );
 
-    expect(repository.listChats().map((chat) => chat.id)).toEqual([
+    const betaActivity = repository.getChat("chat-b", 500)!.updatedAt;
+    expect(repository.setChatPinned("chat-b", true, 600)).toEqual({
+      pinnedAt: 600,
+    });
+    expect(repository.setChatPinned("chat-b", true, 900)).toEqual({
+      pinnedAt: 600,
+    });
+    expect(repository.setChatPinned("chat-a", true, 800)).toEqual({
+      pinnedAt: 800,
+    });
+
+    const chats = repository.listChats(1_000);
+    expect(chats.map((chat) => chat.id)).toEqual([
       "chat-a",
       "chat-b",
+      "chat-c",
     ]);
-    expect(repository.getChat("chat-a")).toMatchObject({
-      title: "Alpha launch",
-      accent: "ocean",
+    expect(chats[0]).toMatchObject({
+      pinnedAt: 800,
+      latestMessagePreview: expect.stringMatching(/^Latest preview/),
+      nextMessageAt: null,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
+    });
+    expect(chats[0].latestMessagePreview!.length).toBeLessThanOrEqual(512);
+    expect(chats[1]).toMatchObject({
+      pinnedAt: 600,
+      latestMessagePreview: "Old attention",
+      nextMessageAt: 1_500,
+      latestAttentionAt: 250,
+      nextAttentionAt: 1_500,
+      updatedAt: betaActivity,
+    });
+    expect(chats[2]).toMatchObject({
+      pinnedAt: null,
+      latestMessagePreview: null,
+      nextMessageAt: null,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
     });
 
-    database.close();
-    database = openDatabase(join(directory, "on-track.sqlite"));
-    repository = new SqliteChatRepository(database);
-
-    expect(repository.getChat("chat-a")).toMatchObject({
-      title: "Alpha launch",
-      accent: "ocean",
+    expect(repository.setChatPinned("chat-a", false, 1_000)).toEqual({
+      pinnedAt: null,
     });
+    expect(repository.listChats(1_000).map((chat) => chat.id)).toEqual([
+      "chat-b",
+      "chat-a",
+      "chat-c",
+    ]);
+    expect(repository.setChatPinned("missing", true, 1_000)).toBeUndefined();
+    expect(() =>
+      database
+        .prepare("UPDATE chats SET pinned_at = -1 WHERE id = 'chat-a'")
+        .run(),
+    ).toThrow(/CHECK constraint/);
   });
 
   it("persists project label settings and scoped multi-label messages", () => {

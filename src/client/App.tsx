@@ -1,9 +1,11 @@
 import {
+  Fragment,
   useEffect,
   useId,
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
@@ -51,7 +53,6 @@ const LABEL_NAMES: Record<Label, string> = {
 };
 
 const LABEL_MARKS: Partial<Record<Label, string>> = {
-  attention: "🔴",
   risk: "⚠️",
   milestone: "🎖️",
 };
@@ -63,6 +64,7 @@ const FILTER_LABEL_NAMES: Record<Label, string> = {
 };
 
 const ICON_ONLY_MESSAGE_LABELS = new Set<Label>(["pin", "attention"]);
+const MESSAGE_COLLAPSED_HEIGHT_PX = 192;
 
 type HistoryFilter = "all" | "attachments" | Label;
 
@@ -72,9 +74,16 @@ interface WorkspaceServerState {
 }
 
 function sortChats(chats: Chat[]): Chat[] {
-  return [...chats].sort(
-    (a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id),
-  );
+  return [...chats].sort((a, b) => {
+    const aPinnedAt = a.pinnedAt ?? null;
+    const bPinnedAt = b.pinnedAt ?? null;
+    if (aPinnedAt !== null || bPinnedAt !== null) {
+      if (aPinnedAt === null) return 1;
+      if (bPinnedAt === null) return -1;
+      return bPinnedAt - aPinnedAt || a.id.localeCompare(b.id);
+    }
+    return b.updatedAt - a.updatedAt || a.id.localeCompare(b.id);
+  });
 }
 
 function sortNotes(notes: Note[]): Note[] {
@@ -102,15 +111,68 @@ function chatActivityFromNotes(chat: ChatDetail, notes: Note[]): number {
   );
 }
 
-function chatFromDetail(detail: ChatDetail): Chat {
+function chatFromDetail(detail: ChatDetail, now = Date.now()): Chat {
+  const notes = sortNotes(detail.notes);
+  const latest = notes.filter((note) => note.createdAt <= now).at(-1);
+  const attentionTimestamps = notes
+    .filter((note) => note.labels?.includes("attention"))
+    .map((note) => note.createdAt);
   return {
     id: detail.id,
     title: detail.title,
     accent: detail.accent,
     enabledLabels: detail.enabledLabels,
+    collapseLongMessages: detail.collapseLongMessages ?? true,
     createdAt: detail.createdAt,
     updatedAt: detail.updatedAt,
+    pinnedAt: detail.pinnedAt ?? null,
+    latestMessagePreview: latest?.body.slice(0, 512) ?? null,
+    nextMessageAt:
+      notes.find((note) => note.createdAt > now)?.createdAt ?? null,
+    latestAttentionAt:
+      attentionTimestamps.filter((timestamp) => timestamp <= now).at(-1) ??
+      null,
+    nextAttentionAt:
+      attentionTimestamps.find((timestamp) => timestamp > now) ?? null,
   };
+}
+
+function mergeMessageSummary(chat: Chat, detail: ChatDetail): Chat {
+  const summary = chatFromDetail(detail);
+  return {
+    ...chat,
+    updatedAt: summary.updatedAt,
+    latestMessagePreview: summary.latestMessagePreview,
+    nextMessageAt: summary.nextMessageAt,
+    latestAttentionAt: summary.latestAttentionAt,
+    nextAttentionAt: summary.nextAttentionAt,
+  };
+}
+
+function projectPreview(chat: Chat): string {
+  const preview = chat.latestMessagePreview?.replace(/\s+/g, " ").trim();
+  if (chat.latestMessagePreview == null) return "Ready for the first note";
+  return preview || "Attachment message";
+}
+
+function projectAttentionState(
+  chat: Chat,
+  now: number,
+): "today" | "earlier" | undefined {
+  const reachedFuture =
+    chat.nextAttentionAt !== null &&
+    chat.nextAttentionAt !== undefined &&
+    chat.nextAttentionAt <= now
+      ? chat.nextAttentionAt
+      : null;
+  const latest = Math.max(
+    chat.latestAttentionAt ?? Number.NEGATIVE_INFINITY,
+    reachedFuture ?? Number.NEGATIVE_INFINITY,
+  );
+  if (!Number.isFinite(latest)) return undefined;
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  return latest >= startOfToday.getTime() ? "today" : "earlier";
 }
 
 function commitProjectUpdate(
@@ -251,6 +313,41 @@ function groupNotesByDay(
   );
 }
 
+const MAX_TIMELINE_TIMEOUT_MS = 2_147_483_647;
+
+function useTimelineNow(notes: Note[]): number {
+  const [renderedAt, setRenderedAt] = useState(() => Date.now());
+  const timelineKey = notes
+    .map((note) => `${note.id}:${note.createdAt}`)
+    .join("\u0000");
+  const previousTimelineKey = useRef(timelineKey);
+  const now = renderedAt;
+  const nextFutureTimestamp = notes.find(
+    (note) => note.createdAt > now,
+  )?.createdAt;
+
+  useEffect(() => {
+    if (nextFutureTimestamp === undefined) return;
+    const delay = Math.min(
+      Math.max(0, nextFutureTimestamp - Date.now()) + 1,
+      MAX_TIMELINE_TIMEOUT_MS,
+    );
+    const timeout = window.setTimeout(() => {
+      setRenderedAt(Math.max(Date.now(), nextFutureTimestamp));
+    }, delay);
+    return () => window.clearTimeout(timeout);
+  }, [nextFutureTimestamp, renderedAt]);
+
+  useLayoutEffect(() => {
+    if (previousTimelineKey.current === timelineKey) return;
+    previousTimelineKey.current = timelineKey;
+    // Synchronize the external wall clock before paint when the visible timeline changes.
+    setRenderedAt(Date.now());
+  }, [timelineKey]);
+
+  return now;
+}
+
 interface ProjectFormProps {
   chat?: Chat;
   onCancel: () => void;
@@ -379,6 +476,7 @@ function ProjectEditWorkspace({
     title: string;
     accent: Accent;
     enabledLabels: ConfigurableLabel[];
+    collapseLongMessages: boolean;
   }) => Promise<void>;
   onDelete: () => Promise<void>;
 }) {
@@ -386,6 +484,9 @@ function ProjectEditWorkspace({
   const [accent, setAccent] = useState<Accent>(chat.accent);
   const [enabledLabels, setEnabledLabels] = useState<ConfigurableLabel[]>(
     chat.enabledLabels ?? ["todo", "milestone"],
+  );
+  const [collapseLongMessages, setCollapseLongMessages] = useState(
+    chat.collapseLongMessages ?? true,
   );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -396,7 +497,12 @@ function ProjectEditWorkspace({
     setSaving(true);
     setError("");
     try {
-      await onSubmit({ title, accent, enabledLabels });
+      await onSubmit({
+        title,
+        accent,
+        enabledLabels,
+        collapseLongMessages,
+      });
     } catch (caught) {
       setError(errorMessage(caught, "The project could not be saved."));
       setSaving(false);
@@ -493,6 +599,23 @@ function ProjectEditWorkspace({
               ))}
             </div>
           </fieldset>
+          <fieldset className="project-message-display-fieldset">
+            <legend>Message display</legend>
+            <p className="field-help">
+              Choose how long messages first appear in this project. Every long
+              message can still be expanded or collapsed individually.
+            </p>
+            <label className="project-message-display-option">
+              <input
+                type="checkbox"
+                checked={collapseLongMessages}
+                onChange={(event) =>
+                  setCollapseLongMessages(event.target.checked)
+                }
+              />
+              <span>Collapse long messages by default</span>
+            </label>
+          </fieldset>
           {error && (
             <p role="alert" className="form-error">
               {error}
@@ -534,17 +657,169 @@ function ProjectRail({
   chats,
   activeId,
   onSelect,
+  onTogglePinned,
+  onTemporalBoundary,
   onCreate,
   onSettings,
   navigationDisabled,
+  pinErrors,
+  pinningIds,
 }: {
   chats: Chat[];
   activeId?: string;
   onSelect: (id: string) => void;
+  onTogglePinned: (chat: Chat) => void;
+  onTemporalBoundary: () => void;
   onCreate: () => void;
   onSettings: () => void;
   navigationDisabled: boolean;
+  pinErrors: Record<string, string>;
+  pinningIds: ReadonlySet<string>;
 }) {
+  const [now, setNow] = useState(() => Date.now());
+  const boundaryCallback = useRef(onTemporalBoundary);
+  const handledTemporalKey = useRef("");
+  const pinned = chats.filter((chat) => chat.pinnedAt != null);
+  const projects = chats.filter((chat) => chat.pinnedAt == null);
+  const temporalKey = chats
+    .map(
+      (chat) =>
+        `${chat.id}:${chat.nextMessageAt ?? ""}:${chat.nextAttentionAt ?? ""}`,
+    )
+    .join("\u0000");
+  const schedulingNow = now;
+  const dueTemporalKey = chats.some((chat) =>
+    [chat.nextMessageAt, chat.nextAttentionAt].some(
+      (timestamp) => timestamp != null && timestamp <= schedulingNow,
+    ),
+  )
+    ? temporalKey
+    : "";
+  const nextMidnight = new Date(schedulingNow);
+  nextMidnight.setHours(24, 0, 0, 0);
+  const temporalBoundary = Math.min(
+    nextMidnight.getTime(),
+    ...chats
+      .flatMap((chat) => [chat.nextMessageAt, chat.nextAttentionAt])
+      .filter(
+        (timestamp): timestamp is number =>
+          timestamp !== null &&
+          timestamp !== undefined &&
+          timestamp > schedulingNow,
+      ),
+  );
+
+  useEffect(() => {
+    boundaryCallback.current = onTemporalBoundary;
+  }, [onTemporalBoundary]);
+
+  useEffect(() => {
+    if (!dueTemporalKey || handledTemporalKey.current === dueTemporalKey)
+      return;
+    handledTemporalKey.current = dueTemporalKey;
+    boundaryCallback.current();
+  }, [dueTemporalKey]);
+
+  useEffect(() => {
+    const current = Date.now();
+    const delay = Math.min(
+      Math.max(0, temporalBoundary - current) + 1,
+      MAX_TIMELINE_TIMEOUT_MS,
+    );
+    const timeout = window.setTimeout(() => {
+      handledTemporalKey.current = temporalKey;
+      setNow(Date.now());
+      boundaryCallback.current();
+    }, delay);
+    return () => window.clearTimeout(timeout);
+  }, [temporalBoundary, temporalKey]);
+
+  useEffect(() => {
+    const refresh = () => {
+      handledTemporalKey.current = temporalKey;
+      setNow(Date.now());
+      boundaryCallback.current();
+    };
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [temporalKey]);
+
+  function renderSection(label: "Pinned" | "Projects", items: Chat[]) {
+    if (label === "Pinned" && items.length === 0) return null;
+    return (
+      <section className="project-section" aria-labelledby={`rail-${label}`}>
+        <div className="rail-section-label">
+          <span id={`rail-${label}`}>{label}</span>
+          <span>{String(items.length).padStart(2, "0")}</span>
+        </div>
+        <ul className="project-items">
+          {items.map((chat) => {
+            const attention = projectAttentionState(chat, now);
+            const error = pinErrors[chat.id];
+            const isPinned = chat.pinnedAt != null;
+            const statusId = `project-status-${chat.id}`;
+            const errorId = `project-pin-error-${chat.id}`;
+            return (
+              <li
+                className={`project-row ${activeId === chat.id ? "project-row--active" : ""} ${error ? "project-row--error" : ""}`}
+                data-accent={chat.accent}
+                data-attention-state={attention}
+                key={chat.id}
+              >
+                <button
+                  className={`project-item ${activeId === chat.id ? "project-item--active" : ""}`}
+                  data-chat-id={chat.id}
+                  type="button"
+                  aria-label={`Open ${chat.title}`}
+                  aria-describedby={`${statusId}${error ? ` ${errorId}` : ""}`}
+                  aria-current={activeId === chat.id ? "page" : undefined}
+                  disabled={navigationDisabled}
+                  onClick={() => onSelect(chat.id)}
+                >
+                  <span className="project-item-copy">
+                    <strong>{chat.title}</strong>
+                    <small>{error || projectPreview(chat)}</small>
+                  </span>
+                </button>
+                <button
+                  className="project-pin-button"
+                  data-project-pin-id={chat.id}
+                  type="button"
+                  aria-label={`Pin ${chat.title}`}
+                  aria-pressed={isPinned}
+                  aria-describedby={error ? errorId : undefined}
+                  disabled={navigationDisabled || pinningIds.has(chat.id)}
+                  onClick={() => onTogglePinned(chat)}
+                >
+                  <PinIcon />
+                </button>
+                {attention && (
+                  <span
+                    className={`attention-dot attention-dot--${attention} project-attention-dot project-attention-dot--${attention}`}
+                    aria-hidden="true"
+                  />
+                )}
+                <span className="visually-hidden" id={statusId}>
+                  {isPinned ? "Pinned project. " : ""}
+                  {attention === "today"
+                    ? "Attention today."
+                    : attention === "earlier"
+                      ? "Earlier attention."
+                      : "No attention."}
+                </span>
+                {error && (
+                  <span className="visually-hidden" id={errorId} role="alert">
+                    {error}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+    );
+  }
+
   return (
     <aside
       className={`project-rail ${activeId ? "project-rail--detail-open" : ""}`}
@@ -565,38 +840,9 @@ function ProjectRail({
         </button>
       </header>
 
-      <div className="rail-section-label">
-        <span>Projects</span>
-        <span>{String(chats.length).padStart(2, "0")}</span>
-      </div>
-
       <nav aria-label="Projects" className="project-list">
-        {chats.map((chat) => (
-          <button
-            className={`project-item ${activeId === chat.id ? "project-item--active" : ""}`}
-            data-accent={chat.accent}
-            data-chat-id={chat.id}
-            key={chat.id}
-            type="button"
-            aria-label={`Open ${chat.title}`}
-            aria-current={activeId === chat.id ? "page" : undefined}
-            disabled={navigationDisabled}
-            onClick={() => onSelect(chat.id)}
-          >
-            <span className="project-dot" aria-hidden="true" />
-            <span className="project-item-copy">
-              <strong>{chat.title}</strong>
-              <small>
-                {chat.updatedAt === chat.createdAt
-                  ? "Ready for the first note"
-                  : "Recently updated"}
-              </small>
-            </span>
-            <span className="project-arrow" aria-hidden="true">
-              <ChevronRightIcon />
-            </span>
-          </button>
-        ))}
+        {renderSection("Pinned", pinned)}
+        {renderSection("Projects", projects)}
       </nav>
 
       <footer className="local-footnote">
@@ -996,14 +1242,6 @@ function PlusIcon() {
   );
 }
 
-function ChevronRightIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="m9 6 6 6-6 6" />
-    </svg>
-  );
-}
-
 function SendIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -1132,6 +1370,14 @@ function QuestionIcon() {
 }
 
 function LabelGlyph({ label }: { label: Label }) {
+  if (label === "attention") {
+    return (
+      <span className="label-glyph" aria-hidden="true">
+        <span className="attention-dot attention-dot--today" />
+      </span>
+    );
+  }
+
   const mark = LABEL_MARKS[label];
   if (mark) {
     return (
@@ -1368,6 +1614,105 @@ function MarkdownMessage({ body }: { body: string }) {
   );
 }
 
+function syncClippedMessageLinks(
+  bodyElement: HTMLDivElement,
+  collapsed: boolean,
+) {
+  const clipBottom =
+    bodyElement.getBoundingClientRect().top + MESSAGE_COLLAPSED_HEIGHT_PX;
+  for (const link of bodyElement.querySelectorAll<HTMLAnchorElement>("a")) {
+    const clipped =
+      collapsed && link.getBoundingClientRect().bottom > clipBottom;
+    if (clipped) {
+      link.dataset.messageClippedLink = "true";
+      link.tabIndex = -1;
+    } else if (link.dataset.messageClippedLink === "true") {
+      delete link.dataset.messageClippedLink;
+      link.removeAttribute("tabindex");
+    }
+  }
+}
+
+function ChevronDownIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function CollapsibleMessageBody({
+  body,
+  collapseLongMessages,
+}: {
+  body: string;
+  collapseLongMessages: boolean;
+}) {
+  const contentId = useId();
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [isLong, setIsLong] = useState(false);
+  const [expanded, setExpanded] = useState(!collapseLongMessages);
+  const collapsed = isLong && !expanded;
+
+  useLayoutEffect(() => {
+    const bodyElement = bodyRef.current;
+    if (!bodyElement) return;
+    const nextIsLong = bodyElement.scrollHeight > MESSAGE_COLLAPSED_HEIGHT_PX;
+    setIsLong((current) => (current === nextIsLong ? current : nextIsLong));
+    syncClippedMessageLinks(bodyElement, nextIsLong && !expanded);
+    return () => syncClippedMessageLinks(bodyElement, false);
+  }, [body, expanded]);
+
+  useEffect(() => {
+    const bodyElement = bodyRef.current;
+    if (!bodyElement) return;
+    const measure = () => {
+      const nextIsLong = bodyElement.scrollHeight > MESSAGE_COLLAPSED_HEIGHT_PX;
+      setIsLong((current) => (current === nextIsLong ? current : nextIsLong));
+      syncClippedMessageLinks(bodyElement, nextIsLong && !expanded);
+    };
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(measure);
+    observer?.observe(bodyElement);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [body, expanded]);
+
+  return (
+    <>
+      <div
+        className={`message-body-viewport ${collapsed ? "message-body-viewport--collapsed" : ""}`}
+        style={
+          {
+            "--message-collapse-height": `${MESSAGE_COLLAPSED_HEIGHT_PX}px`,
+          } as CSSProperties
+        }
+      >
+        <div className="message-body note-body" id={contentId} ref={bodyRef}>
+          <MarkdownMessage body={body} />
+        </div>
+      </div>
+      {isLong && (
+        <button
+          className="message-collapse-toggle"
+          type="button"
+          aria-controls={contentId}
+          aria-expanded={expanded}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          <span>{expanded ? "Show less" : "Show more"}</span>
+          <ChevronDownIcon />
+        </button>
+      )}
+    </>
+  );
+}
+
 function AttachmentList({
   note,
   onAction,
@@ -1504,6 +1849,149 @@ function AttachmentList({
   );
 }
 
+function MessageGroups({
+  notes,
+  futureStartId,
+  enabledLabels,
+  collapseLongMessages,
+  copiedNoteId,
+  onAttachmentAction,
+  onCopyNote,
+  onDeleteNote,
+  onEditNote,
+  onSetNoteLabel,
+}: {
+  notes: Note[];
+  futureStartId?: string;
+  enabledLabels: ConfigurableLabel[];
+  collapseLongMessages: boolean;
+  copiedNoteId?: string;
+  onAttachmentAction: (
+    note: Note,
+    attachmentId: string,
+    action: "open" | "reveal",
+  ) => Promise<void>;
+  onCopyNote: (note: Note) => void;
+  onDeleteNote: (note: Note) => void;
+  onEditNote: (note: Note) => void;
+  onSetNoteLabel: (note: Note, label: Label, applied: boolean) => Promise<void>;
+}) {
+  return (
+    <div className="message-groups">
+      {groupNotesByDay(notes).map((group) => {
+        const futureStartIndex = group.notes.findIndex(
+          (note) => note.id === futureStartId,
+        );
+        const futureStartsGroup = futureStartIndex === 0;
+        return (
+          <section className="message-day" key={group.key}>
+            {futureStartsGroup && (
+              <div
+                className="future-message-boundary future-message-boundary--day"
+                role="separator"
+                aria-label="Future messages"
+              >
+                <span
+                  className="future-message-boundary-surface"
+                  aria-hidden="true"
+                />
+              </div>
+            )}
+            <div className="message-date-separator">{group.label}</div>
+            <ol
+              className="message-list"
+              style={{
+                gridTemplateRows: `repeat(${group.notes.length}, auto)`,
+              }}
+            >
+              {group.notes.map((note, noteIndex) => {
+                const copied = copiedNoteId === note.id;
+                return (
+                  <Fragment key={note.id}>
+                    {!futureStartsGroup && note.id === futureStartId && (
+                      <li
+                        key="future-boundary"
+                        className="future-message-boundary"
+                        role="separator"
+                        aria-label="Future messages"
+                        style={{
+                          gridRow: `${noteIndex + 1} / ${group.notes.length + 1}`,
+                        }}
+                      >
+                        <span
+                          className="future-message-boundary-surface"
+                          aria-hidden="true"
+                        />
+                      </li>
+                    )}
+                    <li
+                      key="message"
+                      className="message-row message-row--own"
+                      style={{ gridRow: noteIndex + 1 }}
+                    >
+                      <div className="message-stack">
+                        <article className="message-bubble">
+                          <AttachmentList
+                            note={note}
+                            onAction={onAttachmentAction}
+                          />
+                          <CollapsibleMessageBody
+                            key={String(collapseLongMessages)}
+                            body={note.body}
+                            collapseLongMessages={collapseLongMessages}
+                          />
+                          <footer className="message-footer">
+                            <MessageLabels labels={note.labels ?? []} />
+                            <time
+                              className="message-time"
+                              dateTime={new Date(note.createdAt).toISOString()}
+                            >
+                              {formatMessageTime(note.createdAt)}
+                            </time>
+                          </footer>
+                        </article>
+                        <div
+                          className="message-actions"
+                          aria-label="Message actions"
+                        >
+                          <MessageLabelPicker
+                            note={note}
+                            enabledLabels={enabledLabels}
+                            onToggle={onSetNoteLabel}
+                          />
+                          <MessageActionButton
+                            label={copied ? "Message copied" : "Copy message"}
+                            onClick={() => onCopyNote(note)}
+                          >
+                            {copied ? <CheckIcon /> : <CopyIcon />}
+                          </MessageActionButton>
+                          <MessageActionButton
+                            label="Edit message"
+                            onClick={() => onEditNote(note)}
+                          >
+                            <EditIcon />
+                          </MessageActionButton>
+                          <MessageActionButton
+                            label="Delete message"
+                            danger
+                            onClick={() => onDeleteNote(note)}
+                          >
+                            <TrashIcon />
+                          </MessageActionButton>
+                        </div>
+                      </div>
+                    </li>
+                  </Fragment>
+                );
+              })}
+            </ol>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 function ChatWorkspace({
   detail,
   draft,
@@ -1577,6 +2065,10 @@ function ChatWorkspace({
     if (historyFilter === "attachments") return hasAttachments(note);
     return (note.labels ?? []).includes(historyFilter);
   });
+  const timelineNow = useTimelineNow(visibleNotes);
+  const futureStartId = visibleNotes.find(
+    (note) => note.createdAt > timelineNow,
+  )?.id;
   const showingEmptyFilter =
     historyFilter !== "all" && visibleNotes.length === 0;
   const editingAttachments =
@@ -1739,76 +2231,18 @@ function ChatWorkspace({
             </div>
           </div>
         ) : (
-          <div className="message-groups">
-            {groupNotesByDay(visibleNotes).map((group) => (
-              <section className="message-day" key={group.key}>
-                <div className="message-date-separator">{group.label}</div>
-                <ol className="message-list">
-                  {group.notes.map((note) => {
-                    const copied = copiedNoteId === note.id;
-                    return (
-                      <li
-                        className="message-row message-row--own"
-                        key={note.id}
-                      >
-                        <div className="message-stack">
-                          <article className="message-bubble">
-                            <AttachmentList
-                              note={note}
-                              onAction={onAttachmentAction}
-                            />
-                            <div className="message-body note-body">
-                              <MarkdownMessage body={note.body} />
-                            </div>
-                            <footer className="message-footer">
-                              <MessageLabels labels={note.labels ?? []} />
-                              <time
-                                className="message-time"
-                                dateTime={new Date(
-                                  note.createdAt,
-                                ).toISOString()}
-                              >
-                                {formatMessageTime(note.createdAt)}
-                              </time>
-                            </footer>
-                          </article>
-                          <div
-                            className="message-actions"
-                            aria-label="Message actions"
-                          >
-                            <MessageLabelPicker
-                              note={note}
-                              enabledLabels={enabledLabels}
-                              onToggle={onSetNoteLabel}
-                            />
-                            <MessageActionButton
-                              label={copied ? "Message copied" : "Copy message"}
-                              onClick={() => onCopyNote(note)}
-                            >
-                              {copied ? <CheckIcon /> : <CopyIcon />}
-                            </MessageActionButton>
-                            <MessageActionButton
-                              label="Edit message"
-                              onClick={() => onEditNote(note)}
-                            >
-                              <EditIcon />
-                            </MessageActionButton>
-                            <MessageActionButton
-                              label="Delete message"
-                              danger
-                              onClick={() => onDeleteNote(note)}
-                            >
-                              <TrashIcon />
-                            </MessageActionButton>
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ol>
-              </section>
-            ))}
-          </div>
+          <MessageGroups
+            notes={visibleNotes}
+            futureStartId={futureStartId}
+            enabledLabels={enabledLabels}
+            collapseLongMessages={detail.collapseLongMessages ?? true}
+            copiedNoteId={copiedNoteId}
+            onAttachmentAction={onAttachmentAction}
+            onCopyNote={onCopyNote}
+            onDeleteNote={onDeleteNote}
+            onEditNote={onEditNote}
+            onSetNoteLabel={onSetNoteLabel}
+          />
         )}
       </section>
 
@@ -1998,8 +2432,13 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [composerTimestampOpen, setComposerTimestampOpen] = useState(false);
   const [error, setError] = useState("");
   const [savingNote, setSavingNote] = useState(false);
+  const [pinErrors, setPinErrors] = useState<Record<string, string>>({});
+  const [pinningIds, setPinningIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const selectionRequest = useRef(0);
   const activeMutationGeneration = useRef(0);
+  const summaryRequest = useRef(0);
   const activeId = useRef<string | undefined>(undefined);
   const copyResetTimer = useRef<number | undefined>(undefined);
 
@@ -2048,13 +2487,35 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     return () => window.removeEventListener("focus", refreshActiveProject);
   }, [api]);
 
+  function refreshProjectSummaries() {
+    const request = ++summaryRequest.current;
+    const mutation = activeMutationGeneration.current;
+    void api
+      .listChats()
+      .then((result) => {
+        if (
+          request !== summaryRequest.current ||
+          mutation !== activeMutationGeneration.current
+        )
+          return;
+        setWorkspace((current) => ({
+          ...current,
+          chats: sortChats(result),
+        }));
+      })
+      .catch(() => {
+        // Temporal and focus refreshes are best effort.
+      });
+  }
+
   useEffect(() => {
     let current = true;
+    const request = ++summaryRequest.current;
     api
       .listChats()
       .then((result) => {
-        if (!current) return;
-        setWorkspace((current) => ({ ...current, chats: result }));
+        if (!current || request !== summaryRequest.current) return;
+        setWorkspace((current) => ({ ...current, chats: sortChats(result) }));
         setLoadState("loaded");
       })
       .catch(() => {
@@ -2084,7 +2545,19 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     try {
       const detail = await api.getChat(id);
       if (request !== selectionRequest.current) return;
-      setWorkspace((current) => ({ ...current, active: detail }));
+      setWorkspace((current) => {
+        const summary = current.chats.find((chat) => chat.id === id);
+        return {
+          ...current,
+          active: {
+            ...detail,
+            pinnedAt:
+              summary?.pinnedAt === undefined
+                ? detail.pinnedAt
+                : summary.pinnedAt,
+          },
+        };
+      });
       setDraft("");
       setPendingFiles([]);
       setHistoryFilter("all");
@@ -2116,10 +2589,64 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     focusMobileBackButton();
   }
 
+  async function toggleChatPinned(chat: Chat) {
+    const pinned = chat.pinnedAt == null;
+    activeMutationGeneration.current += 1;
+    summaryRequest.current += 1;
+    setPinErrors((current) => {
+      const next = { ...current };
+      delete next[chat.id];
+      return next;
+    });
+    setPinningIds((current) => new Set(current).add(chat.id));
+    try {
+      const state = await api.setChatPinned(chat.id, pinned);
+      setWorkspace((current) => ({
+        active:
+          current.active?.id === chat.id
+            ? { ...current.active, pinnedAt: state.pinnedAt }
+            : current.active,
+        chats: sortChats(
+          current.chats.map((item) =>
+            item.id === chat.id ? { ...item, pinnedAt: state.pinnedAt } : item,
+          ),
+        ),
+      }));
+      requestAnimationFrame(() => {
+        const control = [
+          ...document.querySelectorAll<HTMLButtonElement>(
+            "[data-project-pin-id]",
+          ),
+        ].find((button) => button.dataset.projectPinId === chat.id);
+        control?.focus();
+      });
+    } catch (caught) {
+      setPinErrors((current) => ({
+        ...current,
+        [chat.id]: errorMessage(caught, "The project pin could not be saved."),
+      }));
+      requestAnimationFrame(() => {
+        const control = [
+          ...document.querySelectorAll<HTMLButtonElement>(
+            "[data-project-pin-id]",
+          ),
+        ].find((button) => button.dataset.projectPinId === chat.id);
+        control?.focus();
+      });
+    } finally {
+      setPinningIds((current) => {
+        const next = new Set(current);
+        next.delete(chat.id);
+        return next;
+      });
+    }
+  }
+
   async function updateChat(input: {
     title: string;
     accent: Accent;
     enabledLabels: ConfigurableLabel[];
+    collapseLongMessages: boolean;
   }) {
     if (!active) return;
     const projectId = active.id;
@@ -2366,11 +2893,16 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     activeMutationGeneration.current += 1;
     const submittedNotes = active.notes.filter((item) => item.id !== note.id);
     const submittedUpdatedAt = chatActivityFromNotes(active, submittedNotes);
+    const submittedDetail = {
+      ...active,
+      notes: submittedNotes,
+      updatedAt: submittedUpdatedAt,
+    };
     setWorkspace((current) =>
       commitProjectUpdate(
         current,
         projectId,
-        (chat) => ({ ...chat, updatedAt: submittedUpdatedAt }),
+        (chat) => mergeMessageSummary(chat, submittedDetail),
         (detail) => {
           const notes = detail.notes.filter((item) => item.id !== note.id);
           return {
@@ -2388,11 +2920,17 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     const projectId = active.id;
     const labels = await api.setNoteLabel(projectId, note.id, label, applied);
     activeMutationGeneration.current += 1;
+    const submittedDetail = {
+      ...active,
+      notes: active.notes.map((item) =>
+        item.id === note.id ? { ...item, labels } : item,
+      ),
+    };
     setWorkspace((current) =>
       commitProjectUpdate(
         current,
         projectId,
-        (chat) => chat,
+        (chat) => mergeMessageSummary(chat, submittedDetail),
         (detail) => ({
           ...detail,
           notes: detail.notes.map((item) =>
@@ -2463,9 +3001,13 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           chats={chats}
           activeId={active?.id}
           onSelect={selectChat}
+          onTogglePinned={toggleChatPinned}
+          onTemporalBoundary={refreshProjectSummaries}
           onCreate={() => setDialog("create")}
           onSettings={() => setMode("settings")}
           navigationDisabled={savingNote}
+          pinErrors={pinErrors}
+          pinningIds={pinningIds}
         />
       )}
       {!active && error && (

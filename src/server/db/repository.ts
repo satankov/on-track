@@ -4,8 +4,10 @@ import type {
   Chat,
   Note,
   NoteAttachment,
+  ProjectPinState,
   StoredNoteAttachment,
 } from "../../domain/types.js";
+import { MAX_PROJECT_PREVIEW_SOURCE_LENGTH } from "../../domain/types.js";
 import {
   CONFIGURABLE_LABELS,
   DEFAULT_ENABLED_LABELS,
@@ -22,6 +24,15 @@ interface ChatRow {
   accent: Accent;
   created_at: number;
   updated_at: number;
+  pinned_at: number | null;
+  collapse_long_messages: 0 | 1;
+}
+
+interface ChatSidebarSummary {
+  latestMessagePreview: string | null;
+  nextMessageAt: number | null;
+  latestAttentionAt: number | null;
+  nextAttentionAt: number | null;
 }
 
 interface NoteRow {
@@ -42,14 +53,26 @@ interface NoteAttachmentRow {
   created_at: number;
 }
 
-function toChat(row: ChatRow, enabledLabels: ConfigurableLabel[] = []): Chat {
+function toChat(
+  row: ChatRow,
+  enabledLabels: ConfigurableLabel[] = [],
+  summary: ChatSidebarSummary = {
+    latestMessagePreview: null,
+    nextMessageAt: null,
+    latestAttentionAt: null,
+    nextAttentionAt: null,
+  },
+): Chat {
   return {
     id: row.id,
     title: row.title,
     accent: row.accent,
     enabledLabels,
+    collapseLongMessages: row.collapse_long_messages === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    pinnedAt: row.pinned_at,
+    ...summary,
   };
 }
 
@@ -120,24 +143,41 @@ export class SqliteChatRepository {
     });
     create();
 
-    return this.getChat(input.id)!;
+    return this.getChat(input.id, input.now)!;
   }
 
-  listChats(): Chat[] {
+  listChats(now = Date.now()): Chat[] {
     const rows = this.database
-      .prepare("SELECT * FROM chats ORDER BY updated_at DESC, id ASC")
+      .prepare(
+        `SELECT * FROM chats
+         ORDER BY pinned_at IS NULL ASC,
+                  pinned_at DESC,
+                  CASE WHEN pinned_at IS NULL THEN updated_at END DESC,
+                  id ASC`,
+      )
       .all() as ChatRow[];
     const labelsByChat = this.listEnabledLabelsForChats(
       rows.map((row) => row.id),
     );
-    return rows.map((row) => toChat(row, labelsByChat.get(row.id) ?? []));
+    const summariesByChat = this.listSidebarSummariesForChats(
+      rows.map((row) => row.id),
+      now,
+    );
+    return rows.map((row) =>
+      toChat(row, labelsByChat.get(row.id) ?? [], summariesByChat.get(row.id)),
+    );
   }
 
-  getChat(id: string): Chat | undefined {
+  getChat(id: string, now = Date.now()): Chat | undefined {
     const row = this.database
       .prepare("SELECT * FROM chats WHERE id = ?")
       .get(id) as ChatRow | undefined;
-    return row ? toChat(row, this.listEnabledLabels(id)) : undefined;
+    if (!row) return undefined;
+    return toChat(
+      row,
+      this.listEnabledLabels(id),
+      this.listSidebarSummariesForChats([id], now).get(id),
+    );
   }
 
   updateChat(
@@ -146,6 +186,7 @@ export class SqliteChatRepository {
       title?: string;
       accent?: Accent;
       enabledLabels?: ConfigurableLabel[];
+      collapseLongMessages?: boolean;
       now: number;
     },
   ): Chat | undefined {
@@ -155,6 +196,10 @@ export class SqliteChatRepository {
           `UPDATE chats
            SET title = COALESCE(@title, title),
                accent = COALESCE(@accent, accent),
+               collapse_long_messages = COALESCE(
+                 @collapseLongMessages,
+                 collapse_long_messages
+               ),
                updated_at = @now
            WHERE id = @id`,
         )
@@ -162,6 +207,10 @@ export class SqliteChatRepository {
           id,
           title: input.title ?? null,
           accent: input.accent ?? null,
+          collapseLongMessages:
+            input.collapseLongMessages === undefined
+              ? null
+              : Number(input.collapseLongMessages),
           now: input.now,
         });
       if (result.changes === 0) return false;
@@ -177,7 +226,29 @@ export class SqliteChatRepository {
       return true;
     });
 
-    return update() ? this.getChat(id) : undefined;
+    return update() ? this.getChat(id, input.now) : undefined;
+  }
+
+  setChatPinned(
+    id: string,
+    pinned: boolean,
+    now: number,
+  ): ProjectPinState | undefined {
+    this.database
+      .prepare(
+        pinned
+          ? `UPDATE chats
+             SET pinned_at = COALESCE(pinned_at, @now)
+             WHERE id = @id`
+          : `UPDATE chats
+             SET pinned_at = NULL
+             WHERE id = @id`,
+      )
+      .run({ id, now });
+    const row = this.database
+      .prepare("SELECT pinned_at FROM chats WHERE id = ?")
+      .get(id) as { pinned_at: number | null } | undefined;
+    return row ? { pinnedAt: row.pinned_at } : undefined;
   }
 
   deleteChat(id: string): { deleted: boolean; storagePaths: string[] } {
@@ -550,6 +621,88 @@ export class SqliteChatRepository {
 
   private listEnabledLabels(chatId: string): ConfigurableLabel[] {
     return this.listEnabledLabelsForChats([chatId]).get(chatId) ?? [];
+  }
+
+  private listSidebarSummariesForChats(
+    chatIds: string[],
+    now: number,
+  ): Map<string, ChatSidebarSummary> {
+    const result = new Map<string, ChatSidebarSummary>();
+    for (const chatId of chatIds) {
+      result.set(chatId, {
+        latestMessagePreview: null,
+        nextMessageAt: null,
+        latestAttentionAt: null,
+        nextAttentionAt: null,
+      });
+    }
+    if (chatIds.length === 0) return result;
+
+    const placeholders = chatIds.map(() => "?").join(", ");
+    const latestRows = this.database
+      .prepare(
+        `SELECT chat_id, substr(body, 1, ?) AS latest_message_preview
+         FROM (
+           SELECT chat_id, body,
+                  row_number() OVER (
+                    PARTITION BY chat_id
+                    ORDER BY created_at DESC, id DESC
+                  ) AS row_number
+           FROM notes
+           WHERE chat_id IN (${placeholders})
+             AND created_at <= ?
+         )
+         WHERE row_number = 1`,
+      )
+      .all(MAX_PROJECT_PREVIEW_SOURCE_LENGTH, ...chatIds, now) as Array<{
+      chat_id: string;
+      latest_message_preview: string;
+    }>;
+    for (const row of latestRows) {
+      result.get(row.chat_id)!.latestMessagePreview =
+        row.latest_message_preview;
+    }
+
+    const futureMessageRows = this.database
+      .prepare(
+        `SELECT chat_id, min(created_at) AS next_message_at
+         FROM notes
+         WHERE created_at > ?
+           AND chat_id IN (${placeholders})
+         GROUP BY chat_id`,
+      )
+      .all(now, ...chatIds) as Array<{
+      chat_id: string;
+      next_message_at: number;
+    }>;
+    for (const row of futureMessageRows) {
+      result.get(row.chat_id)!.nextMessageAt = row.next_message_at;
+    }
+
+    const attentionRows = this.database
+      .prepare(
+        `SELECT notes.chat_id,
+                max(CASE WHEN notes.created_at <= ? THEN notes.created_at END)
+                  AS latest_attention_at,
+                min(CASE WHEN notes.created_at > ? THEN notes.created_at END)
+                  AS next_attention_at
+         FROM notes
+         INNER JOIN note_labels ON note_labels.note_id = notes.id
+         WHERE note_labels.label = 'attention'
+           AND notes.chat_id IN (${placeholders})
+         GROUP BY notes.chat_id`,
+      )
+      .all(now, now, ...chatIds) as Array<{
+      chat_id: string;
+      latest_attention_at: number | null;
+      next_attention_at: number | null;
+    }>;
+    for (const row of attentionRows) {
+      const summary = result.get(row.chat_id)!;
+      summary.latestAttentionAt = row.latest_attention_at;
+      summary.nextAttentionAt = row.next_attention_at;
+    }
+    return result;
   }
 
   private listEnabledLabelsForChats(

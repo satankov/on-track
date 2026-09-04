@@ -31,6 +31,12 @@ export const chats = sqliteTable(
     accent: text("accent").notNull(),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
+    pinnedAt: integer("pinned_at"),
+    collapseLongMessages: integer("collapse_long_messages", {
+      mode: "boolean",
+    })
+      .notNull()
+      .default(true),
   },
   (table) => [
     check(
@@ -38,6 +44,14 @@ export const chats = sqliteTable(
       sql`length(trim(${table.title})) BETWEEN 1 AND 80`,
     ),
     check("chats_accent_allowed", sql.raw(accentCheck)),
+    check(
+      "chats_pinned_at_nonnegative",
+      sql`${table.pinnedAt} IS NULL OR ${table.pinnedAt} >= 0`,
+    ),
+    check(
+      "chats_collapse_long_messages_boolean",
+      sql`${table.collapseLongMessages} IN (0, 1)`,
+    ),
     index("chats_activity_idx").on(table.updatedAt, table.id),
   ],
 );

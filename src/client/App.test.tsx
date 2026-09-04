@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -30,6 +37,7 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
       updatedAt: 1,
     }),
     updateChat: vi.fn(),
+    setChatPinned: vi.fn(),
     deleteChat: vi.fn(),
     appendNote: vi.fn(),
     updateNote: vi.fn(),
@@ -99,6 +107,442 @@ describe("personal project chat workspace", () => {
     expect(api.getChat).not.toHaveBeenCalled();
   });
 
+  it("groups pinned projects and shows message previews with current and older Attention states", async () => {
+    const now = new Date(2026, 8, 4, 12).getTime();
+    const dateNow = vi.spyOn(Date, "now").mockReturnValue(now);
+    const shared = {
+      accent: "moss" as const,
+      enabledLabels: ["todo"] as ["todo"],
+      createdAt: 1,
+      latestMessagePreview: null,
+      nextMessageAt: null,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([
+        {
+          ...shared,
+          id: "recent",
+          title: "Recent",
+          updatedAt: 30,
+          pinnedAt: null,
+          latestMessagePreview: "The latest project message",
+          latestAttentionAt: now - 60_000,
+        },
+        {
+          ...shared,
+          id: "pinned",
+          title: "Pinned",
+          updatedAt: 10,
+          pinnedAt: 20,
+          latestMessagePreview: "A pinned project stays fixed",
+          latestAttentionAt: now - 86_400_000,
+        },
+      ]),
+    });
+    const { container } = render(<App api={api} />);
+
+    expect(
+      await screen.findByText("A pinned project stays fixed"),
+    ).toBeVisible();
+    expect(screen.getByText("The latest project message")).toBeVisible();
+    expect(
+      screen.getByText("Pinned", { selector: ".rail-section-label span" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Open Pinned" }).closest("li"),
+    ).toHaveAttribute("data-attention-state", "earlier");
+    expect(
+      screen.getByRole("button", { name: "Open Recent" }).closest("li"),
+    ).toHaveAttribute("data-attention-state", "today");
+    expect(container.querySelector(".project-dot")).toBeNull();
+    expect(container.querySelector(".project-arrow")).toBeNull();
+    dateNow.mockRestore();
+  });
+
+  it("pins a project without blocking navigation and restores focus after regrouping", async () => {
+    const user = userEvent.setup();
+    const pinRequest = deferred<{ pinnedAt: number | null }>();
+    const chat = {
+      id: "alpha",
+      title: "Alpha",
+      accent: "coral" as const,
+      enabledLabels: ["todo"] as ["todo"],
+      createdAt: 1,
+      updatedAt: 2,
+      pinnedAt: null,
+      latestMessagePreview: "Ready to pin",
+      nextMessageAt: null,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      setChatPinned: vi.fn(() => pinRequest.promise),
+    });
+    render(<App api={api} />);
+
+    const pin = await screen.findByRole("button", { name: "Pin Alpha" });
+    await user.click(pin);
+    expect(api.setChatPinned).toHaveBeenCalledWith("alpha", true);
+    expect(screen.getByRole("button", { name: "Open Alpha" })).toBeEnabled();
+    expect(pin).toBeDisabled();
+
+    await act(async () => pinRequest.resolve({ pinnedAt: 123 }));
+    const pinnedControl = screen.getByRole("button", { name: "Pin Alpha" });
+    expect(pinnedControl).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(pinnedControl).toHaveFocus());
+  });
+
+  it("does not let older project refreshes overwrite a completed pin", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "alpha",
+      title: "Alpha",
+      accent: "coral" as const,
+      enabledLabels: ["todo"] as ["todo"],
+      createdAt: 1,
+      updatedAt: 2,
+      pinnedAt: null,
+      latestMessagePreview: "Ready to pin",
+      nextMessageAt: null,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
+    };
+    const detail = { ...chat, notes: [] };
+    const staleList = deferred<(typeof chat)[]>();
+    const staleDetail = deferred<typeof detail>();
+    const listChats = vi
+      .fn()
+      .mockResolvedValueOnce([chat])
+      .mockImplementationOnce(() => staleList.promise);
+    const getChat = vi
+      .fn()
+      .mockResolvedValueOnce(detail)
+      .mockImplementationOnce(() => staleDetail.promise);
+    const api = createApi({
+      listChats,
+      getChat,
+      setChatPinned: vi.fn().mockResolvedValue({ pinnedAt: 123 }),
+    });
+    render(<App api={api} />);
+
+    await user.click(await screen.findByRole("button", { name: "Open Alpha" }));
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => {
+      expect(listChats).toHaveBeenCalledTimes(2);
+      expect(getChat).toHaveBeenCalledTimes(2);
+    });
+
+    await user.click(screen.getByRole("button", { name: "Pin Alpha" }));
+    expect(screen.getByRole("button", { name: "Pin Alpha" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await act(async () => {
+      staleList.resolve([chat]);
+      staleDetail.resolve(detail);
+    });
+    expect(screen.getByRole("button", { name: "Pin Alpha" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("keeps a project in place and exposes a row alert when pinning fails", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "alpha",
+      title: "Alpha",
+      accent: "coral" as const,
+      enabledLabels: ["todo"] as ["todo"],
+      createdAt: 1,
+      updatedAt: 2,
+      pinnedAt: null,
+      latestMessagePreview: "Ready to pin",
+      nextMessageAt: null,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      setChatPinned: vi.fn().mockRejectedValue(new Error("Database busy")),
+    });
+    render(<App api={api} />);
+
+    const pin = await screen.findByRole("button", { name: "Pin Alpha" });
+    await user.click(pin);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Database busy");
+    expect(pin).toHaveAttribute("aria-pressed", "false");
+    expect(
+      screen.queryByText("Pinned", { selector: ".rail-section-label span" }),
+    ).toBeNull();
+    await waitFor(() => expect(pin).toHaveFocus());
+  });
+
+  it("updates a deleted message preview after navigating to another project", async () => {
+    const user = userEvent.setup();
+    const deletion = deferred<void>();
+    const now = Date.now();
+    const alpha = {
+      id: "alpha",
+      title: "Alpha",
+      accent: "coral" as const,
+      enabledLabels: ["todo"] as ["todo"],
+      collapseLongMessages: true,
+      createdAt: now - 3_000,
+      updatedAt: now - 1_000,
+      pinnedAt: null,
+      latestMessagePreview: "Remove me",
+      nextMessageAt: null,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
+    };
+    const beta = {
+      ...alpha,
+      id: "beta",
+      title: "Beta",
+      latestMessagePreview: "Beta note",
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([alpha, beta]),
+      getChat: vi.fn((id: string) =>
+        Promise.resolve(
+          id === alpha.id
+            ? {
+                ...alpha,
+                notes: [
+                  {
+                    id: "keep",
+                    chatId: alpha.id,
+                    body: "Keep me",
+                    createdAt: now - 2_000,
+                    labels: [],
+                  },
+                  {
+                    id: "remove",
+                    chatId: alpha.id,
+                    body: "Remove me",
+                    createdAt: now - 1_000,
+                    labels: [],
+                  },
+                ],
+              }
+            : { ...beta, notes: [] },
+        ),
+      ),
+      deleteNote: vi.fn(() => deletion.promise),
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App api={api} />);
+
+    await user.click(await screen.findByRole("button", { name: "Open Alpha" }));
+    const removeMessage = within(
+      document.querySelector<HTMLElement>(".message-list")!,
+    )
+      .getByText("Remove me")
+      .closest("li")!;
+    await user.click(
+      within(removeMessage).getByRole("button", { name: "Delete message" }),
+    );
+    await waitFor(() => expect(api.deleteNote).toHaveBeenCalled());
+    await user.click(screen.getByRole("button", { name: "Open Beta" }));
+
+    await act(async () => deletion.resolve());
+    expect(
+      within(screen.getByRole("button", { name: "Open Alpha" })).getByText(
+        "Keep me",
+      ),
+    ).toBeVisible();
+  });
+
+  it("updates inactive project Attention after navigating during a label change", async () => {
+    const user = userEvent.setup();
+    const labelChange = deferred<Array<"attention">>();
+    const now = Date.now();
+    const alpha = {
+      id: "alpha",
+      title: "Alpha",
+      accent: "coral" as const,
+      enabledLabels: ["todo"] as ["todo"],
+      collapseLongMessages: true,
+      createdAt: now - 2_000,
+      updatedAt: now - 1_000,
+      pinnedAt: null,
+      latestMessagePreview: "Needs attention",
+      nextMessageAt: null,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
+    };
+    const beta = {
+      ...alpha,
+      id: "beta",
+      title: "Beta",
+      latestMessagePreview: "Beta note",
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([alpha, beta]),
+      getChat: vi.fn((id: string) =>
+        Promise.resolve(
+          id === alpha.id
+            ? {
+                ...alpha,
+                notes: [
+                  {
+                    id: "attention-note",
+                    chatId: alpha.id,
+                    body: "Needs attention",
+                    createdAt: now - 1_000,
+                    labels: [],
+                  },
+                ],
+              }
+            : { ...beta, notes: [] },
+        ),
+      ),
+      setNoteLabel: vi.fn(() => labelChange.promise),
+    });
+    render(<App api={api} />);
+
+    await user.click(await screen.findByRole("button", { name: "Open Alpha" }));
+    await user.click(screen.getByRole("button", { name: "Change labels" }));
+    await user.click(screen.getByRole("checkbox", { name: "Attention" }));
+    await waitFor(() => expect(api.setNoteLabel).toHaveBeenCalled());
+    await user.click(screen.getByRole("button", { name: "Open Beta" }));
+
+    await act(async () => labelChange.resolve(["attention"]));
+    expect(
+      screen.getByRole("button", { name: "Open Alpha" }).closest("li"),
+    ).toHaveAttribute("data-attention-state", "today");
+  });
+
+  it("activates future Attention at its timestamp and refreshes summaries", async () => {
+    vi.useFakeTimers();
+    const now = new Date(2026, 8, 4, 12).getTime();
+    vi.setSystemTime(now);
+    const chat = {
+      id: "alpha",
+      title: "Alpha",
+      accent: "coral" as const,
+      enabledLabels: ["todo"] as ["todo"],
+      createdAt: 1,
+      updatedAt: 2,
+      pinnedAt: null,
+      latestMessagePreview: "Future alert",
+      nextMessageAt: null,
+      latestAttentionAt: null,
+      nextAttentionAt: now + 1_000,
+    };
+    const listChats = vi.fn().mockResolvedValue([chat]);
+
+    try {
+      render(<App api={createApi({ listChats })} />);
+      await act(async () => Promise.resolve());
+      const row = screen
+        .getByRole("button", { name: "Open Alpha" })
+        .closest("li");
+      expect(row).not.toHaveAttribute("data-attention-state");
+
+      await act(async () => vi.advanceTimersByTime(1_001));
+      await act(async () => Promise.resolve());
+
+      expect(row).toHaveAttribute("data-attention-state", "today");
+      expect(listChats).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reveals a future message preview only when its timestamp arrives", async () => {
+    vi.useFakeTimers();
+    const now = new Date(2026, 8, 4, 12).getTime();
+    vi.setSystemTime(now);
+    const chat = {
+      id: "alpha",
+      title: "Alpha",
+      accent: "coral" as const,
+      enabledLabels: ["todo"] as ["todo"],
+      createdAt: 1,
+      updatedAt: now + 1_000,
+      pinnedAt: null,
+      latestMessagePreview: "Current update",
+      nextMessageAt: now + 1_000,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
+    };
+    const listChats = vi
+      .fn()
+      .mockResolvedValueOnce([chat])
+      .mockResolvedValueOnce([
+        {
+          ...chat,
+          latestMessagePreview: "Scheduled update",
+          nextMessageAt: null,
+        },
+      ]);
+
+    try {
+      render(<App api={createApi({ listChats })} />);
+      await act(async () => Promise.resolve());
+      expect(screen.getByText("Current update")).toBeVisible();
+      expect(screen.queryByText("Scheduled update")).toBeNull();
+
+      await act(async () => vi.advanceTimersByTime(1_001));
+      await act(async () => Promise.resolve());
+
+      expect(screen.getByText("Scheduled update")).toBeVisible();
+      expect(listChats).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refreshes an overdue message preview when returning from Settings", async () => {
+    vi.useFakeTimers();
+    const now = new Date(2026, 8, 4, 12).getTime();
+    vi.setSystemTime(now);
+    const chat = {
+      id: "alpha",
+      title: "Alpha",
+      accent: "coral" as const,
+      enabledLabels: ["todo"] as ["todo"],
+      createdAt: 1,
+      updatedAt: now + 1_000,
+      pinnedAt: null,
+      latestMessagePreview: "Current update",
+      nextMessageAt: now + 1_000,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
+    };
+    const listChats = vi
+      .fn()
+      .mockResolvedValueOnce([chat])
+      .mockResolvedValueOnce([
+        {
+          ...chat,
+          latestMessagePreview: "Scheduled update",
+          nextMessageAt: null,
+        },
+      ]);
+
+    try {
+      render(<App api={createApi({ listChats })} />);
+      await act(async () => Promise.resolve());
+      fireEvent.click(screen.getByRole("button", { name: /Settings/ }));
+      act(() => vi.advanceTimersByTime(1_001));
+      fireEvent.click(screen.getByRole("button", { name: "Back to projects" }));
+      await act(async () => Promise.resolve());
+
+      expect(screen.getByText("Scheduled update")).toBeVisible();
+      expect(listChats).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shows a recoverable local-service error when the project list fails", async () => {
     const api = createApi({
       listChats: vi.fn().mockRejectedValue(new Error("offline")),
@@ -147,6 +591,7 @@ describe("personal project chat workspace", () => {
       id: "chat-1",
       title: "Discovery",
       accent: "moss" as const,
+      collapseLongMessages: true,
       createdAt: 1,
       updatedAt: 1,
     };
@@ -159,7 +604,9 @@ describe("personal project chat workspace", () => {
     });
     render(<App api={api} />);
 
-    await user.click(await screen.findByRole("button", { name: /Discovery/ }));
+    await user.click(
+      await screen.findByRole("button", { name: "Open Discovery" }),
+    );
     await user.click(await screen.findByRole("button", { name: "Edit" }));
     expect(screen.getByRole("heading", { name: "Edit project" })).toBeVisible();
     expect(
@@ -169,12 +616,18 @@ describe("personal project chat workspace", () => {
     await user.clear(name);
     await user.type(name, "Research");
     await user.click(screen.getByRole("radio", { name: "Iris" }));
+    const collapseLongMessages = screen.getByRole("checkbox", {
+      name: "Collapse long messages by default",
+    });
+    expect(collapseLongMessages).toBeChecked();
+    await user.click(collapseLongMessages);
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(api.updateChat).toHaveBeenCalledWith("chat-1", {
       title: "Research",
       accent: "iris",
       enabledLabels: ["todo", "milestone"],
+      collapseLongMessages: false,
     });
     expect(
       await screen.findByRole("heading", { name: "Research" }),
@@ -201,7 +654,9 @@ describe("personal project chat workspace", () => {
     });
     render(<App api={api} />);
 
-    await user.click(await screen.findByRole("button", { name: /Discovery/ }));
+    await user.click(
+      await screen.findByRole("button", { name: "Open Discovery" }),
+    );
     await user.click(screen.getByRole("button", { name: "Edit" }));
     expect(screen.getByRole("group", { name: "Project labels" })).toBeVisible();
     expect(screen.getByRole("checkbox", { name: "Todo" })).toBeChecked();
@@ -215,6 +670,7 @@ describe("personal project chat workspace", () => {
       title: "Discovery",
       accent: "moss",
       enabledLabels: ["todo", "decision", "milestone"],
+      collapseLongMessages: true,
     });
   });
 
@@ -396,7 +852,8 @@ describe("personal project chat workspace", () => {
     expect(pin).not.toHaveTextContent("Pin");
     expect(attention).not.toHaveTextContent("Attention");
     expect(pin.querySelector("svg")).not.toBeNull();
-    expect(attention).toHaveTextContent("🔴");
+    expect(attention.textContent).toBe("");
+    expect(attention.querySelector(".attention-dot--today")).not.toBeNull();
 
     for (const label of ["todo", "decision", "open-question"]) {
       expect(
@@ -404,6 +861,408 @@ describe("personal project chat workspace", () => {
           `.message-label[data-label="${label}"] .label-glyph svg`,
         ),
       ).not.toBeNull();
+    }
+  });
+
+  it("collapses long rendered messages while keeping visible links keyboard-accessible", async () => {
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollHeight",
+    );
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("message-body") ? 300 : 0;
+      },
+    });
+    const originalRect = HTMLElement.prototype.getBoundingClientRect;
+    const rect = (top: number, height: number) =>
+      ({
+        x: 0,
+        y: top,
+        top,
+        bottom: top + height,
+        left: 0,
+        right: 100,
+        width: 100,
+        height,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.textContent === "Visible reference") return rect(40, 20);
+        if (this.textContent === "Clipped reference") return rect(240, 20);
+        return originalRect.call(this);
+      });
+    try {
+      const user = userEvent.setup();
+      const chat = {
+        id: "chat-1",
+        title: "Research",
+        accent: "ocean" as const,
+        enabledLabels: ["todo"] as "todo"[],
+        collapseLongMessages: true,
+        createdAt: 100,
+        updatedAt: 200,
+      };
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({
+          ...chat,
+          notes: [
+            {
+              id: "note-1",
+              chatId: "chat-1",
+              body: "[Visible reference](https://example.com/visible)\n\nFirst paragraph\n\n[Clipped reference](https://example.com/clipped)",
+              createdAt: 200,
+              labels: [],
+            },
+          ],
+        }),
+      });
+      render(<App api={api} />);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Open Research" }),
+      );
+      const showMore = await screen.findByRole("button", {
+        name: "Show more",
+      });
+      const visibleLink = screen.getByRole("link", {
+        name: "Visible reference",
+      });
+      const clippedLink = screen.getByRole("link", {
+        name: "Clipped reference",
+      });
+      expect(showMore).toHaveAttribute("aria-expanded", "false");
+      expect(showMore).toHaveAttribute("aria-controls");
+      expect(clippedLink.closest(".message-body-viewport")).toHaveClass(
+        "message-body-viewport--collapsed",
+      );
+      expect(visibleLink).not.toHaveAttribute("tabindex");
+      expect(clippedLink).toHaveAttribute("tabindex", "-1");
+      expect(clippedLink).not.toHaveAttribute("aria-disabled");
+
+      showMore.focus();
+      await user.keyboard("{Enter}");
+      const showLess = screen.getByRole("button", { name: "Show less" });
+      expect(showLess).toHaveAttribute("aria-expanded", "true");
+      expect(clippedLink.closest(".message-body-viewport")).not.toHaveClass(
+        "message-body-viewport--collapsed",
+      );
+      expect(visibleLink).not.toHaveAttribute("tabindex");
+      expect(clippedLink).not.toHaveAttribute("tabindex");
+    } finally {
+      rectSpy.mockRestore();
+      if (originalScrollHeight) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "scrollHeight",
+          originalScrollHeight,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
+      }
+    }
+  });
+
+  it("does not add a disclosure at the collapsed-height threshold", async () => {
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollHeight",
+    );
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("message-body") ? 192 : 0;
+      },
+    });
+    try {
+      const user = userEvent.setup();
+      const chat = {
+        id: "chat-1",
+        title: "Research",
+        accent: "ocean" as const,
+        enabledLabels: ["todo"] as "todo"[],
+        collapseLongMessages: true,
+        createdAt: 100,
+        updatedAt: 200,
+      };
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({
+          ...chat,
+          notes: [
+            {
+              id: "note-1",
+              chatId: "chat-1",
+              body: "A message at the threshold",
+              createdAt: 200,
+              labels: [],
+            },
+          ],
+        }),
+      });
+      render(<App api={api} />);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Open Research" }),
+      );
+      expect(
+        screen.queryByRole("button", { name: /Show (more|less)/ }),
+      ).not.toBeInTheDocument();
+    } finally {
+      if (originalScrollHeight) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "scrollHeight",
+          originalScrollHeight,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
+      }
+    }
+  });
+
+  it("remeasures message length when observed layout changes", async () => {
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollHeight",
+    );
+    const originalResizeObserver = globalThis.ResizeObserver;
+    let messageHeight = 192;
+    const resizeObservers: Array<{
+      callback: ResizeObserverCallback;
+      observer: ResizeObserver;
+    }> = [];
+    class TestResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        resizeObservers.push({
+          callback,
+          observer: this as unknown as ResizeObserver,
+        });
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    globalThis.ResizeObserver =
+      TestResizeObserver as unknown as typeof ResizeObserver;
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("message-body") ? messageHeight : 0;
+      },
+    });
+    try {
+      const user = userEvent.setup();
+      const chat = {
+        id: "chat-1",
+        title: "Research",
+        accent: "ocean" as const,
+        enabledLabels: ["todo"] as "todo"[],
+        collapseLongMessages: true,
+        createdAt: 100,
+        updatedAt: 200,
+      };
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({
+          ...chat,
+          notes: [
+            {
+              id: "note-1",
+              chatId: "chat-1",
+              body: "Responsive message",
+              createdAt: 200,
+              labels: [],
+            },
+          ],
+        }),
+      });
+      render(<App api={api} />);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Open Research" }),
+      );
+      expect(
+        screen.queryByRole("button", { name: "Show more" }),
+      ).not.toBeInTheDocument();
+
+      messageHeight = 300;
+      act(() => {
+        for (const { callback, observer } of resizeObservers) {
+          callback([], observer);
+        }
+      });
+      expect(
+        await screen.findByRole("button", { name: "Show more" }),
+      ).toHaveAttribute("aria-expanded", "false");
+    } finally {
+      if (originalResizeObserver) {
+        globalThis.ResizeObserver = originalResizeObserver;
+      } else {
+        Reflect.deleteProperty(globalThis, "ResizeObserver");
+      }
+      if (originalScrollHeight) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "scrollHeight",
+          originalScrollHeight,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
+      }
+    }
+  });
+
+  it("starts long messages expanded when the project default is disabled", async () => {
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollHeight",
+    );
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("message-body") ? 300 : 0;
+      },
+    });
+    try {
+      const user = userEvent.setup();
+      const chat = {
+        id: "chat-1",
+        title: "Research",
+        accent: "ocean" as const,
+        enabledLabels: ["todo"] as "todo"[],
+        collapseLongMessages: false,
+        createdAt: 100,
+        updatedAt: 200,
+      };
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({
+          ...chat,
+          notes: [
+            {
+              id: "note-1",
+              chatId: "chat-1",
+              body: "A long message",
+              createdAt: 200,
+              labels: [],
+            },
+          ],
+        }),
+      });
+      render(<App api={api} />);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Open Research" }),
+      );
+      const showLess = await screen.findByRole("button", {
+        name: "Show less",
+      });
+      expect(showLess).toHaveAttribute("aria-expanded", "true");
+      await user.click(showLess);
+      expect(screen.getByRole("button", { name: "Show more" })).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+    } finally {
+      if (originalScrollHeight) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "scrollHeight",
+          originalScrollHeight,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
+      }
+    }
+  });
+
+  it("keeps each long-message disclosure independent across parent rerenders", async () => {
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollHeight",
+    );
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("message-body") ? 300 : 0;
+      },
+    });
+    try {
+      const user = userEvent.setup();
+      const chat = {
+        id: "chat-1",
+        title: "Research",
+        accent: "ocean" as const,
+        enabledLabels: ["todo"] as "todo"[],
+        collapseLongMessages: true,
+        createdAt: 100,
+        updatedAt: 200,
+      };
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({
+          ...chat,
+          notes: [
+            {
+              id: "note-1",
+              chatId: "chat-1",
+              body: "First long message",
+              createdAt: 200,
+              labels: [],
+            },
+            {
+              id: "note-2",
+              chatId: "chat-1",
+              body: "Second long message",
+              createdAt: 201,
+              labels: [],
+            },
+          ],
+        }),
+      });
+      const rendered = render(<App api={api} />);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Open Research" }),
+      );
+      const firstMessage = screen
+        .getByText("First long message")
+        .closest("li")!;
+      const secondMessage = screen
+        .getByText("Second long message")
+        .closest("li")!;
+      await user.click(
+        within(firstMessage).getByRole("button", { name: "Show more" }),
+      );
+      expect(
+        within(firstMessage).getByRole("button", { name: "Show less" }),
+      ).toHaveAttribute("aria-expanded", "true");
+      expect(
+        within(secondMessage).getByRole("button", { name: "Show more" }),
+      ).toHaveAttribute("aria-expanded", "false");
+
+      rendered.rerender(<App api={api} />);
+      expect(
+        within(firstMessage).getByRole("button", { name: "Show less" }),
+      ).toBeInTheDocument();
+      expect(
+        within(secondMessage).getByRole("button", { name: "Show more" }),
+      ).toBeInTheDocument();
+    } finally {
+      if (originalScrollHeight) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "scrollHeight",
+          originalScrollHeight,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
+      }
     }
   });
 
@@ -548,7 +1407,9 @@ describe("personal project chat workspace", () => {
     });
     render(<App api={api} />);
 
-    await user.click(await screen.findByRole("button", { name: /Delivery/ }));
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
     const composer = await screen.findByLabelText("Add a note");
     await user.type(composer, "**Decision** recorded{enter}<img src=x>");
     await user.keyboard("{Control>}{Enter}{/Control}");
@@ -687,7 +1548,9 @@ describe("personal project chat workspace", () => {
       body: "Backfilled message",
       createdAt,
     });
-    expect(await screen.findByText("Backfilled message")).toBeVisible();
+    expect(
+      await within(screen.getByRole("main")).findByText("Backfilled message"),
+    ).toBeVisible();
     expect(screen.getByLabelText("Add a note")).toHaveValue("");
   });
 
@@ -1002,9 +1865,176 @@ describe("personal project chat workspace", () => {
 
     const separators = screen.getAllByText(/September/);
     expect(separators).toHaveLength(2);
-    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    expect(
+      within(
+        document.querySelector<HTMLElement>(".message-groups")!,
+      ).getAllByRole("listitem"),
+    ).toHaveLength(3);
     expect(document.querySelectorAll(".message-row--own")).toHaveLength(3);
     expect(document.querySelectorAll(".message-time")).toHaveLength(3);
+  });
+
+  it("places future messages in one silent region without repeating a same-day date", async () => {
+    const now = new Date("2026-09-04T12:00:00").getTime();
+    const dateNow = vi.spyOn(Date, "now").mockReturnValue(now);
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: now - 10_000,
+      updatedAt: now + 86_400_000,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({
+        ...chat,
+        notes: [
+          {
+            id: "note-past",
+            chatId: "chat-1",
+            body: "Earlier today",
+            createdAt: now - 3_600_000,
+          },
+          {
+            id: "note-future-today",
+            chatId: "chat-1",
+            body: "Later today",
+            createdAt: now + 3_600_000,
+          },
+          {
+            id: "note-future-tomorrow",
+            chatId: "chat-1",
+            body: "Tomorrow",
+            createdAt: now + 86_400_000,
+          },
+        ],
+      }),
+    });
+
+    try {
+      render(<App api={api} />);
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Open Delivery" }),
+      );
+
+      const futureBoundary = screen.getByRole("separator", {
+        name: "Future messages",
+      });
+      const laterToday = screen.getByText("Later today");
+      expect(
+        futureBoundary.compareDocumentPosition(laterToday) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(screen.queryByText("Future messages")).toBeNull();
+      expect(document.querySelectorAll(".message-date-separator")).toHaveLength(
+        2,
+      );
+    } finally {
+      dateNow.mockRestore();
+    }
+  });
+
+  it("removes the future region when its next message timestamp arrives", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-09-04T12:00:00").getTime();
+    vi.setSystemTime(now);
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: now,
+      updatedAt: now + 1_000,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({
+        ...chat,
+        notes: [
+          {
+            id: "note-future",
+            chatId: "chat-1",
+            body: "Arrives shortly",
+            createdAt: now + 1_000,
+          },
+        ],
+      }),
+    });
+
+    try {
+      render(<App api={api} />);
+      await act(async () => Promise.resolve());
+      fireEvent.click(screen.getByRole("button", { name: "Open Delivery" }));
+      await act(async () => Promise.resolve());
+      expect(
+        screen.getByRole("separator", { name: "Future messages" }),
+      ).toBeVisible();
+      const futureMessage = screen.getByText("Arrives shortly").closest("li")!;
+      fireEvent.click(
+        within(futureMessage).getByRole("button", { name: "Change labels" }),
+      );
+      const todo = within(futureMessage).getByRole("checkbox", {
+        name: "Todo",
+      });
+      todo.focus();
+      expect(todo).toHaveFocus();
+
+      act(() => vi.advanceTimersByTime(1_001));
+
+      expect(
+        screen.queryByRole("separator", { name: "Future messages" }),
+      ).toBeNull();
+      expect(screen.getByText("Arrives shortly")).toBeVisible();
+      expect(todo).toBeVisible();
+      expect(todo).toHaveFocus();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not classify a newly added present-time message using a stale clock", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-09-04T12:00:00").getTime();
+    vi.setSystemTime(now);
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      appendNote: vi.fn().mockResolvedValue({
+        id: "note-now",
+        chatId: "chat-1",
+        body: "Written now",
+        createdAt: now + 60_000,
+      }),
+    });
+
+    try {
+      render(<App api={api} />);
+      await act(async () => Promise.resolve());
+      fireEvent.click(screen.getByRole("button", { name: "Open Delivery" }));
+      await act(async () => Promise.resolve());
+      act(() => vi.advanceTimersByTime(60_000));
+
+      fireEvent.change(screen.getByLabelText("Add a note"), {
+        target: { value: "Written now" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Add note" }));
+      await act(async () => Promise.resolve());
+
+      expect(
+        within(screen.getByRole("main")).getByText("Written now"),
+      ).toBeVisible();
+      expect(
+        screen.queryByRole("separator", { name: "Future messages" }),
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("renders attachment cards and filters history to messages with files", async () => {
@@ -1319,10 +2349,14 @@ describe("personal project chat workspace", () => {
     await waitFor(() => expect(getChat).toHaveBeenCalledTimes(2));
     await user.type(screen.getByLabelText("Add a note"), "Newer local note");
     await user.click(screen.getByRole("button", { name: /Add note/ }));
-    expect(await screen.findByText("Newer local note")).toBeVisible();
+    expect(
+      await within(screen.getByRole("main")).findByText("Newer local note"),
+    ).toBeVisible();
     await act(async () => focusRefresh.resolve({ ...chat, notes: [] }));
 
-    expect(screen.getByText("Newer local note")).toBeVisible();
+    expect(
+      within(screen.getByRole("main")).getByText("Newer local note"),
+    ).toBeVisible();
   });
 
   it("copies with icon feedback, edits message files from the composer, and deletes an existing message", async () => {
@@ -1572,8 +2606,14 @@ describe("personal project chat workspace", () => {
       title: "Alpha",
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      collapseLongMessages: true,
       createdAt: 1,
       updatedAt: 2,
+      pinnedAt: null,
+      latestMessagePreview: null,
+      nextMessageAt: null,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
     };
     const beta = {
       ...alpha,
@@ -1606,8 +2646,14 @@ describe("personal project chat workspace", () => {
       title: "Alpha",
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      collapseLongMessages: true,
       createdAt: 1,
       updatedAt: 2,
+      pinnedAt: null,
+      latestMessagePreview: null,
+      nextMessageAt: null,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
     };
     const beta = {
       ...alpha,
@@ -1657,8 +2703,14 @@ describe("personal project chat workspace", () => {
       title: "Alpha",
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      collapseLongMessages: true,
       createdAt: 1,
       updatedAt: 3,
+      pinnedAt: null,
+      latestMessagePreview: "Remove me",
+      nextMessageAt: null,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
     };
     const beta = {
       ...alpha,
@@ -1687,7 +2739,9 @@ describe("personal project chat workspace", () => {
     render(<App api={api} />);
 
     await user.click(await screen.findByRole("button", { name: "Open Alpha" }));
-    const noteItem = (await screen.findByText("Remove me")).closest("li")!;
+    const noteItem = (
+      await within(screen.getByRole("main")).findByText("Remove me")
+    ).closest("li")!;
     await user.click(
       within(noteItem).getByRole("button", { name: "Delete message" }),
     );
@@ -1700,7 +2754,8 @@ describe("personal project chat workspace", () => {
       screen.getByRole("navigation", { name: "Projects" }),
     )
       .getAllByRole("button")
-      .map((button) => button.getAttribute("aria-label"));
+      .map((button) => button.getAttribute("aria-label"))
+      .filter((label) => label?.startsWith("Open "));
     expect(projectButtons).toEqual(["Open Beta", "Open Alpha"]);
     expect(screen.getByRole("heading", { name: "Beta" })).toBeVisible();
   });
@@ -1712,8 +2767,14 @@ describe("personal project chat workspace", () => {
       title: "Alpha",
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      collapseLongMessages: true,
       createdAt: 1,
       updatedAt: 2,
+      pinnedAt: null,
+      latestMessagePreview: null,
+      nextMessageAt: null,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
     };
     const beta = {
       ...alpha,
@@ -1753,8 +2814,14 @@ describe("personal project chat workspace", () => {
       title: "Alpha",
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      collapseLongMessages: true,
       createdAt: 1,
       updatedAt: 2,
+      pinnedAt: null,
+      latestMessagePreview: null,
+      nextMessageAt: null,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
     };
     const beta = {
       ...alpha,
@@ -1795,7 +2862,9 @@ describe("personal project chat workspace", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Alpha" })).toBeVisible();
-    expect(screen.getByText("Alpha note")).toBeVisible();
+    expect(
+      within(screen.getByRole("main")).getByText("Alpha note"),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "Open Beta" })).toBeEnabled();
   });
 
@@ -1844,6 +2913,11 @@ describe("personal project chat workspace", () => {
       accent: "coral" as const,
       createdAt: 1,
       updatedAt: 2,
+      pinnedAt: null,
+      latestMessagePreview: null,
+      nextMessageAt: null,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
     };
     const beta = {
       ...alpha,
@@ -1872,7 +2946,8 @@ describe("personal project chat workspace", () => {
       screen.getByRole("navigation", { name: "Projects" }),
     )
       .getAllByRole("button")
-      .map((button) => button.getAttribute("aria-label"));
+      .map((button) => button.getAttribute("aria-label"))
+      .filter((label) => label?.startsWith("Open "));
     expect(projectButtons).toEqual(["Open Beta updated", "Open Alpha"]);
   });
 });

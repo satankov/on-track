@@ -51,7 +51,7 @@ async function addNote(
   chatId: string,
   body: string,
   createdAt?: number,
-): Promise<void> {
+): Promise<{ id: string }> {
   const response = await request.post(`${url}/api/chats/${chatId}/notes`, {
     multipart: {
       body,
@@ -59,6 +59,7 @@ async function addNote(
     },
   });
   expect(response.ok()).toBe(true);
+  return (await response.json()) as { id: string };
 }
 
 function readAttachmentRow(
@@ -126,7 +127,9 @@ test("creates, customizes, records, and reopens a private project thread", async
   await page.getByLabel("Message timestamp").fill("2026-08-30T10:15");
   await page.getByRole("button", { name: /Add note/ }).click();
   await expect(
-    page.getByText("Ship the smallest useful workflow."),
+    page
+      .locator(".message-list")
+      .getByText("Ship the smallest useful workflow."),
   ).toBeVisible();
   await expect(page.getByText("August 30, 2026")).toBeVisible();
   await expect(
@@ -189,13 +192,429 @@ test("creates, customizes, records, and reopens a private project thread", async
     page.getByRole("heading", { name: renamedProject }),
   ).toBeVisible();
   await expect(
-    page.getByText("Ship the smallest useful workflow."),
+    page
+      .locator(".message-list")
+      .getByText("Ship the smallest useful workflow."),
   ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("workspace.png"),
     fullPage: true,
   });
   expect([...unexpectedHosts]).toEqual([]);
+});
+
+test("pins projects and scans previews with Attention status", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  const suffix = `${viewportName(testInfo.project.name)}-${Date.now()}`;
+  const pinned = await createProject(request, localApp.url, {
+    title: `Pinned ${suffix}`,
+    accent: "coral",
+  });
+  const current = await createProject(request, localApp.url, {
+    title: `Current alert ${suffix}`,
+    accent: "ocean",
+  });
+  const earlier = await createProject(request, localApp.url, {
+    title: `Earlier alert ${suffix}`,
+    accent: "moss",
+  });
+  await addNote(
+    request,
+    localApp.url,
+    pinned.id,
+    "A deliberately long latest message preview that should remain on one line and end with a width-aware ellipsis in the compact project rail.",
+  );
+  const currentNote = await addNote(
+    request,
+    localApp.url,
+    current.id,
+    "Needs attention today",
+  );
+  const earlierNote = await addNote(
+    request,
+    localApp.url,
+    earlier.id,
+    "Needed attention earlier",
+    Date.now() - 86_400_000,
+  );
+  expect(
+    (
+      await request.put(
+        `${localApp.url}/api/chats/${current.id}/notes/${currentNote.id}/labels/attention`,
+      )
+    ).ok(),
+  ).toBe(true);
+  expect(
+    (
+      await request.put(
+        `${localApp.url}/api/chats/${earlier.id}/notes/${earlierNote.id}/labels/attention`,
+      )
+    ).ok(),
+  ).toBe(true);
+  expect(
+    (await request.put(`${localApp.url}/api/chats/${pinned.id}/pin`)).ok(),
+  ).toBe(true);
+
+  await page.goto(localApp.url);
+  const pinnedSection = page.locator(".project-section", {
+    hasText: "Pinned",
+  });
+  await expect(pinnedSection).toContainText(pinned.title);
+  await expect(
+    page.getByRole("button", { name: `Pin ${pinned.title}` }),
+  ).toHaveAttribute("aria-pressed", "true");
+  const pinnedControl = page.getByRole("button", {
+    name: `Pin ${pinned.title}`,
+  });
+  await page.mouse.move(1, 1);
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  if (testInfo.project.name === "mobile-webkit") {
+    await expect(pinnedControl).toHaveCSS("opacity", "1");
+  } else {
+    await expect(pinnedControl).toHaveCSS("opacity", "0");
+    await pinnedControl.focus();
+    await expect(pinnedControl).toHaveCSS("opacity", "1");
+    await page.mouse.move(1, 1);
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+    await expect(pinnedControl).toHaveCSS("opacity", "0");
+    await page
+      .getByRole("button", { name: `Open ${pinned.title}` })
+      .locator("..")
+      .hover();
+    await expect(pinnedControl).toHaveCSS("opacity", "1");
+  }
+  await expect(
+    page.getByRole("button", { name: `Open ${current.title}` }).locator(".."),
+  ).toHaveAttribute("data-attention-state", "today");
+  await expect(
+    page.getByRole("button", { name: `Open ${earlier.title}` }).locator(".."),
+  ).toHaveAttribute("data-attention-state", "earlier");
+  expect(
+    await page
+      .getByRole("button", { name: `Open ${pinned.title}` })
+      .locator("small")
+      .evaluate((element) => element.scrollWidth > element.clientWidth),
+  ).toBe(true);
+
+  const currentPin = page.getByRole("button", {
+    name: `Pin ${current.title}`,
+  });
+  await currentPin.click();
+  await expect(currentPin).toHaveAttribute("aria-pressed", "true");
+  await expect(currentPin).toBeFocused();
+  await expect(pinnedSection).toContainText(current.title);
+  await currentPin.click();
+  await expect(currentPin).toHaveAttribute("aria-pressed", "false");
+  await expect(
+    page.locator(".project-section", { hasText: "Projects" }),
+  ).toContainText(current.title);
+
+  await localApp.restart();
+  await page.goto(localApp.url);
+  await expect(
+    page.getByRole("button", { name: `Pin ${pinned.title}` }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: `Pin ${current.title}` }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(".project-dot, .project-arrow")).toHaveCount(0);
+
+  await page.screenshot({
+    path: testInfo.outputPath("project-sidebar.png"),
+    fullPage: true,
+  });
+});
+
+test("collapses long messages using the persisted project default", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  const suffix = `${viewportName(testInfo.project.name)}-${Date.now()}`;
+  const project = await createProject(request, localApp.url, {
+    title: `Long messages ${suffix}`,
+    accent: "ocean",
+  });
+  const body = [
+    "## Weekly research summary",
+    "[Visible reference](https://example.com/visible)",
+    ...Array.from(
+      { length: 18 },
+      (_, index) =>
+        `Paragraph ${index + 1}: the project history remains compact until the reader asks for the full context.`,
+    ),
+    "[Clipped reference](https://example.com/clipped)",
+  ].join("\n\n");
+  await addNote(request, localApp.url, project.id, body);
+
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  const showMore = page.getByRole("button", { name: "Show more" });
+  const viewport = page.locator(".message-body-viewport");
+  const visibleLink = page.getByRole("link", { name: "Visible reference" });
+  const clippedLink = page.getByRole("link", { name: "Clipped reference" });
+  await expect(showMore).toHaveAttribute("aria-expanded", "false");
+  await expect(viewport).toHaveClass(/message-body-viewport--collapsed/);
+  await expect(showMore).toHaveCSS("padding-left", "0px");
+  await expect(showMore).toHaveCSS("border-radius", "0px");
+  await showMore.hover();
+  await expect(showMore).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(visibleLink).not.toHaveAttribute("tabindex", "-1");
+  await expect(clippedLink).toHaveAttribute("tabindex", "-1");
+  const collapsedHeight = await viewport.evaluate(
+    (element) => element.getBoundingClientRect().height,
+  );
+  expect(collapsedHeight).toBeCloseTo(192, 0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("long-message-collapsed.png"),
+    fullPage: true,
+  });
+
+  await showMore.click();
+  const showLess = page.getByRole("button", { name: "Show less" });
+  await expect(showLess).toHaveAttribute("aria-expanded", "true");
+  await expect(viewport).not.toHaveClass(/message-body-viewport--collapsed/);
+  await expect(visibleLink).not.toHaveAttribute("tabindex", "-1");
+  await expect(clippedLink).not.toHaveAttribute("tabindex", "-1");
+  expect(
+    await viewport.evaluate(
+      (element) => element.getBoundingClientRect().height,
+    ),
+  ).toBeGreaterThan(collapsedHeight);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  const collapseDefault = page.getByRole("checkbox", {
+    name: "Collapse long messages by default",
+  });
+  await expect(collapseDefault).toBeChecked();
+  await collapseDefault.uncheck();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("button", { name: "Show less" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+
+  await localApp.restart();
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  await expect(page.getByRole("button", { name: "Show less" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("long-message-expanded.png"),
+    fullPage: true,
+  });
+});
+
+test("keeps labels visible and attachments full width in wide messages", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  const suffix = `${viewportName(testInfo.project.name)}-${Date.now()}`;
+  const project = await createProject(request, localApp.url, {
+    title: `Wide message layout ${suffix}`,
+    accent: "ocean",
+  });
+  const body =
+    "**Lorem Ipsum** is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since 1966, when designers at Letraset and James Mosley, the librarian at St Bride Printing Library in London, took a 1914 Cicero translation and scrambled it to make dummy text for Letraset's Body Type sheets. It has survived not only many decades, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised thanks to these sheets and more recently with desktop publishing software like Aldus PageMaker and Microsoft Word including versions of Lorem Ipsum.";
+
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  await page.getByLabel("Attach files").setInputFiles([
+    {
+      name: "research-notes.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("research notes"),
+    },
+    {
+      name: "source-summary.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("source summary"),
+    },
+  ]);
+  await page.getByLabel("Add a note").fill(body);
+  await page.getByRole("button", { name: /Add note/ }).click();
+
+  const message = page.locator(".message-row").last();
+  await expect(message.locator(".attachment-card")).toHaveCount(2);
+  await message.hover();
+  await message.getByRole("button", { name: "Change labels" }).click();
+  const popover = message.locator(".message-label-popover");
+  await expect(popover).toBeVisible();
+  await message
+    .getByRole("checkbox", { name: "Todo" })
+    .scrollIntoViewIfNeeded();
+
+  const readGeometry = () =>
+    message.evaluate((element) => {
+      const history = element.closest(".history")!;
+      const bubble = element.querySelector<HTMLElement>(".message-bubble")!;
+      const attachment =
+        element.querySelector<HTMLElement>(".attachment-list")!;
+      const labelPopover = element.querySelector<HTMLElement>(
+        ".message-label-popover",
+      )!;
+      const bubbleStyle = getComputedStyle(bubble);
+      const box = (target: Element) => {
+        const rect = target.getBoundingClientRect();
+        return {
+          left: rect.left,
+          right: rect.right,
+          width: rect.width,
+        };
+      };
+      return {
+        history: box(history),
+        bubble: box(bubble),
+        attachment: box(attachment),
+        popover: box(labelPopover),
+        bubblePaddingLeft: Number.parseFloat(bubbleStyle.paddingLeft),
+        bubblePaddingRight: Number.parseFloat(bubbleStyle.paddingRight),
+        documentFits: document.documentElement.scrollWidth <= window.innerWidth,
+      };
+    });
+  const geometry = await readGeometry();
+
+  if (testInfo.project.name === "desktop-chromium") {
+    expect(geometry.attachment.width).toBeGreaterThan(460);
+  }
+  expect
+    .soft(geometry.popover.left)
+    .toBeGreaterThanOrEqual(geometry.history.left - 1);
+  expect(geometry.popover.right).toBeLessThanOrEqual(
+    geometry.history.right + 1,
+  );
+  expect
+    .soft(
+      Math.abs(
+        geometry.attachment.left -
+          (geometry.bubble.left + geometry.bubblePaddingLeft),
+      ),
+    )
+    .toBeLessThanOrEqual(2);
+  expect
+    .soft(
+      Math.abs(
+        geometry.attachment.right -
+          (geometry.bubble.right - geometry.bubblePaddingRight),
+      ),
+    )
+    .toBeLessThanOrEqual(2);
+  expect(geometry.documentFits).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("wide-message-layout.png"),
+    fullPage: true,
+  });
+  if (testInfo.project.name === "desktop-chromium") {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    const intermediateGeometry = await readGeometry();
+    expect(intermediateGeometry.popover.left).toBeGreaterThanOrEqual(
+      intermediateGeometry.history.left - 1,
+    );
+    expect(intermediateGeometry.popover.right).toBeLessThanOrEqual(
+      intermediateGeometry.history.right + 1,
+    );
+    expect(
+      Math.abs(
+        intermediateGeometry.attachment.left -
+          (intermediateGeometry.bubble.left +
+            intermediateGeometry.bubblePaddingLeft),
+      ),
+    ).toBeLessThanOrEqual(2);
+    expect(
+      Math.abs(
+        intermediateGeometry.attachment.right -
+          (intermediateGeometry.bubble.right -
+            intermediateGeometry.bubblePaddingRight),
+      ),
+    ).toBeLessThanOrEqual(2);
+    expect(intermediateGeometry.documentFits).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath("wide-message-layout-1024.png"),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 800, height: 768 });
+    await message
+      .getByRole("checkbox", { name: "Milestone" })
+      .scrollIntoViewIfNeeded();
+    const narrowDesktopGeometry = await readGeometry();
+    expect(narrowDesktopGeometry.popover.left).toBeGreaterThanOrEqual(
+      narrowDesktopGeometry.history.left - 1,
+    );
+    expect(narrowDesktopGeometry.popover.right).toBeLessThanOrEqual(
+      narrowDesktopGeometry.history.right + 1,
+    );
+    expect(
+      Math.abs(
+        narrowDesktopGeometry.attachment.left -
+          (narrowDesktopGeometry.bubble.left +
+            narrowDesktopGeometry.bubblePaddingLeft),
+      ),
+    ).toBeLessThanOrEqual(2);
+    expect(
+      Math.abs(
+        narrowDesktopGeometry.attachment.right -
+          (narrowDesktopGeometry.bubble.right -
+            narrowDesktopGeometry.bubblePaddingRight),
+      ),
+    ).toBeLessThanOrEqual(2);
+    expect(narrowDesktopGeometry.documentFits).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath("wide-message-layout-800.png"),
+      fullPage: true,
+    });
+  } else {
+    await page.setViewportSize({ width: 320, height: 700 });
+    await message
+      .getByRole("checkbox", { name: "Milestone" })
+      .scrollIntoViewIfNeeded();
+    const minimumWidthGeometry = await readGeometry();
+    expect(minimumWidthGeometry.popover.left).toBeGreaterThanOrEqual(
+      minimumWidthGeometry.history.left - 1,
+    );
+    expect(minimumWidthGeometry.popover.right).toBeLessThanOrEqual(
+      minimumWidthGeometry.history.right + 1,
+    );
+    expect(
+      Math.abs(
+        minimumWidthGeometry.attachment.left -
+          (minimumWidthGeometry.bubble.left +
+            minimumWidthGeometry.bubblePaddingLeft),
+      ),
+    ).toBeLessThanOrEqual(2);
+    expect(
+      Math.abs(
+        minimumWidthGeometry.attachment.right -
+          (minimumWidthGeometry.bubble.right -
+            minimumWidthGeometry.bubblePaddingRight),
+      ),
+    ).toBeLessThanOrEqual(2);
+    expect(minimumWidthGeometry.documentFits).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath("wide-message-layout-320.png"),
+      fullPage: true,
+    });
+  }
+
+  const deleteResponse = await request.delete(
+    `${localApp.url}/api/chats/${project.id}`,
+  );
+  expect(deleteResponse.ok()).toBe(true);
 });
 
 test("uses compact desktop chrome and an auto-growing composer", async ({
@@ -291,6 +710,141 @@ test("uses compact desktop chrome and an auto-growing composer", async ({
       composer.evaluate((element) => element.getBoundingClientRect().height),
     )
     .toBeGreaterThan(wideComposerHeight);
+});
+
+test("shows future messages in a silent full-width fade", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  const now = Date.now();
+  const project = await createProject(request, localApp.url, {
+    title: `Future boundary ${testInfo.project.name}`,
+    accent: "ocean",
+  });
+  await addNote(
+    request,
+    localApp.url,
+    project.id,
+    "Already happened",
+    now - 86_400_000,
+  );
+  await addNote(
+    request,
+    localApp.url,
+    project.id,
+    "Scheduled for tomorrow",
+    now + 86_400_000,
+  );
+
+  await page.goto(localApp.url);
+  const projectButton = page.getByRole("button", {
+    name: `Open ${project.title}`,
+  });
+  await expect(projectButton.locator("small")).toHaveText("Already happened");
+  await expect(projectButton.locator("small")).not.toHaveText(
+    "Scheduled for tomorrow",
+  );
+  await projectButton.click();
+
+  const futureBoundary = page.getByRole("separator", {
+    name: "Future messages",
+  });
+  await expect(futureBoundary).toBeAttached();
+  await expect(
+    page.locator(".message-list").getByText("Scheduled for tomorrow"),
+  ).toBeVisible();
+  await expect(
+    page.locator(".message-list").getByText("Already happened"),
+  ).toBeVisible();
+  await expect(page.getByText("Future messages")).toHaveCount(0);
+
+  const geometry = await page.evaluate(() => {
+    const history = document.querySelector(".history")!;
+    const future = document.querySelector(".future-message-boundary-surface")!;
+    const historyBox = history.getBoundingClientRect();
+    const futureBox = future.getBoundingClientRect();
+    const style = getComputedStyle(future);
+    return {
+      historyLeft: historyBox.left,
+      historyRight: historyBox.right,
+      futureLeft: futureBox.left,
+      futureRight: futureBox.right,
+      borderRadius: style.borderRadius,
+      borderTopStyle: style.borderTopStyle,
+      backgroundImage: style.backgroundImage,
+      historyOverflowX: getComputedStyle(history).overflowX,
+    };
+  });
+  expect(geometry.futureLeft).toBeLessThanOrEqual(geometry.historyLeft);
+  expect(geometry.futureRight).toBeGreaterThanOrEqual(geometry.historyRight);
+  expect(geometry.borderRadius).toBe("0px");
+  expect(geometry.borderTopStyle).toBe("solid");
+  expect(geometry.backgroundImage).toContain("linear-gradient");
+  expect(geometry.historyOverflowX).toBe("hidden");
+
+  const shortFeedScroll = await page.locator(".history").evaluate((history) => {
+    const element = history as HTMLElement;
+    element.style.height = "300px";
+    element.style.minHeight = "300px";
+    element.style.maxHeight = "300px";
+    const overflow = element.scrollHeight - element.clientHeight;
+    element.scrollTop = element.scrollHeight;
+    const historyBottom = element.getBoundingClientRect().bottom;
+    const messageRows = element.querySelectorAll(".message-row");
+    const lastMessageBottom =
+      messageRows[messageRows.length - 1].getBoundingClientRect().bottom;
+    const trailingGap = historyBottom - lastMessageBottom;
+    element.style.removeProperty("height");
+    element.style.removeProperty("min-height");
+    element.style.removeProperty("max-height");
+    element.scrollTop = 0;
+    return { overflow, trailingGap };
+  });
+  expect(
+    shortFeedScroll.overflow === 0 || shortFeedScroll.trailingGap <= 37,
+  ).toBe(true);
+
+  const pastMessage = page.locator(".message-row", {
+    hasText: "Already happened",
+  });
+  await pastMessage.getByRole("button", { name: "Change labels" }).click();
+  const todoCheckbox = pastMessage.getByRole("checkbox", { name: "Todo" });
+  await expect(todoCheckbox).toBeVisible();
+  await todoCheckbox.scrollIntoViewIfNeeded();
+  const popoverIsTopmost = await todoCheckbox.evaluate((checkbox) => {
+    const box = checkbox.getBoundingClientRect();
+    const topmost = document.elementFromPoint(
+      box.left + box.width / 2,
+      box.top + box.height / 2,
+    );
+    return (
+      checkbox.closest(".message-label-popover")?.contains(topmost) ?? false
+    );
+  });
+  expect(popoverIsTopmost).toBe(true);
+  await todoCheckbox.click();
+  await expect(todoCheckbox).toBeChecked();
+  await pastMessage.getByRole("button", { name: "Change labels" }).click();
+
+  await page.emulateMedia({ forcedColors: "active" });
+  const forcedColorsBoundary = await page
+    .locator(".future-message-boundary-surface")
+    .evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        borderTopStyle: style.borderTopStyle,
+        borderTopWidth: style.borderTopWidth,
+      };
+    });
+  expect(forcedColorsBoundary.borderTopStyle).toBe("solid");
+  expect(forcedColorsBoundary.borderTopWidth).toBe("1px");
+  await page.emulateMedia({ forcedColors: "none" });
+
+  await page.screenshot({
+    path: testInfo.outputPath("future-message-boundary.png"),
+    fullPage: true,
+  });
 });
 
 test("switches and persists appearance themes from visual previews", async ({
@@ -421,7 +975,7 @@ test("manages markdown messages and database backups from the UI", async ({
 
   page.once("dialog", (dialog) => dialog.accept());
   await note.getByRole("button", { name: "Delete message" }).click();
-  await expect(page.getByText("Revised")).toBeHidden();
+  await expect(page.locator(".message-list").getByText("Revised")).toBeHidden();
 
   const bundledAttachmentPath = testInfo.outputPath("bundled-roadmap.txt");
   writeFileSync(bundledAttachmentPath, "bundle sidecar bytes");
@@ -518,18 +1072,26 @@ test("adds an attachment message and filters history by files", async ({
   }
   await page.getByLabel("Add a note").fill("Plain status");
   await page.getByRole("button", { name: /Add note/ }).click();
-  await expect(page.getByText("Plain status")).toBeVisible();
+  await expect(
+    page.locator(".message-list").getByText("Plain status"),
+  ).toBeVisible();
 
   await page.getByLabel("Attach files").setInputFiles(attachmentPath);
   await expect(page.getByText("roadmap.txt")).toBeVisible();
   await page.getByLabel("Add a note").fill("Roadmap context");
   await page.getByRole("button", { name: /Add note/ }).click();
 
-  await expect(page.getByText("Roadmap context")).toBeVisible();
+  await expect(
+    page.locator(".message-list").getByText("Roadmap context"),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Files 1" })).toBeVisible();
   await page.getByRole("button", { name: "Files 1" }).click();
-  await expect(page.getByText("Plain status")).toBeHidden();
-  await expect(page.getByText("Roadmap context")).toBeVisible();
+  await expect(
+    page.locator(".message-list").getByText("Plain status"),
+  ).toBeHidden();
+  await expect(
+    page.locator(".message-list").getByText("Roadmap context"),
+  ).toBeVisible();
 
   await expect(
     page.getByRole("button", { name: "Open roadmap.txt" }),
@@ -638,7 +1200,9 @@ test("adds an attachment message and filters history by files", async ({
   await localApp.restart();
   await page.goto(localApp.url);
   await page.getByRole("button", { name: `Open ${projectTitle}` }).click();
-  await expect(page.getByText("Roadmap context")).toBeVisible();
+  await expect(
+    page.locator(".message-list").getByText("Roadmap context"),
+  ).toBeVisible();
   await expect(page.getByText("roadmap.txt")).toBeVisible();
   await expect(page.locator(".attachment-card small")).toContainText(
     `${editedByteSize} B`,
@@ -700,8 +1264,11 @@ test("configures, applies, filters, and retains project message labels", async (
   await expect(pinLabel).toBeVisible();
   await expect(pinLabel).toHaveAttribute("aria-label", "Pin");
   await expect(pinLabel).toHaveText("");
+  await expect(pinLabel).toHaveCSS("border-top-width", "0px");
   await expect(attentionLabel).toHaveAttribute("aria-label", "Attention");
-  await expect(attentionLabel).toHaveText("🔴");
+  await expect(attentionLabel).toHaveText("");
+  await expect(attentionLabel).toHaveCSS("border-top-width", "0px");
+  await expect(attentionLabel.locator(".attention-dot--today")).toBeVisible();
   await expect(
     message.locator('.message-label[data-label="risk"]'),
   ).toContainText("⚠️Risk");
@@ -711,7 +1278,9 @@ test("configures, applies, filters, and retains project message labels", async (
   );
   await expect(page.getByRole("button", { name: "Risk 1" })).toBeVisible();
   await page.getByRole("button", { name: "Risk 1" }).click();
-  await expect(page.getByText("Escalate the rollout risk")).toBeVisible();
+  await expect(
+    page.locator(".message-list").getByText("Escalate the rollout risk"),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByRole("checkbox", { name: "Risk" }).uncheck();
@@ -839,7 +1408,7 @@ test("keeps project and note collections inside their own scroll panes", async (
     };
   });
   expect(railAfter.headerTop).toBeCloseTo(railBefore.header.top, 0);
-  expect(railAfter.labelTop).toBeCloseTo(railBefore.label.top, 0);
+  expect(railAfter.labelTop).toBeLessThan(railBefore.label.top);
   expect(railAfter.footerBottom).toBeCloseTo(railBefore.footer.bottom, 0);
 
   await page

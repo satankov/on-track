@@ -1,12 +1,24 @@
 import type { Accent, ConfigurableLabel, Label } from "./validation.js";
 
+export const MAX_PROJECT_PREVIEW_SOURCE_LENGTH = 512;
+
 export interface Chat {
   id: string;
   title: string;
   accent: Accent;
   enabledLabels: ConfigurableLabel[];
+  collapseLongMessages: boolean;
   createdAt: number;
   updatedAt: number;
+  pinnedAt: number | null;
+  latestMessagePreview: string | null;
+  nextMessageAt: number | null;
+  latestAttentionAt: number | null;
+  nextAttentionAt: number | null;
+}
+
+export interface ProjectPinState {
+  pinnedAt: number | null;
 }
 
 export interface Note {

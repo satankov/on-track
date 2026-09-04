@@ -294,6 +294,46 @@ describe("appearance theme contract", () => {
     }
   });
 
+  it.each(THEMES)(
+    "keeps current and earlier Attention marks identifiable in %s",
+    (theme) => {
+      for (const status of ["critical", "muted"]) {
+        expect(
+          contrastRatio(
+            readThemeToken(theme, status),
+            readThemeToken(theme, "rail"),
+          ),
+          `--${status} against --rail in ${theme}`,
+        ).toBeGreaterThanOrEqual(3);
+      }
+
+      const earlierRule = stylesheet.match(
+        /\.project-attention-dot--earlier\s*\{(?<body>[^}]+)\}/,
+      );
+      expect(earlierRule?.groups?.body).toContain("background: var(--muted)");
+      expect(earlierRule?.groups?.body).not.toContain("border");
+      expect(earlierRule?.groups?.body).not.toContain("opacity");
+    },
+  );
+
+  it("centers the project status cluster and separates rail sections", () => {
+    expect(stylesheet).toMatch(
+      /\.project-section \+ \.project-section\s*\{[^}]*margin-top:\s*10px/s,
+    );
+    expect(stylesheet).toMatch(
+      /\.project-pin-button svg\s*\{[^}]*transform:\s*translateY\(-3px\)/s,
+    );
+    expect(stylesheet).toMatch(
+      /\.project-attention-dot\s*\{[^}]*bottom:\s*13px/s,
+    );
+  });
+
+  it("renders icon-only message labels without a surrounding border", () => {
+    expect(stylesheet).toMatch(
+      /\.message-label--icon-only\s*\{[^}]*border:\s*0/s,
+    );
+  });
+
   it.each(THEMES)("keeps structural dividers quiet in %s", (theme) => {
     for (const background of ["paper", "history", "rail"]) {
       expect(
@@ -328,6 +368,35 @@ describe("appearance theme contract", () => {
       "background: var(--attachment-surface)",
     );
     expect(attachmentCardRule?.groups?.body).toContain("border: 0");
+  });
+
+  it("uses a square full-width fade for future messages", () => {
+    const historyRule = stylesheet.match(/\.history\s*\{(?<body>[^}]+)\}/);
+    const futureSurfaceRule = stylesheet.match(
+      /\.future-message-boundary-surface\s*\{(?<body>[^}]+)\}/,
+    );
+    const futureBoundaryRule = stylesheet.match(
+      /\.future-message-boundary\s*\{(?<body>[^}]+)\}/,
+    );
+
+    expect(historyRule?.groups?.body).toContain("--history-inline-padding");
+    expect(historyRule?.groups?.body).toContain("overflow-x: hidden");
+    expect(futureSurfaceRule?.groups?.body).toContain("linear-gradient");
+    expect(futureSurfaceRule?.groups?.body).toContain("var(--accent)");
+    expect(futureSurfaceRule?.groups?.body).toContain("left: -100vw");
+    expect(futureSurfaceRule?.groups?.body).toContain("inset-block: 0");
+    expect(futureSurfaceRule?.groups?.body).toContain(
+      "background-size: 100% min(320px, 100%)",
+    );
+    expect(futureSurfaceRule?.groups?.body).not.toContain("height: 320px");
+    expect(futureSurfaceRule?.groups?.body).toContain(
+      "border-block-start: 1px solid",
+    );
+    expect(futureSurfaceRule?.groups?.body).not.toContain("border-radius");
+    expect(futureBoundaryRule?.groups?.body).toContain("align-self: stretch");
+    expect(stylesheet).toMatch(
+      /@media \(forced-colors: active\)[\s\S]*\.future-message-boundary-surface\s*\{[^}]*border-block-start-color:\s*CanvasText/,
+    );
   });
 
   it("keeps the composer and rail icon controls visually quiet at rest", () => {

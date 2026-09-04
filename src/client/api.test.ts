@@ -82,6 +82,42 @@ describe("browser API client", () => {
     expect(await exported.text()).toBe("SQLite format 3");
   });
 
+  it("pins and unpins projects through encoded project routes", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ pinnedAt: 1_234 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ pinnedAt: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(apiClient.setChatPinned("project/one", true)).resolves.toEqual(
+      { pinnedAt: 1_234 },
+    );
+    await expect(
+      apiClient.setChatPinned("project/one", false),
+    ).resolves.toEqual({ pinnedAt: null });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/chats/project%2Fone/pin",
+      { method: "PUT" },
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/chats/project%2Fone/pin",
+      { method: "DELETE" },
+    );
+  });
+
   it("sends note updates, deletes, and database imports through scoped routes", async () => {
     const fetchMock = vi.fn().mockImplementation(() =>
       Promise.resolve(

@@ -29,6 +29,20 @@
       "when": 1788356400000,
       "tag": "0003_project_message_labels",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788516961034,
+      "tag": "0004_project_sidebar_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788523044823,
+      "tag": "0005_collapsible_messages",
+      "breakpoints": true
     }
   ]
 }

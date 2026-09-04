@@ -15,16 +15,15 @@ recovery parts of that promise.
 
 ## Current phase
 
-Version 0.0.3 is the current published plaintext alpha source release under
-Apache License 2.0. Version 0.0.4 is prepared as the next release candidate: it
-adds a desktop-first flat workspace, browser-local Light, Neutral, and Dark
-appearance themes, durable project message labels with project-specific
-filtering, Node.js support from 22.16.0 on macOS and Linux, and Node.js 24 support
-on Windows, macOS, and Linux.
+Version 0.0.4 is the current published plaintext alpha source release under
+Apache License 2.0. Version 0.0.5 is prepared as the next release candidate with
+a silent live boundary between current and future-dated messages, project
+sidebar pins, current-time previews, Attention status, quiet pin controls, and
+collapsible long messages with a per-project default.
 
 ## Current objective
 
-Complete review, CI, and publication of the v0.0.4 alpha release candidate while
+Complete review, CI, and publication of the v0.0.5 alpha release candidate while
 retaining the plaintext and portability warnings. Mobile remains a
 regression-protected alpha, not a dedicated design target.
 
@@ -72,7 +71,7 @@ regression-protected alpha, not a dedicated design target.
   requests, external edits, stable identity, focus refresh, and restart without
   launching desktop applications.
 
-## v0.0.4 release candidate
+## v0.0.4 outcome
 
 - The main workspace uses a flatter desktop-first hierarchy, compact auto-growing
   composer, and vertical history filters without losing mobile regression
@@ -88,17 +87,38 @@ regression-protected alpha, not a dedicated design target.
   schema validation is derived from checked-in migrations; the unused attachment
   download route and obsolete schema-2 backup restore path are removed.
 
+## v0.0.5 release candidate
+
+- Chronological history marks the first future-dated message with a silent,
+  square-edged, full-width accent fade and accessible separator. The boundary
+  advances or disappears at delivery time without remounting message controls.
+- The current project-rail slice adds persistent project pins, current-time
+  message previews, and today/earlier Attention status without changing message
+  activity ordering.
+- Pinned controls stay visually quiet at rest on hover-capable layouts, and long
+  Markdown messages can be expanded or collapsed using a project-level default
+  that persists through restart and backup restore.
+
 ## Current capabilities
 
 - Create and switch between personal project chats.
+- Pin and unpin projects in a stable sidebar section without changing their
+  message-activity timestamps.
 - Rename a project and select a restrained accent color.
 - Add multiline Markdown notes in deterministic chronological order.
+- Expand and collapse long Markdown notes, and choose each project's initial
+  long-message state from Edit project.
+- Schedule future-dated messages and see a live, unobtrusive boundary between
+  current history and messages whose timestamps have not arrived.
 - Add local files to project messages with optional text context, including
   attachment add/remove while editing a message.
 - Filter the open project history to messages with attached files.
 - Apply permanent Pin and Attention labels plus project-enabled Todo, Decision,
   Open question, Risk, and Milestone labels to messages, then filter history by
   active labels.
+- Scan each project's latest message up to the current time and see whether an
+  applied Attention label belongs to today or an earlier message directly from
+  the sidebar.
 - Open eligible managed files with the operating system's default association,
   or show their safe managed folder; risky executable/launcher types are blocked
   from Open.
@@ -112,7 +132,7 @@ regression-protected alpha, not a dedicated design target.
 
 ## Near-term priorities
 
-1. Publish v0.0.4 after review and the platform-scoped Node 22.16/24 release
+1. Publish v0.0.5 after review and the platform-scoped Node 22.16/24 release
    matrix passes.
 2. Continue hardening backup, restore, integrity checking, recovery, and
    conflict-free import semantics before users entrust irreplaceable data to the
@@ -157,6 +177,7 @@ The public repository and release are:
 - [v0.0.1 release](https://github.com/satankov/on-track/releases/tag/v0.0.1)
 - [v0.0.2 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.2)
 - [v0.0.3 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.3)
+- [v0.0.4 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.4)
 - [Issues](https://github.com/satankov/on-track/issues)
 
 GitHub Issues is the intended backlog and ownership tracker. The near-term
@@ -173,8 +194,8 @@ priorities above still need tracker records. Durable decisions live in
   dependency. Node 22 support ends no later than upstream support, currently
   2027-04-30. The next candidate must pass full verification on Node 22.16 and
   24 on Linux, plus native SQLite install/test coverage on macOS for both lines
-  and on Windows for Node 24; future dependency upgrades can still affect
-  portability.
+  and on Windows for Node 24; the v0.0.5 candidate must pass those gates, and
+  future dependency upgrades can still affect portability.
 - v0.0.4 deliberately does not restore v0.0.3/schema-2 backup bundles. Live
   v0.0.3 databases still migrate at startup, and this compatibility break is
   acceptable only under the current no-user alpha assumption.

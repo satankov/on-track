@@ -86,13 +86,18 @@ describe("local project-chat API", () => {
       id: "id-1",
       title: "Migration",
       accent: "amber",
+      collapseLongMessages: true,
     });
 
     const updated = await app.inject({
       method: "PATCH",
       url: "/api/chats/id-1",
       headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
-      payload: { title: "Migration plan", accent: "ocean" },
+      payload: {
+        title: "Migration plan",
+        accent: "ocean",
+        collapseLongMessages: false,
+      },
     });
     expect(updated.statusCode).toBe(200);
 
@@ -113,8 +118,55 @@ describe("local project-chat API", () => {
     expect(detail.json()).toMatchObject({
       title: "Migration plan",
       accent: "ocean",
+      collapseLongMessages: false,
       notes: [{ id: "id-2", body: "Decision:\nShip the thin slice." }],
     });
+  });
+
+  it("pins projects idempotently without changing project activity", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: { title: "Launch", accent: "amber" },
+    });
+    const originalUpdatedAt = created.json().updatedAt as number;
+
+    const pinned = await app.inject({
+      method: "PUT",
+      url: "/api/chats/id-1/pin",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+    });
+    const pinnedAgain = await app.inject({
+      method: "PUT",
+      url: "/api/chats/id-1/pin",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+    });
+    const listed = await app.inject({
+      method: "GET",
+      url: "/api/chats",
+      headers: { host: "localhost:4173" },
+    });
+    const unpinned = await app.inject({
+      method: "DELETE",
+      url: "/api/chats/id-1/pin",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+    });
+    const missing = await app.inject({
+      method: "PUT",
+      url: "/api/chats/missing/pin",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+    });
+
+    expect(pinned.statusCode).toBe(200);
+    expect(pinned.json()).toEqual({ pinnedAt: 1_001 });
+    expect(pinnedAgain.json()).toEqual(pinned.json());
+    expect(listed.json()[0]).toMatchObject({
+      pinnedAt: 1_001,
+      updatedAt: originalUpdatedAt,
+    });
+    expect(unpinned.json()).toEqual({ pinnedAt: null });
+    expect(missing.statusCode).toBe(404);
   });
 
   it("accepts an optional timestamp when appending a note", async () => {

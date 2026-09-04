@@ -330,6 +330,18 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       service.updateChat(request.params.id, request.body),
     ),
   );
+  app.put<{ Params: { id: string } }>("/api/chats/:id/pin", async (request) =>
+    maintenanceGate.runMutation(() =>
+      service.setChatPinned(request.params.id, true),
+    ),
+  );
+  app.delete<{ Params: { id: string } }>(
+    "/api/chats/:id/pin",
+    async (request) =>
+      maintenanceGate.runMutation(() =>
+        service.setChatPinned(request.params.id, false),
+      ),
+  );
   app.delete<{ Params: { id: string } }>(
     "/api/chats/:id",
     async (request, reply) => {

@@ -2,13 +2,12 @@
 
 ## Status
 
-The v0.0.3 plaintext alpha is the published baseline. Version 0.0.4 is prepared
-as the next release candidate with browser-local appearance preferences,
-durable project/message label relations, platform-scoped Node.js 22.16/24
-support, and simpler
-note-write, client-state, and backup-validation paths. It preserves the existing
-local server/service/repository and versioned-backup boundaries. The core
-decisions are recorded in
+The v0.0.4 plaintext alpha is the published baseline. Version 0.0.5 is prepared
+as the next release candidate with a client-side live boundary for future-dated
+messages, persistent project pins, current-time previews, Attention status,
+quiet pin presentation, and per-project collapsible-message defaults. It does
+not change the existing local server/service/repository or versioned-backup
+boundaries. The core decisions are recorded in
 [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
 encryption limitation in [ADR-0002](adr/0002-defer-at-rest-encryption.md),
 source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the
@@ -58,7 +57,11 @@ Local browser -> loopback Fastify server -> application service -> repository ->
 - `src/client`: React workspace, styles, and typed API client. It never imports
   server or database modules. A closed Light/Neutral/Dark theme preference is
   validated in the client and stored in browser-local storage; a same-origin
-  bootstrap script applies it before React mounts to avoid a theme flash.
+  bootstrap script applies it before React mounts to avoid a theme flash. The
+  visible message timeline schedules its next future timestamp and renders one
+  silent accessible boundary without moving the message rows when time advances.
+  Rendered Markdown bodies measure their natural height and expose an accessible
+  per-message disclosure when they exceed the project's collapse threshold.
 - `src/domain`: shared data contracts, closed built-in label vocabularies, and
   validation rules with no UI or persistence dependency.
 - `src/server/app.ts`: Fastify transport, boundary controls, safe error mapping,
@@ -88,7 +91,14 @@ ordering makes note history stable; chat activity is ordered using timestamps
 with a deterministic ID tie-breaker. Appending, editing, timestamp-adjusting,
 and deleting notes keep chat activity consistent with the newest remaining note
 in a transaction. Label changes do not alter message time or project activity.
-All child relations cascade with their owning project or message.
+Project-level `pinned_at` is nullable, nonnegative, and updated separately from
+activity. Each project also stores a checked integer boolean controlling whether
+long messages start collapsed; new and migrated projects default to enabled.
+Sidebar reads batch the latest bounded message preview at or before the service
+clock, the nearest future message timestamp, and the nearest past/future
+Attention timestamps across all projects, then order pinned projects by pin time
+and other projects by activity. All child relations cascade with their owning
+project or message.
 
 Default data directories:
 
@@ -134,7 +144,10 @@ browser download route.
 All browser note creation and editing uses the same bounded multipart contract,
 whether or not files are attached. The client keeps project summaries and the
 active project detail in one canonical server-state value so mutations update
-both views atomically without duplicated synchronization branches.
+both views atomically without duplicated synchronization branches. Dedicated
+idempotent pin routes patch only pin state. The rail derives browser-local
+today/earlier Attention state and refreshes at the next future message or
+Attention time, local midnight, and browser focus.
 
 Settings exports one versioned SQLite `.on-track-backup` container, including
 project label configuration and message assignments. An online snapshot
@@ -144,10 +157,12 @@ integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
 fresh managed paths, removes bundle payload tables, and compacts the current-
-schema candidate. It then uses the maintenance gate and restore journal to
-replace live state. Exact active-schema expectations come from a trusted in-
-memory database built with checked-in migrations; imported SQL never defines
-its own validation baseline.
+schema candidate. Exact schema-4 development and schema-3 v0.0.4 bundles are
+accepted through fixed legacy descriptors and migrated to schema 5 only after
+copying into the staging workspace. It then uses the maintenance gate and
+restore journal to replace live state. Exact active-schema expectations come
+from a trusted in-memory database built with checked-in migrations; imported SQL
+never defines its own validation baseline.
 Restore is replacement, not merge. Export is limited to three attempts per
 minute per process; restore is limited to two attempts per minute per process.
 
@@ -182,8 +197,15 @@ be hardened before production-readiness claims.
 
 - Empty state -> create project -> customize title/accent -> add multiline note.
 - Create/switch multiple projects and preserve project-specific histories.
+- Pin/unpin projects, preserve pin order across restart/backup, and scan latest
+  message and current/earlier Attention status in the project rail.
+- Expand and collapse one long message without affecting its neighbors, change
+  the project default, and preserve that default through restart and backup.
 - Copy, edit, timestamp-adjust, and delete notes while preserving deterministic
   ordering.
+- Schedule future-dated messages, see the silent current/future boundary at
+  desktop and mobile widths, and let it advance without losing message-control
+  focus when timestamps arrive.
 - Export and restore a versioned backup bundle through Settings with validation.
 - Choose Light, Neutral, or Dark from accessible preview radios in Appearance,
   reload without a theme flash, and keep project data and backups independent
