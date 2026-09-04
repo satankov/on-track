@@ -7,6 +7,7 @@ export interface Chat {
   title: string;
   accent: Accent;
   enabledLabels: ConfigurableLabel[];
+  collapseLongMessages: boolean;
   createdAt: number;
   updatedAt: number;
   pinnedAt: number | null;

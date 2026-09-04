@@ -18,8 +18,9 @@ recovery parts of that promise.
 Version 0.0.4 is the current published plaintext alpha source release under
 Apache License 2.0. Version 0.0.5 is in development: its first committed slice
 adds a silent live boundary between current and future-dated messages, while the
-current feature slice adds project sidebar pins, current-time previews, and
-Attention status.
+current feature slices add project sidebar pins, current-time previews,
+Attention status, quiet pin controls, and collapsible long messages with a
+per-project default.
 
 ## Current objective
 
@@ -95,6 +96,9 @@ regression-protected alpha, not a dedicated design target.
 - The current project-rail slice adds persistent project pins, current-time
   message previews, and today/earlier Attention status without changing message
   activity ordering.
+- Pinned controls stay visually quiet at rest on hover-capable layouts, and long
+  Markdown messages can be expanded or collapsed using a project-level default
+  that persists through restart and backup restore.
 
 ## Current capabilities
 
@@ -103,6 +107,8 @@ regression-protected alpha, not a dedicated design target.
   message-activity timestamps.
 - Rename a project and select a restrained accent color.
 - Add multiline Markdown notes in deterministic chronological order.
+- Expand and collapse long Markdown notes, and choose each project's initial
+  long-message state from Edit project.
 - Schedule future-dated messages and see a live, unobtrusive boundary between
   current history and messages whose timestamps have not arrived.
 - Add local files to project messages with optional text context, including

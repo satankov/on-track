@@ -42,6 +42,18 @@ describe("chat input validation", () => {
     expect(() => updateChatInputSchema.parse({})).toThrow();
   });
 
+  it("accepts only a boolean long-message collapse preference", () => {
+    expect(
+      updateChatInputSchema.parse({ collapseLongMessages: false }),
+    ).toEqual({ collapseLongMessages: false });
+    expect(() =>
+      updateChatInputSchema.parse({ collapseLongMessages: 0 }),
+    ).toThrow();
+    expect(() =>
+      updateChatInputSchema.parse({ collapseLongMessages: "false" }),
+    ).toThrow();
+  });
+
   it("accepts a complete unique configurable-label selection", () => {
     expect(CONFIGURABLE_LABELS).toEqual([
       "todo",

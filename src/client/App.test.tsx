@@ -292,6 +292,7 @@ describe("personal project chat workspace", () => {
       title: "Alpha",
       accent: "coral" as const,
       enabledLabels: ["todo"] as ["todo"],
+      collapseLongMessages: true,
       createdAt: now - 3_000,
       updatedAt: now - 1_000,
       pinnedAt: null,
@@ -367,6 +368,7 @@ describe("personal project chat workspace", () => {
       title: "Alpha",
       accent: "coral" as const,
       enabledLabels: ["todo"] as ["todo"],
+      collapseLongMessages: true,
       createdAt: now - 2_000,
       updatedAt: now - 1_000,
       pinnedAt: null,
@@ -589,6 +591,7 @@ describe("personal project chat workspace", () => {
       id: "chat-1",
       title: "Discovery",
       accent: "moss" as const,
+      collapseLongMessages: true,
       createdAt: 1,
       updatedAt: 1,
     };
@@ -613,12 +616,18 @@ describe("personal project chat workspace", () => {
     await user.clear(name);
     await user.type(name, "Research");
     await user.click(screen.getByRole("radio", { name: "Iris" }));
+    const collapseLongMessages = screen.getByRole("checkbox", {
+      name: "Collapse long messages by default",
+    });
+    expect(collapseLongMessages).toBeChecked();
+    await user.click(collapseLongMessages);
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(api.updateChat).toHaveBeenCalledWith("chat-1", {
       title: "Research",
       accent: "iris",
       enabledLabels: ["todo", "milestone"],
+      collapseLongMessages: false,
     });
     expect(
       await screen.findByRole("heading", { name: "Research" }),
@@ -661,6 +670,7 @@ describe("personal project chat workspace", () => {
       title: "Discovery",
       accent: "moss",
       enabledLabels: ["todo", "decision", "milestone"],
+      collapseLongMessages: true,
     });
   });
 
@@ -851,6 +861,408 @@ describe("personal project chat workspace", () => {
           `.message-label[data-label="${label}"] .label-glyph svg`,
         ),
       ).not.toBeNull();
+    }
+  });
+
+  it("collapses long rendered messages while keeping visible links keyboard-accessible", async () => {
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollHeight",
+    );
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("message-body") ? 300 : 0;
+      },
+    });
+    const originalRect = HTMLElement.prototype.getBoundingClientRect;
+    const rect = (top: number, height: number) =>
+      ({
+        x: 0,
+        y: top,
+        top,
+        bottom: top + height,
+        left: 0,
+        right: 100,
+        width: 100,
+        height,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.textContent === "Visible reference") return rect(40, 20);
+        if (this.textContent === "Clipped reference") return rect(240, 20);
+        return originalRect.call(this);
+      });
+    try {
+      const user = userEvent.setup();
+      const chat = {
+        id: "chat-1",
+        title: "Research",
+        accent: "ocean" as const,
+        enabledLabels: ["todo"] as "todo"[],
+        collapseLongMessages: true,
+        createdAt: 100,
+        updatedAt: 200,
+      };
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({
+          ...chat,
+          notes: [
+            {
+              id: "note-1",
+              chatId: "chat-1",
+              body: "[Visible reference](https://example.com/visible)\n\nFirst paragraph\n\n[Clipped reference](https://example.com/clipped)",
+              createdAt: 200,
+              labels: [],
+            },
+          ],
+        }),
+      });
+      render(<App api={api} />);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Open Research" }),
+      );
+      const showMore = await screen.findByRole("button", {
+        name: "Show more",
+      });
+      const visibleLink = screen.getByRole("link", {
+        name: "Visible reference",
+      });
+      const clippedLink = screen.getByRole("link", {
+        name: "Clipped reference",
+      });
+      expect(showMore).toHaveAttribute("aria-expanded", "false");
+      expect(showMore).toHaveAttribute("aria-controls");
+      expect(clippedLink.closest(".message-body-viewport")).toHaveClass(
+        "message-body-viewport--collapsed",
+      );
+      expect(visibleLink).not.toHaveAttribute("tabindex");
+      expect(clippedLink).toHaveAttribute("tabindex", "-1");
+      expect(clippedLink).not.toHaveAttribute("aria-disabled");
+
+      showMore.focus();
+      await user.keyboard("{Enter}");
+      const showLess = screen.getByRole("button", { name: "Show less" });
+      expect(showLess).toHaveAttribute("aria-expanded", "true");
+      expect(clippedLink.closest(".message-body-viewport")).not.toHaveClass(
+        "message-body-viewport--collapsed",
+      );
+      expect(visibleLink).not.toHaveAttribute("tabindex");
+      expect(clippedLink).not.toHaveAttribute("tabindex");
+    } finally {
+      rectSpy.mockRestore();
+      if (originalScrollHeight) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "scrollHeight",
+          originalScrollHeight,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
+      }
+    }
+  });
+
+  it("does not add a disclosure at the collapsed-height threshold", async () => {
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollHeight",
+    );
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("message-body") ? 192 : 0;
+      },
+    });
+    try {
+      const user = userEvent.setup();
+      const chat = {
+        id: "chat-1",
+        title: "Research",
+        accent: "ocean" as const,
+        enabledLabels: ["todo"] as "todo"[],
+        collapseLongMessages: true,
+        createdAt: 100,
+        updatedAt: 200,
+      };
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({
+          ...chat,
+          notes: [
+            {
+              id: "note-1",
+              chatId: "chat-1",
+              body: "A message at the threshold",
+              createdAt: 200,
+              labels: [],
+            },
+          ],
+        }),
+      });
+      render(<App api={api} />);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Open Research" }),
+      );
+      expect(
+        screen.queryByRole("button", { name: /Show (more|less)/ }),
+      ).not.toBeInTheDocument();
+    } finally {
+      if (originalScrollHeight) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "scrollHeight",
+          originalScrollHeight,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
+      }
+    }
+  });
+
+  it("remeasures message length when observed layout changes", async () => {
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollHeight",
+    );
+    const originalResizeObserver = globalThis.ResizeObserver;
+    let messageHeight = 192;
+    const resizeObservers: Array<{
+      callback: ResizeObserverCallback;
+      observer: ResizeObserver;
+    }> = [];
+    class TestResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        resizeObservers.push({
+          callback,
+          observer: this as unknown as ResizeObserver,
+        });
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    globalThis.ResizeObserver =
+      TestResizeObserver as unknown as typeof ResizeObserver;
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("message-body") ? messageHeight : 0;
+      },
+    });
+    try {
+      const user = userEvent.setup();
+      const chat = {
+        id: "chat-1",
+        title: "Research",
+        accent: "ocean" as const,
+        enabledLabels: ["todo"] as "todo"[],
+        collapseLongMessages: true,
+        createdAt: 100,
+        updatedAt: 200,
+      };
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({
+          ...chat,
+          notes: [
+            {
+              id: "note-1",
+              chatId: "chat-1",
+              body: "Responsive message",
+              createdAt: 200,
+              labels: [],
+            },
+          ],
+        }),
+      });
+      render(<App api={api} />);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Open Research" }),
+      );
+      expect(
+        screen.queryByRole("button", { name: "Show more" }),
+      ).not.toBeInTheDocument();
+
+      messageHeight = 300;
+      act(() => {
+        for (const { callback, observer } of resizeObservers) {
+          callback([], observer);
+        }
+      });
+      expect(
+        await screen.findByRole("button", { name: "Show more" }),
+      ).toHaveAttribute("aria-expanded", "false");
+    } finally {
+      if (originalResizeObserver) {
+        globalThis.ResizeObserver = originalResizeObserver;
+      } else {
+        Reflect.deleteProperty(globalThis, "ResizeObserver");
+      }
+      if (originalScrollHeight) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "scrollHeight",
+          originalScrollHeight,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
+      }
+    }
+  });
+
+  it("starts long messages expanded when the project default is disabled", async () => {
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollHeight",
+    );
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("message-body") ? 300 : 0;
+      },
+    });
+    try {
+      const user = userEvent.setup();
+      const chat = {
+        id: "chat-1",
+        title: "Research",
+        accent: "ocean" as const,
+        enabledLabels: ["todo"] as "todo"[],
+        collapseLongMessages: false,
+        createdAt: 100,
+        updatedAt: 200,
+      };
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({
+          ...chat,
+          notes: [
+            {
+              id: "note-1",
+              chatId: "chat-1",
+              body: "A long message",
+              createdAt: 200,
+              labels: [],
+            },
+          ],
+        }),
+      });
+      render(<App api={api} />);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Open Research" }),
+      );
+      const showLess = await screen.findByRole("button", {
+        name: "Show less",
+      });
+      expect(showLess).toHaveAttribute("aria-expanded", "true");
+      await user.click(showLess);
+      expect(screen.getByRole("button", { name: "Show more" })).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+    } finally {
+      if (originalScrollHeight) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "scrollHeight",
+          originalScrollHeight,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
+      }
+    }
+  });
+
+  it("keeps each long-message disclosure independent across parent rerenders", async () => {
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollHeight",
+    );
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("message-body") ? 300 : 0;
+      },
+    });
+    try {
+      const user = userEvent.setup();
+      const chat = {
+        id: "chat-1",
+        title: "Research",
+        accent: "ocean" as const,
+        enabledLabels: ["todo"] as "todo"[],
+        collapseLongMessages: true,
+        createdAt: 100,
+        updatedAt: 200,
+      };
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({
+          ...chat,
+          notes: [
+            {
+              id: "note-1",
+              chatId: "chat-1",
+              body: "First long message",
+              createdAt: 200,
+              labels: [],
+            },
+            {
+              id: "note-2",
+              chatId: "chat-1",
+              body: "Second long message",
+              createdAt: 201,
+              labels: [],
+            },
+          ],
+        }),
+      });
+      const rendered = render(<App api={api} />);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Open Research" }),
+      );
+      const firstMessage = screen
+        .getByText("First long message")
+        .closest("li")!;
+      const secondMessage = screen
+        .getByText("Second long message")
+        .closest("li")!;
+      await user.click(
+        within(firstMessage).getByRole("button", { name: "Show more" }),
+      );
+      expect(
+        within(firstMessage).getByRole("button", { name: "Show less" }),
+      ).toHaveAttribute("aria-expanded", "true");
+      expect(
+        within(secondMessage).getByRole("button", { name: "Show more" }),
+      ).toHaveAttribute("aria-expanded", "false");
+
+      rendered.rerender(<App api={api} />);
+      expect(
+        within(firstMessage).getByRole("button", { name: "Show less" }),
+      ).toBeInTheDocument();
+      expect(
+        within(secondMessage).getByRole("button", { name: "Show more" }),
+      ).toBeInTheDocument();
+    } finally {
+      if (originalScrollHeight) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "scrollHeight",
+          originalScrollHeight,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
+      }
     }
   });
 
@@ -2194,6 +2606,7 @@ describe("personal project chat workspace", () => {
       title: "Alpha",
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      collapseLongMessages: true,
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
@@ -2233,6 +2646,7 @@ describe("personal project chat workspace", () => {
       title: "Alpha",
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      collapseLongMessages: true,
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
@@ -2289,6 +2703,7 @@ describe("personal project chat workspace", () => {
       title: "Alpha",
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      collapseLongMessages: true,
       createdAt: 1,
       updatedAt: 3,
       pinnedAt: null,
@@ -2352,6 +2767,7 @@ describe("personal project chat workspace", () => {
       title: "Alpha",
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      collapseLongMessages: true,
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
@@ -2398,6 +2814,7 @@ describe("personal project chat workspace", () => {
       title: "Alpha",
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
+      collapseLongMessages: true,
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,

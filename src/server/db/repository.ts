@@ -25,6 +25,7 @@ interface ChatRow {
   created_at: number;
   updated_at: number;
   pinned_at: number | null;
+  collapse_long_messages: 0 | 1;
 }
 
 interface ChatSidebarSummary {
@@ -67,6 +68,7 @@ function toChat(
     title: row.title,
     accent: row.accent,
     enabledLabels,
+    collapseLongMessages: row.collapse_long_messages === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     pinnedAt: row.pinned_at,
@@ -184,6 +186,7 @@ export class SqliteChatRepository {
       title?: string;
       accent?: Accent;
       enabledLabels?: ConfigurableLabel[];
+      collapseLongMessages?: boolean;
       now: number;
     },
   ): Chat | undefined {
@@ -193,6 +196,10 @@ export class SqliteChatRepository {
           `UPDATE chats
            SET title = COALESCE(@title, title),
                accent = COALESCE(@accent, accent),
+               collapse_long_messages = COALESCE(
+                 @collapseLongMessages,
+                 collapse_long_messages
+               ),
                updated_at = @now
            WHERE id = @id`,
         )
@@ -200,6 +207,10 @@ export class SqliteChatRepository {
           id,
           title: input.title ?? null,
           accent: input.accent ?? null,
+          collapseLongMessages:
+            input.collapseLongMessages === undefined
+              ? null
+              : Number(input.collapseLongMessages),
           now: input.now,
         });
       if (result.changes === 0) return false;

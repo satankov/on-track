@@ -48,13 +48,15 @@ export const updateChatInputSchema = z
     title: titleSchema.optional(),
     accent: accentSchema.optional(),
     enabledLabels: enabledLabelsSchema.optional(),
+    collapseLongMessages: z.boolean().optional(),
   })
   .refine(
     (value) =>
       value.title !== undefined ||
       value.accent !== undefined ||
-      value.enabledLabels !== undefined,
-    { message: "Provide a title, accent, or label selection" },
+      value.enabledLabels !== undefined ||
+      value.collapseLongMessages !== undefined,
+    { message: "Provide a title, accent, label, or message display setting" },
   );
 
 export const createNoteInputSchema = z.object({

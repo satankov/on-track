@@ -86,13 +86,18 @@ describe("local project-chat API", () => {
       id: "id-1",
       title: "Migration",
       accent: "amber",
+      collapseLongMessages: true,
     });
 
     const updated = await app.inject({
       method: "PATCH",
       url: "/api/chats/id-1",
       headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
-      payload: { title: "Migration plan", accent: "ocean" },
+      payload: {
+        title: "Migration plan",
+        accent: "ocean",
+        collapseLongMessages: false,
+      },
     });
     expect(updated.statusCode).toBe(200);
 
@@ -113,6 +118,7 @@ describe("local project-chat API", () => {
     expect(detail.json()).toMatchObject({
       title: "Migration plan",
       accent: "ocean",
+      collapseLongMessages: false,
       notes: [{ id: "id-2", body: "Decision:\nShip the thin slice." }],
     });
   });

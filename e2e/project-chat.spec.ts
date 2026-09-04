@@ -266,6 +266,26 @@ test("pins projects and scans previews with Attention status", async ({
   await expect(
     page.getByRole("button", { name: `Pin ${pinned.title}` }),
   ).toHaveAttribute("aria-pressed", "true");
+  const pinnedControl = page.getByRole("button", {
+    name: `Pin ${pinned.title}`,
+  });
+  await page.mouse.move(1, 1);
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  if (testInfo.project.name === "mobile-webkit") {
+    await expect(pinnedControl).toHaveCSS("opacity", "1");
+  } else {
+    await expect(pinnedControl).toHaveCSS("opacity", "0");
+    await pinnedControl.focus();
+    await expect(pinnedControl).toHaveCSS("opacity", "1");
+    await page.mouse.move(1, 1);
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+    await expect(pinnedControl).toHaveCSS("opacity", "0");
+    await page
+      .getByRole("button", { name: `Open ${pinned.title}` })
+      .locator("..")
+      .hover();
+    await expect(pinnedControl).toHaveCSS("opacity", "1");
+  }
   await expect(
     page.getByRole("button", { name: `Open ${current.title}` }).locator(".."),
   ).toHaveAttribute("data-attention-state", "today");
@@ -304,6 +324,94 @@ test("pins projects and scans previews with Attention status", async ({
 
   await page.screenshot({
     path: testInfo.outputPath("project-sidebar.png"),
+    fullPage: true,
+  });
+});
+
+test("collapses long messages using the persisted project default", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  const suffix = `${viewportName(testInfo.project.name)}-${Date.now()}`;
+  const project = await createProject(request, localApp.url, {
+    title: `Long messages ${suffix}`,
+    accent: "ocean",
+  });
+  const body = [
+    "## Weekly research summary",
+    "[Visible reference](https://example.com/visible)",
+    ...Array.from(
+      { length: 18 },
+      (_, index) =>
+        `Paragraph ${index + 1}: the project history remains compact until the reader asks for the full context.`,
+    ),
+    "[Clipped reference](https://example.com/clipped)",
+  ].join("\n\n");
+  await addNote(request, localApp.url, project.id, body);
+
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  const showMore = page.getByRole("button", { name: "Show more" });
+  const viewport = page.locator(".message-body-viewport");
+  const visibleLink = page.getByRole("link", { name: "Visible reference" });
+  const clippedLink = page.getByRole("link", { name: "Clipped reference" });
+  await expect(showMore).toHaveAttribute("aria-expanded", "false");
+  await expect(viewport).toHaveClass(/message-body-viewport--collapsed/);
+  await expect(visibleLink).not.toHaveAttribute("tabindex", "-1");
+  await expect(clippedLink).toHaveAttribute("tabindex", "-1");
+  const collapsedHeight = await viewport.evaluate(
+    (element) => element.getBoundingClientRect().height,
+  );
+  expect(collapsedHeight).toBeCloseTo(192, 0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("long-message-collapsed.png"),
+    fullPage: true,
+  });
+
+  await showMore.click();
+  const showLess = page.getByRole("button", { name: "Show less" });
+  await expect(showLess).toHaveAttribute("aria-expanded", "true");
+  await expect(viewport).not.toHaveClass(/message-body-viewport--collapsed/);
+  await expect(visibleLink).not.toHaveAttribute("tabindex", "-1");
+  await expect(clippedLink).not.toHaveAttribute("tabindex", "-1");
+  expect(
+    await viewport.evaluate(
+      (element) => element.getBoundingClientRect().height,
+    ),
+  ).toBeGreaterThan(collapsedHeight);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  const collapseDefault = page.getByRole("checkbox", {
+    name: "Collapse long messages by default",
+  });
+  await expect(collapseDefault).toBeChecked();
+  await collapseDefault.uncheck();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("button", { name: "Show less" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+
+  await localApp.restart();
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  await expect(page.getByRole("button", { name: "Show less" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("long-message-expanded.png"),
     fullPage: true,
   });
 });

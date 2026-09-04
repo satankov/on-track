@@ -371,8 +371,7 @@ label {
   opacity: 0;
 }
 .project-pin-button:hover,
-.project-pin-button:focus-visible,
-.project-pin-button[aria-pressed="true"] {
+.project-pin-button:focus-visible {
   color: var(--ink);
   opacity: 1;
 }
@@ -1161,17 +1160,18 @@ label {
   justify-items: end;
 }
 .message-bubble {
+  --message-surface: color-mix(
+    in srgb,
+    var(--accent) var(--message-accent-strength),
+    var(--paper)
+  );
   position: relative;
   width: 100%;
   min-width: min(200px, 100%);
   padding: 10px 12px 6px;
   border: 0;
   border-radius: 14px 14px 5px 14px;
-  background: color-mix(
-    in srgb,
-    var(--accent) var(--message-accent-strength),
-    var(--paper)
-  );
+  background: var(--message-surface);
 }
 .message-bubble .note-body blockquote {
   color: var(--message-muted);
@@ -1296,6 +1296,54 @@ label {
 }
 .message-body {
   min-width: 0;
+}
+.message-body-viewport {
+  position: relative;
+  min-width: 0;
+}
+.message-body-viewport--collapsed {
+  max-height: var(--message-collapse-height);
+  overflow: hidden;
+}
+.message-body-viewport--collapsed::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 3.75rem;
+  background: linear-gradient(to bottom, transparent, var(--message-surface));
+  pointer-events: none;
+}
+.message-collapse-toggle {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 2px 3px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--message-muted);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+.message-collapse-toggle:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--message-muted) 9%, transparent);
+}
+.message-collapse-toggle svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+.message-collapse-toggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
 }
 .attachment-list {
   width: min(460px, 100%);
@@ -2064,7 +2112,8 @@ kbd {
   padding: 0;
   border: 0;
 }
-.project-label-fieldset legend {
+.project-label-fieldset legend,
+.project-message-display-fieldset legend {
   margin-bottom: 6px;
   font-size: 0.75rem;
   font-weight: 750;
@@ -2109,6 +2158,37 @@ kbd {
 }
 .project-label-option > .label-glyph {
   margin-left: auto;
+}
+.project-message-display-fieldset {
+  margin: 24px 0 0;
+  padding: 0;
+  border: 0;
+}
+.project-message-display-option {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+.project-message-display-option:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--paper));
+}
+.project-message-display-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.project-message-display-option:has(input:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
 }
 .project-edit-actions {
   display: grid;
@@ -2300,6 +2380,9 @@ kbd {
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  .message-collapse-toggle svg {
+    transition: transform 140ms ease;
+  }
   .project-item,
   .project-pin-button,
   .button,
@@ -2335,6 +2418,10 @@ kbd {
   .future-message-boundary-surface {
     background: Canvas;
     border-block-start-color: CanvasText;
+  }
+
+  .message-body-viewport--collapsed::after {
+    display: none;
   }
 
   .attention-dot--today {

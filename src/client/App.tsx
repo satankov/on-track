@@ -5,6 +5,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
@@ -63,6 +64,7 @@ const FILTER_LABEL_NAMES: Record<Label, string> = {
 };
 
 const ICON_ONLY_MESSAGE_LABELS = new Set<Label>(["pin", "attention"]);
+const MESSAGE_COLLAPSED_HEIGHT_PX = 192;
 
 type HistoryFilter = "all" | "attachments" | Label;
 
@@ -120,6 +122,7 @@ function chatFromDetail(detail: ChatDetail, now = Date.now()): Chat {
     title: detail.title,
     accent: detail.accent,
     enabledLabels: detail.enabledLabels,
+    collapseLongMessages: detail.collapseLongMessages ?? true,
     createdAt: detail.createdAt,
     updatedAt: detail.updatedAt,
     pinnedAt: detail.pinnedAt ?? null,
@@ -473,6 +476,7 @@ function ProjectEditWorkspace({
     title: string;
     accent: Accent;
     enabledLabels: ConfigurableLabel[];
+    collapseLongMessages: boolean;
   }) => Promise<void>;
   onDelete: () => Promise<void>;
 }) {
@@ -480,6 +484,9 @@ function ProjectEditWorkspace({
   const [accent, setAccent] = useState<Accent>(chat.accent);
   const [enabledLabels, setEnabledLabels] = useState<ConfigurableLabel[]>(
     chat.enabledLabels ?? ["todo", "milestone"],
+  );
+  const [collapseLongMessages, setCollapseLongMessages] = useState(
+    chat.collapseLongMessages ?? true,
   );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -490,7 +497,12 @@ function ProjectEditWorkspace({
     setSaving(true);
     setError("");
     try {
-      await onSubmit({ title, accent, enabledLabels });
+      await onSubmit({
+        title,
+        accent,
+        enabledLabels,
+        collapseLongMessages,
+      });
     } catch (caught) {
       setError(errorMessage(caught, "The project could not be saved."));
       setSaving(false);
@@ -586,6 +598,23 @@ function ProjectEditWorkspace({
                 </label>
               ))}
             </div>
+          </fieldset>
+          <fieldset className="project-message-display-fieldset">
+            <legend>Message display</legend>
+            <p className="field-help">
+              Choose how long messages first appear in this project. Every long
+              message can still be expanded or collapsed individually.
+            </p>
+            <label className="project-message-display-option">
+              <input
+                type="checkbox"
+                checked={collapseLongMessages}
+                onChange={(event) =>
+                  setCollapseLongMessages(event.target.checked)
+                }
+              />
+              <span>Collapse long messages by default</span>
+            </label>
           </fieldset>
           {error && (
             <p role="alert" className="form-error">
@@ -1585,6 +1614,105 @@ function MarkdownMessage({ body }: { body: string }) {
   );
 }
 
+function syncClippedMessageLinks(
+  bodyElement: HTMLDivElement,
+  collapsed: boolean,
+) {
+  const clipBottom =
+    bodyElement.getBoundingClientRect().top + MESSAGE_COLLAPSED_HEIGHT_PX;
+  for (const link of bodyElement.querySelectorAll<HTMLAnchorElement>("a")) {
+    const clipped =
+      collapsed && link.getBoundingClientRect().bottom > clipBottom;
+    if (clipped) {
+      link.dataset.messageClippedLink = "true";
+      link.tabIndex = -1;
+    } else if (link.dataset.messageClippedLink === "true") {
+      delete link.dataset.messageClippedLink;
+      link.removeAttribute("tabindex");
+    }
+  }
+}
+
+function ChevronDownIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function CollapsibleMessageBody({
+  body,
+  collapseLongMessages,
+}: {
+  body: string;
+  collapseLongMessages: boolean;
+}) {
+  const contentId = useId();
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [isLong, setIsLong] = useState(false);
+  const [expanded, setExpanded] = useState(!collapseLongMessages);
+  const collapsed = isLong && !expanded;
+
+  useLayoutEffect(() => {
+    const bodyElement = bodyRef.current;
+    if (!bodyElement) return;
+    const nextIsLong = bodyElement.scrollHeight > MESSAGE_COLLAPSED_HEIGHT_PX;
+    setIsLong((current) => (current === nextIsLong ? current : nextIsLong));
+    syncClippedMessageLinks(bodyElement, nextIsLong && !expanded);
+    return () => syncClippedMessageLinks(bodyElement, false);
+  }, [body, expanded]);
+
+  useEffect(() => {
+    const bodyElement = bodyRef.current;
+    if (!bodyElement) return;
+    const measure = () => {
+      const nextIsLong = bodyElement.scrollHeight > MESSAGE_COLLAPSED_HEIGHT_PX;
+      setIsLong((current) => (current === nextIsLong ? current : nextIsLong));
+      syncClippedMessageLinks(bodyElement, nextIsLong && !expanded);
+    };
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(measure);
+    observer?.observe(bodyElement);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [body, expanded]);
+
+  return (
+    <>
+      <div
+        className={`message-body-viewport ${collapsed ? "message-body-viewport--collapsed" : ""}`}
+        style={
+          {
+            "--message-collapse-height": `${MESSAGE_COLLAPSED_HEIGHT_PX}px`,
+          } as CSSProperties
+        }
+      >
+        <div className="message-body note-body" id={contentId} ref={bodyRef}>
+          <MarkdownMessage body={body} />
+        </div>
+      </div>
+      {isLong && (
+        <button
+          className="message-collapse-toggle"
+          type="button"
+          aria-controls={contentId}
+          aria-expanded={expanded}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          <span>{expanded ? "Show less" : "Show more"}</span>
+          <ChevronDownIcon />
+        </button>
+      )}
+    </>
+  );
+}
+
 function AttachmentList({
   note,
   onAction,
@@ -1725,6 +1853,7 @@ function MessageGroups({
   notes,
   futureStartId,
   enabledLabels,
+  collapseLongMessages,
   copiedNoteId,
   onAttachmentAction,
   onCopyNote,
@@ -1735,6 +1864,7 @@ function MessageGroups({
   notes: Note[];
   futureStartId?: string;
   enabledLabels: ConfigurableLabel[];
+  collapseLongMessages: boolean;
   copiedNoteId?: string;
   onAttachmentAction: (
     note: Note,
@@ -1805,9 +1935,11 @@ function MessageGroups({
                             note={note}
                             onAction={onAttachmentAction}
                           />
-                          <div className="message-body note-body">
-                            <MarkdownMessage body={note.body} />
-                          </div>
+                          <CollapsibleMessageBody
+                            key={String(collapseLongMessages)}
+                            body={note.body}
+                            collapseLongMessages={collapseLongMessages}
+                          />
                           <footer className="message-footer">
                             <MessageLabels labels={note.labels ?? []} />
                             <time
@@ -2103,6 +2235,7 @@ function ChatWorkspace({
             notes={visibleNotes}
             futureStartId={futureStartId}
             enabledLabels={enabledLabels}
+            collapseLongMessages={detail.collapseLongMessages ?? true}
             copiedNoteId={copiedNoteId}
             onAttachmentAction={onAttachmentAction}
             onCopyNote={onCopyNote}
@@ -2513,6 +2646,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     title: string;
     accent: Accent;
     enabledLabels: ConfigurableLabel[];
+    collapseLongMessages: boolean;
   }) {
     if (!active) return;
     const projectId = active.id;

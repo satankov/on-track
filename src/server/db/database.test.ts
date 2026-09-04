@@ -77,7 +77,7 @@ describe("SQLite project-chat persistence", () => {
     );
   });
 
-  it("migrates an existing schema-3 database with projects left unpinned", () => {
+  it("migrates an existing schema-3 database with project defaults intact", () => {
     const databasePath = join(directory, "on-track.sqlite");
     repository.createChat({
       id: "chat-a",
@@ -88,9 +88,11 @@ describe("SQLite project-chat persistence", () => {
     database.close();
     const legacy = new Database(databasePath);
     legacy.exec(`
+      ALTER TABLE chats DROP COLUMN collapse_long_messages;
       ALTER TABLE chats DROP COLUMN pinned_at;
       UPDATE app_metadata SET schema_version = 3 WHERE id = 1;
-      DELETE FROM __drizzle_migrations WHERE created_at = 1788516961034;
+      DELETE FROM __drizzle_migrations
+      WHERE created_at IN (1788516961034, 1788523044823);
     `);
     legacy.close();
 
@@ -102,8 +104,9 @@ describe("SQLite project-chat persistence", () => {
         .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
         .pluck()
         .get(),
-    ).toBe(4);
+    ).toBe(5);
     expect(repository.getChat("chat-a")?.pinnedAt).toBeNull();
+    expect(repository.getChat("chat-a")?.collapseLongMessages).toBe(true);
   });
 
   it.runIf(process.platform !== "win32")(
@@ -115,12 +118,13 @@ describe("SQLite project-chat persistence", () => {
   );
 
   it("creates, customizes, orders, and reopens persisted chats", () => {
-    repository.createChat({
+    const created = repository.createChat({
       id: "chat-a",
       title: "Alpha",
       accent: "coral",
       now: 100,
     });
+    expect(created.collapseLongMessages).toBe(true);
     repository.createChat({
       id: "chat-b",
       title: "Beta",
@@ -130,6 +134,7 @@ describe("SQLite project-chat persistence", () => {
     repository.updateChat("chat-a", {
       title: "Alpha launch",
       accent: "ocean",
+      collapseLongMessages: false,
       now: 300,
     });
 
@@ -140,6 +145,7 @@ describe("SQLite project-chat persistence", () => {
     expect(repository.getChat("chat-a")).toMatchObject({
       title: "Alpha launch",
       accent: "ocean",
+      collapseLongMessages: false,
     });
 
     database.close();
@@ -149,7 +155,15 @@ describe("SQLite project-chat persistence", () => {
     expect(repository.getChat("chat-a")).toMatchObject({
       title: "Alpha launch",
       accent: "ocean",
+      collapseLongMessages: false,
     });
+    expect(() =>
+      database
+        .prepare(
+          "UPDATE chats SET collapse_long_messages = 2 WHERE id = 'chat-a'",
+        )
+        .run(),
+    ).toThrow(/CHECK constraint/);
   });
 
   it("persists stable project pins and batches sidebar message and Attention summaries", () => {

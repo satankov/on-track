@@ -8,6 +8,8 @@ below `1.0.0`, releases may contain breaking changes.
 
 ### Added
 
+- Per-project long-message display preferences, with accessible Show more/Show
+  less controls for rendered Markdown that exceeds the collapsed height.
 - A silent full-width fade marks the transition into future-dated messages and
   advances automatically as scheduled timestamps arrive.
 - Project-level sidebar pinning with a stable Pinned section that is independent
@@ -18,11 +20,13 @@ below `1.0.0`, releases may contain breaking changes.
 
 ### Changed
 
+- Kept project pin controls quiet at rest on hover-capable layouts, including
+  for pinned projects, while preserving keyboard-focus and touch visibility.
 - Replaced sidebar accent dots, generic update copy, and trailing chevrons with
   project previews, dedicated pin controls, and accessible Attention status.
-- Advanced the live and backup database schema to version 4. Exact schema-3
-  v0.0.4 backups migrate during guarded restore staging; schema 2 remains
-  unsupported.
+- Advanced the live and backup database schema to version 5. Exact schema-4
+  development and schema-3 v0.0.4 backups migrate during guarded restore
+  staging; schema 2 remains unsupported.
 
 ## [0.0.4] - 2026-09-03
 

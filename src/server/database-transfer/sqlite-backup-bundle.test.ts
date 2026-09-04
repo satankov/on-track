@@ -84,7 +84,7 @@ describe("SQLite backup bundle", () => {
     );
     expect(manifest).toEqual({
       formatVersion: 1,
-      schemaVersion: 4,
+      schemaVersion: 5,
       createdAt: 1_725_000_100_000,
       attachmentCount: 1,
       totalBytes: 12,
@@ -423,7 +423,7 @@ describe("SQLite backup bundle", () => {
         directory,
         `${name.replaceAll(" ", "-")}.sqlite`,
       );
-      const lookalike = createMetadataOnlySchemaV4Database(
+      const lookalike = createMetadataOnlySchemaV5Database(
         lookalikePath,
         schema,
       );
@@ -797,10 +797,15 @@ describe("SQLite backup bundle", () => {
     ).toBeUndefined();
   });
 
-  it("preserves a valid project pin through export and restore preparation", async () => {
+  it("preserves project pin and message-collapse settings through export and restore preparation", async () => {
     sourceDatabase
       .prepare("UPDATE chats SET pinned_at = ? WHERE id = 'chat-a'")
       .run(1_725_000_100_000);
+    sourceDatabase
+      .prepare(
+        "UPDATE chats SET collapse_long_messages = 0 WHERE id = 'chat-a'",
+      )
+      .run();
     const bundlePath = join(directory, "pinned.on-track-backup");
     await createSqliteBackupBundle({
       sourceDatabase,
@@ -813,7 +818,7 @@ describe("SQLite backup bundle", () => {
     });
 
     expect(validateSqliteBackupBundle(bundlePath)).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
     });
     const prepared = prepareSqliteBackupBundle({
       bundlePath,
@@ -829,6 +834,65 @@ describe("SQLite backup bundle", () => {
           .pluck()
           .get(),
       ).toBe(1_725_000_100_000);
+      expect(
+        candidate
+          .prepare(
+            "SELECT collapse_long_messages FROM chats WHERE id = 'chat-a'",
+          )
+          .pluck()
+          .get(),
+      ).toBe(0);
+    } finally {
+      candidate.close();
+    }
+  });
+
+  it("strictly accepts a schema-4 bundle and enables message collapsing during preparation", async () => {
+    const legacyPath = join(directory, "schema-4.on-track-backup");
+    await createSqliteBackupBundle({
+      sourceDatabase,
+      destinationPath: legacyPath,
+      attachmentStore: {
+        read: () => {
+          throw new Error("no files");
+        },
+      },
+      createdAt: () => 100,
+    });
+    mutateBundle(legacyPath, (legacy) => {
+      legacy.exec(`
+        ALTER TABLE chats DROP COLUMN collapse_long_messages;
+        UPDATE app_metadata SET schema_version = 4 WHERE id = 1;
+        UPDATE _on_track_bundle SET schema_version = 4 WHERE id = 1;
+        DELETE FROM __drizzle_migrations WHERE created_at = 1788523044823;
+      `);
+    });
+
+    expect(validateSqliteBackupBundle(legacyPath)).toMatchObject({
+      schemaVersion: 4,
+    });
+    const prepared = prepareSqliteBackupBundle({
+      bundlePath: legacyPath,
+      workspace: createRestoreWorkspace(directory, "schema-4"),
+    });
+    const candidate = new Database(prepared.candidateDatabasePath, {
+      readonly: true,
+    });
+    try {
+      expect(
+        candidate
+          .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
+          .pluck()
+          .get(),
+      ).toBe(5);
+      expect(
+        candidate
+          .prepare(
+            "SELECT collapse_long_messages FROM chats WHERE id = 'chat-a'",
+          )
+          .pluck()
+          .get(),
+      ).toBe(1);
     } finally {
       candidate.close();
     }
@@ -911,10 +975,12 @@ describe("SQLite backup bundle", () => {
     });
     mutateBundle(legacyPath, (legacy) => {
       legacy.exec(`
+        ALTER TABLE chats DROP COLUMN collapse_long_messages;
         ALTER TABLE chats DROP COLUMN pinned_at;
         UPDATE app_metadata SET schema_version = 3 WHERE id = 1;
         UPDATE _on_track_bundle SET schema_version = 3 WHERE id = 1;
-        DELETE FROM __drizzle_migrations WHERE created_at = 1788516961034;
+        DELETE FROM __drizzle_migrations
+        WHERE created_at IN (1788516961034, 1788523044823);
       `);
     });
 
@@ -934,13 +1000,21 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(4);
+      ).toBe(5);
       expect(
         candidate
           .prepare("SELECT pinned_at FROM chats WHERE id = 'chat-a'")
           .pluck()
           .get(),
       ).toBeNull();
+      expect(
+        candidate
+          .prepare(
+            "SELECT collapse_long_messages FROM chats WHERE id = 'chat-a'",
+          )
+          .pluck()
+          .get(),
+      ).toBe(1);
     } finally {
       candidate.close();
     }
@@ -964,6 +1038,27 @@ describe("SQLite backup bundle", () => {
 
     expect(() => validateSqliteBackupBundle(bundlePath)).toThrow(
       /project pin time/i,
+    );
+  });
+
+  it("rejects invalid persisted message-collapse preferences in a bundle", async () => {
+    const bundlePath = join(directory, "invalid-collapse.on-track-backup");
+    await createSqliteBackupBundle({
+      sourceDatabase,
+      destinationPath: bundlePath,
+      attachmentStore: {
+        read: () => {
+          throw new Error("no files");
+        },
+      },
+    });
+    mutateBundle(bundlePath, (database) => {
+      database.pragma("ignore_check_constraints = ON");
+      database.exec("UPDATE chats SET collapse_long_messages = 2");
+    });
+
+    expect(() => validateSqliteBackupBundle(bundlePath)).toThrow(
+      /message collapse preference/i,
     );
   });
 
@@ -1171,7 +1266,7 @@ function createMetadataOnlySchemaV2Database(
   return database;
 }
 
-function createMetadataOnlySchemaV4Database(
+function createMetadataOnlySchemaV5Database(
   path: string,
   options: Parameters<typeof createMetadataOnlySchemaV2Database>[1] = {},
 ): Database.Database {
@@ -1196,7 +1291,8 @@ function createMetadataOnlySchemaV4Database(
     INSERT INTO chat_enabled_labels (chat_id, label) VALUES
       ('chat-a', 'todo'), ('chat-a', 'milestone');
     ALTER TABLE chats ADD COLUMN pinned_at INTEGER${omitChecks ? "" : " CONSTRAINT chats_pinned_at_nonnegative CHECK (pinned_at IS NULL OR pinned_at >= 0)"};
-    UPDATE app_metadata SET schema_version = 4 WHERE id = 1;
+    ALTER TABLE chats ADD COLUMN collapse_long_messages INTEGER DEFAULT 1 NOT NULL${omitChecks ? "" : " CONSTRAINT chats_collapse_long_messages_boolean CHECK (collapse_long_messages IN (0, 1))"};
+    UPDATE app_metadata SET schema_version = 5 WHERE id = 1;
     INSERT INTO __drizzle_migrations (id, hash, created_at)
       VALUES (2, 'schema-v3', 1788356400000);
   `);

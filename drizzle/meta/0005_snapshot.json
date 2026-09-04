@@ -1,0 +1,424 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "bf48d2ce-c5c2-443d-baf6-17608873bcc1",
+  "prevId": "1ea8b1d6-70fe-4067-8f11-f8b0e6937330",
+  "tables": {
+    "app_metadata": {
+      "name": "app_metadata",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "schema_version": {
+          "name": "schema_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "app_metadata_single_row": {
+          "name": "app_metadata_single_row",
+          "value": "\"app_metadata\".\"id\" = 1"
+        },
+        "app_metadata_version_positive": {
+          "name": "app_metadata_version_positive",
+          "value": "\"app_metadata\".\"schema_version\" >= 1"
+        }
+      }
+    },
+    "chat_enabled_labels": {
+      "name": "chat_enabled_labels",
+      "columns": {
+        "chat_id": {
+          "name": "chat_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "chat_enabled_labels_chat_id_chats_id_fk": {
+          "name": "chat_enabled_labels_chat_id_chats_id_fk",
+          "tableFrom": "chat_enabled_labels",
+          "tableTo": "chats",
+          "columnsFrom": [
+            "chat_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "chat_enabled_labels_chat_id_label_pk": {
+          "columns": [
+            "chat_id",
+            "label"
+          ],
+          "name": "chat_enabled_labels_chat_id_label_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "chat_enabled_labels_label_allowed": {
+          "name": "chat_enabled_labels_label_allowed",
+          "value": "\"chat_enabled_labels\".\"label\" IN ('todo', 'decision', 'open-question', 'risk', 'milestone')"
+        }
+      }
+    },
+    "chats": {
+      "name": "chats",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "accent": {
+          "name": "accent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "pinned_at": {
+          "name": "pinned_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "collapse_long_messages": {
+          "name": "collapse_long_messages",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        }
+      },
+      "indexes": {
+        "chats_activity_idx": {
+          "name": "chats_activity_idx",
+          "columns": [
+            "updated_at",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "chats_title_length": {
+          "name": "chats_title_length",
+          "value": "length(trim(\"chats\".\"title\")) BETWEEN 1 AND 80"
+        },
+        "chats_accent_allowed": {
+          "name": "chats_accent_allowed",
+          "value": "accent IN ('coral', 'amber', 'moss', 'ocean', 'iris', 'slate')"
+        },
+        "chats_pinned_at_nonnegative": {
+          "name": "chats_pinned_at_nonnegative",
+          "value": "\"chats\".\"pinned_at\" IS NULL OR \"chats\".\"pinned_at\" >= 0"
+        },
+        "chats_collapse_long_messages_boolean": {
+          "name": "chats_collapse_long_messages_boolean",
+          "value": "\"chats\".\"collapse_long_messages\" IN (0, 1)"
+        }
+      }
+    },
+    "note_attachments": {
+      "name": "note_attachments",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note_id": {
+          "name": "note_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "filename": {
+          "name": "filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "media_type": {
+          "name": "media_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "storage_path": {
+          "name": "storage_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "byte_size": {
+          "name": "byte_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "modified_at": {
+          "name": "modified_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "note_attachments_storage_path_unique": {
+          "name": "note_attachments_storage_path_unique",
+          "columns": [
+            "storage_path"
+          ],
+          "isUnique": true
+        },
+        "note_attachments_note_idx": {
+          "name": "note_attachments_note_idx",
+          "columns": [
+            "note_id",
+            "created_at",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "note_attachments_note_id_notes_id_fk": {
+          "name": "note_attachments_note_id_notes_id_fk",
+          "tableFrom": "note_attachments",
+          "tableTo": "notes",
+          "columnsFrom": [
+            "note_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "note_attachments_filename_length": {
+          "name": "note_attachments_filename_length",
+          "value": "length(trim(\"note_attachments\".\"filename\")) BETWEEN 1 AND 255"
+        },
+        "note_attachments_media_type_length": {
+          "name": "note_attachments_media_type_length",
+          "value": "length(trim(\"note_attachments\".\"media_type\")) BETWEEN 1 AND 255"
+        },
+        "note_attachments_storage_path_length": {
+          "name": "note_attachments_storage_path_length",
+          "value": "length(\"note_attachments\".\"storage_path\") BETWEEN 1 AND 1024"
+        },
+        "note_attachments_byte_size_nonnegative": {
+          "name": "note_attachments_byte_size_nonnegative",
+          "value": "\"note_attachments\".\"byte_size\" >= 0"
+        },
+        "note_attachments_modified_at_nonnegative": {
+          "name": "note_attachments_modified_at_nonnegative",
+          "value": "\"note_attachments\".\"modified_at\" >= 0"
+        }
+      }
+    },
+    "note_labels": {
+      "name": "note_labels",
+      "columns": {
+        "note_id": {
+          "name": "note_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "note_labels_note_id_notes_id_fk": {
+          "name": "note_labels_note_id_notes_id_fk",
+          "tableFrom": "note_labels",
+          "tableTo": "notes",
+          "columnsFrom": [
+            "note_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "note_labels_note_id_label_pk": {
+          "columns": [
+            "note_id",
+            "label"
+          ],
+          "name": "note_labels_note_id_label_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "note_labels_label_allowed": {
+          "name": "note_labels_label_allowed",
+          "value": "\"note_labels\".\"label\" IN ('pin', 'attention', 'todo', 'decision', 'open-question', 'risk', 'milestone')"
+        }
+      }
+    },
+    "notes": {
+      "name": "notes",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "chat_id": {
+          "name": "chat_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "notes_chat_history_idx": {
+          "name": "notes_chat_history_idx",
+          "columns": [
+            "chat_id",
+            "created_at",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "notes_chat_id_chats_id_fk": {
+          "name": "notes_chat_id_chats_id_fk",
+          "tableFrom": "notes",
+          "tableTo": "chats",
+          "columnsFrom": [
+            "chat_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "notes_body_length": {
+          "name": "notes_body_length",
+          "value": "length(\"notes\".\"body\") <= 10000"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

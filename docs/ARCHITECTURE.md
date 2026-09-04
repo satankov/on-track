@@ -5,8 +5,9 @@
 The v0.0.4 plaintext alpha is the published baseline. Version 0.0.5 development
 adds a client-side live boundary for future-dated messages and extends the
 project rail with persistent pins, current-time previews, and Attention status.
-It preserves the existing local server/service/repository and versioned-backup
-boundaries. The core decisions are recorded in
+It also adds quiet pin presentation and per-project collapsible-message defaults
+without changing the existing local server/service/repository or
+versioned-backup boundaries. The core decisions are recorded in
 [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
 encryption limitation in [ADR-0002](adr/0002-defer-at-rest-encryption.md),
 source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the
@@ -59,6 +60,8 @@ Local browser -> loopback Fastify server -> application service -> repository ->
   bootstrap script applies it before React mounts to avoid a theme flash. The
   visible message timeline schedules its next future timestamp and renders one
   silent accessible boundary without moving the message rows when time advances.
+  Rendered Markdown bodies measure their natural height and expose an accessible
+  per-message disclosure when they exceed the project's collapse threshold.
 - `src/domain`: shared data contracts, closed built-in label vocabularies, and
   validation rules with no UI or persistence dependency.
 - `src/server/app.ts`: Fastify transport, boundary controls, safe error mapping,
@@ -89,8 +92,10 @@ with a deterministic ID tie-breaker. Appending, editing, timestamp-adjusting,
 and deleting notes keep chat activity consistent with the newest remaining note
 in a transaction. Label changes do not alter message time or project activity.
 Project-level `pinned_at` is nullable, nonnegative, and updated separately from
-activity. Sidebar reads batch the latest bounded message preview at or before the
-service clock, the nearest future message timestamp, and the nearest past/future
+activity. Each project also stores a checked integer boolean controlling whether
+long messages start collapsed; new and migrated projects default to enabled.
+Sidebar reads batch the latest bounded message preview at or before the service
+clock, the nearest future message timestamp, and the nearest past/future
 Attention timestamps across all projects, then order pinned projects by pin time
 and other projects by activity. All child relations cascade with their owning
 project or message.
@@ -152,12 +157,12 @@ integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
 fresh managed paths, removes bundle payload tables, and compacts the current-
-schema candidate. Exact schema-3 v0.0.4 bundles are accepted through a fixed
-legacy descriptor and migrated to schema 4 only after copying into the staging
-workspace. It then uses the maintenance gate and restore journal to
-replace live state. Exact active-schema expectations come from a trusted in-
-memory database built with checked-in migrations; imported SQL never defines
-its own validation baseline.
+schema candidate. Exact schema-4 development and schema-3 v0.0.4 bundles are
+accepted through fixed legacy descriptors and migrated to schema 5 only after
+copying into the staging workspace. It then uses the maintenance gate and
+restore journal to replace live state. Exact active-schema expectations come
+from a trusted in-memory database built with checked-in migrations; imported SQL
+never defines its own validation baseline.
 Restore is replacement, not merge. Export is limited to three attempts per
 minute per process; restore is limited to two attempts per minute per process.
 
@@ -194,6 +199,8 @@ be hardened before production-readiness claims.
 - Create/switch multiple projects and preserve project-specific histories.
 - Pin/unpin projects, preserve pin order across restart/backup, and scan latest
   message and current/earlier Attention status in the project rail.
+- Expand and collapse one long message without affecting its neighbors, change
+  the project default, and preserve that default through restart and backup.
 - Copy, edit, timestamp-adjust, and delete notes while preserving deterministic
   ordering.
 - Schedule future-dated messages, see the silent current/future boundary at
