@@ -20,9 +20,14 @@ services, analytics, or remote runtime assets.
 ## What works in this checkout
 
 - Create and switch between personal project chats.
+- Pin important projects above the activity-sorted project list.
 - Customize each project's title and accent.
 - Add multiline Markdown notes with keyboard-friendly controls.
 - Copy, edit, timestamp-adjust, and delete notes.
+- Schedule future-dated messages and see where the history crosses into the
+  future through a silent full-width fade that clears as timestamps arrive.
+- Scan one-line previews of the latest message up to the current time and current
+  or earlier Attention status directly in the project sidebar.
 - Attach local files to notes, filter messages with files, open eligible files
   through the operating system's default association, and show them in their
   managed folder. Executable and launcher-like files are blocked from Open.
@@ -83,10 +88,10 @@ SQLite databases, journals, backups, exports, and common local development
 artifacts are ignored by Git. The release check also fails if a database file is
 ever tracked. Use the Settings button at the bottom of the sidebar to export or
 restore a versioned backup bundle. Restore replaces current local projects and
-files rather than merging them. The v0.0.4 alpha accepts only backups created by
-v0.0.4; it does not restore v0.0.3/schema-2 bundles. A live v0.0.3 database is
-still migrated during startup. You can isolate evaluation data with an absolute
-disposable path:
+files rather than merging them. The current checkout accepts its schema-4
+backups and strictly validated v0.0.4/schema-3 backups; it does not restore
+v0.0.3/schema-2 bundles. Live schema-3 databases migrate during startup. You can
+isolate evaluation data with an absolute disposable path:
 
 ```sh
 ON_TRACK_DATA_DIR=/absolute/path/to/on-track-data npm start

@@ -15,16 +15,15 @@ recovery parts of that promise.
 
 ## Current phase
 
-Version 0.0.3 is the current published plaintext alpha source release under
-Apache License 2.0. Version 0.0.4 is prepared as the next release candidate: it
-adds a desktop-first flat workspace, browser-local Light, Neutral, and Dark
-appearance themes, durable project message labels with project-specific
-filtering, Node.js support from 22.16.0 on macOS and Linux, and Node.js 24 support
-on Windows, macOS, and Linux.
+Version 0.0.4 is the current published plaintext alpha source release under
+Apache License 2.0. Version 0.0.5 is in development: its first committed slice
+adds a silent live boundary between current and future-dated messages, while the
+current feature slice adds project sidebar pins, current-time previews, and
+Attention status.
 
 ## Current objective
 
-Complete review, CI, and publication of the v0.0.4 alpha release candidate while
+Complete, review, and prepare the v0.0.5 feature slices for publication while
 retaining the plaintext and portability warnings. Mobile remains a
 regression-protected alpha, not a dedicated design target.
 
@@ -72,7 +71,7 @@ regression-protected alpha, not a dedicated design target.
   requests, external edits, stable identity, focus refresh, and restart without
   launching desktop applications.
 
-## v0.0.4 release candidate
+## v0.0.4 outcome
 
 - The main workspace uses a flatter desktop-first hierarchy, compact auto-growing
   composer, and vertical history filters without losing mobile regression
@@ -88,17 +87,33 @@ regression-protected alpha, not a dedicated design target.
   schema validation is derived from checked-in migrations; the unused attachment
   download route and obsolete schema-2 backup restore path are removed.
 
+## v0.0.5 development
+
+- Chronological history marks the first future-dated message with a silent,
+  square-edged, full-width accent fade and accessible separator. The boundary
+  advances or disappears at delivery time without remounting message controls.
+- The current project-rail slice adds persistent project pins, current-time
+  message previews, and today/earlier Attention status without changing message
+  activity ordering.
+
 ## Current capabilities
 
 - Create and switch between personal project chats.
+- Pin and unpin projects in a stable sidebar section without changing their
+  message-activity timestamps.
 - Rename a project and select a restrained accent color.
 - Add multiline Markdown notes in deterministic chronological order.
+- Schedule future-dated messages and see a live, unobtrusive boundary between
+  current history and messages whose timestamps have not arrived.
 - Add local files to project messages with optional text context, including
   attachment add/remove while editing a message.
 - Filter the open project history to messages with attached files.
 - Apply permanent Pin and Attention labels plus project-enabled Todo, Decision,
   Open question, Risk, and Milestone labels to messages, then filter history by
   active labels.
+- Scan each project's latest message up to the current time and see whether an
+  applied Attention label belongs to today or an earlier message directly from
+  the sidebar.
 - Open eligible managed files with the operating system's default association,
   or show their safe managed folder; risky executable/launcher types are blocked
   from Open.
@@ -112,8 +127,8 @@ regression-protected alpha, not a dedicated design target.
 
 ## Near-term priorities
 
-1. Publish v0.0.4 after review and the platform-scoped Node 22.16/24 release
-   matrix passes.
+1. Finish and publish v0.0.5 after its future-message and project-rail slices
+   pass review and the platform-scoped Node 22.16/24 release matrix.
 2. Continue hardening backup, restore, integrity checking, recovery, and
    conflict-free import semantics before users entrust irreplaceable data to the
    application.
