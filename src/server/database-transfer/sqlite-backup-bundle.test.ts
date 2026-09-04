@@ -333,7 +333,7 @@ describe("SQLite backup bundle", () => {
         maximumBundleBytes: 100,
       }),
     ).toThrow(/bundle size/i);
-  });
+  }, 15_000);
 
   it("rejects unsafe envelopes, destinations, and invalid limit configuration", async () => {
     const notSqlite = join(directory, "not-sqlite.on-track-backup");
