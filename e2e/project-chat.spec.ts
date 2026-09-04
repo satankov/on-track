@@ -51,7 +51,7 @@ async function addNote(
   chatId: string,
   body: string,
   createdAt?: number,
-): Promise<void> {
+): Promise<{ id: string }> {
   const response = await request.post(`${url}/api/chats/${chatId}/notes`, {
     multipart: {
       body,
@@ -59,6 +59,7 @@ async function addNote(
     },
   });
   expect(response.ok()).toBe(true);
+  return (await response.json()) as { id: string };
 }
 
 function readAttachmentRow(
@@ -126,7 +127,9 @@ test("creates, customizes, records, and reopens a private project thread", async
   await page.getByLabel("Message timestamp").fill("2026-08-30T10:15");
   await page.getByRole("button", { name: /Add note/ }).click();
   await expect(
-    page.getByText("Ship the smallest useful workflow."),
+    page
+      .locator(".message-list")
+      .getByText("Ship the smallest useful workflow."),
   ).toBeVisible();
   await expect(page.getByText("August 30, 2026")).toBeVisible();
   await expect(
@@ -189,13 +192,120 @@ test("creates, customizes, records, and reopens a private project thread", async
     page.getByRole("heading", { name: renamedProject }),
   ).toBeVisible();
   await expect(
-    page.getByText("Ship the smallest useful workflow."),
+    page
+      .locator(".message-list")
+      .getByText("Ship the smallest useful workflow."),
   ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("workspace.png"),
     fullPage: true,
   });
   expect([...unexpectedHosts]).toEqual([]);
+});
+
+test("pins projects and scans previews with Attention status", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  const suffix = `${viewportName(testInfo.project.name)}-${Date.now()}`;
+  const pinned = await createProject(request, localApp.url, {
+    title: `Pinned ${suffix}`,
+    accent: "coral",
+  });
+  const current = await createProject(request, localApp.url, {
+    title: `Current alert ${suffix}`,
+    accent: "ocean",
+  });
+  const earlier = await createProject(request, localApp.url, {
+    title: `Earlier alert ${suffix}`,
+    accent: "moss",
+  });
+  await addNote(
+    request,
+    localApp.url,
+    pinned.id,
+    "A deliberately long latest message preview that should remain on one line and end with a width-aware ellipsis in the compact project rail.",
+  );
+  const currentNote = await addNote(
+    request,
+    localApp.url,
+    current.id,
+    "Needs attention today",
+  );
+  const earlierNote = await addNote(
+    request,
+    localApp.url,
+    earlier.id,
+    "Needed attention earlier",
+    Date.now() - 86_400_000,
+  );
+  expect(
+    (
+      await request.put(
+        `${localApp.url}/api/chats/${current.id}/notes/${currentNote.id}/labels/attention`,
+      )
+    ).ok(),
+  ).toBe(true);
+  expect(
+    (
+      await request.put(
+        `${localApp.url}/api/chats/${earlier.id}/notes/${earlierNote.id}/labels/attention`,
+      )
+    ).ok(),
+  ).toBe(true);
+  expect(
+    (await request.put(`${localApp.url}/api/chats/${pinned.id}/pin`)).ok(),
+  ).toBe(true);
+
+  await page.goto(localApp.url);
+  const pinnedSection = page.locator(".project-section", {
+    hasText: "Pinned",
+  });
+  await expect(pinnedSection).toContainText(pinned.title);
+  await expect(
+    page.getByRole("button", { name: `Pin ${pinned.title}` }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: `Open ${current.title}` }).locator(".."),
+  ).toHaveAttribute("data-attention-state", "today");
+  await expect(
+    page.getByRole("button", { name: `Open ${earlier.title}` }).locator(".."),
+  ).toHaveAttribute("data-attention-state", "earlier");
+  expect(
+    await page
+      .getByRole("button", { name: `Open ${pinned.title}` })
+      .locator("small")
+      .evaluate((element) => element.scrollWidth > element.clientWidth),
+  ).toBe(true);
+
+  const currentPin = page.getByRole("button", {
+    name: `Pin ${current.title}`,
+  });
+  await currentPin.click();
+  await expect(currentPin).toHaveAttribute("aria-pressed", "true");
+  await expect(currentPin).toBeFocused();
+  await expect(pinnedSection).toContainText(current.title);
+  await currentPin.click();
+  await expect(currentPin).toHaveAttribute("aria-pressed", "false");
+  await expect(
+    page.locator(".project-section", { hasText: "Projects" }),
+  ).toContainText(current.title);
+
+  await localApp.restart();
+  await page.goto(localApp.url);
+  await expect(
+    page.getByRole("button", { name: `Pin ${pinned.title}` }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: `Pin ${current.title}` }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(".project-dot, .project-arrow")).toHaveCount(0);
+
+  await page.screenshot({
+    path: testInfo.outputPath("project-sidebar.png"),
+    fullPage: true,
+  });
 });
 
 test("uses compact desktop chrome and an auto-growing composer", async ({
@@ -319,14 +429,25 @@ test("shows future messages in a silent full-width fade", async ({
   );
 
   await page.goto(localApp.url);
-  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  const projectButton = page.getByRole("button", {
+    name: `Open ${project.title}`,
+  });
+  await expect(projectButton.locator("small")).toHaveText("Already happened");
+  await expect(projectButton.locator("small")).not.toHaveText(
+    "Scheduled for tomorrow",
+  );
+  await projectButton.click();
 
   const futureBoundary = page.getByRole("separator", {
     name: "Future messages",
   });
   await expect(futureBoundary).toBeAttached();
-  await expect(page.getByText("Scheduled for tomorrow")).toBeVisible();
-  await expect(page.getByText("Already happened")).toBeVisible();
+  await expect(
+    page.locator(".message-list").getByText("Scheduled for tomorrow"),
+  ).toBeVisible();
+  await expect(
+    page.locator(".message-list").getByText("Already happened"),
+  ).toBeVisible();
   await expect(page.getByText("Future messages")).toHaveCount(0);
 
   const geometry = await page.evaluate(() => {
@@ -545,7 +666,7 @@ test("manages markdown messages and database backups from the UI", async ({
 
   page.once("dialog", (dialog) => dialog.accept());
   await note.getByRole("button", { name: "Delete message" }).click();
-  await expect(page.getByText("Revised")).toBeHidden();
+  await expect(page.locator(".message-list").getByText("Revised")).toBeHidden();
 
   const bundledAttachmentPath = testInfo.outputPath("bundled-roadmap.txt");
   writeFileSync(bundledAttachmentPath, "bundle sidecar bytes");
@@ -642,18 +763,26 @@ test("adds an attachment message and filters history by files", async ({
   }
   await page.getByLabel("Add a note").fill("Plain status");
   await page.getByRole("button", { name: /Add note/ }).click();
-  await expect(page.getByText("Plain status")).toBeVisible();
+  await expect(
+    page.locator(".message-list").getByText("Plain status"),
+  ).toBeVisible();
 
   await page.getByLabel("Attach files").setInputFiles(attachmentPath);
   await expect(page.getByText("roadmap.txt")).toBeVisible();
   await page.getByLabel("Add a note").fill("Roadmap context");
   await page.getByRole("button", { name: /Add note/ }).click();
 
-  await expect(page.getByText("Roadmap context")).toBeVisible();
+  await expect(
+    page.locator(".message-list").getByText("Roadmap context"),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Files 1" })).toBeVisible();
   await page.getByRole("button", { name: "Files 1" }).click();
-  await expect(page.getByText("Plain status")).toBeHidden();
-  await expect(page.getByText("Roadmap context")).toBeVisible();
+  await expect(
+    page.locator(".message-list").getByText("Plain status"),
+  ).toBeHidden();
+  await expect(
+    page.locator(".message-list").getByText("Roadmap context"),
+  ).toBeVisible();
 
   await expect(
     page.getByRole("button", { name: "Open roadmap.txt" }),
@@ -762,7 +891,9 @@ test("adds an attachment message and filters history by files", async ({
   await localApp.restart();
   await page.goto(localApp.url);
   await page.getByRole("button", { name: `Open ${projectTitle}` }).click();
-  await expect(page.getByText("Roadmap context")).toBeVisible();
+  await expect(
+    page.locator(".message-list").getByText("Roadmap context"),
+  ).toBeVisible();
   await expect(page.getByText("roadmap.txt")).toBeVisible();
   await expect(page.locator(".attachment-card small")).toContainText(
     `${editedByteSize} B`,
@@ -824,8 +955,11 @@ test("configures, applies, filters, and retains project message labels", async (
   await expect(pinLabel).toBeVisible();
   await expect(pinLabel).toHaveAttribute("aria-label", "Pin");
   await expect(pinLabel).toHaveText("");
+  await expect(pinLabel).toHaveCSS("border-top-width", "0px");
   await expect(attentionLabel).toHaveAttribute("aria-label", "Attention");
-  await expect(attentionLabel).toHaveText("🔴");
+  await expect(attentionLabel).toHaveText("");
+  await expect(attentionLabel).toHaveCSS("border-top-width", "0px");
+  await expect(attentionLabel.locator(".attention-dot--today")).toBeVisible();
   await expect(
     message.locator('.message-label[data-label="risk"]'),
   ).toContainText("⚠️Risk");
@@ -835,7 +969,9 @@ test("configures, applies, filters, and retains project message labels", async (
   );
   await expect(page.getByRole("button", { name: "Risk 1" })).toBeVisible();
   await page.getByRole("button", { name: "Risk 1" }).click();
-  await expect(page.getByText("Escalate the rollout risk")).toBeVisible();
+  await expect(
+    page.locator(".message-list").getByText("Escalate the rollout risk"),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByRole("checkbox", { name: "Risk" }).uncheck();
@@ -963,7 +1099,7 @@ test("keeps project and note collections inside their own scroll panes", async (
     };
   });
   expect(railAfter.headerTop).toBeCloseTo(railBefore.header.top, 0);
-  expect(railAfter.labelTop).toBeCloseTo(railBefore.label.top, 0);
+  expect(railAfter.labelTop).toBeLessThan(railBefore.label.top);
   expect(railAfter.footerBottom).toBeCloseTo(railBefore.footer.bottom, 0);
 
   await page

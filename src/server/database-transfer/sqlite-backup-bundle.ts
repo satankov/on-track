@@ -14,9 +14,18 @@ import {
   unlinkSync,
   utimesSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, posix, relative, sep } from "node:path";
+import {
+  dirname,
+  isAbsolute,
+  join,
+  posix,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 
 import Database from "better-sqlite3";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 
 import {
   ACCENTS,
@@ -37,7 +46,9 @@ import {
 
 export const SQL_ON_TRACK_BACKUP_APPLICATION_ID = 0x4f545242;
 export const SQL_ON_TRACK_BACKUP_FORMAT_VERSION = 1;
-export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 3;
+export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 4;
+const LEGACY_SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 3;
+const LEGACY_SCHEMA_MIGRATION_AT = 1_788_356_400_000;
 
 export interface SqliteBackupBundleLimits {
   maximumBundleBytes: number;
@@ -344,10 +355,10 @@ export function validateSqliteBackupBundle(
       );
     }
     validateIntegrity(database);
-    requireCurrentBundleSchemaVersion(database);
-    validateExactSchema(database, currentBundleSchemaDescriptor());
-    validateSchemaVersion(database, SQL_ON_TRACK_BACKUP_SCHEMA_VERSION);
-    validateApplicationData(database, limits);
+    const schemaVersion = requireSupportedBundleSchemaVersion(database);
+    validateExactSchema(database, bundleSchemaDescriptor(schemaVersion));
+    validateSchemaVersion(database, schemaVersion);
+    validateApplicationData(database, limits, schemaVersion);
 
     const rows = database
       .prepare(
@@ -375,7 +386,7 @@ export function validateSqliteBackupBundle(
     const row = rows[0];
     if (
       row.format_version !== SQL_ON_TRACK_BACKUP_FORMAT_VERSION ||
-      row.schema_version !== SQL_ON_TRACK_BACKUP_SCHEMA_VERSION
+      row.schema_version !== schemaVersion
     ) {
       throw validationError("The backup bundle version is unsupported.");
     }
@@ -605,6 +616,11 @@ export function prepareSqliteBackupBundle(
       DROP TABLE _on_track_bundle;
     `);
     candidate.pragma("application_id = 0");
+    if (
+      copiedManifest.schemaVersion === LEGACY_SQL_ON_TRACK_BACKUP_SCHEMA_VERSION
+    ) {
+      applyBundledMigrations(candidate);
+    }
     candidate.exec("VACUUM");
     candidate.close();
     candidate = undefined;
@@ -648,7 +664,11 @@ export function validatePreparedSqliteBackupDatabase(
     validateIntegrity(database);
     validateExactSchema(database, trustedActiveSchemaDescriptor());
     validateSchemaVersion(database, SQL_ON_TRACK_BACKUP_SCHEMA_VERSION);
-    validateApplicationData(database, DEFAULT_SQLITE_BACKUP_BUNDLE_LIMITS);
+    validateApplicationData(
+      database,
+      DEFAULT_SQLITE_BACKUP_BUNDLE_LIMITS,
+      SQL_ON_TRACK_BACKUP_SCHEMA_VERSION,
+    );
   } catch (error) {
     throw asValidationError(error);
   } finally {
@@ -762,21 +782,26 @@ function validateActiveDatabase(
   validateIntegrity(database);
   validateExactSchema(database, trustedActiveSchemaDescriptor());
   validateSchemaVersion(database, SQL_ON_TRACK_BACKUP_SCHEMA_VERSION);
-  validateApplicationData(database, limits);
+  validateApplicationData(database, limits, SQL_ON_TRACK_BACKUP_SCHEMA_VERSION);
 }
 
 function validateApplicationData(
   database: Database.Database,
   limits: SqliteBackupBundleLimits,
+  schemaVersion: number,
 ): void {
   const chats = database
-    .prepare("SELECT id, title, accent, created_at, updated_at FROM chats")
+    .prepare(
+      `SELECT id, title, accent, created_at, updated_at${schemaVersion >= 4 ? ", pinned_at" : ""}
+       FROM chats`,
+    )
     .all() as Array<{
     id: unknown;
     title: unknown;
     accent: unknown;
     created_at: unknown;
     updated_at: unknown;
+    pinned_at?: unknown;
   }>;
   for (const chat of chats) {
     if (
@@ -793,6 +818,9 @@ function validateApplicationData(
     }
     requireNonnegativeSafeInteger(chat.created_at, "project creation time");
     requireNonnegativeSafeInteger(chat.updated_at, "project update time");
+    if (schemaVersion >= 4 && chat.pinned_at !== null) {
+      requireNonnegativeSafeInteger(chat.pinned_at, "project pin time");
+    }
   }
 
   const notes = database
@@ -917,6 +945,7 @@ function validateIntegrity(database: Database.Database): void {
 }
 
 let trustedActiveSchema: SchemaDescriptor | undefined;
+let trustedSchema3: SchemaDescriptor | undefined;
 
 function trustedActiveSchemaDescriptor(): SchemaDescriptor {
   if (trustedActiveSchema) return trustedActiveSchema;
@@ -931,8 +960,51 @@ function trustedActiveSchemaDescriptor(): SchemaDescriptor {
   }
 }
 
-function currentBundleSchemaDescriptor(): SchemaDescriptor {
-  const active = trustedActiveSchemaDescriptor();
+function trustedSchema3Descriptor(): SchemaDescriptor {
+  if (trustedSchema3) return trustedSchema3;
+  const database = new Database(":memory:");
+  try {
+    database.pragma("foreign_keys = ON");
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS __drizzle_migrations (
+        id SERIAL PRIMARY KEY,
+        hash TEXT NOT NULL,
+        created_at numeric
+      );
+    `);
+    const migrations = readMigrationFiles({
+      migrationsFolder: resolve(process.cwd(), "drizzle"),
+    }).filter(
+      (migration) => migration.folderMillis <= LEGACY_SCHEMA_MIGRATION_AT,
+    );
+    if (
+      migrations.length !== 4 ||
+      migrations.at(-1)?.folderMillis !== LEGACY_SCHEMA_MIGRATION_AT
+    ) {
+      throw validationError("The trusted schema-3 migration set is missing.");
+    }
+    const insertMigration = database.prepare(
+      `INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)`,
+    );
+    const applyLegacyMigrations = database.transaction(() => {
+      for (const migration of migrations) {
+        for (const statement of migration.sql) database.exec(statement);
+        insertMigration.run(migration.hash, migration.folderMillis);
+      }
+    });
+    applyLegacyMigrations();
+    trustedSchema3 = describeSchema(database);
+    return trustedSchema3;
+  } finally {
+    database.close();
+  }
+}
+
+function bundleSchemaDescriptor(schemaVersion: number): SchemaDescriptor {
+  const active =
+    schemaVersion === SQL_ON_TRACK_BACKUP_SCHEMA_VERSION
+      ? trustedActiveSchemaDescriptor()
+      : trustedSchema3Descriptor();
   return {
     objects: [...active.objects, ...BUNDLE_SCHEMA_OBJECTS].sort(),
     columns: { ...active.columns, ...BUNDLE_TABLE_COLUMNS },
@@ -943,7 +1015,9 @@ function currentBundleSchemaDescriptor(): SchemaDescriptor {
   };
 }
 
-function requireCurrentBundleSchemaVersion(database: Database.Database): void {
+function requireSupportedBundleSchemaVersion(
+  database: Database.Database,
+): number {
   let rows: Array<{ id: unknown; schema_version: unknown }>;
   try {
     rows = database
@@ -955,9 +1029,13 @@ function requireCurrentBundleSchemaVersion(database: Database.Database): void {
   if (rows.length !== 1 || rows[0].id !== 1) {
     throw validationError("The backup manifest must contain exactly one row.");
   }
-  if (rows[0].schema_version !== SQL_ON_TRACK_BACKUP_SCHEMA_VERSION) {
+  if (
+    rows[0].schema_version !== SQL_ON_TRACK_BACKUP_SCHEMA_VERSION &&
+    rows[0].schema_version !== LEGACY_SQL_ON_TRACK_BACKUP_SCHEMA_VERSION
+  ) {
     throw validationError("The backup bundle version is unsupported.");
   }
+  return rows[0].schema_version as number;
 }
 
 function schemaObjects(database: Database.Database): string[] {

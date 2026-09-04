@@ -3,6 +3,7 @@ import type {
   ChatDetail,
   Note,
   NoteAttachment,
+  ProjectPinState,
   StoredNoteAttachment,
 } from "../domain/types.js";
 import { z } from "zod";
@@ -167,11 +168,11 @@ export class ChatService {
   ) {}
 
   listChats(): Chat[] {
-    return this.repository.listChats();
+    return this.repository.listChats(this.clock());
   }
 
   getChat(id: string): ChatDetail {
-    const chat = this.repository.getChat(id);
+    const chat = this.repository.getChat(id, this.clock());
     if (!chat) throw new ProjectNotFoundError();
     const notes = this.repository.listStoredNotes(id).map((note) => ({
       ...note,
@@ -199,6 +200,12 @@ export class ChatService {
     });
     if (!chat) throw new ProjectNotFoundError();
     return chat;
+  }
+
+  setChatPinned(id: string, pinned: boolean): ProjectPinState {
+    const state = this.repository.setChatPinned(id, pinned, this.clock());
+    if (!state) throw new ProjectNotFoundError();
+    return state;
   }
 
   deleteChat(id: string): void {

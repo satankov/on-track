@@ -31,6 +31,7 @@ export const chats = sqliteTable(
     accent: text("accent").notNull(),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
+    pinnedAt: integer("pinned_at"),
   },
   (table) => [
     check(
@@ -38,6 +39,10 @@ export const chats = sqliteTable(
       sql`length(trim(${table.title})) BETWEEN 1 AND 80`,
     ),
     check("chats_accent_allowed", sql.raw(accentCheck)),
+    check(
+      "chats_pinned_at_nonnegative",
+      sql`${table.pinnedAt} IS NULL OR ${table.pinnedAt} >= 0`,
+    ),
     index("chats_activity_idx").on(table.updatedAt, table.id),
   ],
 );

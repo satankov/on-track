@@ -294,6 +294,46 @@ describe("appearance theme contract", () => {
     }
   });
 
+  it.each(THEMES)(
+    "keeps current and earlier Attention marks identifiable in %s",
+    (theme) => {
+      for (const status of ["critical", "muted"]) {
+        expect(
+          contrastRatio(
+            readThemeToken(theme, status),
+            readThemeToken(theme, "rail"),
+          ),
+          `--${status} against --rail in ${theme}`,
+        ).toBeGreaterThanOrEqual(3);
+      }
+
+      const earlierRule = stylesheet.match(
+        /\.project-attention-dot--earlier\s*\{(?<body>[^}]+)\}/,
+      );
+      expect(earlierRule?.groups?.body).toContain("background: var(--muted)");
+      expect(earlierRule?.groups?.body).not.toContain("border");
+      expect(earlierRule?.groups?.body).not.toContain("opacity");
+    },
+  );
+
+  it("centers the project status cluster and separates rail sections", () => {
+    expect(stylesheet).toMatch(
+      /\.project-section \+ \.project-section\s*\{[^}]*margin-top:\s*10px/s,
+    );
+    expect(stylesheet).toMatch(
+      /\.project-pin-button svg\s*\{[^}]*transform:\s*translateY\(-3px\)/s,
+    );
+    expect(stylesheet).toMatch(
+      /\.project-attention-dot\s*\{[^}]*bottom:\s*13px/s,
+    );
+  });
+
+  it("renders icon-only message labels without a surrounding border", () => {
+    expect(stylesheet).toMatch(
+      /\.message-label--icon-only\s*\{[^}]*border:\s*0/s,
+    );
+  });
+
   it.each(THEMES)("keeps structural dividers quiet in %s", (theme) => {
     for (const background of ["paper", "history", "rail"]) {
       expect(

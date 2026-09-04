@@ -283,43 +283,57 @@ label {
   overscroll-behavior: contain;
 }
 
-.project-item {
-  position: relative;
-  width: 100%;
-  min-height: 58px;
-  display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) 20px;
-  align-items: center;
-  gap: 11px;
-  padding: 9px 10px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
+.project-section + .project-section {
+  margin-top: 10px;
 }
-.project-item:hover {
+
+.project-section .rail-section-label {
+  padding: 18px 10px 8px;
+}
+
+.project-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-row {
+  position: relative;
+  min-height: 58px;
+  border-radius: 8px;
+}
+.project-row:hover {
   background: color-mix(in srgb, var(--selection) 68%, transparent);
 }
-.project-item--active {
+.project-row--active {
   background: var(--selection);
 }
-.project-item--active::before {
+.project-row--active::before {
   content: "";
   position: absolute;
+  z-index: 1;
   inset: 10px auto 10px 0;
   width: 3px;
   border-radius: 3px;
   background: var(--accent);
 }
-.project-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
+
+.project-item {
+  width: 100%;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  padding: 9px 46px 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
 }
 .project-item-copy {
   min-width: 0;
+  width: 100%;
   display: grid;
   gap: 3px;
 }
@@ -337,12 +351,39 @@ label {
   color: var(--muted);
   font-size: 0.69rem;
 }
-.project-arrow {
+.project-row--error .project-item-copy small {
+  color: var(--critical);
+}
+.project-pin-button {
+  position: absolute;
+  z-index: 2;
+  inset: 0 0 auto auto;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
   color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
 }
-.project-arrow svg {
+.project-pin-button:hover,
+.project-pin-button:focus-visible,
+.project-pin-button[aria-pressed="true"] {
+  color: var(--ink);
+  opacity: 1;
+}
+.project-row:hover .project-pin-button,
+.project-row:focus-within .project-pin-button {
+  opacity: 1;
+}
+.project-pin-button[aria-pressed="true"] {
+  color: var(--accent);
+}
+.project-pin-button svg {
   width: 16px;
   height: 16px;
   fill: none;
@@ -350,6 +391,43 @@ label {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 2;
+  transform: translateY(-3px);
+}
+.project-pin-button[aria-pressed="true"] svg {
+  fill: color-mix(in srgb, currentColor 20%, transparent);
+}
+.attention-dot {
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--critical);
+  pointer-events: none;
+}
+.attention-dot--today {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--critical) 18%, transparent);
+}
+.attention-dot--earlier,
+.project-attention-dot--earlier {
+  background: var(--muted);
+}
+.project-attention-dot {
+  position: absolute;
+  z-index: 2;
+  right: 18px;
+  bottom: 13px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 [data-accent="coral"] {
@@ -1368,7 +1446,9 @@ label {
   width: 20px;
   min-height: 20px;
   justify-content: center;
-  padding: 1px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
 }
 .label-glyph {
   width: 13px;
@@ -2069,6 +2149,9 @@ kbd {
   .project-rail--detail-open {
     display: none;
   }
+  .project-pin-button {
+    opacity: 1;
+  }
   .workspace-empty {
     display: none;
   }
@@ -2218,6 +2301,7 @@ kbd {
 
 @media (prefers-reduced-motion: no-preference) {
   .project-item,
+  .project-pin-button,
   .button,
   .new-project-button,
   .settings-icon-button,
@@ -2231,7 +2315,7 @@ kbd {
 }
 
 @media (forced-colors: active) {
-  .project-dot,
+  .attention-dot,
   .note-node,
   .local-indicator,
   .accent-swatch,
@@ -2251,5 +2335,22 @@ kbd {
   .future-message-boundary-surface {
     background: Canvas;
     border-block-start-color: CanvasText;
+  }
+
+  .attention-dot--today {
+    background: Highlight;
+    box-shadow: none;
+  }
+
+  .attention-dot--earlier,
+  .project-attention-dot--earlier {
+    background: GrayText;
+    border-color: GrayText;
+  }
+}
+
+@media (pointer: coarse) {
+  .project-pin-button {
+    opacity: 1;
   }
 }

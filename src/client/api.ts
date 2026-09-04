@@ -1,4 +1,9 @@
-import type { Chat, ChatDetail, Note } from "../domain/types.js";
+import type {
+  Chat,
+  ChatDetail,
+  Note,
+  ProjectPinState,
+} from "../domain/types.js";
 import type { Label } from "../domain/validation.js";
 import type {
   CreateChatInput,
@@ -12,6 +17,7 @@ export interface ApiClient {
   getChat(id: string): Promise<ChatDetail>;
   createChat(input: CreateChatInput): Promise<Chat>;
   updateChat(id: string, input: UpdateChatInput): Promise<Chat>;
+  setChatPinned(id: string, pinned: boolean): Promise<ProjectPinState>;
   deleteChat(id: string): Promise<void>;
   appendNote(id: string, input: CreateNoteInput): Promise<Note>;
   updateNote(
@@ -76,6 +82,10 @@ export const apiClient: ApiClient = {
     request<Chat>(`/api/chats/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: JSON.stringify(input),
+    }),
+  setChatPinned: (id, pinned) =>
+    request<ProjectPinState>(`/api/chats/${encodeURIComponent(id)}/pin`, {
+      method: pinned ? "PUT" : "DELETE",
     }),
   deleteChat: async (id) => {
     await request<void>(`/api/chats/${encodeURIComponent(id)}`, {
