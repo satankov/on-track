@@ -420,6 +420,203 @@ test("collapses long messages using the persisted project default", async ({
   });
 });
 
+test("keeps labels visible and attachments full width in wide messages", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  const suffix = `${viewportName(testInfo.project.name)}-${Date.now()}`;
+  const project = await createProject(request, localApp.url, {
+    title: `Wide message layout ${suffix}`,
+    accent: "ocean",
+  });
+  const body =
+    "**Lorem Ipsum** is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since 1966, when designers at Letraset and James Mosley, the librarian at St Bride Printing Library in London, took a 1914 Cicero translation and scrambled it to make dummy text for Letraset's Body Type sheets. It has survived not only many decades, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised thanks to these sheets and more recently with desktop publishing software like Aldus PageMaker and Microsoft Word including versions of Lorem Ipsum.";
+
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  await page.getByLabel("Attach files").setInputFiles([
+    {
+      name: "research-notes.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("research notes"),
+    },
+    {
+      name: "source-summary.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("source summary"),
+    },
+  ]);
+  await page.getByLabel("Add a note").fill(body);
+  await page.getByRole("button", { name: /Add note/ }).click();
+
+  const message = page.locator(".message-row").last();
+  await expect(message.locator(".attachment-card")).toHaveCount(2);
+  await message.hover();
+  await message.getByRole("button", { name: "Change labels" }).click();
+  const popover = message.locator(".message-label-popover");
+  await expect(popover).toBeVisible();
+  await message
+    .getByRole("checkbox", { name: "Todo" })
+    .scrollIntoViewIfNeeded();
+
+  const readGeometry = () =>
+    message.evaluate((element) => {
+      const history = element.closest(".history")!;
+      const bubble = element.querySelector<HTMLElement>(".message-bubble")!;
+      const attachment =
+        element.querySelector<HTMLElement>(".attachment-list")!;
+      const labelPopover = element.querySelector<HTMLElement>(
+        ".message-label-popover",
+      )!;
+      const bubbleStyle = getComputedStyle(bubble);
+      const box = (target: Element) => {
+        const rect = target.getBoundingClientRect();
+        return {
+          left: rect.left,
+          right: rect.right,
+          width: rect.width,
+        };
+      };
+      return {
+        history: box(history),
+        bubble: box(bubble),
+        attachment: box(attachment),
+        popover: box(labelPopover),
+        bubblePaddingLeft: Number.parseFloat(bubbleStyle.paddingLeft),
+        bubblePaddingRight: Number.parseFloat(bubbleStyle.paddingRight),
+        documentFits: document.documentElement.scrollWidth <= window.innerWidth,
+      };
+    });
+  const geometry = await readGeometry();
+
+  if (testInfo.project.name === "desktop-chromium") {
+    expect(geometry.attachment.width).toBeGreaterThan(460);
+  }
+  expect
+    .soft(geometry.popover.left)
+    .toBeGreaterThanOrEqual(geometry.history.left - 1);
+  expect(geometry.popover.right).toBeLessThanOrEqual(
+    geometry.history.right + 1,
+  );
+  expect
+    .soft(
+      Math.abs(
+        geometry.attachment.left -
+          (geometry.bubble.left + geometry.bubblePaddingLeft),
+      ),
+    )
+    .toBeLessThanOrEqual(2);
+  expect
+    .soft(
+      Math.abs(
+        geometry.attachment.right -
+          (geometry.bubble.right - geometry.bubblePaddingRight),
+      ),
+    )
+    .toBeLessThanOrEqual(2);
+  expect(geometry.documentFits).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("wide-message-layout.png"),
+    fullPage: true,
+  });
+  if (testInfo.project.name === "desktop-chromium") {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    const intermediateGeometry = await readGeometry();
+    expect(intermediateGeometry.popover.left).toBeGreaterThanOrEqual(
+      intermediateGeometry.history.left - 1,
+    );
+    expect(intermediateGeometry.popover.right).toBeLessThanOrEqual(
+      intermediateGeometry.history.right + 1,
+    );
+    expect(
+      Math.abs(
+        intermediateGeometry.attachment.left -
+          (intermediateGeometry.bubble.left +
+            intermediateGeometry.bubblePaddingLeft),
+      ),
+    ).toBeLessThanOrEqual(2);
+    expect(
+      Math.abs(
+        intermediateGeometry.attachment.right -
+          (intermediateGeometry.bubble.right -
+            intermediateGeometry.bubblePaddingRight),
+      ),
+    ).toBeLessThanOrEqual(2);
+    expect(intermediateGeometry.documentFits).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath("wide-message-layout-1024.png"),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 800, height: 768 });
+    await message
+      .getByRole("checkbox", { name: "Milestone" })
+      .scrollIntoViewIfNeeded();
+    const narrowDesktopGeometry = await readGeometry();
+    expect(narrowDesktopGeometry.popover.left).toBeGreaterThanOrEqual(
+      narrowDesktopGeometry.history.left - 1,
+    );
+    expect(narrowDesktopGeometry.popover.right).toBeLessThanOrEqual(
+      narrowDesktopGeometry.history.right + 1,
+    );
+    expect(
+      Math.abs(
+        narrowDesktopGeometry.attachment.left -
+          (narrowDesktopGeometry.bubble.left +
+            narrowDesktopGeometry.bubblePaddingLeft),
+      ),
+    ).toBeLessThanOrEqual(2);
+    expect(
+      Math.abs(
+        narrowDesktopGeometry.attachment.right -
+          (narrowDesktopGeometry.bubble.right -
+            narrowDesktopGeometry.bubblePaddingRight),
+      ),
+    ).toBeLessThanOrEqual(2);
+    expect(narrowDesktopGeometry.documentFits).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath("wide-message-layout-800.png"),
+      fullPage: true,
+    });
+  } else {
+    await page.setViewportSize({ width: 320, height: 700 });
+    await message
+      .getByRole("checkbox", { name: "Milestone" })
+      .scrollIntoViewIfNeeded();
+    const minimumWidthGeometry = await readGeometry();
+    expect(minimumWidthGeometry.popover.left).toBeGreaterThanOrEqual(
+      minimumWidthGeometry.history.left - 1,
+    );
+    expect(minimumWidthGeometry.popover.right).toBeLessThanOrEqual(
+      minimumWidthGeometry.history.right + 1,
+    );
+    expect(
+      Math.abs(
+        minimumWidthGeometry.attachment.left -
+          (minimumWidthGeometry.bubble.left +
+            minimumWidthGeometry.bubblePaddingLeft),
+      ),
+    ).toBeLessThanOrEqual(2);
+    expect(
+      Math.abs(
+        minimumWidthGeometry.attachment.right -
+          (minimumWidthGeometry.bubble.right -
+            minimumWidthGeometry.bubblePaddingRight),
+      ),
+    ).toBeLessThanOrEqual(2);
+    expect(minimumWidthGeometry.documentFits).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath("wide-message-layout-320.png"),
+      fullPage: true,
+    });
+  }
+
+  const deleteResponse = await request.delete(
+    `${localApp.url}/api/chats/${project.id}`,
+  );
+  expect(deleteResponse.ok()).toBe(true);
+});
+
 test("uses compact desktop chrome and an auto-growing composer", async ({
   page,
   request,

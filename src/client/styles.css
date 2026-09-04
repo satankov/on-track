@@ -1231,7 +1231,8 @@ label {
 }
 .message-label-popover {
   position: absolute;
-  right: 0;
+  right: auto;
+  left: 0;
   top: calc(100% + 7px);
   z-index: 12;
   width: 218px;
@@ -1348,7 +1349,7 @@ label {
   transform: rotate(180deg);
 }
 .attachment-list {
-  width: min(460px, 100%);
+  width: 100%;
   display: grid;
   gap: 2px;
   padding: 5px;
@@ -2217,6 +2218,24 @@ kbd {
   margin-bottom: 18px;
 }
 
+@media (max-width: 960px) {
+  .message-actions {
+    position: static;
+    opacity: 1;
+    pointer-events: auto;
+    justify-content: flex-end;
+    margin-top: 6px;
+  }
+  .message-label-picker {
+    position: static;
+  }
+  .message-label-popover {
+    right: 0;
+    left: auto;
+    width: min(218px, calc(100vw - 32px));
+  }
+}
+
 @media (max-width: 760px) {
   .app-shell {
     height: 100vh;
@@ -2283,17 +2302,6 @@ kbd {
   }
   .message-stack {
     max-width: 88%;
-  }
-  .message-actions {
-    position: static;
-    opacity: 1;
-    pointer-events: auto;
-    justify-content: flex-end;
-    margin-top: 6px;
-  }
-  .message-label-popover {
-    right: 0;
-    width: min(218px, calc(100vw - 32px));
   }
   .no-notes {
     margin: 60px 10px 0;
