@@ -2442,12 +2442,13 @@ function ChatWorkspace({
           {timestampOpen && (
             <div className="composer-timestamp-row">
               <label className="field-label" htmlFor="composer-timestamp">
-                Message timestamp
+                Timestamp
               </label>
               <input
                 id="composer-timestamp"
                 className="text-input composer-timestamp-input"
                 type="datetime-local"
+                aria-label="Message timestamp"
                 value={draftTimestamp}
                 onChange={(event) => onDraftTimestampChange(event.target.value)}
               />

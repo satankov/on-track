@@ -124,6 +124,26 @@ test("creates, customizes, records, and reopens a private project thread", async
   }
   await page.getByLabel("Add a note").fill(note);
   await page.getByRole("button", { name: "Choose timestamp" }).click();
+  const timestampLayout = await page.evaluate(() => {
+    const row = document.querySelector(".composer-timestamp-row")!;
+    const label = row.querySelector("label")!;
+    const input = row.querySelector("input")!;
+    const rowBox = row.getBoundingClientRect();
+    const labelBox = label.getBoundingClientRect();
+    const inputBox = input.getBoundingClientRect();
+    return {
+      rowHeight: rowBox.height,
+      inputHeight: inputBox.height,
+      labelCenter: labelBox.top + labelBox.height / 2,
+      inputCenter: inputBox.top + inputBox.height / 2,
+    };
+  });
+  expect(timestampLayout.rowHeight).toBeLessThanOrEqual(46);
+  expect(timestampLayout.inputHeight).toBeLessThanOrEqual(34);
+  expect(timestampLayout.labelCenter).toBeCloseTo(
+    timestampLayout.inputCenter,
+    0,
+  );
   await page.getByLabel("Message timestamp").fill("2026-08-30T10:15");
   await page.getByRole("button", { name: /Add note/ }).click();
   await expect(

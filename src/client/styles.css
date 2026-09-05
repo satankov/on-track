@@ -1967,20 +1967,36 @@ kbd {
   border-color: color-mix(in srgb, var(--accent) 46%, var(--line-strong));
 }
 .composer-timestamp-row {
-  display: grid;
-  grid-template-columns: auto minmax(210px, 280px);
-  align-items: end;
-  gap: 10px;
-  padding: 9px 12px;
+  min-width: 0;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px;
   border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--accent) 3%, var(--field));
 }
 .composer-timestamp-row .field-label {
-  margin: 0 2px 8px 0;
+  flex: 0 0 auto;
+  margin: 0;
   color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
-.composer-timestamp-input {
-  height: 38px;
+.text-input.composer-timestamp-input {
+  width: min(240px, 100%);
+  min-width: 0;
+  height: 34px;
+  margin-left: auto;
+  padding: 0 9px;
+  border-color: var(--line-strong);
+  border-radius: 7px;
+  background: var(--control);
+  font-size: 0.72rem;
+  font-weight: 650;
 }
 .markdown-tools-strip {
   min-width: 0;
@@ -2452,11 +2468,7 @@ kbd {
     gap: 4px;
   }
   .composer-timestamp-row {
-    grid-template-columns: minmax(0, 1fr);
-    padding: 10px 12px 12px;
-  }
-  .composer-timestamp-row .field-label {
-    margin-bottom: -2px;
+    padding-inline: 7px;
   }
   .settings-rail {
     height: auto;
