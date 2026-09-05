@@ -1982,6 +1982,114 @@ kbd {
 .composer-timestamp-input {
   height: 38px;
 }
+.markdown-tools-strip {
+  min-width: 0;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--accent) 3%, var(--field));
+}
+.markdown-tools-label {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.markdown-tools-scroll {
+  min-width: 0;
+  display: flex;
+  flex: 0 1 auto;
+  gap: 3px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+}
+.markdown-tool-button {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+.markdown-tool-button:hover,
+.markdown-tool-button:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 9%, var(--paper));
+}
+.markdown-tool-button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.markdown-tool-glyph {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: -0.08em;
+  line-height: 1;
+}
+.markdown-tool-glyph--bold {
+  font-family: inherit;
+  font-size: 0.86rem;
+  font-weight: 850;
+}
+.markdown-tool-glyph--italic {
+  font-family: inherit;
+  font-size: 0.86rem;
+  font-style: italic;
+  font-weight: 700;
+}
+.markdown-tool-glyph--quote,
+.markdown-tool-glyph--checklist,
+.markdown-tool-glyph--table {
+  font-family: inherit;
+  font-size: 0.9rem;
+  letter-spacing: 0;
+}
+.markdown-tool-hint {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.62rem;
+  white-space: nowrap;
+}
+.markdown-tool-hint strong {
+  color: var(--ink);
+  font-size: 0.66rem;
+}
+.markdown-tool-hint code {
+  overflow: hidden;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: var(--code-inline);
+  color: var(--ink);
+  font-size: 0.62rem;
+  text-overflow: ellipsis;
+}
+.markdown-tools-escape {
+  flex: 0 0 auto;
+  padding: 2px 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.58rem;
+  line-height: 1;
+}
 .composer-icon-button {
   width: 36px;
   height: 36px;
@@ -1993,6 +2101,12 @@ kbd {
   color: var(--muted);
   background: transparent;
   cursor: pointer;
+}
+.markdown-mark {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: -0.08em;
 }
 .composer-icon-button[aria-expanded="true"],
 .composer-icon-button:hover {
@@ -2324,6 +2438,19 @@ kbd {
   .composer-bar {
     justify-content: flex-end;
   }
+  .markdown-tools-strip {
+    gap: 0;
+    padding-inline: 6px;
+  }
+  .markdown-tools-label,
+  .markdown-tool-hint,
+  .markdown-tools-escape {
+    display: none;
+  }
+  .markdown-tools-scroll {
+    flex: 1 1 auto;
+    gap: 4px;
+  }
   .composer-timestamp-row {
     grid-template-columns: minmax(0, 1fr);
     padding: 10px 12px 12px;
@@ -2389,6 +2516,48 @@ kbd {
   }
 }
 
+@media (max-width: 420px) {
+  .composer-input-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .composer textarea {
+    min-height: 56px;
+    padding-bottom: 8px;
+  }
+
+  .composer-bar {
+    min-height: 44px;
+    padding-top: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 340px) {
+  .markdown-tools-strip {
+    position: relative;
+    padding-right: 20px;
+  }
+
+  .markdown-tools-strip::after {
+    content: "›";
+    position: absolute;
+    z-index: 1;
+    top: 6px;
+    right: 2px;
+    width: 18px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border-left: 1px solid var(--line);
+    color: var(--ink);
+    background: var(--field);
+    font-size: 1rem;
+    font-weight: 800;
+    pointer-events: none;
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .message-collapse-toggle svg {
     transition: transform 140ms ease;
@@ -2423,6 +2592,11 @@ kbd {
 
   .history-filter-count {
     border: 1px solid CanvasText;
+  }
+
+  .markdown-tool-button,
+  .markdown-tools-escape {
+    border-color: CanvasText;
   }
 
   .future-message-boundary-surface {

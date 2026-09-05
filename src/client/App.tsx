@@ -26,6 +26,12 @@ import {
 } from "../domain/validation.js";
 import { apiClient, type ApiClient } from "./api.js";
 import {
+  applyMarkdownAction,
+  MARKDOWN_TOOLS,
+  markdownActionForShortcut,
+  type MarkdownAction,
+} from "./markdown-assistance.js";
+import {
   applyTheme,
   persistTheme,
   readStoredTheme,
@@ -1316,6 +1322,29 @@ function PaperclipIcon() {
   );
 }
 
+function MarkdownToolGlyph({ action }: { action: MarkdownAction }) {
+  const labels: Record<MarkdownAction, string> = {
+    bold: "B",
+    italic: "I",
+    link: "↗",
+    quote: "❞",
+    "bulleted-list": "•≡",
+    "numbered-list": "1≡",
+    checklist: "☐",
+    code: "</>",
+    table: "▦",
+  };
+
+  return (
+    <span
+      className={`markdown-tool-glyph markdown-tool-glyph--${action}`}
+      aria-hidden="true"
+    >
+      {labels[action]}
+    </span>
+  );
+}
+
 function ListIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -2057,6 +2086,17 @@ function ChatWorkspace({
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const markdownToolsId = useId();
+  const pendingMarkdownSelection = useRef<
+    { start: number; end: number } | undefined
+  >(undefined);
+  const lastMarkdownSelection = useRef<
+    { start: number; end: number } | undefined
+  >(undefined);
+  const [markdownOpen, setMarkdownOpen] = useState(false);
+  const [activeMarkdownAction, setActiveMarkdownAction] =
+    useState<MarkdownAction>("bold");
+  const [markdownError, setMarkdownError] = useState("");
   const attachmentCount = detail.notes.filter(hasAttachments).length;
   const enabledLabels = detail.enabledLabels ?? ["todo", "milestone"];
   const filterLabels = [...PERMANENT_LABELS, ...enabledLabels];
@@ -2075,11 +2115,22 @@ function ChatWorkspace({
     editingNote?.attachments?.filter((attachment) =>
       editingAttachmentIds.includes(attachment.id),
     ) ?? [];
+  const activeMarkdownTool =
+    MARKDOWN_TOOLS.find((tool) => tool.action === activeMarkdownAction) ??
+    MARKDOWN_TOOLS[0];
+  const visibleComposerError = error || markdownError;
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
     resizeComposerTextarea(textarea);
+    const selection = pendingMarkdownSelection.current;
+    if (selection) {
+      pendingMarkdownSelection.current = undefined;
+      textarea.focus();
+      textarea.setSelectionRange(selection.start, selection.end);
+      lastMarkdownSelection.current = selection;
+    }
   }, [draft]);
 
   useEffect(() => {
@@ -2108,10 +2159,105 @@ function ChatWorkspace({
     };
   }, []);
 
+  function applyMarkdownFormatting(action: MarkdownAction) {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const selection =
+      document.activeElement === textarea
+        ? { start: textarea.selectionStart, end: textarea.selectionEnd }
+        : (lastMarkdownSelection.current ?? {
+            start: textarea.selectionStart,
+            end: textarea.selectionEnd,
+          });
+    const result = applyMarkdownAction(
+      draft,
+      action,
+      selection.start,
+      selection.end,
+    );
+    if (!result.ok) {
+      setMarkdownError(result.error);
+      restoreMarkdownSelection(selection);
+      return;
+    }
+
+    setMarkdownError("");
+    setActiveMarkdownAction(action);
+    pendingMarkdownSelection.current = {
+      start: result.selectionStart,
+      end: result.selectionEnd,
+    };
+    if (result.value === draft) {
+      pendingMarkdownSelection.current = undefined;
+      textarea.focus();
+      textarea.setSelectionRange(result.selectionStart, result.selectionEnd);
+      return;
+    }
+    onDraftChange(result.value);
+  }
+
+  function restoreMarkdownSelection(selection = lastMarkdownSelection.current) {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.focus();
+    if (!selection) return;
+    textarea.setSelectionRange(selection.start, selection.end);
+    lastMarkdownSelection.current = selection;
+  }
+
+  function closeMarkdownTools() {
+    setMarkdownOpen(false);
+    restoreMarkdownSelection();
+  }
+
+  function rememberMarkdownSelection() {
+    const textarea = textareaRef.current;
+    if (!textarea || document.activeElement !== textarea) return;
+    lastMarkdownSelection.current = {
+      start: textarea.selectionStart,
+      end: textarea.selectionEnd,
+    };
+  }
+
+  function beginEditingNote(note: Note) {
+    setMarkdownError("");
+    lastMarkdownSelection.current = undefined;
+    onEditNote(note);
+  }
+
+  function cancelEditingNote() {
+    setMarkdownError("");
+    lastMarkdownSelection.current = undefined;
+    onCancelEditNote();
+  }
+
+  function submitDraft() {
+    setMarkdownError("");
+    lastMarkdownSelection.current = undefined;
+    onSubmit();
+  }
+
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape" && markdownOpen) {
+      event.preventDefault();
+      closeMarkdownTools();
+    }
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    const markdownAction = markdownActionForShortcut(
+      event,
+      navigator.platform || navigator.userAgent,
+    );
+    if (markdownAction) {
+      event.preventDefault();
+      applyMarkdownFormatting(markdownAction);
+      return;
+    }
+
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
-      onSubmit();
+      submitDraft();
     }
   }
 
@@ -2240,19 +2386,22 @@ function ChatWorkspace({
             onAttachmentAction={onAttachmentAction}
             onCopyNote={onCopyNote}
             onDeleteNote={onDeleteNote}
-            onEditNote={onEditNote}
+            onEditNote={beginEditingNote}
             onSetNoteLabel={onSetNoteLabel}
           />
         )}
       </section>
 
       <footer className="composer-wrap">
-        {error && (
+        {visibleComposerError && (
           <p role="alert" className="composer-error">
-            Your note is still here. {error}
+            Your note is still here. {visibleComposerError}
           </p>
         )}
-        <div className={`composer ${editingNote ? "composer--editing" : ""}`}>
+        <div
+          className={`composer ${editingNote ? "composer--editing" : ""}`}
+          onKeyDown={handleComposerKeyDown}
+        >
           {(editingAttachments.length > 0 || pendingFiles.length > 0) && (
             <div className="pending-attachments" aria-label="Pending files">
               {editingAttachments.map((attachment) => (
@@ -2304,6 +2453,48 @@ function ChatWorkspace({
               />
             </div>
           )}
+          {markdownOpen && (
+            <div
+              id={markdownToolsId}
+              className="markdown-tools-strip"
+              role="group"
+              aria-label="Markdown assistance"
+            >
+              <span className="markdown-tools-label">Format</span>
+              <div className="markdown-tools-scroll">
+                {MARKDOWN_TOOLS.map((tool) => (
+                  <button
+                    className="markdown-tool-button"
+                    type="button"
+                    key={tool.action}
+                    aria-label={
+                      tool.shortcutLabel
+                        ? `${tool.label} (${tool.shortcutLabel})`
+                        : tool.label
+                    }
+                    aria-keyshortcuts={tool.ariaKeyShortcuts}
+                    title={`${tool.label} · ${tool.syntax}${tool.shortcutLabel ? ` · ${tool.shortcutLabel}` : ""}`}
+                    onPointerDown={rememberMarkdownSelection}
+                    onFocus={() => setActiveMarkdownAction(tool.action)}
+                    onMouseEnter={() => setActiveMarkdownAction(tool.action)}
+                    onClick={() => applyMarkdownFormatting(tool.action)}
+                  >
+                    <MarkdownToolGlyph action={tool.action} />
+                  </button>
+                ))}
+              </div>
+              <span className="markdown-tool-hint" aria-hidden="true">
+                <strong>{activeMarkdownTool.label}</strong>
+                <code>{activeMarkdownTool.syntax}</code>
+                {activeMarkdownTool.shortcutLabel && (
+                  <span>{activeMarkdownTool.shortcutLabel}</span>
+                )}
+              </span>
+              <span className="markdown-tools-escape" aria-hidden="true">
+                Esc
+              </span>
+            </div>
+          )}
           <div className="composer-input-row">
             <textarea
               ref={textareaRef}
@@ -2316,7 +2507,12 @@ function ChatWorkspace({
               }
               value={draft}
               maxLength={10_000}
-              onChange={(event) => onDraftChange(event.target.value)}
+              onChange={(event) => {
+                setMarkdownError("");
+                onDraftChange(event.target.value);
+              }}
+              onSelect={rememberMarkdownSelection}
+              onBlur={rememberMarkdownSelection}
               onKeyDown={handleKeyDown}
             />
             <div className="composer-bar">
@@ -2324,6 +2520,31 @@ function ChatWorkspace({
                 <kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd>
               </span>
               <div className="composer-tools">
+                <button
+                  className="composer-icon-button composer-markdown-button"
+                  type="button"
+                  onClick={() => {
+                    setMarkdownOpen((open) => !open);
+                    setMarkdownError("");
+                  }}
+                  onPointerDown={rememberMarkdownSelection}
+                  aria-label={
+                    markdownOpen
+                      ? "Hide Markdown assistance"
+                      : "Show Markdown assistance"
+                  }
+                  aria-expanded={markdownOpen}
+                  aria-controls={markdownToolsId}
+                  title={
+                    markdownOpen
+                      ? "Hide Markdown assistance"
+                      : "Show Markdown assistance"
+                  }
+                >
+                  <span className="markdown-mark" aria-hidden="true">
+                    M↓
+                  </span>
+                </button>
                 <input
                   ref={fileInputRef}
                   className="visually-hidden-file"
@@ -2361,7 +2582,7 @@ function ChatWorkspace({
                 <button
                   className="composer-cancel-button"
                   type="button"
-                  onClick={onCancelEditNote}
+                  onClick={cancelEditingNote}
                 >
                   Cancel
                 </button>
@@ -2369,7 +2590,7 @@ function ChatWorkspace({
               <button
                 className="send-button"
                 type="button"
-                onClick={onSubmit}
+                onClick={submitDraft}
                 aria-label={
                   saving
                     ? editingNote
@@ -3033,6 +3254,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         />
       ) : active ? (
         <ChatWorkspace
+          key={active.id}
           detail={active}
           draft={draft}
           draftTimestamp={draftTimestamp}

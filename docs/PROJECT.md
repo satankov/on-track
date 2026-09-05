@@ -98,6 +98,9 @@ regression-protected alpha, not a dedicated design target.
 - Pinned controls stay visually quiet at rest on hover-capable layouts, and long
   Markdown messages can be expanded or collapsed using a project-level default
   that persists through restart and backup restore.
+- The shared add/edit composer provides an optional compact Markdown strip with
+  selection-aware formatting, GFM table insertion, and familiar textarea-scoped
+  shortcuts without changing stored note or backup formats.
 
 ## Current capabilities
 
@@ -106,6 +109,8 @@ regression-protected alpha, not a dedicated design target.
   message-activity timestamps.
 - Rename a project and select a restrained accent color.
 - Add multiline Markdown notes in deterministic chronological order.
+- Format selected or placeholder text from the compact Markdown strip, or use
+  Cmd/Ctrl shortcuts for bold, italic, link, quote, lists, checklist, and code.
 - Expand and collapse long Markdown notes, and choose each project's initial
   long-message state from Edit project.
 - Schedule future-dated messages and see a live, unobtrusive boundary between

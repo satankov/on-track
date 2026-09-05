@@ -61,7 +61,11 @@ Local browser -> loopback Fastify server -> application service -> repository ->
   visible message timeline schedules its next future timestamp and renders one
   silent accessible boundary without moving the message rows when time advances.
   Rendered Markdown bodies measure their natural height and expose an accessible
-  per-message disclosure when they exceed the project's collapse threshold.
+  per-message disclosure when they exceed the project's collapse threshold. A
+  pure client helper applies Markdown transformations and returns explicit
+  textarea selection offsets; the shared add/edit composer restores those
+  offsets after its controlled draft updates. No editor state or syntax metadata
+  crosses the API boundary.
 - `src/domain`: shared data contracts, closed built-in label vocabularies, and
   validation rules with no UI or persistence dependency.
 - `src/server/app.ts`: Fastify transport, boundary controls, safe error mapping,
@@ -203,6 +207,9 @@ be hardened before production-readiness claims.
   the project default, and preserve that default through restart and backup.
 - Copy, edit, timestamp-adjust, and delete notes while preserving deterministic
   ordering.
+- Select draft text, apply Markdown from the compact add/edit strip or a familiar
+  Cmd/Ctrl shortcut, retain the intended selection, and save rendered Quote and
+  GFM Table output at desktop and narrow mobile widths.
 - Schedule future-dated messages, see the silent current/future boundary at
   desktop and mobile widths, and let it advance without losing message-control
   focus when timestamps arrive.

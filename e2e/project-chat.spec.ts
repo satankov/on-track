@@ -712,6 +712,120 @@ test("uses compact desktop chrome and an auto-growing composer", async ({
     .toBeGreaterThan(wideComposerHeight);
 });
 
+test("formats Markdown selections in a compact, responsive composer strip", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  const project = await createProject(request, localApp.url, {
+    title: `Markdown assistance ${testInfo.project.name}`,
+    accent: "iris",
+  });
+
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+
+  const composer = page.getByLabel("Add a note");
+  await composer.fill("Remember this");
+  await composer.evaluate((element) => element.setSelectionRange(9, 13));
+
+  const toggle = page.getByRole("button", {
+    name: "Show Markdown assistance",
+  });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await toggle.click();
+
+  const tools = page.getByRole("group", { name: "Markdown assistance" });
+  await expect(tools.getByRole("button")).toHaveCount(9);
+  expect(
+    await tools.evaluate((element) => element.getBoundingClientRect().height),
+  ).toBeLessThanOrEqual(46);
+  await page.screenshot({
+    path: testInfo.outputPath("markdown-assistance-open.png"),
+    fullPage: true,
+  });
+
+  await tools.getByRole("button", { name: /Bold/ }).click();
+  await expect(composer).toHaveValue("Remember **this**");
+  await expect(composer).toBeFocused();
+  expect(
+    await composer.evaluate((element) => [
+      element.selectionStart,
+      element.selectionEnd,
+    ]),
+  ).toEqual([11, 15]);
+
+  if (testInfo.project.name === "desktop-chromium") {
+    await composer.fill("one\ntwo");
+    await composer.selectText();
+    const primaryModifier = await page.evaluate(() =>
+      /Mac|iPhone|iPad|iPod/i.test(navigator.platform) ? "Meta" : "Control",
+    );
+    await composer.press(`${primaryModifier}+Shift+7`);
+    await expect(composer).toHaveValue("1. one\n2. two");
+  }
+
+  await composer.fill("Quoted evidence");
+  await composer.selectText();
+  await tools.getByRole("button", { name: /Quote/ }).click();
+  await tools.getByRole("button", { name: "Table" }).click();
+  await page.getByRole("button", { name: /Add note/ }).click();
+
+  await expect(page.locator(".message-bubble blockquote")).toContainText(
+    "Quoted evidence",
+  );
+  await expect(page.locator(".message-bubble table")).toBeVisible();
+
+  if (testInfo.project.name === "mobile-webkit") {
+    await page.setViewportSize({ width: 320, height: 720 });
+    await expect(
+      page.getByRole("button", { name: /Edit message/ }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: /Edit message/ }).click();
+    await expect(
+      page.getByRole("group", { name: "Markdown assistance" }),
+    ).toBeVisible();
+    const mobileMetrics = await page.evaluate(() => {
+      const strip = document.querySelector(".markdown-tools-scroll")!;
+      const composer = document.querySelector(".composer")!;
+      const composerRect = composer.getBoundingClientRect();
+      const controls = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          ".composer-bar button:not([hidden])",
+        ),
+      );
+      return {
+        documentWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+        stripClientWidth: strip.clientWidth,
+        stripScrollWidth: strip.scrollWidth,
+        overflowCue: getComputedStyle(
+          document.querySelector(".markdown-tools-strip")!,
+          "::after",
+        ).content,
+        controlsFit: controls.every((control) => {
+          const rect = control.getBoundingClientRect();
+          return (
+            rect.left >= composerRect.left && rect.right <= composerRect.right
+          );
+        }),
+      };
+    });
+    expect(mobileMetrics.documentWidth).toBeLessThanOrEqual(
+      mobileMetrics.viewportWidth,
+    );
+    expect(mobileMetrics.stripScrollWidth).toBeGreaterThan(
+      mobileMetrics.stripClientWidth,
+    );
+    expect(mobileMetrics.controlsFit).toBe(true);
+    expect(mobileMetrics.overflowCue).toBe('"›"');
+    await page.screenshot({
+      path: testInfo.outputPath("markdown-assistance-320.png"),
+      fullPage: true,
+    });
+  }
+});
+
 test("shows future messages in a silent full-width fade", async ({
   page,
   request,

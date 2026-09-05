@@ -953,6 +953,13 @@ describe("personal project chat workspace", () => {
       );
       expect(visibleLink).not.toHaveAttribute("tabindex");
       expect(clippedLink).not.toHaveAttribute("tabindex");
+
+      await user.click(screen.getByRole("button", { name: "Edit message" }));
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.getByRole("button", { name: "Show less" })).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      );
     } finally {
       rectSpy.mockRestore();
       if (originalScrollHeight) {
@@ -1510,6 +1517,187 @@ describe("personal project chat workspace", () => {
         );
       }
     }
+  });
+
+  it("opens a compact Markdown strip and formats the selected draft text", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    const toggle = screen.getByRole("button", {
+      name: "Show Markdown assistance",
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("group", { name: "Markdown assistance" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(toggle);
+    const tools = screen.getByRole("group", {
+      name: "Markdown assistance",
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(toggle).toHaveAccessibleName("Hide Markdown assistance");
+    expect(within(tools).getAllByRole("button")).toHaveLength(9);
+
+    const bold = within(tools).getByRole("button", { name: /Bold/ });
+    expect(bold).toHaveAttribute("aria-keyshortcuts", "Meta+B Control+B");
+    fireEvent.focus(bold);
+    expect(within(tools).getByText("**text**")).toBeVisible();
+    expect(within(tools).getByText("⌘B / Ctrl+B")).toBeVisible();
+
+    const composer = screen.getByLabelText<HTMLTextAreaElement>("Add a note");
+    await user.type(composer, "Make this important");
+    composer.setSelectionRange(10, 19);
+    await user.click(bold);
+
+    expect(composer).toHaveValue("Make this **important**");
+    expect(composer).toHaveFocus();
+    expect(composer).toHaveProperty("selectionStart", 12);
+    expect(composer).toHaveProperty("selectionEnd", 21);
+
+    fireEvent.focus(bold);
+    fireEvent.keyDown(bold, { key: "Escape" });
+    expect(
+      screen.queryByRole("group", { name: "Markdown assistance" }),
+    ).not.toBeInTheDocument();
+    expect(composer).toHaveFocus();
+  });
+
+  it("applies familiar Markdown shortcuts while the strip is closed", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    const composer = screen.getByLabelText<HTMLTextAreaElement>("Add a note");
+    await user.type(composer, "important");
+    composer.setSelectionRange(0, 9);
+
+    expect(fireEvent.keyDown(composer, { key: "b", ctrlKey: true })).toBe(
+      false,
+    );
+    expect(composer).toHaveValue("**important**");
+    expect(composer).toHaveProperty("selectionStart", 2);
+    expect(composer).toHaveProperty("selectionEnd", 11);
+    expect(
+      screen.queryByRole("group", { name: "Markdown assistance" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.keyDown(composer, {
+      key: "i",
+      ctrlKey: true,
+      repeat: true,
+    });
+    expect(composer).toHaveValue("**important**");
+  });
+
+  it("closes Markdown assistance with Escape from its disclosure", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    const composer = screen.getByLabelText<HTMLTextAreaElement>("Add a note");
+    await user.type(composer, "important");
+    composer.setSelectionRange(0, 9);
+    const toggle = screen.getByRole("button", {
+      name: "Show Markdown assistance",
+    });
+    await user.click(toggle);
+    fireEvent.focus(toggle);
+    composer.setSelectionRange(0, 0);
+    fireEvent.keyDown(toggle, { key: "Escape" });
+
+    expect(
+      screen.queryByRole("group", { name: "Markdown assistance" }),
+    ).not.toBeInTheDocument();
+    expect(composer).toHaveFocus();
+    fireEvent.keyDown(composer, { key: "b", ctrlKey: true });
+    expect(composer).toHaveValue("**important**");
+  });
+
+  it("preserves the draft and explains formatting that exceeds the limit", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const note = {
+      id: "note-1",
+      chatId: "chat-1",
+      body: "Existing note",
+      createdAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    const composer = screen.getByLabelText<HTMLTextAreaElement>("Add a note");
+    const draftAtLimit = "a".repeat(9_999);
+    fireEvent.change(composer, { target: { value: draftAtLimit } });
+    composer.setSelectionRange(0, 1);
+
+    await user.click(
+      screen.getByRole("button", { name: "Show Markdown assistance" }),
+    );
+    await user.click(screen.getByRole("button", { name: /Bold/ }));
+
+    expect(composer).toHaveValue(draftAtLimit);
+    expect(composer).toHaveFocus();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "This formatting would exceed the 10,000-character message limit.",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Edit message" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("sends a new message with an optional composer timestamp", async () => {

@@ -22,7 +22,8 @@ services, analytics, or remote runtime assets.
 - Create and switch between personal project chats.
 - Pin important projects above the activity-sorted project list.
 - Customize each project's title and accent.
-- Add multiline Markdown notes with keyboard-friendly controls.
+- Add multiline Markdown notes with a compact, selection-aware formatting strip
+  for bold, italic, links, quotes, lists, checklists, code, and GFM tables.
 - Apply permanent Pin and Attention labels plus project-enabled Todo, Decision,
   Open question, Risk, and Milestone labels, then filter history by label.
 - Expand and collapse long Markdown notes, with a persisted per-project default
@@ -45,6 +46,25 @@ Windows and Linux native-action smoke verification, encryption, native
 installers, and peer-to-peer iPhone sync are roadmap work. Open delegates to an
 installed default application; On Track does not provide embedded PowerPoint or
 document editing.
+
+### Markdown assistance
+
+Use the `M↓` control beside Attach and Timestamp to reveal the compact Markdown
+strip. Select existing text before choosing an action to format that selection;
+with no selection, the editor inserts an editable placeholder. Quote inserts a
+Markdown blockquote (`> text`), and Table inserts a two-column GFM table
+skeleton. The same strip is available while adding or editing a message.
+
+The common shortcuts work whenever the message textarea is focused, even while
+the strip is closed:
+
+| Action                        | Shortcut           |
+| ----------------------------- | ------------------ |
+| Bold / Italic / Link / Code   | Cmd/Ctrl+B/I/K/E   |
+| Numbered list / Bulleted list | Cmd/Ctrl+Shift+7/8 |
+| Checklist / Quote             | Cmd/Ctrl+Shift+9/. |
+
+Cmd/Ctrl+Enter continues to submit the message. Table is click/tap only.
 
 ## Quick start
 
