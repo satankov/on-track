@@ -2859,6 +2859,21 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [pinningIds, setPinningIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const pendingPinFocus = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    const id = pendingPinFocus.current;
+    if (id === undefined || pinningIds.has(id)) return;
+    pendingPinFocus.current = undefined;
+    const control = [
+      ...document.querySelectorAll<HTMLButtonElement>("[data-project-pin-id]"),
+    ].find((button) => button.dataset.projectPinId === id);
+    const target = control?.closest("[hidden]")
+      ? control
+          .closest(".project-section")
+          ?.querySelector<HTMLButtonElement>(".rail-section-label")
+      : control;
+    target?.focus();
+  }, [pinningIds]);
   const [readingPositions, setReadingPositions] = useState(
     () => new Map<string, ReadingPosition>(),
   );
@@ -3063,38 +3078,13 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ),
         ),
       }));
-      requestAnimationFrame(() => {
-        const control = [
-          ...document.querySelectorAll<HTMLButtonElement>(
-            "[data-project-pin-id]",
-          ),
-        ].find((button) => button.dataset.projectPinId === chat.id);
-        const target = control?.closest("[hidden]")
-          ? control
-              .closest(".project-section")
-              ?.querySelector<HTMLButtonElement>(".rail-section-label")
-          : control;
-        target?.focus();
-      });
     } catch (caught) {
       setPinErrors((current) => ({
         ...current,
         [chat.id]: errorMessage(caught, "The project pin could not be saved."),
       }));
-      requestAnimationFrame(() => {
-        const control = [
-          ...document.querySelectorAll<HTMLButtonElement>(
-            "[data-project-pin-id]",
-          ),
-        ].find((button) => button.dataset.projectPinId === chat.id);
-        const target = control?.closest("[hidden]")
-          ? control
-              .closest(".project-section")
-              ?.querySelector<HTMLButtonElement>(".rail-section-label")
-          : control;
-        target?.focus();
-      });
     } finally {
+      pendingPinFocus.current = chat.id;
       setPinningIds((current) => {
         const next = new Set(current);
         next.delete(chat.id);

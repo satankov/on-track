@@ -347,39 +347,63 @@ describe("personal project chat workspace", () => {
     dateNow.mockRestore();
   });
 
-  it("pins a project without blocking navigation and restores focus after regrouping", async () => {
-    const user = userEvent.setup();
-    const pinRequest = deferred<{ pinnedAt: number | null }>();
-    const chat = {
-      id: "alpha",
-      title: "Alpha",
-      accent: "coral" as const,
-      enabledLabels: ["todo"] as ["todo"],
-      createdAt: 1,
-      updatedAt: 2,
-      pinnedAt: null,
-      latestMessagePreview: "Ready to pin",
-      nextMessageAt: null,
-      latestAttentionAt: null,
-      nextAttentionAt: null,
-    };
-    const api = createApi({
-      listChats: vi.fn().mockResolvedValue([chat]),
-      setChatPinned: vi.fn(() => pinRequest.promise),
-    });
-    render(<App api={api} />);
+  it.each([false, true])(
+    "pins without blocking navigation and restores focus (collapsed: %s)",
+    async (collapsed) => {
+      // A browser frame may run before React commits an async state update.
+      const frame = vi
+        .spyOn(window, "requestAnimationFrame")
+        .mockImplementation((callback) => {
+          callback(0);
+          return 0;
+        });
+      const user = userEvent.setup();
+      const pinRequest = deferred<{ pinnedAt: number | null }>();
+      const chat = {
+        id: "alpha",
+        title: "Alpha",
+        accent: "coral" as const,
+        enabledLabels: ["todo"] as ["todo"],
+        createdAt: 1,
+        updatedAt: 2,
+        pinnedAt: null,
+        latestMessagePreview: "Ready to pin",
+        nextMessageAt: null,
+        latestAttentionAt: null,
+        nextAttentionAt: null,
+      };
+      const api = createApi({
+        listChats: vi
+          .fn()
+          .mockResolvedValue([
+            chat,
+            { ...chat, id: "beta", title: "Beta", pinnedAt: 1 },
+          ]),
+        setChatPinned: vi.fn(() => pinRequest.promise),
+      });
+      render(<App api={api} />);
 
-    const pin = await screen.findByRole("button", { name: "Pin Alpha" });
-    await user.click(pin);
-    expect(api.setChatPinned).toHaveBeenCalledWith("alpha", true);
-    expect(screen.getByRole("button", { name: "Open Alpha" })).toBeEnabled();
-    expect(pin).toBeDisabled();
+      const pin = await screen.findByRole("button", { name: "Pin Alpha" });
+      const header = screen.getByRole("button", {
+        name: "Pinned",
+      });
+      if (collapsed) await user.click(header);
+      await user.click(pin);
+      expect(api.setChatPinned).toHaveBeenCalledWith("alpha", true);
+      expect(screen.getByRole("button", { name: "Open Alpha" })).toBeEnabled();
+      expect(pin).toBeDisabled();
 
-    await act(async () => pinRequest.resolve({ pinnedAt: 123 }));
-    const pinnedControl = screen.getByRole("button", { name: "Pin Alpha" });
-    expect(pinnedControl).toHaveAttribute("aria-pressed", "true");
-    await waitFor(() => expect(pinnedControl).toHaveFocus());
-  });
+      await act(async () => pinRequest.resolve({ pinnedAt: 123 }));
+      const pinnedControl = document.querySelector(
+        '[data-project-pin-id="alpha"]',
+      );
+      expect(pinnedControl).toHaveAttribute("aria-pressed", "true");
+      await waitFor(() =>
+        expect(collapsed ? header : pinnedControl).toHaveFocus(),
+      );
+      frame.mockRestore();
+    },
+  );
 
   it("does not let older project refreshes overwrite a completed pin", async () => {
     const user = userEvent.setup();
