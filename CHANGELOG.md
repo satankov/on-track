@@ -8,6 +8,9 @@ below `1.0.0`, releases may contain breaking changes.
 
 ### Added
 
+- Compact selection-aware Markdown assistance in the shared add/edit composer,
+  with actions for emphasis, links, quotes, lists, checklists, code, and GFM
+  tables plus familiar textarea-scoped keyboard shortcuts.
 - Home navigation from the On Track brand and independently collapsible Pinned
   and Projects sections, with quiet hover/focus chevrons.
 - Per-project reading positions retained during the current browser session.
@@ -24,6 +27,8 @@ below `1.0.0`, releases may contain breaking changes.
 
 ### Changed
 
+- Unified the Timestamp and Markdown composer utilities around the same compact
+  46-pixel row, spacing, label, control, focus, and responsive treatment.
 - Sidebar message previews display plain text extracted from Markdown.
 - The shared add/edit composer grows to eight lines before scrolling internally.
 - Advanced the live and backup database schema to version 6. Exact schema-5,

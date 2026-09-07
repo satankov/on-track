@@ -2,14 +2,14 @@
 
 ## Status
 
-The v0.0.4 plaintext alpha is the published baseline. Version 0.0.5 is prepared
-as the next release candidate with a client-side live boundary for future-dated
-messages, persistent project pins, current-time previews, Attention status,
-quiet pin presentation, and per-project collapsible-message defaults. It does
-not change the existing local server/service/repository boundaries. The current
-unreleased checkout extends the existing note and versioned-backup contracts
-with nullable free-form participant attribution. The core decisions are recorded in
-[ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
+The v0.0.5 plaintext alpha is the published baseline. The `release/v0.0.6`
+checkout contains verified unreleased work: client-only Markdown authoring,
+navigation, reading-position, sidebar disclosure, preview, and Links-filter
+behavior, plus nullable free-form participant attribution in the note and
+versioned-backup contracts. The client-only additions preserve the local
+server/service/repository boundaries; attribution advances the schema to 6.
+Package metadata remains at 0.0.5 until release preparation. The core decisions
+are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
 encryption limitation in [ADR-0002](adr/0002-defer-at-rest-encryption.md),
 source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the
 current license in [ADR-0005](adr/0005-apache-2-license.md). Managed mutable
