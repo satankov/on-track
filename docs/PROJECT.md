@@ -109,7 +109,9 @@ regression-protected alpha, not a dedicated design target.
 
 ## Current capabilities
 
-- Create and switch between personal project chats.
+- Create and switch between personal project chats, return Home through the
+  On Track brand, and retain reading positions during the current browser session.
+- Independently collapse the Pinned and Projects sidebar sections during a session.
 - Pin and unpin projects in a stable sidebar section without changing their
   message-activity timestamps.
 - Rename a project and select a restrained accent color.
@@ -124,13 +126,14 @@ regression-protected alpha, not a dedicated design target.
   current history and messages whose timestamps have not arrived.
 - Add local files to project messages with optional text context, including
   attachment add/remove while editing a message.
-- Filter the open project history to messages with attached files.
+- Filter the open project history to messages with attached files or automatically
+  detected Markdown/GFM links.
 - Apply permanent Pin and Attention labels plus project-enabled Todo, Decision,
   Open question, Risk, and Milestone labels to messages, then filter history by
   active labels.
-- Scan each project's latest message up to the current time and see whether an
-  applied Attention label belongs to today or an earlier message directly from
-  the sidebar.
+- Scan a plain-text preview of each project's latest message up to the current
+  time and see whether an applied Attention label belongs to today or an earlier
+  message directly from the sidebar.
 - Open eligible managed files with the operating system's default association,
   or show their safe managed folder; risky executable/launcher types are blocked
   from Open.

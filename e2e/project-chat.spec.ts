@@ -693,11 +693,13 @@ test("uses compact desktop chrome and an auto-growing composer", async ({
   expect(multilineHeight).toBeGreaterThan(oneLineHeight);
 
   await composer.fill("One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight");
+  await expect(composer).toHaveCSS("overflow-y", "hidden");
+  await composer.fill("One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine");
   await expect(composer).toHaveCSS("overflow-y", "auto");
   const cappedHeight = await composer.evaluate(
     (element) => element.getBoundingClientRect().height,
   );
-  expect(cappedHeight).toBeLessThanOrEqual(144);
+  expect(cappedHeight).toBe(216);
 
   await composer.fill("");
   const clearedHeight = await composer.evaluate(
@@ -1755,4 +1757,287 @@ test("keeps project and note collections inside their own scroll panes", async (
   expect(workspaceAfter.lastMessageBottom).toBeLessThanOrEqual(
     workspaceAfter.historyBottom + 1,
   );
+});
+
+test("opens near current work and restores each chat reading position", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  const project = await createProject(request, localApp.url, {
+    title: "Reading position",
+    accent: "ocean",
+  });
+  const other = await createProject(request, localApp.url, {
+    title: "Other reading",
+    accent: "moss",
+  });
+  const now = Date.now();
+  for (let index = 0; index < 20; index += 1) {
+    await addNote(
+      request,
+      localApp.url,
+      project.id,
+      `Past context ${index}. ${index === 10 ? "Long context paragraph.\n\n".repeat(90) : "Earlier work context. ".repeat(8)}`,
+      now - (20 - index) * 60_000,
+    );
+  }
+  for (let index = 0; index < 8; index += 1) {
+    await addNote(
+      request,
+      localApp.url,
+      project.id,
+      `Future task ${index}. ${"Next work context. ".repeat(4)}`,
+      now + (index + 1) * 86_400_000,
+    );
+  }
+  for (let index = 0; index < 15; index += 1) {
+    await addNote(
+      request,
+      localApp.url,
+      other.id,
+      `Other past ${index}. ${"Context. ".repeat(20)}`,
+      now - (15 - index) * 60_000,
+    );
+  }
+  const goHome = async () => {
+    if (testInfo.project.name === "mobile-webkit")
+      await page.getByRole("button", { name: "Back to projects" }).click();
+    else await page.getByRole("link", { name: "Home", exact: true }).click();
+  };
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  const history = page.locator(".history");
+  const initialGeometry = () =>
+    history.evaluate((element) => {
+      const rows = [...element.querySelectorAll<HTMLElement>(".message-row")];
+      const first = rows
+        .find((row) => row.textContent?.includes("Future task 0"))!
+        .getBoundingClientRect();
+      const second = rows
+        .find((row) => row.textContent?.includes("Future task 1"))!
+        .getBoundingClientRect();
+      const lastPast = rows
+        .find((row) => row.textContent?.includes("Past context 19"))!
+        .getBoundingClientRect();
+      const box = element.getBoundingClientRect();
+      return {
+        scrollTop: element.scrollTop,
+        firstBottom: first.bottom,
+        secondTop: second.top,
+        pastBottom: lastPast.bottom,
+        top: box.top,
+        bottom: box.bottom,
+      };
+    });
+  await expect
+    .poll(async () => (await initialGeometry()).scrollTop)
+    .toBeGreaterThan(300);
+  const initial = await initialGeometry();
+  expect(initial.firstBottom).toBeLessThanOrEqual(initial.bottom + 2);
+  expect(initial.firstBottom).toBeGreaterThan(initial.top);
+  expect(initial.secondTop).toBeGreaterThanOrEqual(initial.bottom - 2);
+  expect(initial.pastBottom).toBeGreaterThan(initial.top);
+
+  await history.evaluate(async (element) => {
+    element.scrollTop = 310;
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+  });
+  const remembered = await history.evaluate((element) => element.scrollTop);
+  await goHome();
+  await page.getByRole("button", { name: `Open ${other.title}` }).click();
+  await expect
+    .poll(() =>
+      history.evaluate(
+        (element) =>
+          element.scrollHeight - element.clientHeight - element.scrollTop,
+      ),
+    )
+    .toBeLessThan(2);
+  await goHome();
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  await expect
+    .poll(() => history.evaluate((element) => element.scrollTop))
+    .toBeCloseTo(remembered, 0);
+
+  await page.getByRole("button", { name: "Links 0", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "No links yet." }),
+  ).toBeVisible();
+  await goHome();
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  await expect
+    .poll(() => history.evaluate((element) => element.scrollTop))
+    .toBeCloseTo(remembered, 0);
+  await page
+    .getByLabel("Add a note")
+    .fill("Typing must not move reading position");
+  await expect
+    .poll(() => history.evaluate((element) => element.scrollTop))
+    .toBeCloseTo(remembered, 0);
+  await page.getByLabel("Add a note").fill("");
+  const longRow = page
+    .locator(".message-row")
+    .filter({ hasText: "Past context 10." });
+  await longRow.getByRole("button", { name: "Show more" }).click();
+  await history.evaluate(async (element) => {
+    const row = [...element.querySelectorAll<HTMLElement>(".message-row")].find(
+      (row) => row.textContent?.includes("Past context 10."),
+    )!;
+    element.scrollTop +=
+      row.getBoundingClientRect().top -
+      element.getBoundingClientRect().top +
+      700;
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+  });
+  await goHome();
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  await expect
+    .poll(() =>
+      longRow.evaluate(
+        (row) =>
+          row.getBoundingClientRect().bottom -
+          row.closest(".history")!.getBoundingClientRect().top,
+      ),
+    )
+    .toBeGreaterThan(0);
+  await expect(
+    longRow.getByRole("button", { name: "Show more" }),
+  ).toBeVisible();
+});
+
+test("uses Home, quiet section disclosures, plain previews, and the Links filter", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  const project = await createProject(request, localApp.url, {
+    title: "Useful references",
+    accent: "ocean",
+  });
+  await request.put(`${localApp.url}/api/chats/${project.id}/pin`);
+  await addNote(request, localApp.url, project.id, "A plain note");
+  await addNote(
+    request,
+    localApp.url,
+    project.id,
+    "### Header\n\n**bold text** [Guide](https://example.com)",
+  );
+  const other = await createProject(request, localApp.url, {
+    title: "Other project",
+    accent: "moss",
+  });
+  await page.goto(localApp.url);
+  const pinned = page.getByRole("button", { name: "Pinned", exact: true });
+  const projects = page.getByRole("button", { name: "Projects", exact: true });
+  await expect(
+    page
+      .getByRole("button", { name: `Open ${project.title}` })
+      .locator("small"),
+  ).toHaveText("Header bold text Guide");
+  if (testInfo.project.name === "desktop-chromium") {
+    await page.getByRole("link", { name: "Home", exact: true }).hover();
+    await expect(pinned.locator("svg")).toHaveCSS("opacity", "0");
+    await pinned.hover();
+    await expect(pinned.locator("svg")).toHaveCSS("opacity", "1");
+  } else {
+    await expect(pinned.locator("svg")).toHaveCSS("opacity", "1");
+  }
+  await pinned.focus();
+  await page.keyboard.press("Enter");
+  await expect(pinned).toHaveAttribute("aria-expanded", "false");
+  await expect(pinned.locator("svg")).toHaveCSS(
+    "transform",
+    "matrix(0, -1, 1, 0, 0, 0)",
+  );
+  await expect(
+    page.getByRole("button", { name: `Open ${project.title}` }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: `Open ${other.title}` }),
+  ).toBeVisible();
+  await projects.click();
+  await expect(
+    page.getByRole("button", { name: `Open ${other.title}` }),
+  ).toHaveCount(0);
+  await pinned.click();
+  await expect(pinned.locator("svg")).toHaveCSS("transform", "none");
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  await page.getByRole("button", { name: "Links 1", exact: true }).click();
+  await expect(page.locator(".history article")).toHaveCount(1);
+  await expect(
+    page.locator(".history").getByRole("link", { name: "Guide" }),
+  ).toHaveAttribute("href", "https://example.com");
+  const composer = page.getByLabel("Add a note");
+  await composer.fill("One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight");
+  await expect(composer).toHaveCSS("overflow-y", "hidden");
+  const eight = await composer.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      actual: element.clientHeight,
+      expected:
+        parseFloat(style.lineHeight) * 8 +
+        parseFloat(style.paddingTop) +
+        parseFloat(style.paddingBottom),
+    };
+  });
+  expect(eight.actual).toBeCloseTo(eight.expected, 0);
+  await composer.fill("One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine");
+  await expect(composer).toHaveCSS("overflow-y", "auto");
+  expect(await composer.evaluate((element) => element.clientHeight)).toBe(
+    eight.actual,
+  );
+  await composer.fill("");
+  await page.screenshot({ path: testInfo.outputPath("navigation-polish.png") });
+  if (testInfo.project.name === "mobile-webkit")
+    await page.getByRole("button", { name: "Back to projects" }).click();
+  await page.getByRole("link", { name: "Home", exact: true }).click();
+  if (testInfo.project.name === "desktop-chromium")
+    await expect(
+      page.getByRole("heading", { name: "Choose a project to continue." }),
+    ).toBeVisible();
+  await expect(projects).toHaveAttribute("aria-expanded", "false");
+});
+
+test("keeps keyboard focus when a project moves into a collapsed section", async ({
+  page,
+  request,
+  localApp,
+}) => {
+  const pinned = await createProject(request, localApp.url, {
+    title: "Pinned focus",
+    accent: "ocean",
+  });
+  const project = await createProject(request, localApp.url, {
+    title: "Moving focus",
+    accent: "moss",
+  });
+  const response = await request.put(
+    `${localApp.url}/api/chats/${pinned.id}/pin`,
+  );
+  expect(response.ok()).toBe(true);
+  await page.goto(localApp.url);
+  const pinnedHeader = page.getByRole("button", {
+    name: "Pinned",
+    exact: true,
+  });
+  const projectsHeader = page.getByRole("button", {
+    name: "Projects",
+    exact: true,
+  });
+  await pinnedHeader.click();
+  await page
+    .getByRole("button", { name: `Pin ${project.title}`, exact: true })
+    .focus();
+  await page.keyboard.press("Enter");
+  await expect(pinnedHeader).toBeFocused();
+  await projectsHeader.click();
+  await pinnedHeader.click();
+  await page
+    .getByRole("button", { name: `Pin ${project.title}`, exact: true })
+    .focus();
+  await page.keyboard.press("Enter");
+  await expect(projectsHeader).toBeFocused();
 });

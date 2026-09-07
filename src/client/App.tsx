@@ -3,6 +3,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -38,6 +39,11 @@ import {
   THEMES,
   type Theme,
 } from "./theme.js";
+import {
+  useHistoryPosition,
+  type ReadingPosition,
+} from "./history-position.js";
+import { analyzeMarkdown } from "./markdown-analysis.js";
 import { senderColor } from "./sender-color.js";
 
 const ACCENT_NAMES: Record<Accent, string> = {
@@ -73,7 +79,8 @@ const FILTER_LABEL_NAMES: Record<Label, string> = {
 const ICON_ONLY_MESSAGE_LABELS = new Set<Label>(["pin", "attention"]);
 const MESSAGE_COLLAPSED_HEIGHT_PX = 192;
 
-type HistoryFilter = "all" | "attachments" | Label;
+type HistoryFilter = "all" | "attachments" | "links" | Label;
+type RailSection = "Pinned" | "Projects";
 
 interface WorkspaceServerState {
   chats: Chat[];
@@ -157,7 +164,10 @@ function mergeMessageSummary(chat: Chat, detail: ChatDetail): Chat {
 }
 
 function projectPreview(chat: Chat): string {
-  const preview = chat.latestMessagePreview?.replace(/\s+/g, " ").trim();
+  const preview =
+    chat.latestMessagePreview == null
+      ? ""
+      : analyzeMarkdown(chat.latestMessagePreview).text;
   if (chat.latestMessagePreview == null) return "Ready for the first note";
   return preview || "Attachment message";
 }
@@ -215,8 +225,15 @@ function hasAttachments(note: Note): boolean {
 function resizeComposerTextarea(textarea: HTMLTextAreaElement): void {
   textarea.style.height = "0px";
   const scrollHeight = textarea.scrollHeight;
-  textarea.style.height = `${Math.max(48, Math.min(scrollHeight, 144))}px`;
-  textarea.style.overflowY = scrollHeight > 144 ? "auto" : "hidden";
+  const style = getComputedStyle(textarea);
+  const lineHeight = Number.parseFloat(style.lineHeight) || 24;
+  const padding =
+    (Number.parseFloat(style.paddingTop) || 0) +
+    (Number.parseFloat(style.paddingBottom) || 0);
+  const maxHeight = lineHeight * 8 + (padding || 24);
+  textarea.style.maxHeight = `${maxHeight}px`;
+  textarea.style.height = `${Math.max(48, Math.min(scrollHeight, maxHeight))}px`;
+  textarea.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
 }
 
 function formatFileSize(byteSize: number): string {
@@ -661,6 +678,9 @@ function ProjectEditWorkspace({
 }
 
 function ProjectRail({
+  onHome,
+  collapsedSections,
+  onToggleSection,
   chats,
   activeId,
   onSelect,
@@ -672,6 +692,9 @@ function ProjectRail({
   pinErrors,
   pinningIds,
 }: {
+  onHome: () => void;
+  collapsedSections: Record<RailSection, boolean>;
+  onToggleSection: (section: RailSection) => void;
   chats: Chat[];
   activeId?: string;
   onSelect: (id: string) => void;
@@ -686,6 +709,10 @@ function ProjectRail({
   const [now, setNow] = useState(() => Date.now());
   const boundaryCallback = useRef(onTemporalBoundary);
   const handledTemporalKey = useRef("");
+  const previews = useMemo(
+    () => new Map(chats.map((chat) => [chat.id, projectPreview(chat)])),
+    [chats],
+  );
   const pinned = chats.filter((chat) => chat.pinnedAt != null);
   const projects = chats.filter((chat) => chat.pinnedAt == null);
   const temporalKey = chats
@@ -751,15 +778,29 @@ function ProjectRail({
     return () => window.removeEventListener("focus", refresh);
   }, [temporalKey]);
 
-  function renderSection(label: "Pinned" | "Projects", items: Chat[]) {
+  function renderSection(label: RailSection, items: Chat[]) {
     if (label === "Pinned" && items.length === 0) return null;
     return (
       <section className="project-section" aria-labelledby={`rail-${label}`}>
-        <div className="rail-section-label">
-          <span id={`rail-${label}`}>{label}</span>
+        <button
+          className="rail-section-label"
+          type="button"
+          aria-label={label}
+          aria-expanded={!collapsedSections[label]}
+          aria-controls={`rail-items-${label}`}
+          onClick={() => onToggleSection(label)}
+        >
+          <span className="rail-section-title" id={`rail-${label}`}>
+            {label}
+            <ChevronDownIcon />
+          </span>
           <span>{String(items.length).padStart(2, "0")}</span>
-        </div>
-        <ul className="project-items">
+        </button>
+        <ul
+          className="project-items"
+          id={`rail-items-${label}`}
+          hidden={collapsedSections[label]}
+        >
           {items.map((chat) => {
             const attention = projectAttentionState(chat, now);
             const error = pinErrors[chat.id];
@@ -785,7 +826,7 @@ function ProjectRail({
                 >
                   <span className="project-item-copy">
                     <strong>{chat.title}</strong>
-                    <small>{error || projectPreview(chat)}</small>
+                    <small>{error || previews.get(chat.id)}</small>
                   </span>
                 </button>
                 <button
@@ -833,7 +874,29 @@ function ProjectRail({
     >
       <header className="rail-header">
         <div>
-          <p className="brand-mark">On Track</p>
+          <a
+            className="brand-mark"
+            href="/"
+            aria-label="Home"
+            aria-disabled={navigationDisabled || undefined}
+            onClick={(event) => {
+              if (navigationDisabled) {
+                event.preventDefault();
+                return;
+              }
+              if (
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+              )
+                return;
+              event.preventDefault();
+              onHome();
+            }}
+          >
+            On Track
+          </a>
           <p className="brand-subtitle">Private project threads</p>
         </div>
         <button
@@ -856,13 +919,12 @@ function ProjectRail({
         <span className="local-indicator" aria-hidden="true" />
         <span className="local-footnote-copy">
           <strong>Local only</strong>
-          <small>Not encrypted yet</small>
         </span>
         <button
           className="settings-icon-button"
           type="button"
           onClick={onSettings}
-          aria-label="Settings. Local only, not encrypted yet."
+          aria-label="Settings. Local only."
         >
           <SettingsIcon />
         </button>
@@ -1311,6 +1373,17 @@ function ClockIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <circle cx="12" cy="12" r="9" />
       <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function LinkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d="m10 13 4-4m-6 6-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 2 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"
+        transform="translate(1 1)"
+      />
     </svg>
   );
 }
@@ -1968,6 +2041,8 @@ function MessageGroups({
                     )}
                     <li
                       key="message"
+                      data-note-id={note.id}
+                      data-created-at={note.createdAt}
                       className={`message-row ${participant ? "message-row--participant" : "message-row--own"}`}
                       style={{ gridRow: noteIndex + 1 }}
                     >
@@ -2043,6 +2118,7 @@ function MessageGroups({
 }
 
 function ChatWorkspace({
+  readingPositions,
   detail,
   draft,
   draftSender,
@@ -2076,6 +2152,7 @@ function ChatWorkspace({
   copiedNoteId,
   navigationDisabled,
 }: {
+  readingPositions: Map<string, ReadingPosition>;
   detail: ChatDetail;
   draft: string;
   draftSender: string;
@@ -2113,6 +2190,13 @@ function ChatWorkspace({
   copiedNoteId?: string;
   navigationDisabled: boolean;
 }) {
+  const historyRef = useRef<HTMLElement>(null);
+  useHistoryPosition(
+    historyRef,
+    detail.id,
+    historyFilter === "all",
+    readingPositions,
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const markdownToolsId = useId();
@@ -2127,12 +2211,22 @@ function ChatWorkspace({
   const [activeMarkdownAction, setActiveMarkdownAction] =
     useState<MarkdownAction>("bold");
   const [markdownError, setMarkdownError] = useState("");
+  const linkedNoteIds = useMemo(
+    () =>
+      new Set(
+        detail.notes
+          .filter((note) => analyzeMarkdown(note.body).hasLinks)
+          .map((note) => note.id),
+      ),
+    [detail.notes],
+  );
   const attachmentCount = detail.notes.filter(hasAttachments).length;
   const enabledLabels = detail.enabledLabels ?? ["todo", "milestone"];
   const filterLabels = [...PERMANENT_LABELS, ...enabledLabels];
   const visibleNotes = detail.notes.filter((note) => {
     if (historyFilter === "all") return true;
     if (historyFilter === "attachments") return hasAttachments(note);
+    if (historyFilter === "links") return linkedNoteIds.has(note.id);
     return (note.labels ?? []).includes(historyFilter);
   });
   const timelineNow = useTimelineNow(visibleNotes);
@@ -2355,6 +2449,19 @@ function ChatWorkspace({
             <span className="history-filter-label">Files</span>
             <span className="history-filter-count">{attachmentCount}</span>
           </button>
+          <button
+            type="button"
+            className={`history-filter-button ${historyFilter === "links" ? "history-filter-button--active" : ""}`}
+            aria-label={`Links ${linkedNoteIds.size}`}
+            aria-pressed={historyFilter === "links"}
+            onClick={() => onHistoryFilterChange("links")}
+          >
+            <span className="history-filter-icon" aria-hidden="true">
+              <LinkIcon />
+            </span>
+            <span className="history-filter-label">Links</span>
+            <span className="history-filter-count">{linkedNoteIds.size}</span>
+          </button>
           {filterLabels.map((label) => {
             const count = detail.notes.filter((note) =>
               (note.labels ?? []).includes(label),
@@ -2382,7 +2489,11 @@ function ChatWorkspace({
         </div>
       </nav>
 
-      <section className="history" aria-label={`${detail.title} messages`}>
+      <section
+        ref={historyRef}
+        className="history"
+        aria-label={`${detail.title} messages`}
+      >
         {detail.notes.length === 0 ? (
           <>
             <div className="no-notes">
@@ -2399,13 +2510,17 @@ function ChatWorkspace({
               <p className="eyebrow">
                 {historyFilter === "attachments"
                   ? "Files"
-                  : LABEL_NAMES[historyFilter]}
+                  : historyFilter === "links"
+                    ? "Links"
+                    : LABEL_NAMES[historyFilter]}
               </p>
               <h2>
                 No{" "}
                 {historyFilter === "attachments"
                   ? "attached files"
-                  : "matching messages"}{" "}
+                  : historyFilter === "links"
+                    ? "links"
+                    : "matching messages"}{" "}
                 yet.
               </h2>
               <p>
@@ -2744,6 +2859,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [pinningIds, setPinningIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const [readingPositions, setReadingPositions] = useState(
+    () => new Map<string, ReadingPosition>(),
+  );
+  const [collapsedSections, setCollapsedSections] = useState<
+    Record<RailSection, boolean>
+  >({ Pinned: false, Projects: false });
   const selectionRequest = useRef(0);
   const activeMutationGeneration = useRef(0);
   const summaryRequest = useRef(0);
@@ -2948,7 +3069,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
             "[data-project-pin-id]",
           ),
         ].find((button) => button.dataset.projectPinId === chat.id);
-        control?.focus();
+        const target = control?.closest("[hidden]")
+          ? control
+              .closest(".project-section")
+              ?.querySelector<HTMLButtonElement>(".rail-section-label")
+          : control;
+        target?.focus();
       });
     } catch (caught) {
       setPinErrors((current) => ({
@@ -2961,7 +3087,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
             "[data-project-pin-id]",
           ),
         ].find((button) => button.dataset.projectPinId === chat.id);
-        control?.focus();
+        const target = control?.closest("[hidden]")
+          ? control
+              .closest(".project-section")
+              ?.querySelector<HTMLButtonElement>(".rail-section-label")
+          : control;
+        target?.focus();
       });
     } finally {
       setPinningIds((current) => {
@@ -3011,6 +3142,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     const projectId = active.id;
     const selectionAtStart = selectionRequest.current;
     await api.deleteChat(projectId);
+    setReadingPositions((current) => {
+      const next = new Map(current);
+      next.delete(projectId);
+      return next;
+    });
     const navigationUnchanged = selectionRequest.current === selectionAtStart;
     if (navigationUnchanged) selectionRequest.current += 1;
     activeMutationGeneration.current += 1;
@@ -3298,6 +3434,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function importDatabase(file: File) {
     await api.importDatabase(file);
     const importedChats = await api.listChats();
+    setReadingPositions(new Map());
     selectionRequest.current += 1;
     activeMutationGeneration.current += 1;
     setWorkspace({ chats: importedChats });
@@ -3314,6 +3451,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   function backToProjects() {
     if (savingNote) return;
     const projectId = active?.id;
+    setMode("projects");
+    setError("");
     selectionRequest.current += 1;
     setWorkspace((current) => ({ ...current, active: undefined }));
     setEditingNote(undefined);
@@ -3344,6 +3483,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         />
       ) : (
         <ProjectRail
+          onHome={backToProjects}
+          collapsedSections={collapsedSections}
+          onToggleSection={(section) =>
+            setCollapsedSections((current) => ({
+              ...current,
+              [section]: !current[section],
+            }))
+          }
           chats={chats}
           activeId={active?.id}
           onSelect={selectChat}
@@ -3380,6 +3527,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       ) : active ? (
         <ChatWorkspace
           key={active.id}
+          readingPositions={readingPositions}
           detail={active}
           draft={draft}
           draftSender={draftSender}

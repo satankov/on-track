@@ -65,8 +65,14 @@ Local browser -> loopback Fastify server -> application service -> repository ->
   per-message disclosure when they exceed the project's collapse threshold. A
   pure client helper applies Markdown transformations and returns explicit
   textarea selection offsets; the shared add/edit composer restores those
-  offsets after its controlled draft updates. A second pure helper maps a
-  normalized sender name deterministically onto a closed set of theme-safe color
+  offsets after its controlled draft updates. The shared composer grows to eight
+  content lines. A Markdown analysis helper reuses unified/remark-parse and GFM
+  to derive inert sidebar text and automatic Links filtering, using the renderer's
+  URL policy without fetching destinations. Reading anchors and sidebar disclosure
+  state live in the app session, outside project data and backups. Returning to a
+  chat restores its message anchor and viewport offset; a first visit positions
+  near the current/future boundary. Future messages stay in normal scrolling.
+  A pure sender helper maps a normalized sender name deterministically onto a closed set of theme-safe color
   roles; only the sender text, not a color value, crosses the API boundary.
 - `src/domain`: shared data contracts, closed built-in label vocabularies, and
   validation rules with no UI or persistence dependency.

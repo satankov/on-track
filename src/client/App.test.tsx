@@ -52,6 +52,192 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
 }
 
 describe("personal project chat workspace", () => {
+  it("returns Home from a project and its editor, cancelling stale selections", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "home",
+      title: "Home journey",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const pending = deferred<typeof chat & { notes: [] }>();
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi
+        .fn()
+        .mockResolvedValueOnce({ ...chat, notes: [] })
+        .mockResolvedValueOnce({ ...chat, notes: [] })
+        .mockReturnValueOnce(pending.promise),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Home journey" }),
+    );
+    await user.type(screen.getByLabelText("Add a note"), "Draft");
+    await user.click(screen.getByRole("link", { name: "Home" }));
+    expect(
+      screen.getByRole("heading", { name: "Choose a project to continue." }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Open Home journey" }));
+    expect(screen.getByLabelText("Add a note")).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("link", { name: "Home" }));
+    expect(
+      screen.getByRole("heading", { name: "Choose a project to continue." }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Open Home journey" }));
+    await user.click(screen.getByRole("link", { name: "Home" }));
+    await act(async () => pending.resolve({ ...chat, notes: [] }));
+    expect(
+      screen.getByRole("heading", { name: "Choose a project to continue." }),
+    ).toBeVisible();
+  });
+
+  it("collapses sidebar sections independently and retains them through Settings", async () => {
+    const user = userEvent.setup();
+    const chats = [
+      {
+        id: "pinned",
+        title: "Priority",
+        accent: "ocean" as const,
+        createdAt: 1,
+        updatedAt: 1,
+        pinnedAt: 2,
+      },
+      {
+        id: "other",
+        title: "Other",
+        accent: "moss" as const,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    render(
+      <App api={createApi({ listChats: vi.fn().mockResolvedValue(chats) })} />,
+    );
+    const pinned = await screen.findByRole("button", { name: "Pinned" });
+    expect(pinned).toHaveAttribute("aria-expanded", "true");
+    pinned.focus();
+    await user.keyboard("{Enter}");
+    expect(pinned).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Open Priority" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Open Other" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Projects" }));
+    expect(screen.queryByRole("button", { name: "Open Other" })).toBeNull();
+    await user.click(
+      screen.getByRole("button", {
+        name: "Settings. Local only.",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Back to projects" }));
+    expect(screen.getByRole("button", { name: "Pinned" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    await user.click(screen.getByRole("button", { name: "Projects" }));
+    expect(screen.getByRole("button", { name: "Open Other" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Open Priority" })).toBeNull();
+  });
+
+  it("shows plain Markdown previews and automatically filters messages containing links", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "links",
+      title: "References",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+      latestMessagePreview:
+        "### Header\n\n**bold text** [Guide](https://example.com)",
+    };
+    const notes = [
+      "Visit https://example.com",
+      "[Guide][ref]\n\n[ref]: https://example.org",
+      "`https://code.example`",
+      "No link",
+    ].map((body, i) => ({
+      id: `n${i}`,
+      chatId: chat.id,
+      body,
+      createdAt: i + 1,
+    }));
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes }),
+      updateNote: vi
+        .fn()
+        .mockResolvedValue({ ...notes[0], body: "Link removed" }),
+    });
+    render(<App api={api} />);
+    const project = await screen.findByRole("button", {
+      name: "Open References",
+    });
+    expect(within(project).getByText("Header bold text Guide")).toBeVisible();
+    expect(within(project).queryByRole("link")).toBeNull();
+    await user.click(project);
+    const filters = within(
+      screen.getByRole("navigation", { name: "History filters" }),
+    ).getAllByRole("button");
+    expect(
+      filters.slice(0, 3).map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["All 4", "Files 0", "Links 2"]);
+    await user.click(screen.getByRole("button", { name: "Links 2" }));
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+    expect(screen.queryByText("No link")).toBeNull();
+    expect(screen.queryByText("https://code.example")).toBeNull();
+    const first = screen.getAllByRole("article")[0].closest("li")!;
+    await user.click(
+      within(first).getByRole("button", { name: "Edit message" }),
+    );
+    await user.clear(screen.getByRole("textbox", { name: "Edit message" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Edit message" }),
+      "Link removed",
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(
+      await screen.findByRole("button", { name: "Links 1" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+  });
+
+  it("offers an empty Links filter without adding a message label", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "empty-links",
+      title: "Empty links",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    render(
+      <App
+        api={createApi({
+          listChats: vi.fn().mockResolvedValue([chat]),
+          getChat: vi.fn().mockResolvedValue({
+            ...chat,
+            notes: [
+              {
+                id: "plain",
+                chatId: chat.id,
+                body: "Plain text",
+                createdAt: 1,
+              },
+            ],
+          }),
+        })}
+      />,
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Open Empty links" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Links 0" }));
+    expect(
+      screen.getByRole("heading", { name: "No links yet." }),
+    ).toBeVisible();
+  });
+
   it("shows a loading workspace while projects are still being fetched", () => {
     const listRequest = deferred<[]>();
     const api = createApi({
@@ -712,6 +898,7 @@ describe("personal project chat workspace", () => {
     ).toEqual([
       "All 1",
       "Files 0",
+      "Links 0",
       "Pin 0",
       "Attention 0",
       "Todo 0",
@@ -1501,12 +1688,15 @@ describe("personal project chat workspace", () => {
 
       await user.type(
         composer,
-        "One{enter}Two{enter}Three{enter}Four{enter}Five{enter}Six",
+        "One{enter}Two{enter}Three{enter}Four{enter}Five{enter}Six{enter}Seven{enter}Eight",
       );
       expect(composer).toHaveStyle({
-        height: "144px",
-        overflowY: "auto",
+        height: "216px",
+        overflowY: "hidden",
       });
+
+      await user.type(composer, "{enter}Nine");
+      expect(composer).toHaveStyle({ height: "216px", overflowY: "auto" });
 
       simulatedScrollHeight = 72;
       window.dispatchEvent(new Event("resize"));
@@ -3319,6 +3509,12 @@ describe("personal project chat workspace", () => {
     await user.type(await screen.findByLabelText("Add a note"), "Alpha note");
     await user.click(screen.getByRole("button", { name: /Add note/ }));
     expect(screen.getByRole("button", { name: "Open Beta" })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await user.click(screen.getByRole("link", { name: "Home" }));
+    expect(screen.getByRole("heading", { name: "Alpha" })).toBeVisible();
 
     await act(async () =>
       noteRequest.resolve({
@@ -3368,6 +3564,12 @@ describe("personal project chat workspace", () => {
     );
     await user.click(screen.getByRole("button", { name: /Add note/ }));
     expect(screen.getByRole("button", { name: "Open Beta" })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await user.click(screen.getByRole("link", { name: "Home" }));
+    expect(screen.getByRole("heading", { name: "Alpha" })).toBeVisible();
     await act(async () => noteRequest.reject(new Error("Database busy")));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Database busy");
