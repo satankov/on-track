@@ -19,11 +19,16 @@ services, analytics, or remote runtime assets.
 
 ## What works in this checkout
 
-- Create and switch between personal project chats.
-- Pin important projects above the activity-sorted project list.
+- Create and switch between personal project chats; click On Track to return Home.
+- Resume each project at its remembered reading position during the current
+  browser session. First visits open near current work and the first future
+  message; future messages remain accessible through normal scrolling.
+- Pin important projects above the activity-sorted project list, and independently
+  collapse Pinned and Projects during the current browser session.
 - Customize each project's title and accent.
 - Add multiline Markdown notes with a compact, selection-aware formatting strip
-  for bold, italic, links, quotes, lists, checklists, code, and GFM tables.
+  for bold, italic, links, quotes, lists, checklists, code, and GFM tables. The
+  add/edit input grows to eight lines before scrolling internally.
 - Attribute a message to a participant from the compact Sender row. Participant
   messages use neutral bubbles on the left with a stable colored sender name and
   retain the same labels, filters, files, and message actions as your own notes.
@@ -34,13 +39,16 @@ services, analytics, or remote runtime assets.
 - Copy, edit, timestamp-adjust, and delete notes.
 - Schedule future-dated messages and see where the history crosses into the
   future through a silent full-width fade that clears as timestamps arrive.
-- Scan one-line previews of the latest message up to the current time and current
+- Scan plain-text previews of the latest message up to the current time and current
   or earlier Attention status directly in the project sidebar.
 - Attach local files to notes, filter messages with files, open eligible files
   through the operating system's default association, and show them in their
   managed folder. Executable and launcher-like files are blocked from Open.
+- Filter messages containing Markdown/GFM links with the automatic Links filter
+  after Files, without applying a label.
 - Export and restore one versioned `.on-track-backup` bundle from Settings.
-- Keep state after closing and restarting the application.
+- Keep project data after closing and restarting the application. Reading
+  positions and sidebar collapse state reset when the browser reloads.
 - Use the main flow at desktop and mobile browser widths.
 - Run without accounts, telemetry, or an internet connection after installation.
 

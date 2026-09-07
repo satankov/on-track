@@ -2,9 +2,11 @@
 
 ## Status
 
-Approved, implemented, and verified on 2026-09-07. The user selected remembered last-viewed position and
-confirmed future messages remain accessible through normal scrolling, without a
-separate preview. All required verification gates pass.
+Approved and implemented on 2026-09-07, committed in `d1fe4ae`, including the
+subsequent footer copy change. The user selected remembered last-viewed position
+and normal future-message scrolling without a separate preview. Full feature
+verification and the narrower footer verification are recorded below. Required
+tracker follow-ups remain pending; the next release has not been prepared.
 
 ## Goal
 
@@ -12,16 +14,16 @@ Implement the six requested improvements: Home navigation from the brand,
 remembered chat reading position, an eight-line composer, collapsible sidebar
 sections, plain-text Markdown previews, and an automatic Links history filter.
 
-## Context and reusable precedent
+## Context at the start of the slice
 
 - `src/client/App.tsx`: `backToProjects` already resets navigation and cancels
   stale selections; `ProjectRail` already separates Pinned and Projects.
 - `ChatWorkspace` remounts by project ID. Its `.history` is the sole history
   scroll owner, and `futureStartId` already identifies the live future boundary.
-  There is no existing auto-scroll or reading-position model.
-- `resizeComposerTextarea` and `.composer textarea` currently cap height at
-  144 pixels: five 24-pixel lines plus desktop padding.
-- `projectPreview` currently only normalizes whitespace on the bounded server
+  There was no auto-scroll or reading-position model before this slice.
+- `resizeComposerTextarea` and `.composer textarea` capped height at
+  144 pixels before this slice: five 24-pixel lines plus desktop padding.
+- `projectPreview` previously only normalized whitespace on the bounded server
   preview. `MarkdownMessage` uses `react-markdown` and `remark-gfm`.
 - Files is an inferred client filter, independent of durable message labels.
   Links can follow the same pattern.
@@ -72,6 +74,8 @@ sections, plain-text Markdown previews, and an automatic Links history filter.
    URL policy do not count. Editing/deleting messages updates the filter.
 10. Existing theme tokens, focus treatment, desktop/mobile reflow, and
     reduced-motion behavior remain consistent.
+11. The separately requested footer copy change leaves only “Local only” beside
+    Settings, including its accessible label. It makes no encryption claim.
 
 ## Non-goals
 
@@ -213,4 +217,69 @@ Final verification:
   styling, preview text, and composer containment.
 - Security review found no new boundary issues. Production audit passed the
   high-severity gate and still reports the pre-existing moderate Fastify advisory.
-- Full diff and whitespace review completed. No commit, push, or release made.
+- Full diff and whitespace review completed. The implementation was subsequently
+  committed in `d1fe4ae`; release-context documentation followed in `84d7d7c`.
+- The later footer-only change passed `npm run build`,
+  `npm test -- src/client/App.test.tsx` (67 passed), targeted formatting, and
+  `git diff --check`. The full-suite figures above precede this copy change.
+- Closeout rechecked the three affected client test files (110 passed),
+  documentation formatting, release contract, whitespace, and the production
+  audit. The moderate Fastify advisory remains; no production code changed.
+- Package metadata is still 0.0.5 on `release/v0.0.6`. Local macOS verification
+  does not establish a passing platform matrix for a future release candidate.
+
+## Required tracker follow-ups
+
+Read-only GitHub inspection on 2026-09-07 found no issue records in the repository
+(the issues API returned pull requests only). These are proposed issue bodies,
+not remotely created issues. Closeout remains NOT READY until these required
+records are created or the user explicitly dismisses them. Strategic roadmap
+items stay in PROJECT.md until a concrete implementation slice is selected.
+
+### 1. Resolve the Fastify moderate advisories before v0.0.6
+
+The production audit reports GHSA-w2qp-rph6-63g4 and GHSA-3m5p-2c4r-xxw2 for the
+exact Fastify 5.8.5 dependency. The high-severity gate passes; this does not mean
+there are no advisories. The audit currently offers 5.12.3 as a fix outside the
+pinned version.
+
+Acceptance criteria:
+
+- Assess applicability to the existing schema validation and proxy configuration.
+- Select and explicitly pin a compatible fixed Fastify version with a reviewed
+  lockfile diff, or document an explicit risk acceptance with its rationale.
+- Preserve Host/Origin enforcement, validation/error behavior, multipart limits,
+  rate limits, backup/restore, and native-file route contracts.
+- Run the relevant transport/security regressions and `npm run verify`; record
+  the resulting advisory status and supported-runtime compatibility.
+
+### 2. Prepare and verify the v0.0.6 release candidate
+
+The feature work is committed on `release/v0.0.6`, while manifest/lockfile metadata
+remains 0.0.5 and new changes remain under Unreleased.
+
+Acceptance criteria:
+
+- Agree the release scope and update matching manifests and dated changelog using
+  docs/RELEASING.md; retain accurate schema-6 backup compatibility documentation.
+- Record the Fastify follow-up disposition before calling the candidate ready.
+- Pass `RELEASE_TAG=v0.0.6 npm run release:check`, local `npm run verify`, full
+  Linux verification on Node 22.16/24, and native-install tests on supported
+  Node/OS combinations at the candidate revision.
+- Complete review and link exact CI evidence. Publishing, merging, tagging, and
+  pushing remain separately authorized actions.
+
+### 3. Verify native Open and Show in Folder on Windows and Linux
+
+Existing browser tests use a fake native adapter. Real dispatch has been
+manually reported only on one macOS host; Windows/Linux remain unverified.
+
+Acceptance criteria:
+
+- On Windows with Node 24 and a supported Linux desktop/runtime, test Open for a
+  safe managed document and Show in Folder against disposable evaluation data.
+- Confirm executable/launcher files remain blocked from Open and that missing
+  files or absent default associations produce useful recoverable errors.
+- Record OS/runtime, desktop/file association, tested revision, and outcomes;
+  create defect records for any failure or explicitly retain the platform
+  limitation in release documentation.

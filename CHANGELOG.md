@@ -31,6 +31,7 @@ below `1.0.0`, releases may contain breaking changes.
   46-pixel row, spacing, label, control, focus, and responsive treatment.
 - Sidebar message previews display plain text extracted from Markdown.
 - The shared add/edit composer grows to eight lines before scrolling internally.
+- The sidebar footer shows only “Local only” beside Settings.
 - Advanced the live and backup database schema to version 6. Exact schema-5,
   schema-4, and schema-3 bundles migrate during guarded restore staging; older
   notes migrate as messages from You.

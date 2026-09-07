@@ -190,7 +190,9 @@ hosting, analytics, and telemetry.
 
 - A chat is a private project notebook, not a cooperative messenger.
 - Data is local by default and stored outside the Git checkout.
-- Plaintext alpha limitations must be prominent; locality is not encryption.
+- The sidebar footer uses only “Local only” beside Settings. Plaintext alpha
+  limitations remain documented in the README and backup settings; locality is
+  not encryption.
 - Distribution is a GitHub source release supporting Node.js 22 from 22.16.0 on
   macOS and Linux and Node.js 24 on Windows, macOS, and Linux, not an npm package
   or native installer.
@@ -208,9 +210,12 @@ The public repository and release are:
 - [v0.0.5 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.5)
 - [Issues](https://github.com/satankov/on-track/issues)
 
-GitHub Issues is the intended backlog and ownership tracker. The near-term
-priorities above still need tracker records. Durable decisions live in
-`docs/adr/`; significant active work lives in `docs/plans/`.
+GitHub Issues is the intended backlog and ownership tracker. Concrete closeout
+follow-ups for the Fastify advisory, v0.0.6 release verification, and native-action
+smoke tests await issue creation; review the
+[tracker drafts](plans/0017-chat-navigation-and-history-polish.md#required-tracker-follow-ups).
+Broader product priorities above remain strategy until scoped. Durable decisions
+live in `docs/adr/`; significant work lives in `docs/plans/`.
 
 ## Current risks
 
