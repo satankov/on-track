@@ -20,8 +20,7 @@ Apache License 2.0. The `release/v0.0.6` checkout contains verified unreleased
 work: compact Markdown authoring assistance, visually unified composer utility
 rows, free-form participant attribution, Home and reading-position navigation,
 collapsible sidebar sections, an eight-line composer, plain-text sidebar
-previews, and automatic Links filtering. Package metadata remains at 0.0.5
-until release preparation; attribution does not add collaboration or accounts.
+previews, and automatic Links filtering. Package metadata is 0.0.6 for the release candidate. attribution does not add collaboration or accounts.
 
 ## Current objective
 

@@ -6,6 +6,8 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-09-07
+
 ### Added
 
 - Compact selection-aware Markdown assistance in the shared add/edit composer,

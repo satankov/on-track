@@ -8,7 +8,7 @@ navigation, reading-position, sidebar disclosure, preview, and Links-filter
 behavior, plus nullable free-form participant attribution in the note and
 versioned-backup contracts. The client-only additions preserve the local
 server/service/repository boundaries; attribution advances the schema to 6.
-Package metadata remains at 0.0.5 until release preparation. The core decisions
+Package metadata is 0.0.6 for the release candidate. The core decisions
 are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
 encryption limitation in [ADR-0002](adr/0002-defer-at-rest-encryption.md),
 source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the
