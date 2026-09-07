@@ -2,13 +2,14 @@
 
 ## Status
 
-The v0.0.4 plaintext alpha is the published baseline. Version 0.0.5 is prepared
-as the next release candidate with a client-side live boundary for future-dated
-messages, persistent project pins, current-time previews, Attention status,
-quiet pin presentation, and per-project collapsible-message defaults. It does
-not change the existing local server/service/repository or versioned-backup
-boundaries. The core decisions are recorded in
-[ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
+The v0.0.5 plaintext alpha is the published baseline. The `release/v0.0.6`
+checkout contains verified unreleased work: client-only Markdown authoring,
+navigation, reading-position, sidebar disclosure, preview, and Links-filter
+behavior, plus nullable free-form participant attribution in the note and
+versioned-backup contracts. The client-only additions preserve the local
+server/service/repository boundaries; attribution advances the schema to 6.
+Package metadata is 0.0.6 for the release candidate. The core decisions
+are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
 encryption limitation in [ADR-0002](adr/0002-defer-at-rest-encryption.md),
 source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the
 current license in [ADR-0005](adr/0005-apache-2-license.md). Managed mutable
@@ -61,7 +62,18 @@ Local browser -> loopback Fastify server -> application service -> repository ->
   visible message timeline schedules its next future timestamp and renders one
   silent accessible boundary without moving the message rows when time advances.
   Rendered Markdown bodies measure their natural height and expose an accessible
-  per-message disclosure when they exceed the project's collapse threshold.
+  per-message disclosure when they exceed the project's collapse threshold. A
+  pure client helper applies Markdown transformations and returns explicit
+  textarea selection offsets; the shared add/edit composer restores those
+  offsets after its controlled draft updates. The shared composer grows to eight
+  content lines. A Markdown analysis helper reuses unified/remark-parse and GFM
+  to derive inert sidebar text and automatic Links filtering, using the renderer's
+  URL policy without fetching destinations. Reading anchors and sidebar disclosure
+  state live in the app session, outside project data and backups. Returning to a
+  chat restores its message anchor and viewport offset; a first visit positions
+  near the current/future boundary. Future messages stay in normal scrolling.
+  A pure sender helper maps a normalized sender name deterministically onto a closed set of theme-safe color
+  roles; only the sender text, not a color value, crosses the API boundary.
 - `src/domain`: shared data contracts, closed built-in label vocabularies, and
   validation rules with no UI or persistence dependency.
 - `src/server/app.ts`: Fastify transport, boundary controls, safe error mapping,
@@ -90,7 +102,9 @@ duplicate label settings and assignments. Indexed `(chat_id, created_at, id)`
 ordering makes note history stable; chat activity is ordered using timestamps
 with a deterministic ID tie-breaker. Appending, editing, timestamp-adjusting,
 and deleting notes keep chat activity consistent with the newest remaining note
-in a transaction. Label changes do not alter message time or project activity.
+in a transaction. Each note has a nullable, trimmed sender of at most 80
+characters: null means You, while a name changes only attribution and
+presentation. Label changes do not alter message time or project activity.
 Project-level `pinned_at` is nullable, nonnegative, and updated separately from
 activity. Each project also stores a checked integer boolean controlling whether
 long messages start collapsed; new and migrated projects default to enabled.
@@ -157,9 +171,10 @@ integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
 fresh managed paths, removes bundle payload tables, and compacts the current-
-schema candidate. Exact schema-4 development and schema-3 v0.0.4 bundles are
-accepted through fixed legacy descriptors and migrated to schema 5 only after
-copying into the staging workspace. It then uses the maintenance gate and
+schema candidate. Exact schema-5, schema-4 development, and schema-3 v0.0.4
+bundles are accepted through fixed legacy descriptors and migrated to schema 6
+only after copying into the staging workspace; older notes receive a null sender.
+It then uses the maintenance gate and
 restore journal to replace live state. Exact active-schema expectations come
 from a trusted in-memory database built with checked-in migrations; imported SQL
 never defines its own validation baseline.
@@ -203,6 +218,12 @@ be hardened before production-readiness claims.
   the project default, and preserve that default through restart and backup.
 - Copy, edit, timestamp-adjust, and delete notes while preserving deterministic
   ordering.
+- Switch the compact composer between You and a named participant, create a
+  left-aligned attributed message, retain its normal labels/files/actions, and
+  edit its attribution back to You.
+- Select draft text, apply Markdown from the compact add/edit strip or a familiar
+  Cmd/Ctrl shortcut, retain the intended selection, and save rendered Quote and
+  GFM Table output at desktop and narrow mobile widths.
 - Schedule future-dated messages, see the silent current/future boundary at
   desktop and mobile widths, and let it advance without losing message-control
   focus when timestamps arrive.

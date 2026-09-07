@@ -74,6 +74,47 @@ describe("managed attachment service lifecycle", () => {
     expect(service()).not.toHaveProperty("downloadAttachment");
   });
 
+  it("creates, changes, preserves, and clears participant attribution", () => {
+    ids.push("chat-a", "note-a");
+    const chatService = service();
+    chatService.createChat({ title: "Launch", accent: "ocean" });
+
+    expect(
+      chatService.appendNote("chat-a", {
+        body: "Participant update",
+        sender: "  Maya Chen  ",
+      }),
+    ).toMatchObject({ sender: "Maya Chen" });
+    expect(
+      chatService.updateNote("chat-a", "note-a", { body: "Still Maya" }),
+    ).toMatchObject({ sender: "Maya Chen" });
+    expect(
+      chatService.updateNote("chat-a", "note-a", { sender: " Omar Haddad " }),
+    ).toMatchObject({ sender: "Omar Haddad" });
+    expect(
+      chatService.updateNote("chat-a", "note-a", { sender: null }),
+    ).toMatchObject({ sender: null });
+  });
+
+  it("rejects invalid participant attribution without changing the note", () => {
+    ids.push("chat-a", "note-a");
+    const chatService = service();
+    chatService.createChat({ title: "Launch", accent: "ocean" });
+    chatService.appendNote("chat-a", {
+      body: "Participant update",
+      sender: "Maya Chen",
+    });
+
+    expect(() =>
+      chatService.updateNote("chat-a", "note-a", {
+        sender: "x".repeat(81),
+      }),
+    ).toThrow();
+    expect(chatService.getChat("chat-a").notes[0]).toMatchObject({
+      sender: "Maya Chen",
+    });
+  });
+
   it("uses the public append and update use cases for attachment writes", () => {
     ids.push("chat-a", "note-a", "attachment-a", "attachment-b");
     const chatService = service();

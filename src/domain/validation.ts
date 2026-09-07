@@ -25,6 +25,7 @@ export const DEFAULT_ENABLED_LABELS: ConfigurableLabel[] = [
 
 export const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 export const MAX_ATTACHMENTS_PER_MESSAGE = 10;
+export const MAX_SENDER_NAME_LENGTH = 80;
 
 const titleSchema = z.string().trim().min(1).max(80);
 const accentSchema = z.enum(ACCENTS);
@@ -37,6 +38,11 @@ export const enabledLabelsSchema = z
     message: "Labels must be unique",
   });
 const noteBodySchema = z.string().trim().min(1).max(10_000);
+export const senderSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_SENDER_NAME_LENGTH);
 
 export const createChatInputSchema = z.object({
   title: titleSchema,
@@ -61,6 +67,7 @@ export const updateChatInputSchema = z
 
 export const createNoteInputSchema = z.object({
   body: noteBodySchema,
+  sender: senderSchema.nullable().optional(),
   createdAt: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   files: z
     .array(z.instanceof(File))
@@ -71,6 +78,7 @@ export const createNoteInputSchema = z.object({
 export const updateNoteInputSchema = z
   .object({
     body: noteBodySchema.optional(),
+    sender: senderSchema.nullable().optional(),
     createdAt: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
     keepAttachmentIds: z
       .array(z.string())
@@ -84,11 +92,12 @@ export const updateNoteInputSchema = z
   .refine(
     (value) =>
       value.body !== undefined ||
+      value.sender !== undefined ||
       value.createdAt !== undefined ||
       value.keepAttachmentIds !== undefined ||
       value.files !== undefined,
     {
-      message: "Provide note text or timestamp",
+      message: "Provide note text, sender, or timestamp",
     },
   );
 

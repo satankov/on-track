@@ -39,6 +39,7 @@ interface NoteRow {
   id: string;
   chat_id: string;
   body: string;
+  sender: string | null;
   created_at: number;
 }
 
@@ -105,6 +106,7 @@ function toNote(
     id: row.id,
     chatId: row.chat_id,
     body: row.body,
+    sender: row.sender,
     createdAt: row.created_at,
     labels,
     attachments,
@@ -277,6 +279,7 @@ export class SqliteChatRepository {
     id: string;
     chatId: string;
     body: string;
+    sender?: string | null;
     createdAt?: number;
     now: number;
     attachments?: {
@@ -296,10 +299,10 @@ export class SqliteChatRepository {
 
       this.database
         .prepare(
-          `INSERT INTO notes (id, chat_id, body, created_at)
-           VALUES (@id, @chatId, @body, @createdAt)`,
+          `INSERT INTO notes (id, chat_id, body, sender, created_at)
+           VALUES (@id, @chatId, @body, @sender, @createdAt)`,
         )
-        .run({ ...input, createdAt });
+        .run({ ...input, sender: input.sender ?? null, createdAt });
       for (const attachment of input.attachments ?? []) {
         this.database
           .prepare(
@@ -371,6 +374,7 @@ export class SqliteChatRepository {
     noteId: string,
     input: {
       body?: string;
+      sender?: string | null;
       createdAt?: number;
       now: number;
       keepAttachmentIds?: string[];
@@ -408,6 +412,7 @@ export class SqliteChatRepository {
         .prepare(
           `UPDATE notes
            SET body = COALESCE(@body, body),
+               sender = CASE WHEN @updateSender = 1 THEN @sender ELSE sender END,
                created_at = COALESCE(@createdAt, created_at)
            WHERE id = @noteId AND chat_id = @chatId`,
         )
@@ -415,6 +420,8 @@ export class SqliteChatRepository {
           noteId,
           chatId,
           body: input.body ?? null,
+          sender: input.sender ?? null,
+          updateSender: Number(input.sender !== undefined),
           createdAt: input.createdAt ?? null,
         });
       if (input.keepAttachmentIds || input.attachments?.length) {

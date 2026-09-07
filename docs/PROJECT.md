@@ -15,17 +15,19 @@ recovery parts of that promise.
 
 ## Current phase
 
-Version 0.0.4 is the current published plaintext alpha source release under
-Apache License 2.0. Version 0.0.5 is prepared as the next release candidate with
-a silent live boundary between current and future-dated messages, project
-sidebar pins, current-time previews, Attention status, quiet pin controls, and
-collapsible long messages with a per-project default.
+Version 0.0.5 is the current published plaintext alpha source release under
+Apache License 2.0. The `release/v0.0.6` checkout contains verified unreleased
+work: compact Markdown authoring assistance, visually unified composer utility
+rows, free-form participant attribution, Home and reading-position navigation,
+collapsible sidebar sections, an eight-line composer, plain-text sidebar
+previews, and automatic Links filtering. Package metadata is 0.0.6 for the release candidate. attribution does not add collaboration or accounts.
 
 ## Current objective
 
-Complete review, CI, and publication of the v0.0.5 alpha release candidate while
-retaining the plaintext and portability warnings. Mobile remains a
-regression-protected alpha, not a dedicated design target.
+Prepare the verified unreleased work as a scoped v0.0.6 alpha release candidate,
+including version and release-document updates, review, and the full platform
+matrix, while retaining the plaintext and portability warnings. Mobile remains
+a regression-protected alpha, not a dedicated design target.
 
 ## v0.0.1 outcome
 
@@ -87,7 +89,7 @@ regression-protected alpha, not a dedicated design target.
   schema validation is derived from checked-in migrations; the unused attachment
   download route and obsolete schema-2 backup restore path are removed.
 
-## v0.0.5 release candidate
+## v0.0.5 outcome
 
 - Chronological history marks the first future-dated message with a silent,
   square-edged, full-width accent fade and accessible separator. The boundary
@@ -99,26 +101,50 @@ regression-protected alpha, not a dedicated design target.
   Markdown messages can be expanded or collapsed using a project-level default
   that persists through restart and backup restore.
 
+## Current unreleased outcome
+
+- The shared add/edit composer provides an optional compact Markdown strip with
+  selection-aware formatting, GFM table insertion, and familiar textarea-scoped
+  shortcuts without changing stored note or backup formats. Timestamp and
+  Markdown rows share one compact visual system at desktop and mobile widths.
+- The same composer can attribute messages to a free-form participant name.
+  Those messages use one neutral left-aligned bubble, stable sender-name color,
+  and all existing message labels, filters, files, and actions. Schema 6 and the
+  versioned backup contract preserve this optional attribution.
+- Home navigation, per-project session reading positions, and independently
+  collapsible Pinned and Projects sections improve movement through the private
+  notebook without adding persistent navigation data.
+- The add/edit composer grows to eight lines, sidebar previews present inert
+  plain text extracted from Markdown, and Links filters messages using the same
+  parsed Markdown/GFM URL policy as rendering.
+
 ## Current capabilities
 
-- Create and switch between personal project chats.
+- Create and switch between personal project chats, return Home through the
+  On Track brand, and retain reading positions during the current browser session.
+- Independently collapse the Pinned and Projects sidebar sections during a session.
 - Pin and unpin projects in a stable sidebar section without changing their
   message-activity timestamps.
 - Rename a project and select a restrained accent color.
 - Add multiline Markdown notes in deterministic chronological order.
+- Attribute notes to a named participant from a compact composer row, or switch
+  back to You, without creating participant accounts or project settings.
+- Format selected or placeholder text from the compact Markdown strip, or use
+  Cmd/Ctrl shortcuts for bold, italic, link, quote, lists, checklist, and code.
 - Expand and collapse long Markdown notes, and choose each project's initial
   long-message state from Edit project.
 - Schedule future-dated messages and see a live, unobtrusive boundary between
   current history and messages whose timestamps have not arrived.
 - Add local files to project messages with optional text context, including
   attachment add/remove while editing a message.
-- Filter the open project history to messages with attached files.
+- Filter the open project history to messages with attached files or automatically
+  detected Markdown/GFM links.
 - Apply permanent Pin and Attention labels plus project-enabled Todo, Decision,
   Open question, Risk, and Milestone labels to messages, then filter history by
   active labels.
-- Scan each project's latest message up to the current time and see whether an
-  applied Attention label belongs to today or an earlier message directly from
-  the sidebar.
+- Scan a plain-text preview of each project's latest message up to the current
+  time and see whether an applied Attention label belongs to today or an earlier
+  message directly from the sidebar.
 - Open eligible managed files with the operating system's default association,
   or show their safe managed folder; risky executable/launcher types are blocked
   from Open.
@@ -132,8 +158,8 @@ regression-protected alpha, not a dedicated design target.
 
 ## Near-term priorities
 
-1. Publish v0.0.5 after review and the platform-scoped Node 22.16/24 release
-   matrix passes.
+1. Prepare and publish v0.0.6 after release review and the platform-scoped Node
+   22.16/24 release matrix passes.
 2. Continue hardening backup, restore, integrity checking, recovery, and
    conflict-free import semantics before users entrust irreplaceable data to the
    application.
@@ -163,7 +189,9 @@ hosting, analytics, and telemetry.
 
 - A chat is a private project notebook, not a cooperative messenger.
 - Data is local by default and stored outside the Git checkout.
-- Plaintext alpha limitations must be prominent; locality is not encryption.
+- The sidebar footer uses only “Local only” beside Settings. Plaintext alpha
+  limitations remain documented in the README and backup settings; locality is
+  not encryption.
 - Distribution is a GitHub source release supporting Node.js 22 from 22.16.0 on
   macOS and Linux and Node.js 24 on Windows, macOS, and Linux, not an npm package
   or native installer.
@@ -178,11 +206,15 @@ The public repository and release are:
 - [v0.0.2 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.2)
 - [v0.0.3 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.3)
 - [v0.0.4 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.4)
+- [v0.0.5 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.5)
 - [Issues](https://github.com/satankov/on-track/issues)
 
-GitHub Issues is the intended backlog and ownership tracker. The near-term
-priorities above still need tracker records. Durable decisions live in
-`docs/adr/`; significant active work lives in `docs/plans/`.
+GitHub Issues is the intended backlog and ownership tracker. Concrete closeout
+follow-ups for the Fastify advisory, v0.0.6 release verification, and native-action
+smoke tests await issue creation; review the
+[tracker drafts](plans/0017-chat-navigation-and-history-polish.md#required-tracker-follow-ups).
+Broader product priorities above remain strategy until scoped. Durable decisions
+live in `docs/adr/`; significant work lives in `docs/plans/`.
 
 ## Current risks
 
@@ -194,8 +226,11 @@ priorities above still need tracker records. Durable decisions live in
   dependency. Node 22 support ends no later than upstream support, currently
   2027-04-30. The next candidate must pass full verification on Node 22.16 and
   24 on Linux, plus native SQLite install/test coverage on macOS for both lines
-  and on Windows for Node 24; the v0.0.5 candidate must pass those gates, and
-  future dependency upgrades can still affect portability.
+  and on Windows for Node 24; every future release candidate must pass those
+  gates, and dependency upgrades can still affect portability.
+- The configured production audit passes its high-severity gate but currently
+  reports a moderate Fastify advisory. The available fixed version is outside
+  the exact declared dependency and requires explicit upgrade verification.
 - v0.0.4 deliberately does not restore v0.0.3/schema-2 backup bundles. Live
   v0.0.3 databases still migrate at startup, and this compatibility break is
   acceptable only under the current no-user alpha assumption.

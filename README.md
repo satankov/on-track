@@ -19,10 +19,19 @@ services, analytics, or remote runtime assets.
 
 ## What works in this checkout
 
-- Create and switch between personal project chats.
-- Pin important projects above the activity-sorted project list.
+- Create and switch between personal project chats; click On Track to return Home.
+- Resume each project at its remembered reading position during the current
+  browser session. First visits open near current work and the first future
+  message; future messages remain accessible through normal scrolling.
+- Pin important projects above the activity-sorted project list, and independently
+  collapse Pinned and Projects during the current browser session.
 - Customize each project's title and accent.
-- Add multiline Markdown notes with keyboard-friendly controls.
+- Add multiline Markdown notes with a compact, selection-aware formatting strip
+  for bold, italic, links, quotes, lists, checklists, code, and GFM tables. The
+  add/edit input grows to eight lines before scrolling internally.
+- Attribute a message to a participant from the compact Sender row. Participant
+  messages use neutral bubbles on the left with a stable colored sender name and
+  retain the same labels, filters, files, and message actions as your own notes.
 - Apply permanent Pin and Attention labels plus project-enabled Todo, Decision,
   Open question, Risk, and Milestone labels, then filter history by label.
 - Expand and collapse long Markdown notes, with a persisted per-project default
@@ -30,13 +39,16 @@ services, analytics, or remote runtime assets.
 - Copy, edit, timestamp-adjust, and delete notes.
 - Schedule future-dated messages and see where the history crosses into the
   future through a silent full-width fade that clears as timestamps arrive.
-- Scan one-line previews of the latest message up to the current time and current
+- Scan plain-text previews of the latest message up to the current time and current
   or earlier Attention status directly in the project sidebar.
 - Attach local files to notes, filter messages with files, open eligible files
   through the operating system's default association, and show them in their
   managed folder. Executable and launcher-like files are blocked from Open.
+- Filter messages containing Markdown/GFM links with the automatic Links filter
+  after Files, without applying a label.
 - Export and restore one versioned `.on-track-backup` bundle from Settings.
-- Keep state after closing and restarting the application.
+- Keep project data after closing and restarting the application. Reading
+  positions and sidebar collapse state reset when the browser reloads.
 - Use the main flow at desktop and mobile browser widths.
 - Run without accounts, telemetry, or an internet connection after installation.
 
@@ -45,6 +57,34 @@ Windows and Linux native-action smoke verification, encryption, native
 installers, and peer-to-peer iPhone sync are roadmap work. Open delegates to an
 installed default application; On Track does not provide embedded PowerPoint or
 document editing.
+
+### Markdown assistance
+
+Use the `M↓` control beside Attach and Timestamp to reveal the compact Markdown
+strip. Select existing text before choosing an action to format that selection;
+with no selection, the editor inserts an editable placeholder. Quote inserts a
+Markdown blockquote (`> text`), and Table inserts a two-column GFM table
+skeleton. The same strip is available while adding or editing a message.
+
+The common shortcuts work whenever the message textarea is focused, even while
+the strip is closed:
+
+| Action                        | Shortcut           |
+| ----------------------------- | ------------------ |
+| Bold / Italic / Link / Code   | Cmd/Ctrl+B/I/K/E   |
+| Numbered list / Bulleted list | Cmd/Ctrl+Shift+7/8 |
+| Checklist / Quote             | Cmd/Ctrl+Shift+9/. |
+
+Cmd/Ctrl+Enter continues to submit the message. Table is click/tap only.
+
+### Participant attribution
+
+Use the sender control beside Markdown, Attachments, and Timestamp to reveal one
+compact row. Leave **You** selected for the usual right-aligned note, or enter a
+sender name to place that message on the left. The selected name stays in the
+composer for consecutive messages until you choose **You**. Sender names are
+plain attribution text; On Track still has no participant accounts or shared
+project access.
 
 ## Quick start
 
@@ -92,11 +132,11 @@ SQLite databases, journals, backups, exports, and common local development
 artifacts are ignored by Git. The release check also fails if a database file is
 ever tracked. Use the Settings button at the bottom of the sidebar to export or
 restore a versioned backup bundle. Restore replaces current local projects and
-files rather than merging them. Version 0.0.5 accepts schema-5 backups plus
-strictly validated schema-4 development and v0.0.4/schema-3 backups; it does not
-restore v0.0.3/schema-2 bundles. Live schema-3 and schema-4 databases migrate
-during startup. You can isolate evaluation data with an absolute disposable
-path:
+files rather than merging them. The current checkout uses schema 6 and accepts
+schema-6 backups plus strictly validated schema-5, schema-4 development, and
+v0.0.4/schema-3 backups; it does not restore v0.0.3/schema-2 bundles. Older
+supported databases migrate during startup. You can isolate evaluation data
+with an absolute disposable path:
 
 ```sh
 ON_TRACK_DATA_DIR=/absolute/path/to/on-track-data npm start

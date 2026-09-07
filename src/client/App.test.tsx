@@ -52,6 +52,192 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
 }
 
 describe("personal project chat workspace", () => {
+  it("returns Home from a project and its editor, cancelling stale selections", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "home",
+      title: "Home journey",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const pending = deferred<typeof chat & { notes: [] }>();
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi
+        .fn()
+        .mockResolvedValueOnce({ ...chat, notes: [] })
+        .mockResolvedValueOnce({ ...chat, notes: [] })
+        .mockReturnValueOnce(pending.promise),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Home journey" }),
+    );
+    await user.type(screen.getByLabelText("Add a note"), "Draft");
+    await user.click(screen.getByRole("link", { name: "Home" }));
+    expect(
+      screen.getByRole("heading", { name: "Choose a project to continue." }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Open Home journey" }));
+    expect(screen.getByLabelText("Add a note")).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("link", { name: "Home" }));
+    expect(
+      screen.getByRole("heading", { name: "Choose a project to continue." }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Open Home journey" }));
+    await user.click(screen.getByRole("link", { name: "Home" }));
+    await act(async () => pending.resolve({ ...chat, notes: [] }));
+    expect(
+      screen.getByRole("heading", { name: "Choose a project to continue." }),
+    ).toBeVisible();
+  });
+
+  it("collapses sidebar sections independently and retains them through Settings", async () => {
+    const user = userEvent.setup();
+    const chats = [
+      {
+        id: "pinned",
+        title: "Priority",
+        accent: "ocean" as const,
+        createdAt: 1,
+        updatedAt: 1,
+        pinnedAt: 2,
+      },
+      {
+        id: "other",
+        title: "Other",
+        accent: "moss" as const,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    render(
+      <App api={createApi({ listChats: vi.fn().mockResolvedValue(chats) })} />,
+    );
+    const pinned = await screen.findByRole("button", { name: "Pinned" });
+    expect(pinned).toHaveAttribute("aria-expanded", "true");
+    pinned.focus();
+    await user.keyboard("{Enter}");
+    expect(pinned).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Open Priority" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Open Other" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Projects" }));
+    expect(screen.queryByRole("button", { name: "Open Other" })).toBeNull();
+    await user.click(
+      screen.getByRole("button", {
+        name: "Settings. Local only.",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Back to projects" }));
+    expect(screen.getByRole("button", { name: "Pinned" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    await user.click(screen.getByRole("button", { name: "Projects" }));
+    expect(screen.getByRole("button", { name: "Open Other" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Open Priority" })).toBeNull();
+  });
+
+  it("shows plain Markdown previews and automatically filters messages containing links", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "links",
+      title: "References",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+      latestMessagePreview:
+        "### Header\n\n**bold text** [Guide](https://example.com)",
+    };
+    const notes = [
+      "Visit https://example.com",
+      "[Guide][ref]\n\n[ref]: https://example.org",
+      "`https://code.example`",
+      "No link",
+    ].map((body, i) => ({
+      id: `n${i}`,
+      chatId: chat.id,
+      body,
+      createdAt: i + 1,
+    }));
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes }),
+      updateNote: vi
+        .fn()
+        .mockResolvedValue({ ...notes[0], body: "Link removed" }),
+    });
+    render(<App api={api} />);
+    const project = await screen.findByRole("button", {
+      name: "Open References",
+    });
+    expect(within(project).getByText("Header bold text Guide")).toBeVisible();
+    expect(within(project).queryByRole("link")).toBeNull();
+    await user.click(project);
+    const filters = within(
+      screen.getByRole("navigation", { name: "History filters" }),
+    ).getAllByRole("button");
+    expect(
+      filters.slice(0, 3).map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["All 4", "Files 0", "Links 2"]);
+    await user.click(screen.getByRole("button", { name: "Links 2" }));
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+    expect(screen.queryByText("No link")).toBeNull();
+    expect(screen.queryByText("https://code.example")).toBeNull();
+    const first = screen.getAllByRole("article")[0].closest("li")!;
+    await user.click(
+      within(first).getByRole("button", { name: "Edit message" }),
+    );
+    await user.clear(screen.getByRole("textbox", { name: "Edit message" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Edit message" }),
+      "Link removed",
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(
+      await screen.findByRole("button", { name: "Links 1" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+  });
+
+  it("offers an empty Links filter without adding a message label", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "empty-links",
+      title: "Empty links",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    render(
+      <App
+        api={createApi({
+          listChats: vi.fn().mockResolvedValue([chat]),
+          getChat: vi.fn().mockResolvedValue({
+            ...chat,
+            notes: [
+              {
+                id: "plain",
+                chatId: chat.id,
+                body: "Plain text",
+                createdAt: 1,
+              },
+            ],
+          }),
+        })}
+      />,
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Open Empty links" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Links 0" }));
+    expect(
+      screen.getByRole("heading", { name: "No links yet." }),
+    ).toBeVisible();
+  });
+
   it("shows a loading workspace while projects are still being fetched", () => {
     const listRequest = deferred<[]>();
     const api = createApi({
@@ -319,6 +505,7 @@ describe("personal project chat workspace", () => {
                     id: "keep",
                     chatId: alpha.id,
                     body: "Keep me",
+                    sender: null,
                     createdAt: now - 2_000,
                     labels: [],
                   },
@@ -326,6 +513,7 @@ describe("personal project chat workspace", () => {
                     id: "remove",
                     chatId: alpha.id,
                     body: "Remove me",
+                    sender: null,
                     createdAt: now - 1_000,
                     labels: [],
                   },
@@ -395,6 +583,7 @@ describe("personal project chat workspace", () => {
                     id: "attention-note",
                     chatId: alpha.id,
                     body: "Needs attention",
+                    sender: null,
                     createdAt: now - 1_000,
                     labels: [],
                   },
@@ -709,6 +898,7 @@ describe("personal project chat workspace", () => {
     ).toEqual([
       "All 1",
       "Files 0",
+      "Links 0",
       "Pin 0",
       "Attention 0",
       "Todo 0",
@@ -953,6 +1143,13 @@ describe("personal project chat workspace", () => {
       );
       expect(visibleLink).not.toHaveAttribute("tabindex");
       expect(clippedLink).not.toHaveAttribute("tabindex");
+
+      await user.click(screen.getByRole("button", { name: "Edit message" }));
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.getByRole("button", { name: "Show less" })).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      );
     } finally {
       rectSpy.mockRestore();
       if (originalScrollHeight) {
@@ -1398,7 +1595,9 @@ describe("personal project chat workspace", () => {
         id: "note-1",
         chatId: "chat-1",
         body: "**Decision** recorded\n<img src=x>",
+        sender: "Maya Chen",
         createdAt: 2,
+        labels: [],
       });
     const api = createApi({
       listChats: vi.fn().mockResolvedValue([chat]),
@@ -1410,6 +1609,13 @@ describe("personal project chat workspace", () => {
     await user.click(
       await screen.findByRole("button", { name: "Open Delivery" }),
     );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Show sender options. Current sender: You",
+      }),
+    );
+    const sender = screen.getByRole("textbox", { name: "Sender name" });
+    await user.type(sender, "Maya Chen");
     const composer = await screen.findByLabelText("Add a note");
     await user.type(composer, "**Decision** recorded{enter}<img src=x>");
     await user.keyboard("{Control>}{Enter}{/Control}");
@@ -1418,12 +1624,18 @@ describe("personal project chat workspace", () => {
       "Your note is still here",
     );
     expect(composer).toHaveValue("**Decision** recorded\n<img src=x>");
+    expect(sender).toHaveValue("Maya Chen");
+    expect(appendNote).toHaveBeenLastCalledWith("chat-1", {
+      body: "**Decision** recorded\n<img src=x>",
+      sender: "Maya Chen",
+    });
 
     await user.keyboard("{Meta>}{Enter}{/Meta}");
     expect(await screen.findByText("Decision")).toBeVisible();
     expect(screen.getByText("Decision").tagName).toBe("STRONG");
     expect(document.querySelector("img")).toBeNull();
     expect(composer).toHaveValue("");
+    expect(sender).toHaveValue("Maya Chen");
   });
 
   it("resizes the composer for multiline drafts and edit-prefilled messages", async () => {
@@ -1476,12 +1688,15 @@ describe("personal project chat workspace", () => {
 
       await user.type(
         composer,
-        "One{enter}Two{enter}Three{enter}Four{enter}Five{enter}Six",
+        "One{enter}Two{enter}Three{enter}Four{enter}Five{enter}Six{enter}Seven{enter}Eight",
       );
       expect(composer).toHaveStyle({
-        height: "144px",
-        overflowY: "auto",
+        height: "216px",
+        overflowY: "hidden",
       });
+
+      await user.type(composer, "{enter}Nine");
+      expect(composer).toHaveStyle({ height: "216px", overflowY: "auto" });
 
       simulatedScrollHeight = 72;
       window.dispatchEvent(new Event("resize"));
@@ -1510,6 +1725,274 @@ describe("personal project chat workspace", () => {
         );
       }
     }
+  });
+
+  it("opens a compact Markdown strip and formats the selected draft text", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    const toggle = screen.getByRole("button", {
+      name: "Show Markdown assistance",
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("group", { name: "Markdown assistance" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(toggle);
+    const tools = screen.getByRole("group", {
+      name: "Markdown assistance",
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(toggle).toHaveAccessibleName("Hide Markdown assistance");
+    expect(within(tools).getAllByRole("button")).toHaveLength(9);
+
+    const bold = within(tools).getByRole("button", { name: /Bold/ });
+    expect(bold).toHaveAttribute("aria-keyshortcuts", "Meta+B Control+B");
+    fireEvent.focus(bold);
+    expect(within(tools).getByText("**text**")).toBeVisible();
+    expect(within(tools).getByText("⌘B / Ctrl+B")).toBeVisible();
+
+    const composer = screen.getByLabelText<HTMLTextAreaElement>("Add a note");
+    await user.type(composer, "Make this important");
+    composer.setSelectionRange(10, 19);
+    await user.click(bold);
+
+    expect(composer).toHaveValue("Make this **important**");
+    expect(composer).toHaveFocus();
+    expect(composer).toHaveProperty("selectionStart", 12);
+    expect(composer).toHaveProperty("selectionEnd", 21);
+
+    fireEvent.focus(bold);
+    fireEvent.keyDown(bold, { key: "Escape" });
+    expect(
+      screen.queryByRole("group", { name: "Markdown assistance" }),
+    ).not.toBeInTheDocument();
+    expect(composer).toHaveFocus();
+  });
+
+  it("uses the compact composer disclosure to keep posting as one sender until You is selected", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const appendNote = vi.fn(
+      async (
+        _chatId: string,
+        input: { body: string; sender?: string | null },
+      ) => ({
+        id: `note-${input.body}`,
+        chatId: "chat-1",
+        body: input.body,
+        sender: input.sender ?? null,
+        createdAt: 2,
+        labels: [],
+      }),
+    );
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      appendNote,
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    const toggle = screen.getByRole("button", {
+      name: "Show sender options. Current sender: You",
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await user.click(toggle);
+
+    const senderGroup = screen.getByRole("group", { name: "Message sender" });
+    const you = within(senderGroup).getByRole("button", { name: "You" });
+    const sender = within(senderGroup).getByRole("textbox", {
+      name: "Sender name",
+    });
+    expect(you).toHaveAttribute("aria-pressed", "true");
+    expect(sender).toHaveAttribute("maxlength", "80");
+
+    await user.type(sender, "Maya Chen");
+    expect(you).toHaveAttribute("aria-pressed", "false");
+    expect(toggle).toHaveClass("composer-icon-button--active");
+    expect(toggle).toHaveAccessibleName(
+      "Hide sender options. Current sender: Maya Chen",
+    );
+    await user.click(toggle);
+    expect(
+      screen.queryByRole("group", { name: "Message sender" }),
+    ).not.toBeInTheDocument();
+    expect(toggle).toHaveAccessibleName(
+      "Show sender options. Current sender: Maya Chen",
+    );
+    await user.type(screen.getByLabelText("Add a note"), "First update");
+    await user.click(screen.getByRole("button", { name: "Add note" }));
+    expect(appendNote).toHaveBeenLastCalledWith("chat-1", {
+      body: "First update",
+      sender: "Maya Chen",
+    });
+    await user.click(toggle);
+    const persistedSender = screen.getByRole("textbox", {
+      name: "Sender name",
+    });
+    expect(persistedSender).toHaveValue("Maya Chen");
+
+    await user.type(screen.getByLabelText("Add a note"), "Second update");
+    await user.click(screen.getByRole("button", { name: "Add note" }));
+    expect(appendNote).toHaveBeenLastCalledWith("chat-1", {
+      body: "Second update",
+      sender: "Maya Chen",
+    });
+
+    await user.click(screen.getByRole("button", { name: "You" }));
+    expect(persistedSender).toHaveValue("");
+    await user.type(screen.getByLabelText("Add a note"), "My update");
+    await user.click(screen.getByRole("button", { name: "Add note" }));
+    expect(appendNote).toHaveBeenLastCalledWith("chat-1", {
+      body: "My update",
+    });
+  });
+
+  it("applies familiar Markdown shortcuts while the strip is closed", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    const composer = screen.getByLabelText<HTMLTextAreaElement>("Add a note");
+    await user.type(composer, "important");
+    composer.setSelectionRange(0, 9);
+
+    expect(fireEvent.keyDown(composer, { key: "b", ctrlKey: true })).toBe(
+      false,
+    );
+    expect(composer).toHaveValue("**important**");
+    expect(composer).toHaveProperty("selectionStart", 2);
+    expect(composer).toHaveProperty("selectionEnd", 11);
+    expect(
+      screen.queryByRole("group", { name: "Markdown assistance" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.keyDown(composer, {
+      key: "i",
+      ctrlKey: true,
+      repeat: true,
+    });
+    expect(composer).toHaveValue("**important**");
+  });
+
+  it("closes Markdown assistance with Escape from its disclosure", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    const composer = screen.getByLabelText<HTMLTextAreaElement>("Add a note");
+    await user.type(composer, "important");
+    composer.setSelectionRange(0, 9);
+    const toggle = screen.getByRole("button", {
+      name: "Show Markdown assistance",
+    });
+    await user.click(toggle);
+    fireEvent.focus(toggle);
+    composer.setSelectionRange(0, 0);
+    fireEvent.keyDown(toggle, { key: "Escape" });
+
+    expect(
+      screen.queryByRole("group", { name: "Markdown assistance" }),
+    ).not.toBeInTheDocument();
+    expect(composer).toHaveFocus();
+    fireEvent.keyDown(composer, { key: "b", ctrlKey: true });
+    expect(composer).toHaveValue("**important**");
+  });
+
+  it("preserves the draft and explains formatting that exceeds the limit", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const note = {
+      id: "note-1",
+      chatId: "chat-1",
+      body: "Existing note",
+      createdAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    const composer = screen.getByLabelText<HTMLTextAreaElement>("Add a note");
+    const draftAtLimit = "a".repeat(9_999);
+    fireEvent.change(composer, { target: { value: draftAtLimit } });
+    composer.setSelectionRange(0, 1);
+
+    await user.click(
+      screen.getByRole("button", { name: "Show Markdown assistance" }),
+    );
+    await user.click(screen.getByRole("button", { name: /Bold/ }));
+
+    expect(composer).toHaveValue(draftAtLimit);
+    expect(composer).toHaveFocus();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "This formatting would exceed the 10,000-character message limit.",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Edit message" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("sends a new message with an optional composer timestamp", async () => {
@@ -1872,6 +2355,180 @@ describe("personal project chat workspace", () => {
     ).toHaveLength(3);
     expect(document.querySelectorAll(".message-row--own")).toHaveLength(3);
     expect(document.querySelectorAll(".message-time")).toHaveLength(3);
+  });
+
+  it("renders participant messages on the left with stable colored names and the standard message functions", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      enabledLabels: ["todo"] as ["todo"],
+      createdAt: 1,
+      updatedAt: 3,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({
+        ...chat,
+        notes: [
+          {
+            id: "note-own",
+            chatId: "chat-1",
+            body: "My update",
+            sender: null,
+            createdAt: 1,
+            labels: [],
+          },
+          {
+            id: "note-maya-one",
+            chatId: "chat-1",
+            body: "Participant update",
+            sender: "Maya Chen",
+            createdAt: 2,
+            labels: ["todo"],
+          },
+          {
+            id: "note-maya-two",
+            chatId: "chat-1",
+            body: "Another participant update",
+            sender: "Maya Chen",
+            createdAt: 3,
+            labels: [],
+          },
+        ],
+      }),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    const participant = screen.getByText("Participant update").closest("li")!;
+    expect(participant).toHaveClass("message-row--participant");
+    expect(participant).not.toHaveClass("message-row--own");
+    expect(
+      within(participant).getByText("Maya Chen", {
+        selector: ".message-sender",
+      }),
+    ).toBeVisible();
+    expect(
+      within(participant).getByRole("button", { name: "Change labels" }),
+    ).toBeVisible();
+    expect(
+      within(participant).getByRole("button", { name: "Copy message" }),
+    ).toBeVisible();
+    expect(
+      within(participant).getByRole("button", { name: "Edit message" }),
+    ).toBeVisible();
+    expect(
+      within(participant).getByRole("button", { name: "Delete message" }),
+    ).toBeVisible();
+    expect(document.querySelector(".message-avatar")).toBeNull();
+
+    const mayaNames = screen.getAllByText("Maya Chen", {
+      selector: ".message-sender",
+    });
+    expect(mayaNames).toHaveLength(2);
+    expect(mayaNames[0]).toHaveAttribute(
+      "data-sender-color",
+      mayaNames[1]?.getAttribute("data-sender-color"),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Todo 1" }));
+    expect(screen.getByText("Participant update")).toBeVisible();
+    expect(screen.queryByText("My update")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Another participant update"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("can edit a participant message back to You and restores the new-message sender", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const note = {
+      id: "note-1",
+      chatId: "chat-1",
+      body: "Participant update",
+      sender: "Maya Chen",
+      createdAt: 3_600_000,
+      labels: [],
+    };
+    const updateNote = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Temporary failure"))
+      .mockResolvedValueOnce({ ...note, sender: null });
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+      updateNote,
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Show sender options. Current sender: You",
+      }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Sender name" }),
+      "Omar Haddad",
+    );
+
+    const participant = screen.getByText("Participant update").closest("li")!;
+    await user.click(
+      within(participant).getByRole("button", { name: "Edit message" }),
+    );
+    expect(screen.getByRole("textbox", { name: "Sender name" })).toHaveValue(
+      "Maya Chen",
+    );
+    await user.click(screen.getByRole("button", { name: "You" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Your note is still here",
+    );
+    expect(screen.getByRole("textbox", { name: "Edit message" })).toHaveValue(
+      "Participant update",
+    );
+    expect(screen.getByRole("textbox", { name: "Sender name" })).toHaveValue(
+      "",
+    );
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("textbox", { name: "Sender name" })).toHaveValue(
+      "Omar Haddad",
+    );
+
+    await user.click(
+      within(participant).getByRole("button", { name: "Edit message" }),
+    );
+    await user.click(screen.getByRole("button", { name: "You" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(updateNote).toHaveBeenLastCalledWith("chat-1", "note-1", {
+      body: "Participant update",
+      sender: null,
+      createdAt: 3_600_000,
+      keepAttachmentIds: [],
+      files: [],
+    });
+    expect(
+      screen
+        .getByText("Participant update", { selector: ".note-body p" })
+        .closest("li"),
+    ).toHaveClass("message-row--own");
+    expect(screen.getByRole("textbox", { name: "Sender name" })).toHaveValue(
+      "Omar Haddad",
+    );
   });
 
   it("places future messages in one silent region without repeating a same-day date", async () => {
@@ -2724,6 +3381,7 @@ describe("personal project chat workspace", () => {
       id: "note-alpha",
       chatId: "alpha",
       body: "Remove me",
+      sender: null,
       createdAt: 3,
       labels: [],
     };
@@ -2833,6 +3491,7 @@ describe("personal project chat workspace", () => {
       id: string;
       chatId: string;
       body: string;
+      sender: null;
       createdAt: number;
       labels: [];
     }>();
@@ -2850,12 +3509,19 @@ describe("personal project chat workspace", () => {
     await user.type(await screen.findByLabelText("Add a note"), "Alpha note");
     await user.click(screen.getByRole("button", { name: /Add note/ }));
     expect(screen.getByRole("button", { name: "Open Beta" })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await user.click(screen.getByRole("link", { name: "Home" }));
+    expect(screen.getByRole("heading", { name: "Alpha" })).toBeVisible();
 
     await act(async () =>
       noteRequest.resolve({
         id: "note-alpha",
         chatId: "alpha",
         body: "Alpha note",
+        sender: null,
         createdAt: 3,
         labels: [],
       }),
@@ -2898,6 +3564,12 @@ describe("personal project chat workspace", () => {
     );
     await user.click(screen.getByRole("button", { name: /Add note/ }));
     expect(screen.getByRole("button", { name: "Open Beta" })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await user.click(screen.getByRole("link", { name: "Home" }));
+    expect(screen.getByRole("heading", { name: "Alpha" })).toBeVisible();
     await act(async () => noteRequest.reject(new Error("Database busy")));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Database busy");

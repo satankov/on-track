@@ -109,6 +109,31 @@ describe("note input validation", () => {
     });
   });
 
+  it("normalizes optional participant senders and can reset them to You", () => {
+    expect(
+      createNoteInputSchema.parse({
+        body: "A participant update",
+        sender: "  Maya Chen  ",
+      }),
+    ).toEqual({ body: "A participant update", sender: "Maya Chen" });
+    expect(updateNoteInputSchema.parse({ sender: "  Omar Haddad  " })).toEqual({
+      sender: "Omar Haddad",
+    });
+    expect(updateNoteInputSchema.parse({ sender: null })).toEqual({
+      sender: null,
+    });
+  });
+
+  it.each(["", "   ", "x".repeat(81)])(
+    "rejects an invalid participant sender",
+    (sender) => {
+      expect(() =>
+        createNoteInputSchema.parse({ body: "Update", sender }),
+      ).toThrow();
+      expect(() => updateNoteInputSchema.parse({ sender })).toThrow();
+    },
+  );
+
   it.each([
     {},
     { body: " " },

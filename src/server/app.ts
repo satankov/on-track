@@ -146,7 +146,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     limits: {
       fileSize: MAX_ATTACHMENT_BYTES,
       files: MAX_ATTACHMENTS_PER_MESSAGE,
-      parts: MAX_ATTACHMENTS_PER_MESSAGE + 3,
+      parts: MAX_ATTACHMENTS_PER_MESSAGE + 4,
     },
   });
 
@@ -162,6 +162,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     >;
   }): Promise<{
     body?: string;
+    sender?: string | null;
     createdAt?: number;
     keepAttachmentIds?: string[];
     replaceAttachments?: true;
@@ -173,6 +174,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     }[];
   }> {
     let body: string | undefined;
+    let sender: string | null | undefined;
+    let senderSeen = false;
     let createdAt: number | undefined;
     let keepAttachmentIds: string[] | undefined;
     let replaceAttachments: true | undefined;
@@ -191,6 +194,13 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         }
         if (part.fieldname === "body" && typeof part.value === "string") {
           body = part.value.replace(/\r\n?/g, "\n");
+        }
+        if (part.fieldname === "sender") {
+          if (senderSeen || typeof part.value !== "string") {
+            throw new InvalidInputError();
+          }
+          senderSeen = true;
+          sender = part.value === "" ? null : part.value;
         }
         if (part.fieldname === "createdAt") {
           const timestamp = Number(part.value);
@@ -215,6 +225,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     }
     return {
       body,
+      sender,
       createdAt,
       keepAttachmentIds,
       replaceAttachments,

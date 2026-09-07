@@ -3,6 +3,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -26,12 +27,24 @@ import {
 } from "../domain/validation.js";
 import { apiClient, type ApiClient } from "./api.js";
 import {
+  applyMarkdownAction,
+  MARKDOWN_TOOLS,
+  markdownActionForShortcut,
+  type MarkdownAction,
+} from "./markdown-assistance.js";
+import {
   applyTheme,
   persistTheme,
   readStoredTheme,
   THEMES,
   type Theme,
 } from "./theme.js";
+import {
+  useHistoryPosition,
+  type ReadingPosition,
+} from "./history-position.js";
+import { analyzeMarkdown } from "./markdown-analysis.js";
+import { senderColor } from "./sender-color.js";
 
 const ACCENT_NAMES: Record<Accent, string> = {
   coral: "Coral",
@@ -66,7 +79,8 @@ const FILTER_LABEL_NAMES: Record<Label, string> = {
 const ICON_ONLY_MESSAGE_LABELS = new Set<Label>(["pin", "attention"]);
 const MESSAGE_COLLAPSED_HEIGHT_PX = 192;
 
-type HistoryFilter = "all" | "attachments" | Label;
+type HistoryFilter = "all" | "attachments" | "links" | Label;
+type RailSection = "Pinned" | "Projects";
 
 interface WorkspaceServerState {
   chats: Chat[];
@@ -150,7 +164,10 @@ function mergeMessageSummary(chat: Chat, detail: ChatDetail): Chat {
 }
 
 function projectPreview(chat: Chat): string {
-  const preview = chat.latestMessagePreview?.replace(/\s+/g, " ").trim();
+  const preview =
+    chat.latestMessagePreview == null
+      ? ""
+      : analyzeMarkdown(chat.latestMessagePreview).text;
   if (chat.latestMessagePreview == null) return "Ready for the first note";
   return preview || "Attachment message";
 }
@@ -208,8 +225,15 @@ function hasAttachments(note: Note): boolean {
 function resizeComposerTextarea(textarea: HTMLTextAreaElement): void {
   textarea.style.height = "0px";
   const scrollHeight = textarea.scrollHeight;
-  textarea.style.height = `${Math.max(48, Math.min(scrollHeight, 144))}px`;
-  textarea.style.overflowY = scrollHeight > 144 ? "auto" : "hidden";
+  const style = getComputedStyle(textarea);
+  const lineHeight = Number.parseFloat(style.lineHeight) || 24;
+  const padding =
+    (Number.parseFloat(style.paddingTop) || 0) +
+    (Number.parseFloat(style.paddingBottom) || 0);
+  const maxHeight = lineHeight * 8 + (padding || 24);
+  textarea.style.maxHeight = `${maxHeight}px`;
+  textarea.style.height = `${Math.max(48, Math.min(scrollHeight, maxHeight))}px`;
+  textarea.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
 }
 
 function formatFileSize(byteSize: number): string {
@@ -654,6 +678,9 @@ function ProjectEditWorkspace({
 }
 
 function ProjectRail({
+  onHome,
+  collapsedSections,
+  onToggleSection,
   chats,
   activeId,
   onSelect,
@@ -665,6 +692,9 @@ function ProjectRail({
   pinErrors,
   pinningIds,
 }: {
+  onHome: () => void;
+  collapsedSections: Record<RailSection, boolean>;
+  onToggleSection: (section: RailSection) => void;
   chats: Chat[];
   activeId?: string;
   onSelect: (id: string) => void;
@@ -679,6 +709,10 @@ function ProjectRail({
   const [now, setNow] = useState(() => Date.now());
   const boundaryCallback = useRef(onTemporalBoundary);
   const handledTemporalKey = useRef("");
+  const previews = useMemo(
+    () => new Map(chats.map((chat) => [chat.id, projectPreview(chat)])),
+    [chats],
+  );
   const pinned = chats.filter((chat) => chat.pinnedAt != null);
   const projects = chats.filter((chat) => chat.pinnedAt == null);
   const temporalKey = chats
@@ -744,15 +778,29 @@ function ProjectRail({
     return () => window.removeEventListener("focus", refresh);
   }, [temporalKey]);
 
-  function renderSection(label: "Pinned" | "Projects", items: Chat[]) {
+  function renderSection(label: RailSection, items: Chat[]) {
     if (label === "Pinned" && items.length === 0) return null;
     return (
       <section className="project-section" aria-labelledby={`rail-${label}`}>
-        <div className="rail-section-label">
-          <span id={`rail-${label}`}>{label}</span>
+        <button
+          className="rail-section-label"
+          type="button"
+          aria-label={label}
+          aria-expanded={!collapsedSections[label]}
+          aria-controls={`rail-items-${label}`}
+          onClick={() => onToggleSection(label)}
+        >
+          <span className="rail-section-title" id={`rail-${label}`}>
+            {label}
+            <ChevronDownIcon />
+          </span>
           <span>{String(items.length).padStart(2, "0")}</span>
-        </div>
-        <ul className="project-items">
+        </button>
+        <ul
+          className="project-items"
+          id={`rail-items-${label}`}
+          hidden={collapsedSections[label]}
+        >
           {items.map((chat) => {
             const attention = projectAttentionState(chat, now);
             const error = pinErrors[chat.id];
@@ -778,7 +826,7 @@ function ProjectRail({
                 >
                   <span className="project-item-copy">
                     <strong>{chat.title}</strong>
-                    <small>{error || projectPreview(chat)}</small>
+                    <small>{error || previews.get(chat.id)}</small>
                   </span>
                 </button>
                 <button
@@ -826,7 +874,29 @@ function ProjectRail({
     >
       <header className="rail-header">
         <div>
-          <p className="brand-mark">On Track</p>
+          <a
+            className="brand-mark"
+            href="/"
+            aria-label="Home"
+            aria-disabled={navigationDisabled || undefined}
+            onClick={(event) => {
+              if (navigationDisabled) {
+                event.preventDefault();
+                return;
+              }
+              if (
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+              )
+                return;
+              event.preventDefault();
+              onHome();
+            }}
+          >
+            On Track
+          </a>
           <p className="brand-subtitle">Private project threads</p>
         </div>
         <button
@@ -849,13 +919,12 @@ function ProjectRail({
         <span className="local-indicator" aria-hidden="true" />
         <span className="local-footnote-copy">
           <strong>Local only</strong>
-          <small>Not encrypted yet</small>
         </span>
         <button
           className="settings-icon-button"
           type="button"
           onClick={onSettings}
-          aria-label="Settings. Local only, not encrypted yet."
+          aria-label="Settings. Local only."
         >
           <SettingsIcon />
         </button>
@@ -1308,11 +1377,56 @@ function ClockIcon() {
   );
 }
 
+function LinkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d="m10 13 4-4m-6 6-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 2 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"
+        transform="translate(1 1)"
+      />
+    </svg>
+  );
+}
+
 function PaperclipIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="m21.4 11.6-8.5 8.5a5 5 0 0 1-7.1-7.1l9.2-9.2a3.5 3.5 0 1 1 5 5l-9.3 9.3a2 2 0 0 1-2.8-2.8l8.6-8.6" />
     </svg>
+  );
+}
+
+function SenderIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3.5 19c.6-3.3 2.4-5 5.5-5s4.9 1.7 5.5 5" />
+      <path d="m15 13 5-5" />
+      <path d="m17 7 2 2" />
+    </svg>
+  );
+}
+
+function MarkdownToolGlyph({ action }: { action: MarkdownAction }) {
+  const labels: Record<MarkdownAction, string> = {
+    bold: "B",
+    italic: "I",
+    link: "↗",
+    quote: "❞",
+    "bulleted-list": "•≡",
+    "numbered-list": "1≡",
+    checklist: "☐",
+    code: "</>",
+    table: "▦",
+  };
+
+  return (
+    <span
+      className={`markdown-tool-glyph markdown-tool-glyph--${action}`}
+      aria-hidden="true"
+    >
+      {labels[action]}
+    </span>
   );
 }
 
@@ -1906,6 +2020,7 @@ function MessageGroups({
             >
               {group.notes.map((note, noteIndex) => {
                 const copied = copiedNoteId === note.id;
+                const participant = Boolean(note.sender);
                 return (
                   <Fragment key={note.id}>
                     {!futureStartsGroup && note.id === futureStartId && (
@@ -1926,11 +2041,21 @@ function MessageGroups({
                     )}
                     <li
                       key="message"
-                      className="message-row message-row--own"
+                      data-note-id={note.id}
+                      data-created-at={note.createdAt}
+                      className={`message-row ${participant ? "message-row--participant" : "message-row--own"}`}
                       style={{ gridRow: noteIndex + 1 }}
                     >
                       <div className="message-stack">
                         <article className="message-bubble">
+                          {note.sender && (
+                            <p
+                              className="message-sender"
+                              data-sender-color={senderColor(note.sender)}
+                            >
+                              {note.sender}
+                            </p>
+                          )}
                           <AttachmentList
                             note={note}
                             onAction={onAttachmentAction}
@@ -1993,8 +2118,10 @@ function MessageGroups({
 }
 
 function ChatWorkspace({
+  readingPositions,
   detail,
   draft,
+  draftSender,
   draftTimestamp,
   error,
   editingNote,
@@ -2002,6 +2129,7 @@ function ChatWorkspace({
   pendingFiles,
   historyFilter,
   saving,
+  senderOpen,
   timestampOpen,
   onBack,
   onCancelEditNote,
@@ -2011,6 +2139,7 @@ function ChatWorkspace({
   onEditNote,
   onDeleteNote,
   onDraftChange,
+  onDraftSenderChange,
   onDraftTimestampChange,
   onFilesSelected,
   onHistoryFilterChange,
@@ -2018,12 +2147,15 @@ function ChatWorkspace({
   onRemovePendingFile,
   onSetNoteLabel,
   onSubmit,
+  onSenderOpenChange,
   onToggleTimestamp,
   copiedNoteId,
   navigationDisabled,
 }: {
+  readingPositions: Map<string, ReadingPosition>;
   detail: ChatDetail;
   draft: string;
+  draftSender: string;
   draftTimestamp: string;
   error: string;
   editingNote?: Note;
@@ -2031,6 +2163,7 @@ function ChatWorkspace({
   pendingFiles: File[];
   historyFilter: HistoryFilter;
   saving: boolean;
+  senderOpen: boolean;
   timestampOpen: boolean;
   onBack: () => void;
   onCancelEditNote: () => void;
@@ -2044,6 +2177,7 @@ function ChatWorkspace({
   onEditNote: (note: Note) => void;
   onDeleteNote: (note: Note) => void;
   onDraftChange: (value: string) => void;
+  onDraftSenderChange: (value: string) => void;
   onDraftTimestampChange: (value: string) => void;
   onFilesSelected: (files: File[]) => void;
   onHistoryFilterChange: (filter: HistoryFilter) => void;
@@ -2051,18 +2185,48 @@ function ChatWorkspace({
   onRemovePendingFile: (index: number) => void;
   onSetNoteLabel: (note: Note, label: Label, applied: boolean) => Promise<void>;
   onSubmit: () => void;
+  onSenderOpenChange: (open: boolean) => void;
   onToggleTimestamp: () => void;
   copiedNoteId?: string;
   navigationDisabled: boolean;
 }) {
+  const historyRef = useRef<HTMLElement>(null);
+  useHistoryPosition(
+    historyRef,
+    detail.id,
+    historyFilter === "all",
+    readingPositions,
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const markdownToolsId = useId();
+  const senderToolsId = useId();
+  const pendingMarkdownSelection = useRef<
+    { start: number; end: number } | undefined
+  >(undefined);
+  const lastMarkdownSelection = useRef<
+    { start: number; end: number } | undefined
+  >(undefined);
+  const [markdownOpen, setMarkdownOpen] = useState(false);
+  const [activeMarkdownAction, setActiveMarkdownAction] =
+    useState<MarkdownAction>("bold");
+  const [markdownError, setMarkdownError] = useState("");
+  const linkedNoteIds = useMemo(
+    () =>
+      new Set(
+        detail.notes
+          .filter((note) => analyzeMarkdown(note.body).hasLinks)
+          .map((note) => note.id),
+      ),
+    [detail.notes],
+  );
   const attachmentCount = detail.notes.filter(hasAttachments).length;
   const enabledLabels = detail.enabledLabels ?? ["todo", "milestone"];
   const filterLabels = [...PERMANENT_LABELS, ...enabledLabels];
   const visibleNotes = detail.notes.filter((note) => {
     if (historyFilter === "all") return true;
     if (historyFilter === "attachments") return hasAttachments(note);
+    if (historyFilter === "links") return linkedNoteIds.has(note.id);
     return (note.labels ?? []).includes(historyFilter);
   });
   const timelineNow = useTimelineNow(visibleNotes);
@@ -2075,11 +2239,23 @@ function ChatWorkspace({
     editingNote?.attachments?.filter((attachment) =>
       editingAttachmentIds.includes(attachment.id),
     ) ?? [];
+  const activeMarkdownTool =
+    MARKDOWN_TOOLS.find((tool) => tool.action === activeMarkdownAction) ??
+    MARKDOWN_TOOLS[0];
+  const visibleComposerError = error || markdownError;
+  const currentSender = draftSender.trim() || "You";
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
     resizeComposerTextarea(textarea);
+    const selection = pendingMarkdownSelection.current;
+    if (selection) {
+      pendingMarkdownSelection.current = undefined;
+      textarea.focus();
+      textarea.setSelectionRange(selection.start, selection.end);
+      lastMarkdownSelection.current = selection;
+    }
   }, [draft]);
 
   useEffect(() => {
@@ -2108,10 +2284,111 @@ function ChatWorkspace({
     };
   }, []);
 
+  function applyMarkdownFormatting(action: MarkdownAction) {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const selection =
+      document.activeElement === textarea
+        ? { start: textarea.selectionStart, end: textarea.selectionEnd }
+        : (lastMarkdownSelection.current ?? {
+            start: textarea.selectionStart,
+            end: textarea.selectionEnd,
+          });
+    const result = applyMarkdownAction(
+      draft,
+      action,
+      selection.start,
+      selection.end,
+    );
+    if (!result.ok) {
+      setMarkdownError(result.error);
+      restoreMarkdownSelection(selection);
+      return;
+    }
+
+    setMarkdownError("");
+    setActiveMarkdownAction(action);
+    pendingMarkdownSelection.current = {
+      start: result.selectionStart,
+      end: result.selectionEnd,
+    };
+    if (result.value === draft) {
+      pendingMarkdownSelection.current = undefined;
+      textarea.focus();
+      textarea.setSelectionRange(result.selectionStart, result.selectionEnd);
+      return;
+    }
+    onDraftChange(result.value);
+  }
+
+  function restoreMarkdownSelection(selection = lastMarkdownSelection.current) {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.focus();
+    if (!selection) return;
+    textarea.setSelectionRange(selection.start, selection.end);
+    lastMarkdownSelection.current = selection;
+  }
+
+  function closeMarkdownTools() {
+    setMarkdownOpen(false);
+    restoreMarkdownSelection();
+  }
+
+  function rememberMarkdownSelection() {
+    const textarea = textareaRef.current;
+    if (!textarea || document.activeElement !== textarea) return;
+    lastMarkdownSelection.current = {
+      start: textarea.selectionStart,
+      end: textarea.selectionEnd,
+    };
+  }
+
+  function beginEditingNote(note: Note) {
+    setMarkdownError("");
+    lastMarkdownSelection.current = undefined;
+    onEditNote(note);
+  }
+
+  function cancelEditingNote() {
+    setMarkdownError("");
+    lastMarkdownSelection.current = undefined;
+    onCancelEditNote();
+  }
+
+  function submitDraft() {
+    setMarkdownError("");
+    lastMarkdownSelection.current = undefined;
+    onSubmit();
+  }
+
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape" && markdownOpen) {
+      event.preventDefault();
+      closeMarkdownTools();
+      return;
+    }
+    if (event.key === "Escape" && senderOpen) {
+      event.preventDefault();
+      onSenderOpenChange(false);
+      textareaRef.current?.focus();
+    }
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    const markdownAction = markdownActionForShortcut(
+      event,
+      navigator.platform || navigator.userAgent,
+    );
+    if (markdownAction) {
+      event.preventDefault();
+      applyMarkdownFormatting(markdownAction);
+      return;
+    }
+
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
-      onSubmit();
+      submitDraft();
     }
   }
 
@@ -2172,6 +2449,19 @@ function ChatWorkspace({
             <span className="history-filter-label">Files</span>
             <span className="history-filter-count">{attachmentCount}</span>
           </button>
+          <button
+            type="button"
+            className={`history-filter-button ${historyFilter === "links" ? "history-filter-button--active" : ""}`}
+            aria-label={`Links ${linkedNoteIds.size}`}
+            aria-pressed={historyFilter === "links"}
+            onClick={() => onHistoryFilterChange("links")}
+          >
+            <span className="history-filter-icon" aria-hidden="true">
+              <LinkIcon />
+            </span>
+            <span className="history-filter-label">Links</span>
+            <span className="history-filter-count">{linkedNoteIds.size}</span>
+          </button>
           {filterLabels.map((label) => {
             const count = detail.notes.filter((note) =>
               (note.labels ?? []).includes(label),
@@ -2199,7 +2489,11 @@ function ChatWorkspace({
         </div>
       </nav>
 
-      <section className="history" aria-label={`${detail.title} messages`}>
+      <section
+        ref={historyRef}
+        className="history"
+        aria-label={`${detail.title} messages`}
+      >
         {detail.notes.length === 0 ? (
           <>
             <div className="no-notes">
@@ -2216,13 +2510,17 @@ function ChatWorkspace({
               <p className="eyebrow">
                 {historyFilter === "attachments"
                   ? "Files"
-                  : LABEL_NAMES[historyFilter]}
+                  : historyFilter === "links"
+                    ? "Links"
+                    : LABEL_NAMES[historyFilter]}
               </p>
               <h2>
                 No{" "}
                 {historyFilter === "attachments"
                   ? "attached files"
-                  : "matching messages"}{" "}
+                  : historyFilter === "links"
+                    ? "links"
+                    : "matching messages"}{" "}
                 yet.
               </h2>
               <p>
@@ -2240,19 +2538,22 @@ function ChatWorkspace({
             onAttachmentAction={onAttachmentAction}
             onCopyNote={onCopyNote}
             onDeleteNote={onDeleteNote}
-            onEditNote={onEditNote}
+            onEditNote={beginEditingNote}
             onSetNoteLabel={onSetNoteLabel}
           />
         )}
       </section>
 
       <footer className="composer-wrap">
-        {error && (
+        {visibleComposerError && (
           <p role="alert" className="composer-error">
-            Your note is still here. {error}
+            Your note is still here. {visibleComposerError}
           </p>
         )}
-        <div className={`composer ${editingNote ? "composer--editing" : ""}`}>
+        <div
+          className={`composer ${editingNote ? "composer--editing" : ""}`}
+          onKeyDown={handleComposerKeyDown}
+        >
           {(editingAttachments.length > 0 || pendingFiles.length > 0) && (
             <div className="pending-attachments" aria-label="Pending files">
               {editingAttachments.map((attachment) => (
@@ -2290,18 +2591,97 @@ function ChatWorkspace({
               ))}
             </div>
           )}
+          {senderOpen && (
+            <div
+              id={senderToolsId}
+              className="composer-sender-row"
+              role="group"
+              aria-label="Message sender"
+            >
+              <label className="field-label" htmlFor={`${senderToolsId}-name`}>
+                Sender
+              </label>
+              <button
+                className="composer-sender-you"
+                type="button"
+                aria-pressed={!draftSender.trim()}
+                onClick={() => onDraftSenderChange("")}
+              >
+                You
+              </button>
+              <span className="composer-sender-or" aria-hidden="true">
+                or
+              </span>
+              <input
+                id={`${senderToolsId}-name`}
+                className="text-input composer-sender-input"
+                type="text"
+                aria-label="Sender name"
+                value={draftSender}
+                maxLength={80}
+                placeholder="Type a sender name…"
+                onChange={(event) => onDraftSenderChange(event.target.value)}
+              />
+              <span className="composer-sender-hint" aria-hidden="true">
+                Participant messages appear on the left
+              </span>
+            </div>
+          )}
           {timestampOpen && (
             <div className="composer-timestamp-row">
               <label className="field-label" htmlFor="composer-timestamp">
-                Message timestamp
+                Timestamp
               </label>
               <input
                 id="composer-timestamp"
                 className="text-input composer-timestamp-input"
                 type="datetime-local"
+                aria-label="Message timestamp"
                 value={draftTimestamp}
                 onChange={(event) => onDraftTimestampChange(event.target.value)}
               />
+            </div>
+          )}
+          {markdownOpen && (
+            <div
+              id={markdownToolsId}
+              className="markdown-tools-strip"
+              role="group"
+              aria-label="Markdown assistance"
+            >
+              <span className="markdown-tools-label">Format</span>
+              <div className="markdown-tools-scroll">
+                {MARKDOWN_TOOLS.map((tool) => (
+                  <button
+                    className="markdown-tool-button"
+                    type="button"
+                    key={tool.action}
+                    aria-label={
+                      tool.shortcutLabel
+                        ? `${tool.label} (${tool.shortcutLabel})`
+                        : tool.label
+                    }
+                    aria-keyshortcuts={tool.ariaKeyShortcuts}
+                    title={`${tool.label} · ${tool.syntax}${tool.shortcutLabel ? ` · ${tool.shortcutLabel}` : ""}`}
+                    onPointerDown={rememberMarkdownSelection}
+                    onFocus={() => setActiveMarkdownAction(tool.action)}
+                    onMouseEnter={() => setActiveMarkdownAction(tool.action)}
+                    onClick={() => applyMarkdownFormatting(tool.action)}
+                  >
+                    <MarkdownToolGlyph action={tool.action} />
+                  </button>
+                ))}
+              </div>
+              <span className="markdown-tool-hint" aria-hidden="true">
+                <strong>{activeMarkdownTool.label}</strong>
+                <code>{activeMarkdownTool.syntax}</code>
+                {activeMarkdownTool.shortcutLabel && (
+                  <span>{activeMarkdownTool.shortcutLabel}</span>
+                )}
+              </span>
+              <span className="markdown-tools-escape" aria-hidden="true">
+                Esc
+              </span>
             </div>
           )}
           <div className="composer-input-row">
@@ -2316,7 +2696,12 @@ function ChatWorkspace({
               }
               value={draft}
               maxLength={10_000}
-              onChange={(event) => onDraftChange(event.target.value)}
+              onChange={(event) => {
+                setMarkdownError("");
+                onDraftChange(event.target.value);
+              }}
+              onSelect={rememberMarkdownSelection}
+              onBlur={rememberMarkdownSelection}
               onKeyDown={handleKeyDown}
             />
             <div className="composer-bar">
@@ -2324,6 +2709,42 @@ function ChatWorkspace({
                 <kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd>
               </span>
               <div className="composer-tools">
+                <button
+                  className={`composer-icon-button ${draftSender.trim() ? "composer-icon-button--active" : ""}`}
+                  type="button"
+                  onClick={() => onSenderOpenChange(!senderOpen)}
+                  aria-label={`${senderOpen ? "Hide" : "Show"} sender options. Current sender: ${currentSender}`}
+                  aria-expanded={senderOpen}
+                  aria-controls={senderToolsId}
+                  title={`Sender: ${currentSender}`}
+                >
+                  <SenderIcon />
+                </button>
+                <button
+                  className="composer-icon-button composer-markdown-button"
+                  type="button"
+                  onClick={() => {
+                    setMarkdownOpen((open) => !open);
+                    setMarkdownError("");
+                  }}
+                  onPointerDown={rememberMarkdownSelection}
+                  aria-label={
+                    markdownOpen
+                      ? "Hide Markdown assistance"
+                      : "Show Markdown assistance"
+                  }
+                  aria-expanded={markdownOpen}
+                  aria-controls={markdownToolsId}
+                  title={
+                    markdownOpen
+                      ? "Hide Markdown assistance"
+                      : "Show Markdown assistance"
+                  }
+                >
+                  <span className="markdown-mark" aria-hidden="true">
+                    M↓
+                  </span>
+                </button>
                 <input
                   ref={fileInputRef}
                   className="visually-hidden-file"
@@ -2361,7 +2782,7 @@ function ChatWorkspace({
                 <button
                   className="composer-cancel-button"
                   type="button"
-                  onClick={onCancelEditNote}
+                  onClick={cancelEditingNote}
                 >
                   Cancel
                 </button>
@@ -2369,7 +2790,7 @@ function ChatWorkspace({
               <button
                 className="send-button"
                 type="button"
-                onClick={onSubmit}
+                onClick={submitDraft}
                 aria-label={
                   saving
                     ? editingNote
@@ -2426,9 +2847,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   );
   const [copiedNoteId, setCopiedNoteId] = useState<string>();
   const [draft, setDraft] = useState("");
+  const [draftSender, setDraftSender] = useState("");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
   const [draftTimestamp, setDraftTimestamp] = useState("");
+  const [composerSenderOpen, setComposerSenderOpen] = useState(false);
   const [composerTimestampOpen, setComposerTimestampOpen] = useState(false);
   const [error, setError] = useState("");
   const [savingNote, setSavingNote] = useState(false);
@@ -2436,11 +2859,19 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [pinningIds, setPinningIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const [readingPositions, setReadingPositions] = useState(
+    () => new Map<string, ReadingPosition>(),
+  );
+  const [collapsedSections, setCollapsedSections] = useState<
+    Record<RailSection, boolean>
+  >({ Pinned: false, Projects: false });
   const selectionRequest = useRef(0);
   const activeMutationGeneration = useRef(0);
   const summaryRequest = useRef(0);
   const activeId = useRef<string | undefined>(undefined);
   const copyResetTimer = useRef<number | undefined>(undefined);
+  const newMessageSender = useRef("");
+  const newMessageSenderOpen = useRef(false);
 
   useLayoutEffect(() => {
     applyTheme(theme);
@@ -2537,6 +2968,23 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ? "choose"
           : "empty";
 
+  function resetSenderComposer() {
+    newMessageSender.current = "";
+    newMessageSenderOpen.current = false;
+    setDraftSender("");
+    setComposerSenderOpen(false);
+  }
+
+  function changeDraftSender(value: string) {
+    setDraftSender(value);
+    if (!editingNote) newMessageSender.current = value;
+  }
+
+  function changeSenderOpen(open: boolean) {
+    setComposerSenderOpen(open);
+    if (!editingNote) newMessageSenderOpen.current = open;
+  }
+
   async function selectChat(id: string) {
     if (savingNote) return;
     const request = ++selectionRequest.current;
@@ -2559,6 +3007,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         };
       });
       setDraft("");
+      resetSenderComposer();
       setPendingFiles([]);
       setHistoryFilter("all");
       setDraftTimestamp("");
@@ -2580,6 +3029,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       active: { ...chat, notes: [] },
     }));
     setDialog(undefined);
+    setDraft("");
+    resetSenderComposer();
     setPendingFiles([]);
     setHistoryFilter("all");
     setDraftTimestamp("");
@@ -2618,7 +3069,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
             "[data-project-pin-id]",
           ),
         ].find((button) => button.dataset.projectPinId === chat.id);
-        control?.focus();
+        const target = control?.closest("[hidden]")
+          ? control
+              .closest(".project-section")
+              ?.querySelector<HTMLButtonElement>(".rail-section-label")
+          : control;
+        target?.focus();
       });
     } catch (caught) {
       setPinErrors((current) => ({
@@ -2631,7 +3087,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
             "[data-project-pin-id]",
           ),
         ].find((button) => button.dataset.projectPinId === chat.id);
-        control?.focus();
+        const target = control?.closest("[hidden]")
+          ? control
+              .closest(".project-section")
+              ?.querySelector<HTMLButtonElement>(".rail-section-label")
+          : control;
+        target?.focus();
       });
     } finally {
       setPinningIds((current) => {
@@ -2681,6 +3142,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     const projectId = active.id;
     const selectionAtStart = selectionRequest.current;
     await api.deleteChat(projectId);
+    setReadingPositions((current) => {
+      const next = new Map(current);
+      next.delete(projectId);
+      return next;
+    });
     const navigationUnchanged = selectionRequest.current === selectionAtStart;
     if (navigationUnchanged) selectionRequest.current += 1;
     activeMutationGeneration.current += 1;
@@ -2690,6 +3156,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     }));
     if (navigationUnchanged) {
       setDraft("");
+      resetSenderComposer();
       setPendingFiles([]);
       setHistoryFilter("all");
       setDraftTimestamp("");
@@ -2706,6 +3173,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       return;
     const projectId = active.id;
     const submittedDraft = draft;
+    const submittedSender = draftSender.trim();
     const submittedFiles = pendingFiles;
     const editing = editingNote;
     const timestampValue = draftTimestamp;
@@ -2719,15 +3187,20 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       if (editing) {
         if (timestamp === undefined)
           throw new Error("Choose a valid timestamp.");
+        const sender = submittedSender || null;
         await updateNote(editing, {
           body: submittedDraft,
+          ...(sender === (editing.sender ?? null) ? {} : { sender }),
           createdAt: timestamp,
           keepAttachmentIds: editingAttachmentIds,
           files: submittedFiles,
         });
+        setDraftSender(newMessageSender.current);
+        setComposerSenderOpen(newMessageSenderOpen.current);
       } else {
         const note = await api.appendNote(projectId, {
           body: submittedDraft,
+          ...(submittedSender ? { sender: submittedSender } : {}),
           ...(timestamp === undefined ? {} : { createdAt: timestamp }),
           ...(submittedFiles.length === 0 ? {} : { files: submittedFiles }),
         });
@@ -2771,11 +3244,15 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   }
 
   function startEditingNote(note: Note) {
+    newMessageSender.current = draftSender;
+    newMessageSenderOpen.current = composerSenderOpen;
     setEditingNote(note);
     setEditingAttachmentIds(
       note.attachments?.map((attachment) => attachment.id) ?? [],
     );
     setDraft(note.body);
+    setDraftSender(note.sender ?? "");
+    setComposerSenderOpen(Boolean(note.sender));
     setPendingFiles([]);
     setDraftTimestamp(toDateTimeLocalValue(note.createdAt));
     setComposerTimestampOpen(false);
@@ -2791,6 +3268,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setEditingNote(undefined);
     setEditingAttachmentIds([]);
     setDraft("");
+    setDraftSender(newMessageSender.current);
+    setComposerSenderOpen(newMessageSenderOpen.current);
     setPendingFiles([]);
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
@@ -2849,6 +3328,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     noteToUpdate: Note,
     input: {
       body: string;
+      sender?: string | null;
       createdAt: number;
       keepAttachmentIds?: string[];
       files?: File[];
@@ -2954,10 +3434,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function importDatabase(file: File) {
     await api.importDatabase(file);
     const importedChats = await api.listChats();
+    setReadingPositions(new Map());
     selectionRequest.current += 1;
     activeMutationGeneration.current += 1;
     setWorkspace({ chats: importedChats });
     setDraftTimestamp("");
+    resetSenderComposer();
     setPendingFiles([]);
     setHistoryFilter("all");
     setComposerTimestampOpen(false);
@@ -2969,11 +3451,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   function backToProjects() {
     if (savingNote) return;
     const projectId = active?.id;
+    setMode("projects");
+    setError("");
     selectionRequest.current += 1;
     setWorkspace((current) => ({ ...current, active: undefined }));
     setEditingNote(undefined);
     setEditingAttachmentIds([]);
     setDraft("");
+    resetSenderComposer();
     setPendingFiles([]);
     setHistoryFilter("all");
     setDraftTimestamp("");
@@ -2998,6 +3483,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         />
       ) : (
         <ProjectRail
+          onHome={backToProjects}
+          collapsedSections={collapsedSections}
+          onToggleSection={(section) =>
+            setCollapsedSections((current) => ({
+              ...current,
+              [section]: !current[section],
+            }))
+          }
           chats={chats}
           activeId={active?.id}
           onSelect={selectChat}
@@ -3033,8 +3526,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         />
       ) : active ? (
         <ChatWorkspace
+          key={active.id}
+          readingPositions={readingPositions}
           detail={active}
           draft={draft}
+          draftSender={draftSender}
           draftTimestamp={draftTimestamp}
           error={error}
           editingNote={editingNote}
@@ -3042,6 +3538,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           pendingFiles={pendingFiles}
           historyFilter={historyFilter}
           saving={savingNote}
+          senderOpen={composerSenderOpen}
           timestampOpen={composerTimestampOpen}
           onBack={backToProjects}
           onCustomize={() => setMode("projectEdit")}
@@ -3051,6 +3548,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           onCancelEditNote={cancelEditingNote}
           onDeleteNote={deleteNote}
           onDraftChange={setDraft}
+          onDraftSenderChange={changeDraftSender}
           onDraftTimestampChange={setDraftTimestamp}
           onFilesSelected={addPendingFiles}
           onHistoryFilterChange={setHistoryFilter}
@@ -3058,6 +3556,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           onRemovePendingFile={removePendingFile}
           onSetNoteLabel={setNoteLabel}
           onSubmit={appendNote}
+          onSenderOpenChange={changeSenderOpen}
           onToggleTimestamp={() => {
             setComposerTimestampOpen((current) => {
               const next = !current;

@@ -34,6 +34,30 @@ describe("browser API client", () => {
     expect(fetchMock.mock.calls[0][1].headers).toBeUndefined();
   });
 
+  it("encodes named senders and an explicit switch back to You", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ id: "note-1" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiClient.appendNote("project-one", {
+      body: "Participant update",
+      sender: "Maya Chen",
+    });
+    await apiClient.updateNote("project-one", "note-one", { sender: null });
+
+    const createForm = fetchMock.mock.calls[0][1].body as FormData;
+    const updateForm = fetchMock.mock.calls[1][1].body as FormData;
+    expect(createForm.get("sender")).toBe("Maya Chen");
+    expect(updateForm.has("sender")).toBe(true);
+    expect(updateForm.get("sender")).toBe("");
+  });
+
   it("covers project mutations and successful database export", async () => {
     const fetchMock = vi
       .fn()

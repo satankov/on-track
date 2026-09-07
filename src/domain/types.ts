@@ -25,6 +25,7 @@ export interface Note {
   id: string;
   chatId: string;
   body: string;
+  sender: string | null;
   createdAt: number;
   labels: Label[];
   attachments?: NoteAttachment[];

@@ -159,6 +159,7 @@ export const apiClient: ApiClient = {
 function noteFormData(input: CreateNoteInput | UpdateNoteInput): FormData {
   const form = new FormData();
   if (input.body !== undefined) form.set("body", input.body);
+  if (input.sender !== undefined) form.set("sender", input.sender ?? "");
   if (input.createdAt !== undefined) {
     form.set("createdAt", String(input.createdAt));
   }

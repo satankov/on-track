@@ -6,6 +6,38 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-09-07
+
+### Added
+
+- Compact selection-aware Markdown assistance in the shared add/edit composer,
+  with actions for emphasis, links, quotes, lists, checklists, code, and GFM
+  tables plus familiar textarea-scoped keyboard shortcuts.
+- Home navigation from the On Track brand and independently collapsible Pinned
+  and Projects sections, with quiet hover/focus chevrons.
+- Per-project reading positions retained during the current browser session.
+  First visits open near current work and the first future message; returning
+  visits restore the reading position, with future messages in normal scrolling.
+- An automatic Links history filter after Files, based on rendered Markdown/GFM
+  links without requiring a message label.
+- Optional free-form participant attribution for messages, using left-aligned
+  neutral bubbles, stable accessible sender-name colors, and the same labels,
+  filters, attachments, Markdown, timestamps, and message actions as personal
+  notes.
+- A compact Sender row in the shared add/edit composer for switching between
+  **You** and a named participant without participant settings or accounts.
+
+### Changed
+
+- Unified the Timestamp and Markdown composer utilities around the same compact
+  46-pixel row, spacing, label, control, focus, and responsive treatment.
+- Sidebar message previews display plain text extracted from Markdown.
+- The shared add/edit composer grows to eight lines before scrolling internally.
+- The sidebar footer shows only “Local only” beside Settings.
+- Advanced the live and backup database schema to version 6. Exact schema-5,
+  schema-4, and schema-3 bundles migrate during guarded restore staging; older
+  notes migrate as messages from You.
+
 ## [0.0.5] - 2026-09-04
 
 ### Added

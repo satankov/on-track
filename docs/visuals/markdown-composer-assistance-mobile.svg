@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-labelledby="title desc">
+  <title id="title">On Track Markdown assistance panel, mobile concept</title>
+  <desc id="desc">A narrow On Track project view with a compact horizontally scrollable Markdown formatting strip inside the composer.</desc>
+  <defs>
+    <style>
+      .ui { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #17191c; }
+      .muted { fill: #626a75; }
+      .tiny { font-size: 10px; }
+      .small { font-size: 12px; }
+      .body { font-size: 14px; }
+      .strong { font-weight: 700; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    </style>
+  </defs>
+  <rect width="390" height="844" fill="#f6f7f9"/>
+
+  <!-- Existing mobile header and horizontal filters -->
+  <rect width="390" height="88" fill="#fff"/>
+  <line x1="0" y1="87.5" x2="390" y2="87.5" stroke="#e8ebef"/>
+  <path d="M28 43h18M28 43l7-7M28 43l7 7" fill="none" stroke="#17191c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text class="ui strong" x="62" y="49" font-size="17">Release planning</text>
+  <rect x="326" y="26" width="48" height="36" rx="8" fill="#fff" stroke="#d8dde3"/>
+  <text class="ui small" x="350" y="49" text-anchor="middle">Edit</text>
+  <rect y="88" width="390" height="52" fill="#f6f7f9"/>
+  <line x1="0" y1="139.5" x2="390" y2="139.5" stroke="#e8ebef"/>
+  <rect x="12" y="97" width="62" height="34" rx="7" fill="#fff"/>
+  <text class="ui small strong" x="43" y="118" text-anchor="middle">All 3</text>
+  <text class="ui muted small" x="105" y="118" text-anchor="middle">Files 0</text>
+  <text class="ui muted small" x="170" y="118" text-anchor="middle">Pin 0</text>
+  <text class="ui muted small" x="241" y="118" text-anchor="middle">Alert 0</text>
+  <text class="ui muted small" x="316" y="118" text-anchor="middle">Todo 1</text>
+
+  <!-- History remains visible while help is open -->
+  <text class="ui muted tiny strong" x="18" y="170">TODAY</text>
+  <rect x="71" y="188" width="301" height="78" rx="14" fill="#e7eef2"/>
+  <text class="ui body" x="87" y="214">Decide whether the release table</text>
+  <text class="ui body" x="87" y="234">needs an owner column.</text>
+  <text class="ui muted tiny strong" x="353" y="253" text-anchor="end">10:18</text>
+  <rect x="107" y="281" width="265" height="76" rx="14" fill="#e7eef2"/>
+  <rect x="123" y="298" width="3" height="28" fill="#7ba3b1"/>
+  <text class="ui muted small" x="137" y="312">Launch waits for the</text>
+  <text class="ui muted small" x="137" y="330">migration check.</text>
+  <text class="ui muted tiny strong" x="353" y="346" text-anchor="end">10:24</text>
+
+  <!-- Compact composer keeps most history visible -->
+  <rect x="12" y="646" width="366" height="186" rx="12" fill="#fff" stroke="#33758c" stroke-width="1.5"/>
+
+  <!-- Horizontally scrollable one-row formatting strip -->
+  <rect x="12" y="646" width="366" height="46" rx="12" fill="#fff"/>
+  <line x1="12" y1="692" x2="378" y2="692" stroke="#e8ebef"/>
+  <rect x="22" y="653" width="32" height="32" rx="7" fill="#eef6f8" stroke="#33758c"/>
+  <text class="ui strong" x="38" y="674" text-anchor="middle" font-size="14">B</text>
+  <rect x="58" y="653" width="32" height="32" rx="7" fill="#f8fafc"/>
+  <text class="ui" x="74" y="674" text-anchor="middle" font-size="14" font-style="italic">I</text>
+  <rect x="94" y="653" width="32" height="32" rx="7" fill="#f8fafc"/>
+  <path d="M103 671l6-6a4 4 0 016 6l-6 6a4 4 0 01-6-6m8-2l3-3" fill="none" stroke="#626a75" stroke-width="1.5" stroke-linecap="round"/>
+  <rect x="130" y="653" width="32" height="32" rx="7" fill="#f8fafc"/>
+  <text class="ui strong" x="146" y="675" text-anchor="middle" font-size="18">“</text>
+  <rect x="166" y="653" width="32" height="32" rx="7" fill="#f8fafc"/>
+  <text class="ui" x="182" y="674" text-anchor="middle" font-size="14">•≡</text>
+  <rect x="202" y="653" width="32" height="32" rx="7" fill="#f8fafc"/>
+  <text class="ui" x="218" y="674" text-anchor="middle" font-size="12">1≡</text>
+  <rect x="238" y="653" width="32" height="32" rx="7" fill="#f8fafc"/>
+  <text class="ui" x="254" y="674" text-anchor="middle" font-size="13">☐</text>
+  <rect x="274" y="653" width="32" height="32" rx="7" fill="#f8fafc"/>
+  <text class="ui mono strong" x="290" y="674" text-anchor="middle" font-size="11">&lt;/&gt;</text>
+  <rect x="310" y="653" width="32" height="32" rx="7" fill="#f8fafc"/>
+  <path d="M319 661h14v16h-14zm0 5h14m-7-5v16" fill="none" stroke="#626a75" stroke-width="1.3"/>
+  <rect x="342" y="647" width="35" height="44" fill="#fff" opacity=".78"/>
+  <path d="M353 662l7 7-7 7" fill="none" stroke="#626a75" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Selected text in the shared editor -->
+  <rect x="177" y="708" width="70" height="22" rx="3" fill="#dcebf0"/>
+  <text class="ui body" x="28" y="725">Release gate needs one owner</text>
+  <text class="ui body" x="28" y="747">before Friday.</text>
+  <line x1="12" y1="760" x2="378" y2="760" stroke="#e8ebef"/>
+
+  <text class="ui muted tiny" x="177" y="804" text-anchor="end">Bold · ⌘B</text>
+  <rect x="185" y="772" width="36" height="36" rx="8" fill="#eef6f8"/>
+  <text class="ui strong" x="203" y="795" text-anchor="middle" font-size="13">M↓</text>
+  <rect x="228" y="772" width="36" height="36" rx="8" fill="transparent"/>
+  <path d="M239 791l7-7a4.5 4.5 0 016 6l-8 8a4 4 0 01-5-6l8-8" fill="none" stroke="#626a75" stroke-width="1.6" stroke-linecap="round"/>
+  <rect x="271" y="772" width="36" height="36" rx="8" fill="transparent"/>
+  <circle cx="289" cy="790" r="7" fill="none" stroke="#626a75" stroke-width="1.6"/><path d="M289 785v5l3 2" fill="none" stroke="#626a75" stroke-width="1.6" stroke-linecap="round"/>
+  <rect x="314" y="772" width="36" height="36" rx="8" fill="#33758c"/>
+  <path d="M324 790h15m-5-5l5 5-5 5" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
