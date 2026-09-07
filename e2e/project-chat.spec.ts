@@ -1253,10 +1253,22 @@ test("manages markdown messages and database backups from the UI", async ({
 
   const bundledAttachmentPath = testInfo.outputPath("bundled-roadmap.txt");
   writeFileSync(bundledAttachmentPath, "bundle sidecar bytes");
+  // Exercise export after a slow upload, when the composer still shows the file.
+  await page.route(
+    `**/api/chats/${exportedProject.id}/notes`,
+    async (route) => {
+      if (route.request().method() === "POST") {
+        await new Promise((resolve) => setTimeout(resolve, 750));
+      }
+      await route.continue();
+    },
+  );
   await page.getByLabel("Attach files").setInputFiles(bundledAttachmentPath);
   await page.getByLabel("Add a note").fill("Bundled attachment");
   await page.getByRole("button", { name: /Add note/ }).click();
-  await expect(page.getByText("bundled-roadmap.txt")).toBeVisible();
+  await expect(
+    page.locator(".message-list").getByText("bundled-roadmap.txt"),
+  ).toBeVisible();
 
   if (testInfo.project.name === "mobile-webkit") {
     await page.getByRole("button", { name: "Back to projects" }).click();
