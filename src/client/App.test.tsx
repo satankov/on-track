@@ -319,6 +319,7 @@ describe("personal project chat workspace", () => {
                     id: "keep",
                     chatId: alpha.id,
                     body: "Keep me",
+                    sender: null,
                     createdAt: now - 2_000,
                     labels: [],
                   },
@@ -326,6 +327,7 @@ describe("personal project chat workspace", () => {
                     id: "remove",
                     chatId: alpha.id,
                     body: "Remove me",
+                    sender: null,
                     createdAt: now - 1_000,
                     labels: [],
                   },
@@ -395,6 +397,7 @@ describe("personal project chat workspace", () => {
                     id: "attention-note",
                     chatId: alpha.id,
                     body: "Needs attention",
+                    sender: null,
                     createdAt: now - 1_000,
                     labels: [],
                   },
@@ -1405,7 +1408,9 @@ describe("personal project chat workspace", () => {
         id: "note-1",
         chatId: "chat-1",
         body: "**Decision** recorded\n<img src=x>",
+        sender: "Maya Chen",
         createdAt: 2,
+        labels: [],
       });
     const api = createApi({
       listChats: vi.fn().mockResolvedValue([chat]),
@@ -1417,6 +1422,13 @@ describe("personal project chat workspace", () => {
     await user.click(
       await screen.findByRole("button", { name: "Open Delivery" }),
     );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Show sender options. Current sender: You",
+      }),
+    );
+    const sender = screen.getByRole("textbox", { name: "Sender name" });
+    await user.type(sender, "Maya Chen");
     const composer = await screen.findByLabelText("Add a note");
     await user.type(composer, "**Decision** recorded{enter}<img src=x>");
     await user.keyboard("{Control>}{Enter}{/Control}");
@@ -1425,12 +1437,18 @@ describe("personal project chat workspace", () => {
       "Your note is still here",
     );
     expect(composer).toHaveValue("**Decision** recorded\n<img src=x>");
+    expect(sender).toHaveValue("Maya Chen");
+    expect(appendNote).toHaveBeenLastCalledWith("chat-1", {
+      body: "**Decision** recorded\n<img src=x>",
+      sender: "Maya Chen",
+    });
 
     await user.keyboard("{Meta>}{Enter}{/Meta}");
     expect(await screen.findByText("Decision")).toBeVisible();
     expect(screen.getByText("Decision").tagName).toBe("STRONG");
     expect(document.querySelector("img")).toBeNull();
     expect(composer).toHaveValue("");
+    expect(sender).toHaveValue("Maya Chen");
   });
 
   it("resizes the composer for multiline drafts and edit-prefilled messages", async () => {
@@ -1575,6 +1593,93 @@ describe("personal project chat workspace", () => {
       screen.queryByRole("group", { name: "Markdown assistance" }),
     ).not.toBeInTheDocument();
     expect(composer).toHaveFocus();
+  });
+
+  it("uses the compact composer disclosure to keep posting as one sender until You is selected", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const appendNote = vi.fn(
+      async (
+        _chatId: string,
+        input: { body: string; sender?: string | null },
+      ) => ({
+        id: `note-${input.body}`,
+        chatId: "chat-1",
+        body: input.body,
+        sender: input.sender ?? null,
+        createdAt: 2,
+        labels: [],
+      }),
+    );
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      appendNote,
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    const toggle = screen.getByRole("button", {
+      name: "Show sender options. Current sender: You",
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await user.click(toggle);
+
+    const senderGroup = screen.getByRole("group", { name: "Message sender" });
+    const you = within(senderGroup).getByRole("button", { name: "You" });
+    const sender = within(senderGroup).getByRole("textbox", {
+      name: "Sender name",
+    });
+    expect(you).toHaveAttribute("aria-pressed", "true");
+    expect(sender).toHaveAttribute("maxlength", "80");
+
+    await user.type(sender, "Maya Chen");
+    expect(you).toHaveAttribute("aria-pressed", "false");
+    expect(toggle).toHaveClass("composer-icon-button--active");
+    expect(toggle).toHaveAccessibleName(
+      "Hide sender options. Current sender: Maya Chen",
+    );
+    await user.click(toggle);
+    expect(
+      screen.queryByRole("group", { name: "Message sender" }),
+    ).not.toBeInTheDocument();
+    expect(toggle).toHaveAccessibleName(
+      "Show sender options. Current sender: Maya Chen",
+    );
+    await user.type(screen.getByLabelText("Add a note"), "First update");
+    await user.click(screen.getByRole("button", { name: "Add note" }));
+    expect(appendNote).toHaveBeenLastCalledWith("chat-1", {
+      body: "First update",
+      sender: "Maya Chen",
+    });
+    await user.click(toggle);
+    const persistedSender = screen.getByRole("textbox", {
+      name: "Sender name",
+    });
+    expect(persistedSender).toHaveValue("Maya Chen");
+
+    await user.type(screen.getByLabelText("Add a note"), "Second update");
+    await user.click(screen.getByRole("button", { name: "Add note" }));
+    expect(appendNote).toHaveBeenLastCalledWith("chat-1", {
+      body: "Second update",
+      sender: "Maya Chen",
+    });
+
+    await user.click(screen.getByRole("button", { name: "You" }));
+    expect(persistedSender).toHaveValue("");
+    await user.type(screen.getByLabelText("Add a note"), "My update");
+    await user.click(screen.getByRole("button", { name: "Add note" }));
+    expect(appendNote).toHaveBeenLastCalledWith("chat-1", {
+      body: "My update",
+    });
   });
 
   it("applies familiar Markdown shortcuts while the strip is closed", async () => {
@@ -2060,6 +2165,180 @@ describe("personal project chat workspace", () => {
     ).toHaveLength(3);
     expect(document.querySelectorAll(".message-row--own")).toHaveLength(3);
     expect(document.querySelectorAll(".message-time")).toHaveLength(3);
+  });
+
+  it("renders participant messages on the left with stable colored names and the standard message functions", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      enabledLabels: ["todo"] as ["todo"],
+      createdAt: 1,
+      updatedAt: 3,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({
+        ...chat,
+        notes: [
+          {
+            id: "note-own",
+            chatId: "chat-1",
+            body: "My update",
+            sender: null,
+            createdAt: 1,
+            labels: [],
+          },
+          {
+            id: "note-maya-one",
+            chatId: "chat-1",
+            body: "Participant update",
+            sender: "Maya Chen",
+            createdAt: 2,
+            labels: ["todo"],
+          },
+          {
+            id: "note-maya-two",
+            chatId: "chat-1",
+            body: "Another participant update",
+            sender: "Maya Chen",
+            createdAt: 3,
+            labels: [],
+          },
+        ],
+      }),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    const participant = screen.getByText("Participant update").closest("li")!;
+    expect(participant).toHaveClass("message-row--participant");
+    expect(participant).not.toHaveClass("message-row--own");
+    expect(
+      within(participant).getByText("Maya Chen", {
+        selector: ".message-sender",
+      }),
+    ).toBeVisible();
+    expect(
+      within(participant).getByRole("button", { name: "Change labels" }),
+    ).toBeVisible();
+    expect(
+      within(participant).getByRole("button", { name: "Copy message" }),
+    ).toBeVisible();
+    expect(
+      within(participant).getByRole("button", { name: "Edit message" }),
+    ).toBeVisible();
+    expect(
+      within(participant).getByRole("button", { name: "Delete message" }),
+    ).toBeVisible();
+    expect(document.querySelector(".message-avatar")).toBeNull();
+
+    const mayaNames = screen.getAllByText("Maya Chen", {
+      selector: ".message-sender",
+    });
+    expect(mayaNames).toHaveLength(2);
+    expect(mayaNames[0]).toHaveAttribute(
+      "data-sender-color",
+      mayaNames[1]?.getAttribute("data-sender-color"),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Todo 1" }));
+    expect(screen.getByText("Participant update")).toBeVisible();
+    expect(screen.queryByText("My update")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Another participant update"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("can edit a participant message back to You and restores the new-message sender", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Delivery",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const note = {
+      id: "note-1",
+      chatId: "chat-1",
+      body: "Participant update",
+      sender: "Maya Chen",
+      createdAt: 3_600_000,
+      labels: [],
+    };
+    const updateNote = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Temporary failure"))
+      .mockResolvedValueOnce({ ...note, sender: null });
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+      updateNote,
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Delivery" }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Show sender options. Current sender: You",
+      }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Sender name" }),
+      "Omar Haddad",
+    );
+
+    const participant = screen.getByText("Participant update").closest("li")!;
+    await user.click(
+      within(participant).getByRole("button", { name: "Edit message" }),
+    );
+    expect(screen.getByRole("textbox", { name: "Sender name" })).toHaveValue(
+      "Maya Chen",
+    );
+    await user.click(screen.getByRole("button", { name: "You" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Your note is still here",
+    );
+    expect(screen.getByRole("textbox", { name: "Edit message" })).toHaveValue(
+      "Participant update",
+    );
+    expect(screen.getByRole("textbox", { name: "Sender name" })).toHaveValue(
+      "",
+    );
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("textbox", { name: "Sender name" })).toHaveValue(
+      "Omar Haddad",
+    );
+
+    await user.click(
+      within(participant).getByRole("button", { name: "Edit message" }),
+    );
+    await user.click(screen.getByRole("button", { name: "You" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(updateNote).toHaveBeenLastCalledWith("chat-1", "note-1", {
+      body: "Participant update",
+      sender: null,
+      createdAt: 3_600_000,
+      keepAttachmentIds: [],
+      files: [],
+    });
+    expect(
+      screen
+        .getByText("Participant update", { selector: ".note-body p" })
+        .closest("li"),
+    ).toHaveClass("message-row--own");
+    expect(screen.getByRole("textbox", { name: "Sender name" })).toHaveValue(
+      "Omar Haddad",
+    );
   });
 
   it("places future messages in one silent region without repeating a same-day date", async () => {
@@ -2912,6 +3191,7 @@ describe("personal project chat workspace", () => {
       id: "note-alpha",
       chatId: "alpha",
       body: "Remove me",
+      sender: null,
       createdAt: 3,
       labels: [],
     };
@@ -3021,6 +3301,7 @@ describe("personal project chat workspace", () => {
       id: string;
       chatId: string;
       body: string;
+      sender: null;
       createdAt: number;
       labels: [];
     }>();
@@ -3044,6 +3325,7 @@ describe("personal project chat workspace", () => {
         id: "note-alpha",
         chatId: "alpha",
         body: "Alpha note",
+        sender: null,
         createdAt: 3,
         labels: [],
       }),

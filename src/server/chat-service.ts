@@ -14,6 +14,7 @@ import {
   createChatInputSchema,
   updateChatInputSchema,
   labelSchema,
+  senderSchema,
 } from "../domain/validation.js";
 import {
   InvalidAttachmentSelectionError,
@@ -94,6 +95,7 @@ const noteTimestampSchema = z
 const appendNoteCommandSchema = z
   .object({
     body: noteBodySchema.optional().default(""),
+    sender: senderSchema.nullable().optional(),
     createdAt: noteTimestampSchema.optional(),
     attachments: z
       .array(noteWriteAttachmentSchema)
@@ -108,6 +110,7 @@ const appendNoteCommandSchema = z
 const updateNoteCommandSchema = z
   .object({
     body: noteBodySchema.optional(),
+    sender: senderSchema.nullable().optional(),
     createdAt: noteTimestampSchema.optional(),
     keepAttachmentIds: z
       .array(z.string())
@@ -132,6 +135,7 @@ const updateNoteCommandSchema = z
       input.attachments.length > 0;
     if (
       input.body === undefined &&
+      input.sender === undefined &&
       input.createdAt === undefined &&
       !replacingAttachments
     ) {
@@ -229,6 +233,7 @@ export class ChatService {
         id: noteId,
         chatId,
         body: values.body,
+        sender: values.sender,
         createdAt: values.createdAt,
         now,
         attachments: installed,
@@ -263,6 +268,7 @@ export class ChatService {
     try {
       result = this.repository.updateNote(chatId, noteId, {
         body: values.body,
+        sender: values.sender,
         createdAt: values.createdAt,
         now,
         keepAttachmentIds: replaceAttachments

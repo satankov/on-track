@@ -22,11 +22,13 @@ import type { NativeFileActions } from "./native-file-actions.js";
 
 function noteForm(input: {
   body?: string;
+  sender?: string | null;
   createdAt?: number;
   replaceAttachments?: boolean;
 }): FormData {
   const form = new FormData();
   if (input.body !== undefined) form.set("body", input.body);
+  if (input.sender !== undefined) form.set("sender", input.sender ?? "");
   if (input.createdAt !== undefined) {
     form.set("createdAt", String(input.createdAt));
   }
@@ -105,7 +107,10 @@ describe("local project-chat API", () => {
       method: "POST",
       url: "/api/chats/id-1/notes",
       headers: { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
-      payload: noteForm({ body: "Decision:\nShip the thin slice." }),
+      payload: noteForm({
+        body: "Decision:\nShip the thin slice.",
+        sender: "  Maya Chen  ",
+      }),
     });
     expect(note.statusCode).toBe(201);
 
@@ -119,8 +124,66 @@ describe("local project-chat API", () => {
       title: "Migration plan",
       accent: "ocean",
       collapseLongMessages: false,
-      notes: [{ id: "id-2", body: "Decision:\nShip the thin slice." }],
+      notes: [
+        {
+          id: "id-2",
+          body: "Decision:\nShip the thin slice.",
+          sender: "Maya Chen",
+        },
+      ],
     });
+  });
+
+  it("distinguishes an omitted sender from switching a message back to You", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: { title: "Launch", accent: "ocean" },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: noteForm({ body: "First", sender: "Maya Chen" }),
+    });
+
+    const bodyOnly = await app.inject({
+      method: "PATCH",
+      url: "/api/chats/id-1/notes/id-2",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: noteForm({ body: "Still participant" }),
+    });
+    expect(bodyOnly.json()).toMatchObject({ sender: "Maya Chen" });
+
+    const reset = await app.inject({
+      method: "PATCH",
+      url: "/api/chats/id-1/notes/id-2",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: noteForm({ sender: null }),
+    });
+    expect(reset.statusCode).toBe(200);
+    expect(reset.json()).toMatchObject({ sender: null });
+  });
+
+  it("rejects duplicate sender fields", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: { title: "Launch", accent: "ocean" },
+    });
+    const form = noteForm({ body: "Update", sender: "Maya Chen" });
+    form.append("sender", "Omar Haddad");
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/chats/id-1/notes",
+      headers: { host: "localhost:4173", origin: "http://localhost:4173" },
+      payload: form,
+    });
+
+    expect(response.statusCode).toBe(400);
   });
 
   it("pins projects idempotently without changing project activity", async () => {

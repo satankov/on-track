@@ -46,12 +46,13 @@ import {
 
 export const SQL_ON_TRACK_BACKUP_APPLICATION_ID = 0x4f545242;
 export const SQL_ON_TRACK_BACKUP_FORMAT_VERSION = 1;
-export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 5;
+export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 6;
 const LEGACY_SCHEMA_MIGRATIONS: Readonly<
   Record<number, { migrationAt: number; migrationCount: number }>
 > = {
   3: { migrationAt: 1_788_356_400_000, migrationCount: 4 },
   4: { migrationAt: 1_788_516_961_034, migrationCount: 5 },
+  5: { migrationAt: 1_788_523_044_823, migrationCount: 6 },
 };
 const SUPPORTED_SQL_ON_TRACK_BACKUP_SCHEMA_VERSIONS = new Set([
   SQL_ON_TRACK_BACKUP_SCHEMA_VERSION,
@@ -838,12 +839,16 @@ function validateApplicationData(
   }
 
   const notes = database
-    .prepare("SELECT id, chat_id, body, created_at FROM notes")
+    .prepare(
+      `SELECT id, chat_id, body, created_at${schemaVersion >= 6 ? ", sender" : ""}
+       FROM notes`,
+    )
     .all() as Array<{
     id: unknown;
     chat_id: unknown;
     body: unknown;
     created_at: unknown;
+    sender?: unknown;
   }>;
   const noteIdsWithAttachments = new Set(
     database
@@ -867,6 +872,16 @@ function validateApplicationData(
       (note.body.length === 0 && !noteIdsWithAttachments.has(note.id))
     ) {
       throw validationError("Message metadata is invalid.");
+    }
+    if (
+      schemaVersion >= 6 &&
+      note.sender !== null &&
+      (typeof note.sender !== "string" ||
+        note.sender !== note.sender.trim() ||
+        Array.from(note.sender).length < 1 ||
+        Array.from(note.sender).length > 80)
+    ) {
+      throw validationError("Message sender metadata is invalid.");
     }
     requireNonnegativeSafeInteger(note.created_at, "message creation time");
   }

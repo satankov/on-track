@@ -732,6 +732,144 @@ test("uses compact desktop chrome and an auto-growing composer", async ({
     .toBeGreaterThan(wideComposerHeight);
 });
 
+test("attributes participant messages with the compact desktop sender control", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chromium");
+
+  const project = await createProject(request, localApp.url, {
+    title: "Participant attribution",
+    accent: "ocean",
+  });
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+
+  const senderToggle = page.getByRole("button", {
+    name: "Show sender options. Current sender: You",
+  });
+  await senderToggle.click();
+  const senderRow = page.getByRole("group", { name: "Message sender" });
+  const senderInput = senderRow.getByRole("textbox", { name: "Sender name" });
+  const senderGeometry = await page.evaluate(() => ({
+    trigger: document
+      .querySelector<HTMLButtonElement>(
+        '.composer-icon-button[aria-label="Hide sender options. Current sender: You"]',
+      )!
+      .getBoundingClientRect().height,
+    row: document
+      .querySelector<HTMLElement>(".composer-sender-row")!
+      .getBoundingClientRect().height,
+  }));
+  expect(senderGeometry.trigger).toBeLessThanOrEqual(36);
+  expect(senderGeometry.row).toBeLessThanOrEqual(46);
+
+  await senderInput.fill("Maya Chen");
+  await page.getByLabel("Add a note").fill("Maya's first update");
+  await page.getByRole("button", { name: "Add note" }).click();
+  await expect(senderInput).toHaveValue("Maya Chen");
+  await page.getByLabel("Add a note").fill("Maya's second update");
+  await page.getByRole("button", { name: "Add note" }).click();
+
+  await senderInput.fill("Omar Haddad");
+  await page.getByLabel("Add a note").fill("Omar's update");
+  await page.getByRole("button", { name: "Add note" }).click();
+
+  const participantRows = page.locator(".message-row--participant");
+  await expect(participantRows).toHaveCount(3);
+  const participantPresentation = await page.evaluate(() => {
+    const rows = [
+      ...document.querySelectorAll<HTMLElement>(".message-row--participant"),
+    ];
+    return rows.map((row) => {
+      const bubble = row.querySelector<HTMLElement>(".message-bubble")!;
+      const sender = row.querySelector<HTMLElement>(".message-sender")!;
+      const actions = row.querySelector<HTMLElement>(".message-actions")!;
+      return {
+        bubbleRight: bubble.getBoundingClientRect().right,
+        actionLeft: actions.getBoundingClientRect().left,
+        bubbleColor: getComputedStyle(bubble).backgroundColor,
+        senderColor: getComputedStyle(sender).color,
+      };
+    });
+  });
+  expect(participantPresentation[0]!.actionLeft).toBeGreaterThanOrEqual(
+    participantPresentation[0]!.bubbleRight,
+  );
+  expect(
+    new Set(participantPresentation.map((item) => item.bubbleColor)),
+  ).toEqual(new Set([participantPresentation[0]!.bubbleColor]));
+  expect(participantPresentation[0]!.senderColor).toBe(
+    participantPresentation[1]!.senderColor,
+  );
+  expect(participantPresentation[0]!.senderColor).not.toBe(
+    participantPresentation[2]!.senderColor,
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("participant-attribution.png"),
+    fullPage: true,
+  });
+
+  const firstMaya = participantRows.filter({ hasText: "Maya's first update" });
+  await firstMaya.getByRole("button", { name: "Change labels" }).click();
+  const todo = firstMaya.getByRole("checkbox", { name: "Todo" });
+  await todo.click();
+  await expect(todo).toBeChecked();
+  await page.getByRole("button", { name: "Todo 1" }).click();
+  await expect(firstMaya).toBeVisible();
+  await expect(
+    page.locator(".message-list").getByText("Omar's update"),
+  ).toBeHidden();
+
+  await firstMaya.getByRole("button", { name: "Edit message" }).click();
+  await page.getByRole("button", { name: "You" }).click();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(
+    page.locator(".message-row--own", { hasText: "Maya's first update" }),
+  ).toBeVisible();
+  await expect(page.locator(".message-avatar")).toHaveCount(0);
+
+  await page.getByRole("button", { name: /^All / }).click();
+  await page.setViewportSize({ width: 800, height: 720 });
+  await senderInput.fill("M".repeat(80));
+  await page.getByLabel("Add a note").fill("Long sender name");
+  await page.getByRole("button", { name: "Add note" }).click();
+  const longSenderRow = page.locator(".message-row--participant", {
+    hasText: "Long sender name",
+  });
+  const longSenderGeometry = await longSenderRow.evaluate((row) => {
+    const bubble = row.querySelector<HTMLElement>(".message-bubble")!;
+    const sender = row.querySelector<HTMLElement>(".message-sender")!;
+    const bubbleRect = bubble.getBoundingClientRect();
+    const senderRect = sender.getBoundingClientRect();
+    return {
+      bubbleLeft: bubbleRect.left,
+      bubbleRight: bubbleRect.right,
+      senderLeft: senderRect.left,
+      senderRight: senderRect.right,
+      senderClientWidth: sender.clientWidth,
+      senderScrollWidth: sender.scrollWidth,
+    };
+  });
+  expect(longSenderGeometry.senderLeft).toBeGreaterThanOrEqual(
+    longSenderGeometry.bubbleLeft,
+  );
+  expect(longSenderGeometry.senderRight).toBeLessThanOrEqual(
+    longSenderGeometry.bubbleRight,
+  );
+  expect(longSenderGeometry.senderScrollWidth).toBeLessThanOrEqual(
+    longSenderGeometry.senderClientWidth,
+  );
+
+  await page.setViewportSize({ width: 640, height: 720 });
+  const overflow = await page.evaluate(() => ({
+    documentWidth: document.documentElement.scrollWidth,
+    viewportWidth: window.innerWidth,
+  }));
+  expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.viewportWidth);
+});
+
 test("formats Markdown selections in a compact, responsive composer strip", async ({
   page,
   request,

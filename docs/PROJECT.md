@@ -19,7 +19,9 @@ Version 0.0.4 is the current published plaintext alpha source release under
 Apache License 2.0. Version 0.0.5 is prepared as the next release candidate with
 a silent live boundary between current and future-dated messages, project
 sidebar pins, current-time previews, Attention status, quiet pin controls, and
-collapsible long messages with a per-project default.
+collapsible long messages with a per-project default. The current unreleased
+checkout also supports free-form participant attribution within the existing
+private notebook model; it does not add collaboration or accounts.
 
 ## Current objective
 
@@ -101,6 +103,9 @@ regression-protected alpha, not a dedicated design target.
 - The shared add/edit composer provides an optional compact Markdown strip with
   selection-aware formatting, GFM table insertion, and familiar textarea-scoped
   shortcuts without changing stored note or backup formats.
+- The same composer can attribute messages to a free-form participant name.
+  Those messages use one neutral left-aligned bubble, stable sender-name color,
+  and all existing message labels, filters, files, and actions.
 
 ## Current capabilities
 
@@ -109,6 +114,8 @@ regression-protected alpha, not a dedicated design target.
   message-activity timestamps.
 - Rename a project and select a restrained accent color.
 - Add multiline Markdown notes in deterministic chronological order.
+- Attribute notes to a named participant from a compact composer row, or switch
+  back to You, without creating participant accounts or project settings.
 - Format selected or placeholder text from the compact Markdown strip, or use
   Cmd/Ctrl shortcuts for bold, italic, link, quote, lists, checklist, and code.
 - Expand and collapse long Markdown notes, and choose each project's initial

@@ -24,6 +24,9 @@ services, analytics, or remote runtime assets.
 - Customize each project's title and accent.
 - Add multiline Markdown notes with a compact, selection-aware formatting strip
   for bold, italic, links, quotes, lists, checklists, code, and GFM tables.
+- Attribute a message to a participant from the compact Sender row. Participant
+  messages use neutral bubbles on the left with a stable colored sender name and
+  retain the same labels, filters, files, and message actions as your own notes.
 - Apply permanent Pin and Attention labels plus project-enabled Todo, Decision,
   Open question, Risk, and Milestone labels, then filter history by label.
 - Expand and collapse long Markdown notes, with a persisted per-project default
@@ -65,6 +68,15 @@ the strip is closed:
 | Checklist / Quote             | Cmd/Ctrl+Shift+9/. |
 
 Cmd/Ctrl+Enter continues to submit the message. Table is click/tap only.
+
+### Participant attribution
+
+Use the sender control beside Markdown, Attachments, and Timestamp to reveal one
+compact row. Leave **You** selected for the usual right-aligned note, or enter a
+sender name to place that message on the left. The selected name stays in the
+composer for consecutive messages until you choose **You**. Sender names are
+plain attribution text; On Track still has no participant accounts or shared
+project access.
 
 ## Quick start
 
@@ -112,11 +124,11 @@ SQLite databases, journals, backups, exports, and common local development
 artifacts are ignored by Git. The release check also fails if a database file is
 ever tracked. Use the Settings button at the bottom of the sidebar to export or
 restore a versioned backup bundle. Restore replaces current local projects and
-files rather than merging them. Version 0.0.5 accepts schema-5 backups plus
-strictly validated schema-4 development and v0.0.4/schema-3 backups; it does not
-restore v0.0.3/schema-2 bundles. Live schema-3 and schema-4 databases migrate
-during startup. You can isolate evaluation data with an absolute disposable
-path:
+files rather than merging them. The current checkout uses schema 6 and accepts
+schema-6 backups plus strictly validated schema-5, schema-4 development, and
+v0.0.4/schema-3 backups; it does not restore v0.0.3/schema-2 bundles. Older
+supported databases migrate during startup. You can isolate evaluation data
+with an absolute disposable path:
 
 ```sh
 ON_TRACK_DATA_DIR=/absolute/path/to/on-track-data npm start

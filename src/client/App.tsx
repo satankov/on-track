@@ -38,6 +38,7 @@ import {
   THEMES,
   type Theme,
 } from "./theme.js";
+import { senderColor } from "./sender-color.js";
 
 const ACCENT_NAMES: Record<Accent, string> = {
   coral: "Coral",
@@ -1322,6 +1323,17 @@ function PaperclipIcon() {
   );
 }
 
+function SenderIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3.5 19c.6-3.3 2.4-5 5.5-5s4.9 1.7 5.5 5" />
+      <path d="m15 13 5-5" />
+      <path d="m17 7 2 2" />
+    </svg>
+  );
+}
+
 function MarkdownToolGlyph({ action }: { action: MarkdownAction }) {
   const labels: Record<MarkdownAction, string> = {
     bold: "B",
@@ -1935,6 +1947,7 @@ function MessageGroups({
             >
               {group.notes.map((note, noteIndex) => {
                 const copied = copiedNoteId === note.id;
+                const participant = Boolean(note.sender);
                 return (
                   <Fragment key={note.id}>
                     {!futureStartsGroup && note.id === futureStartId && (
@@ -1955,11 +1968,19 @@ function MessageGroups({
                     )}
                     <li
                       key="message"
-                      className="message-row message-row--own"
+                      className={`message-row ${participant ? "message-row--participant" : "message-row--own"}`}
                       style={{ gridRow: noteIndex + 1 }}
                     >
                       <div className="message-stack">
                         <article className="message-bubble">
+                          {note.sender && (
+                            <p
+                              className="message-sender"
+                              data-sender-color={senderColor(note.sender)}
+                            >
+                              {note.sender}
+                            </p>
+                          )}
                           <AttachmentList
                             note={note}
                             onAction={onAttachmentAction}
@@ -2024,6 +2045,7 @@ function MessageGroups({
 function ChatWorkspace({
   detail,
   draft,
+  draftSender,
   draftTimestamp,
   error,
   editingNote,
@@ -2031,6 +2053,7 @@ function ChatWorkspace({
   pendingFiles,
   historyFilter,
   saving,
+  senderOpen,
   timestampOpen,
   onBack,
   onCancelEditNote,
@@ -2040,6 +2063,7 @@ function ChatWorkspace({
   onEditNote,
   onDeleteNote,
   onDraftChange,
+  onDraftSenderChange,
   onDraftTimestampChange,
   onFilesSelected,
   onHistoryFilterChange,
@@ -2047,12 +2071,14 @@ function ChatWorkspace({
   onRemovePendingFile,
   onSetNoteLabel,
   onSubmit,
+  onSenderOpenChange,
   onToggleTimestamp,
   copiedNoteId,
   navigationDisabled,
 }: {
   detail: ChatDetail;
   draft: string;
+  draftSender: string;
   draftTimestamp: string;
   error: string;
   editingNote?: Note;
@@ -2060,6 +2086,7 @@ function ChatWorkspace({
   pendingFiles: File[];
   historyFilter: HistoryFilter;
   saving: boolean;
+  senderOpen: boolean;
   timestampOpen: boolean;
   onBack: () => void;
   onCancelEditNote: () => void;
@@ -2073,6 +2100,7 @@ function ChatWorkspace({
   onEditNote: (note: Note) => void;
   onDeleteNote: (note: Note) => void;
   onDraftChange: (value: string) => void;
+  onDraftSenderChange: (value: string) => void;
   onDraftTimestampChange: (value: string) => void;
   onFilesSelected: (files: File[]) => void;
   onHistoryFilterChange: (filter: HistoryFilter) => void;
@@ -2080,6 +2108,7 @@ function ChatWorkspace({
   onRemovePendingFile: (index: number) => void;
   onSetNoteLabel: (note: Note, label: Label, applied: boolean) => Promise<void>;
   onSubmit: () => void;
+  onSenderOpenChange: (open: boolean) => void;
   onToggleTimestamp: () => void;
   copiedNoteId?: string;
   navigationDisabled: boolean;
@@ -2087,6 +2116,7 @@ function ChatWorkspace({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const markdownToolsId = useId();
+  const senderToolsId = useId();
   const pendingMarkdownSelection = useRef<
     { start: number; end: number } | undefined
   >(undefined);
@@ -2119,6 +2149,7 @@ function ChatWorkspace({
     MARKDOWN_TOOLS.find((tool) => tool.action === activeMarkdownAction) ??
     MARKDOWN_TOOLS[0];
   const visibleComposerError = error || markdownError;
+  const currentSender = draftSender.trim() || "You";
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -2241,6 +2272,12 @@ function ChatWorkspace({
     if (event.key === "Escape" && markdownOpen) {
       event.preventDefault();
       closeMarkdownTools();
+      return;
+    }
+    if (event.key === "Escape" && senderOpen) {
+      event.preventDefault();
+      onSenderOpenChange(false);
+      textareaRef.current?.focus();
     }
   }
 
@@ -2439,6 +2476,42 @@ function ChatWorkspace({
               ))}
             </div>
           )}
+          {senderOpen && (
+            <div
+              id={senderToolsId}
+              className="composer-sender-row"
+              role="group"
+              aria-label="Message sender"
+            >
+              <label className="field-label" htmlFor={`${senderToolsId}-name`}>
+                Sender
+              </label>
+              <button
+                className="composer-sender-you"
+                type="button"
+                aria-pressed={!draftSender.trim()}
+                onClick={() => onDraftSenderChange("")}
+              >
+                You
+              </button>
+              <span className="composer-sender-or" aria-hidden="true">
+                or
+              </span>
+              <input
+                id={`${senderToolsId}-name`}
+                className="text-input composer-sender-input"
+                type="text"
+                aria-label="Sender name"
+                value={draftSender}
+                maxLength={80}
+                placeholder="Type a sender name…"
+                onChange={(event) => onDraftSenderChange(event.target.value)}
+              />
+              <span className="composer-sender-hint" aria-hidden="true">
+                Participant messages appear on the left
+              </span>
+            </div>
+          )}
           {timestampOpen && (
             <div className="composer-timestamp-row">
               <label className="field-label" htmlFor="composer-timestamp">
@@ -2521,6 +2594,17 @@ function ChatWorkspace({
                 <kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd>
               </span>
               <div className="composer-tools">
+                <button
+                  className={`composer-icon-button ${draftSender.trim() ? "composer-icon-button--active" : ""}`}
+                  type="button"
+                  onClick={() => onSenderOpenChange(!senderOpen)}
+                  aria-label={`${senderOpen ? "Hide" : "Show"} sender options. Current sender: ${currentSender}`}
+                  aria-expanded={senderOpen}
+                  aria-controls={senderToolsId}
+                  title={`Sender: ${currentSender}`}
+                >
+                  <SenderIcon />
+                </button>
                 <button
                   className="composer-icon-button composer-markdown-button"
                   type="button"
@@ -2648,9 +2732,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   );
   const [copiedNoteId, setCopiedNoteId] = useState<string>();
   const [draft, setDraft] = useState("");
+  const [draftSender, setDraftSender] = useState("");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
   const [draftTimestamp, setDraftTimestamp] = useState("");
+  const [composerSenderOpen, setComposerSenderOpen] = useState(false);
   const [composerTimestampOpen, setComposerTimestampOpen] = useState(false);
   const [error, setError] = useState("");
   const [savingNote, setSavingNote] = useState(false);
@@ -2663,6 +2749,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const summaryRequest = useRef(0);
   const activeId = useRef<string | undefined>(undefined);
   const copyResetTimer = useRef<number | undefined>(undefined);
+  const newMessageSender = useRef("");
+  const newMessageSenderOpen = useRef(false);
 
   useLayoutEffect(() => {
     applyTheme(theme);
@@ -2759,6 +2847,23 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ? "choose"
           : "empty";
 
+  function resetSenderComposer() {
+    newMessageSender.current = "";
+    newMessageSenderOpen.current = false;
+    setDraftSender("");
+    setComposerSenderOpen(false);
+  }
+
+  function changeDraftSender(value: string) {
+    setDraftSender(value);
+    if (!editingNote) newMessageSender.current = value;
+  }
+
+  function changeSenderOpen(open: boolean) {
+    setComposerSenderOpen(open);
+    if (!editingNote) newMessageSenderOpen.current = open;
+  }
+
   async function selectChat(id: string) {
     if (savingNote) return;
     const request = ++selectionRequest.current;
@@ -2781,6 +2886,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         };
       });
       setDraft("");
+      resetSenderComposer();
       setPendingFiles([]);
       setHistoryFilter("all");
       setDraftTimestamp("");
@@ -2802,6 +2908,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       active: { ...chat, notes: [] },
     }));
     setDialog(undefined);
+    setDraft("");
+    resetSenderComposer();
     setPendingFiles([]);
     setHistoryFilter("all");
     setDraftTimestamp("");
@@ -2912,6 +3020,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     }));
     if (navigationUnchanged) {
       setDraft("");
+      resetSenderComposer();
       setPendingFiles([]);
       setHistoryFilter("all");
       setDraftTimestamp("");
@@ -2928,6 +3037,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       return;
     const projectId = active.id;
     const submittedDraft = draft;
+    const submittedSender = draftSender.trim();
     const submittedFiles = pendingFiles;
     const editing = editingNote;
     const timestampValue = draftTimestamp;
@@ -2941,15 +3051,20 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       if (editing) {
         if (timestamp === undefined)
           throw new Error("Choose a valid timestamp.");
+        const sender = submittedSender || null;
         await updateNote(editing, {
           body: submittedDraft,
+          ...(sender === (editing.sender ?? null) ? {} : { sender }),
           createdAt: timestamp,
           keepAttachmentIds: editingAttachmentIds,
           files: submittedFiles,
         });
+        setDraftSender(newMessageSender.current);
+        setComposerSenderOpen(newMessageSenderOpen.current);
       } else {
         const note = await api.appendNote(projectId, {
           body: submittedDraft,
+          ...(submittedSender ? { sender: submittedSender } : {}),
           ...(timestamp === undefined ? {} : { createdAt: timestamp }),
           ...(submittedFiles.length === 0 ? {} : { files: submittedFiles }),
         });
@@ -2993,11 +3108,15 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   }
 
   function startEditingNote(note: Note) {
+    newMessageSender.current = draftSender;
+    newMessageSenderOpen.current = composerSenderOpen;
     setEditingNote(note);
     setEditingAttachmentIds(
       note.attachments?.map((attachment) => attachment.id) ?? [],
     );
     setDraft(note.body);
+    setDraftSender(note.sender ?? "");
+    setComposerSenderOpen(Boolean(note.sender));
     setPendingFiles([]);
     setDraftTimestamp(toDateTimeLocalValue(note.createdAt));
     setComposerTimestampOpen(false);
@@ -3013,6 +3132,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setEditingNote(undefined);
     setEditingAttachmentIds([]);
     setDraft("");
+    setDraftSender(newMessageSender.current);
+    setComposerSenderOpen(newMessageSenderOpen.current);
     setPendingFiles([]);
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
@@ -3071,6 +3192,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     noteToUpdate: Note,
     input: {
       body: string;
+      sender?: string | null;
       createdAt: number;
       keepAttachmentIds?: string[];
       files?: File[];
@@ -3180,6 +3302,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     activeMutationGeneration.current += 1;
     setWorkspace({ chats: importedChats });
     setDraftTimestamp("");
+    resetSenderComposer();
     setPendingFiles([]);
     setHistoryFilter("all");
     setComposerTimestampOpen(false);
@@ -3196,6 +3319,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setEditingNote(undefined);
     setEditingAttachmentIds([]);
     setDraft("");
+    resetSenderComposer();
     setPendingFiles([]);
     setHistoryFilter("all");
     setDraftTimestamp("");
@@ -3258,6 +3382,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           key={active.id}
           detail={active}
           draft={draft}
+          draftSender={draftSender}
           draftTimestamp={draftTimestamp}
           error={error}
           editingNote={editingNote}
@@ -3265,6 +3390,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           pendingFiles={pendingFiles}
           historyFilter={historyFilter}
           saving={savingNote}
+          senderOpen={composerSenderOpen}
           timestampOpen={composerTimestampOpen}
           onBack={backToProjects}
           onCustomize={() => setMode("projectEdit")}
@@ -3274,6 +3400,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           onCancelEditNote={cancelEditingNote}
           onDeleteNote={deleteNote}
           onDraftChange={setDraft}
+          onDraftSenderChange={changeDraftSender}
           onDraftTimestampChange={setDraftTimestamp}
           onFilesSelected={addPendingFiles}
           onHistoryFilterChange={setHistoryFilter}
@@ -3281,6 +3408,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           onRemovePendingFile={removePendingFile}
           onSetNoteLabel={setNoteLabel}
           onSubmit={appendNote}
+          onSenderOpenChange={changeSenderOpen}
           onToggleTimestamp={() => {
             setComposerTimestampOpen((current) => {
               const next = !current;

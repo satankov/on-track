@@ -213,6 +213,12 @@ describe("appearance theme contract", () => {
       "attachment-critical",
       "message-muted",
       "message-link",
+      "sender-coral",
+      "sender-amber",
+      "sender-moss",
+      "sender-ocean",
+      "sender-iris",
+      "sender-slate",
       "ink",
       "muted",
       "line",
@@ -255,6 +261,21 @@ describe("appearance theme contract", () => {
       ).toBeGreaterThanOrEqual(4.5);
     }
   });
+
+  it.each(THEMES)(
+    "keeps every stable sender-name color readable on participant messages in %s",
+    (theme) => {
+      for (const accent of ACCENTS) {
+        expect(
+          contrastRatio(
+            readThemeToken(theme, `sender-${accent}`),
+            readThemeToken(theme, "paper"),
+          ),
+          `--sender-${accent} on --paper in ${theme}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    },
+  );
 
   it.each(THEMES)(
     "keeps focus visible against main surfaces in %s",

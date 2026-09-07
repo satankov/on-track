@@ -6,8 +6,9 @@ The v0.0.4 plaintext alpha is the published baseline. Version 0.0.5 is prepared
 as the next release candidate with a client-side live boundary for future-dated
 messages, persistent project pins, current-time previews, Attention status,
 quiet pin presentation, and per-project collapsible-message defaults. It does
-not change the existing local server/service/repository or versioned-backup
-boundaries. The core decisions are recorded in
+not change the existing local server/service/repository boundaries. The current
+unreleased checkout extends the existing note and versioned-backup contracts
+with nullable free-form participant attribution. The core decisions are recorded in
 [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
 encryption limitation in [ADR-0002](adr/0002-defer-at-rest-encryption.md),
 source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the
@@ -64,8 +65,9 @@ Local browser -> loopback Fastify server -> application service -> repository ->
   per-message disclosure when they exceed the project's collapse threshold. A
   pure client helper applies Markdown transformations and returns explicit
   textarea selection offsets; the shared add/edit composer restores those
-  offsets after its controlled draft updates. No editor state or syntax metadata
-  crosses the API boundary.
+  offsets after its controlled draft updates. A second pure helper maps a
+  normalized sender name deterministically onto a closed set of theme-safe color
+  roles; only the sender text, not a color value, crosses the API boundary.
 - `src/domain`: shared data contracts, closed built-in label vocabularies, and
   validation rules with no UI or persistence dependency.
 - `src/server/app.ts`: Fastify transport, boundary controls, safe error mapping,
@@ -94,7 +96,9 @@ duplicate label settings and assignments. Indexed `(chat_id, created_at, id)`
 ordering makes note history stable; chat activity is ordered using timestamps
 with a deterministic ID tie-breaker. Appending, editing, timestamp-adjusting,
 and deleting notes keep chat activity consistent with the newest remaining note
-in a transaction. Label changes do not alter message time or project activity.
+in a transaction. Each note has a nullable, trimmed sender of at most 80
+characters: null means You, while a name changes only attribution and
+presentation. Label changes do not alter message time or project activity.
 Project-level `pinned_at` is nullable, nonnegative, and updated separately from
 activity. Each project also stores a checked integer boolean controlling whether
 long messages start collapsed; new and migrated projects default to enabled.
@@ -161,9 +165,10 @@ integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
 fresh managed paths, removes bundle payload tables, and compacts the current-
-schema candidate. Exact schema-4 development and schema-3 v0.0.4 bundles are
-accepted through fixed legacy descriptors and migrated to schema 5 only after
-copying into the staging workspace. It then uses the maintenance gate and
+schema candidate. Exact schema-5, schema-4 development, and schema-3 v0.0.4
+bundles are accepted through fixed legacy descriptors and migrated to schema 6
+only after copying into the staging workspace; older notes receive a null sender.
+It then uses the maintenance gate and
 restore journal to replace live state. Exact active-schema expectations come
 from a trusted in-memory database built with checked-in migrations; imported SQL
 never defines its own validation baseline.
@@ -207,6 +212,9 @@ be hardened before production-readiness claims.
   the project default, and preserve that default through restart and backup.
 - Copy, edit, timestamp-adjust, and delete notes while preserving deterministic
   ordering.
+- Switch the compact composer between You and a named participant, create a
+  left-aligned attributed message, retain its normal labels/files/actions, and
+  edit its attribution back to You.
 - Select draft text, apply Markdown from the compact add/edit strip or a familiar
   Cmd/Ctrl shortcut, retain the intended selection, and save rendered Quote and
   GFM Table output at desktop and narrow mobile widths.

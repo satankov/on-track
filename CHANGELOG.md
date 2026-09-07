@@ -6,6 +6,21 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- Optional free-form participant attribution for messages, using left-aligned
+  neutral bubbles, stable accessible sender-name colors, and the same labels,
+  filters, attachments, Markdown, timestamps, and message actions as personal
+  notes.
+- A compact Sender row in the shared add/edit composer for switching between
+  **You** and a named participant without participant settings or accounts.
+
+### Changed
+
+- Advanced the live and backup database schema to version 6. Exact schema-5,
+  schema-4, and schema-3 bundles migrate during guarded restore staging; older
+  notes migrate as messages from You.
+
 ## [0.0.5] - 2026-09-04
 
 ### Added

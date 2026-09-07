@@ -85,14 +85,21 @@ describe("SQLite project-chat persistence", () => {
       accent: "coral",
       now: 100,
     });
+    repository.appendNote({
+      id: "note-a",
+      chatId: "chat-a",
+      body: "Legacy note",
+      now: 101,
+    });
     database.close();
     const legacy = new Database(databasePath);
     legacy.exec(`
       ALTER TABLE chats DROP COLUMN collapse_long_messages;
       ALTER TABLE chats DROP COLUMN pinned_at;
+      ALTER TABLE notes DROP COLUMN sender;
       UPDATE app_metadata SET schema_version = 3 WHERE id = 1;
       DELETE FROM __drizzle_migrations
-      WHERE created_at IN (1788516961034, 1788523044823);
+      WHERE created_at IN (1788516961034, 1788523044823, 1788566400000);
     `);
     legacy.close();
 
@@ -104,9 +111,42 @@ describe("SQLite project-chat persistence", () => {
         .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
         .pluck()
         .get(),
-    ).toBe(5);
+    ).toBe(6);
     expect(repository.getChat("chat-a")?.pinnedAt).toBeNull();
     expect(repository.getChat("chat-a")?.collapseLongMessages).toBe(true);
+    expect(repository.listNotes("chat-a")).toMatchObject([
+      { id: "note-a", body: "Legacy note", sender: null },
+    ]);
+  });
+
+  it("enforces normalized nonblank participant senders at the database boundary", () => {
+    repository.createChat({
+      id: "chat-a",
+      title: "Alpha",
+      accent: "coral",
+      now: 100,
+    });
+
+    for (const sender of ["\t", "\u00a0", " Maya Chen", "Maya Chen\u3000"]) {
+      expect(() =>
+        repository.appendNote({
+          id: `note-${sender.codePointAt(0)}`,
+          chatId: "chat-a",
+          body: "Invalid sender",
+          sender,
+          now: 101,
+        }),
+      ).toThrow(/CHECK constraint failed/);
+    }
+    expect(
+      repository.appendNote({
+        id: "note-valid",
+        chatId: "chat-a",
+        body: "Valid sender",
+        sender: "Maya\tChen",
+        now: 102,
+      }),
+    ).toMatchObject({ sender: "Maya\tChen" });
   });
 
   it.runIf(process.platform !== "win32")(
