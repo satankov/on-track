@@ -8,7 +8,8 @@ navigation, reading-position, sidebar disclosure, preview, and Links-filter
 behavior, plus nullable free-form participant attribution in the note and
 versioned-backup contracts. The client-only additions preserve the local
 server/service/repository boundaries; attribution advances the schema to 6.
-Package metadata is 0.0.6 for the release candidate. The core decisions
+The Archive addition advances the database and backup schema to 7.
+Package metadata remains 0.0.6. The core decisions
 are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
 encryption limitation in [ADR-0002](adr/0002-defer-at-rest-encryption.md),
 source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the
@@ -106,7 +107,11 @@ in a transaction. Each note has a nullable, trimmed sender of at most 80
 characters: null means You, while a name changes only attribution and
 presentation. Label changes do not alter message time or project activity.
 Project-level `pinned_at` is nullable, nonnegative, and updated separately from
-activity. Each project also stores a checked integer boolean controlling whether
+activity. Nullable `archived_at` stores archive time; its check enforces a
+nonnegative safe integer and excludes simultaneous pin state. Archive writes
+clear the pin atomically without changing activity; restore returns to Projects.
+Archive is ordered by archive time descending and ID, and remains fully editable.
+Each project also stores a checked integer boolean controlling whether
 long messages start collapsed; new and migrated projects default to enabled.
 Sidebar reads batch the latest bounded message preview at or before the service
 clock, the nearest future message timestamp, and the nearest past/future
@@ -159,7 +164,9 @@ All browser note creation and editing uses the same bounded multipart contract,
 whether or not files are attached. The client keeps project summaries and the
 active project detail in one canonical server-state value so mutations update
 both views atomically without duplicated synchronization branches. Dedicated
-idempotent pin routes patch only pin state. The rail derives browser-local
+idempotent pin routes patch only pin state; archive routes return only archive
+and pin state. The client excludes conflicting project mutations and invalidates
+stale reads at both request start and completion. The rail derives browser-local
 today/earlier Attention state and refreshes at the next future message or
 Attention time, local midnight, and browser focus.
 
@@ -171,9 +178,10 @@ integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
 fresh managed paths, removes bundle payload tables, and compacts the current-
-schema candidate. Exact schema-5, schema-4 development, and schema-3 v0.0.4
-bundles are accepted through fixed legacy descriptors and migrated to schema 6
-only after copying into the staging workspace; older notes receive a null sender.
+schema candidate. Exact schema-6, schema-5, schema-4 development, and schema-3 v0.0.4
+bundles are accepted through fixed legacy descriptors and migrated to schema 7
+only after copying into the staging workspace; older notes receive a null sender
+and all older projects receive null archive state.
 It then uses the maintenance gate and
 restore journal to replace live state. Exact active-schema expectations come
 from a trusted in-memory database built with checked-in migrations; imported SQL

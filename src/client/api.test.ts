@@ -5,6 +5,29 @@ import { apiClient } from "./api.js";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("browser API client", () => {
+  it("uses idempotent archive routes with encoded project IDs", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ archivedAt: null, pinnedAt: null }), {
+          status: 200,
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await apiClient.setChatArchived("project/one", true);
+    await apiClient.setChatArchived("project/one", false);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/chats/project%2Fone/archive",
+      expect.objectContaining({ method: "PUT" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/chats/project%2Fone/archive",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
   it("does not expose the removed browser attachment download API", () => {
     expect(apiClient).not.toHaveProperty("downloadAttachment");
   });

@@ -1,3 +1,4 @@
+import { ArchivedProjectPinError } from "./db/repository.js";
 import type Database from "better-sqlite3";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
@@ -268,6 +269,11 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         message: "Please check the submitted values.",
       });
     }
+    if (error instanceof ArchivedProjectPinError) {
+      return reply
+        .code(409)
+        .send({ code: "project_archived", message: error.message });
+    }
     if (error instanceof ProjectNotFoundError) {
       return reply
         .code(404)
@@ -340,6 +346,20 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     maintenanceGate.runMutation(() =>
       service.updateChat(request.params.id, request.body),
     ),
+  );
+  app.put<{ Params: { id: string } }>(
+    "/api/chats/:id/archive",
+    async (request) =>
+      maintenanceGate.runMutation(() =>
+        service.setChatArchived(request.params.id, true),
+      ),
+  );
+  app.delete<{ Params: { id: string } }>(
+    "/api/chats/:id/archive",
+    async (request) =>
+      maintenanceGate.runMutation(() =>
+        service.setChatArchived(request.params.id, false),
+      ),
   );
   app.put<{ Params: { id: string } }>("/api/chats/:id/pin", async (request) =>
     maintenanceGate.runMutation(() =>

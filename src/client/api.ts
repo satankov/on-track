@@ -3,6 +3,7 @@ import type {
   ChatDetail,
   Note,
   ProjectPinState,
+  ProjectArchiveState,
 } from "../domain/types.js";
 import type { Label } from "../domain/validation.js";
 import type {
@@ -17,6 +18,7 @@ export interface ApiClient {
   getChat(id: string): Promise<ChatDetail>;
   createChat(input: CreateChatInput): Promise<Chat>;
   updateChat(id: string, input: UpdateChatInput): Promise<Chat>;
+  setChatArchived(id: string, archived: boolean): Promise<ProjectArchiveState>;
   setChatPinned(id: string, pinned: boolean): Promise<ProjectPinState>;
   deleteChat(id: string): Promise<void>;
   appendNote(id: string, input: CreateNoteInput): Promise<Note>;
@@ -83,6 +85,13 @@ export const apiClient: ApiClient = {
       method: "PATCH",
       body: JSON.stringify(input),
     }),
+  setChatArchived: (id, archived) =>
+    request<ProjectArchiveState>(
+      `/api/chats/${encodeURIComponent(id)}/archive`,
+      {
+        method: archived ? "PUT" : "DELETE",
+      },
+    ),
   setChatPinned: (id, pinned) =>
     request<ProjectPinState>(`/api/chats/${encodeURIComponent(id)}/pin`, {
       method: pinned ? "PUT" : "DELETE",

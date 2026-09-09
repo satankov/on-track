@@ -80,7 +80,7 @@ const ICON_ONLY_MESSAGE_LABELS = new Set<Label>(["pin", "attention"]);
 const MESSAGE_COLLAPSED_HEIGHT_PX = 192;
 
 type HistoryFilter = "all" | "attachments" | "links" | Label;
-type RailSection = "Pinned" | "Projects";
+type RailSection = "Pinned" | "Projects" | "Archive";
 
 interface WorkspaceServerState {
   chats: Chat[];
@@ -89,6 +89,13 @@ interface WorkspaceServerState {
 
 function sortChats(chats: Chat[]): Chat[] {
   return [...chats].sort((a, b) => {
+    const aArchivedAt = a.archivedAt ?? null;
+    const bArchivedAt = b.archivedAt ?? null;
+    if (aArchivedAt !== null || bArchivedAt !== null) {
+      if (aArchivedAt === null) return -1;
+      if (bArchivedAt === null) return 1;
+      return bArchivedAt - aArchivedAt || a.id.localeCompare(b.id);
+    }
     const aPinnedAt = a.pinnedAt ?? null;
     const bPinnedAt = b.pinnedAt ?? null;
     if (aPinnedAt !== null || bPinnedAt !== null) {
@@ -139,6 +146,7 @@ function chatFromDetail(detail: ChatDetail, now = Date.now()): Chat {
     collapseLongMessages: detail.collapseLongMessages ?? true,
     createdAt: detail.createdAt,
     updatedAt: detail.updatedAt,
+    archivedAt: detail.archivedAt ?? null,
     pinnedAt: detail.pinnedAt ?? null,
     latestMessagePreview: latest?.body.slice(0, 512) ?? null,
     nextMessageAt:
@@ -493,8 +501,12 @@ function ProjectEditWorkspace({
   onBack,
   onSubmit,
   onDelete,
+  onToggleArchived,
+  mutationPending,
 }: {
   chat: ChatDetail;
+  onToggleArchived: () => Promise<void>;
+  mutationPending: boolean;
   onBack: () => void;
   onSubmit: (input: {
     title: string;
@@ -515,6 +527,33 @@ function ProjectEditWorkspace({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [archiveStatus, setArchiveStatus] = useState("");
+  const archiveButton = useRef<HTMLButtonElement>(null);
+  const pendingArchiveFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (!mutationPending && pendingArchiveFocus.current) {
+      pendingArchiveFocus.current = false;
+      archiveButton.current?.focus();
+    }
+  }, [mutationPending]);
+
+  async function handleArchive() {
+    setError("");
+    setArchiveStatus("");
+    pendingArchiveFocus.current = true;
+    try {
+      await onToggleArchived();
+      setArchiveStatus(
+        chat.archivedAt == null
+          ? "Project moved to Archive."
+          : "Project restored to Projects.",
+      );
+    } catch (caught) {
+      setError(
+        errorMessage(caught, "The project archive state could not be saved."),
+      );
+    }
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -556,7 +595,10 @@ function ProjectEditWorkspace({
       <section className="settings-panel" aria-labelledby="project-edit-title">
         <div className="settings-panel-copy">
           <h2 id="project-edit-title">{chat.title}</h2>
-          <p>Change the project name, accent color, or delete this project.</p>
+          <p>
+            Change project settings, or archive it while keeping its messages
+            and files.
+          </p>
         </div>
         <form className="project-edit-form" onSubmit={handleSubmit}>
           <label className="field-label" htmlFor="project-edit-name">
@@ -641,32 +683,50 @@ function ProjectEditWorkspace({
             </label>
           </fieldset>
           {error && (
-            <p role="alert" className="form-error">
+            <p id="project-edit-error" role="alert" className="form-error">
               {error}
             </p>
           )}
+          <p role="status" className="visually-hidden">
+            {archiveStatus}
+          </p>
           <div className="project-edit-actions">
-            <button
-              className="button button-danger"
-              type="button"
-              onClick={handleDelete}
-              disabled={saving || deleting}
-            >
-              {deleting ? "Deleting…" : "Delete project"}
-            </button>
+            <div className="project-lifecycle-actions">
+              <button
+                className="button button-danger"
+                type="button"
+                onClick={handleDelete}
+                disabled={saving || deleting || mutationPending}
+              >
+                {deleting ? "Deleting…" : "Delete project"}
+              </button>
+              <button
+                ref={archiveButton}
+                className="button button-quiet"
+                type="button"
+                onClick={handleArchive}
+                disabled={saving || deleting || mutationPending}
+                aria-busy={mutationPending || undefined}
+                aria-describedby={error ? "project-edit-error" : undefined}
+              >
+                {chat.archivedAt == null
+                  ? "Archive project"
+                  : "Restore project"}
+              </button>
+            </div>
             <span />
             <button
               className="button button-quiet"
               type="button"
               onClick={onBack}
-              disabled={saving || deleting}
+              disabled={saving || deleting || mutationPending}
             >
               Back to project
             </button>
             <button
               className="button button-primary"
               type="submit"
-              disabled={saving || deleting}
+              disabled={saving || deleting || mutationPending}
             >
               {saving ? "Saving…" : "Save changes"}
             </button>
@@ -685,12 +745,13 @@ function ProjectRail({
   activeId,
   onSelect,
   onTogglePinned,
+  onRestore,
   onTemporalBoundary,
   onCreate,
   onSettings,
   navigationDisabled,
   pinErrors,
-  pinningIds,
+  projectMutationIds,
 }: {
   onHome: () => void;
   collapsedSections: Record<RailSection, boolean>;
@@ -699,12 +760,13 @@ function ProjectRail({
   activeId?: string;
   onSelect: (id: string) => void;
   onTogglePinned: (chat: Chat) => void;
+  onRestore: (chat: Chat) => void;
   onTemporalBoundary: () => void;
   onCreate: () => void;
   onSettings: () => void;
   navigationDisabled: boolean;
   pinErrors: Record<string, string>;
-  pinningIds: ReadonlySet<string>;
+  projectMutationIds: ReadonlySet<string>;
 }) {
   const [now, setNow] = useState(() => Date.now());
   const boundaryCallback = useRef(onTemporalBoundary);
@@ -713,8 +775,13 @@ function ProjectRail({
     () => new Map(chats.map((chat) => [chat.id, projectPreview(chat)])),
     [chats],
   );
-  const pinned = chats.filter((chat) => chat.pinnedAt != null);
-  const projects = chats.filter((chat) => chat.pinnedAt == null);
+  const pinned = chats.filter(
+    (chat) => chat.archivedAt == null && chat.pinnedAt != null,
+  );
+  const projects = chats.filter(
+    (chat) => chat.archivedAt == null && chat.pinnedAt == null,
+  );
+  const archived = chats.filter((chat) => chat.archivedAt != null);
   const temporalKey = chats
     .map(
       (chat) =>
@@ -779,7 +846,6 @@ function ProjectRail({
   }, [temporalKey]);
 
   function renderSection(label: RailSection, items: Chat[]) {
-    if (label === "Pinned" && items.length === 0) return null;
     return (
       <section className="project-section" aria-labelledby={`rail-${label}`}>
         <button
@@ -805,6 +871,7 @@ function ProjectRail({
             const attention = projectAttentionState(chat, now);
             const error = pinErrors[chat.id];
             const isPinned = chat.pinnedAt != null;
+            const isArchived = chat.archivedAt != null;
             const statusId = `project-status-${chat.id}`;
             const errorId = `project-pin-error-${chat.id}`;
             return (
@@ -833,13 +900,22 @@ function ProjectRail({
                   className="project-pin-button"
                   data-project-pin-id={chat.id}
                   type="button"
-                  aria-label={`Pin ${chat.title}`}
-                  aria-pressed={isPinned}
+                  aria-label={
+                    isArchived
+                      ? `Restore ${chat.title} from archive`
+                      : `Pin ${chat.title}`
+                  }
+                  title={isArchived ? "Restore project" : undefined}
+                  aria-pressed={isArchived ? undefined : isPinned}
                   aria-describedby={error ? errorId : undefined}
-                  disabled={navigationDisabled || pinningIds.has(chat.id)}
-                  onClick={() => onTogglePinned(chat)}
+                  disabled={
+                    navigationDisabled || projectMutationIds.has(chat.id)
+                  }
+                  onClick={() =>
+                    isArchived ? onRestore(chat) : onTogglePinned(chat)
+                  }
                 >
-                  <PinIcon />
+                  {isArchived ? <ArchiveRestoreIcon /> : <PinIcon />}
                 </button>
                 {attention && (
                   <span
@@ -848,7 +924,11 @@ function ProjectRail({
                   />
                 )}
                 <span className="visually-hidden" id={statusId}>
-                  {isPinned ? "Pinned project. " : ""}
+                  {isArchived
+                    ? "Archived project. "
+                    : isPinned
+                      ? "Pinned project. "
+                      : ""}
                   {attention === "today"
                     ? "Attention today."
                     : attention === "earlier"
@@ -913,6 +993,7 @@ function ProjectRail({
       <nav aria-label="Projects" className="project-list">
         {renderSection("Pinned", pinned)}
         {renderSection("Projects", projects)}
+        {renderSection("Archive", archived)}
       </nav>
 
       <footer className="local-footnote">
@@ -1439,6 +1520,14 @@ function ListIcon() {
       <circle cx="4" cy="6" r="1" />
       <circle cx="4" cy="12" r="1" />
       <circle cx="4" cy="18" r="1" />
+    </svg>
+  );
+}
+
+function ArchiveRestoreIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M4 10v11h16V10M3 6h18v4H3zM9 14h6" />
     </svg>
   );
 }
@@ -2856,13 +2945,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [error, setError] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [pinErrors, setPinErrors] = useState<Record<string, string>>({});
-  const [pinningIds, setPinningIds] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
+  const [projectMutationIds, setProjectMutationIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const projectMutations = useRef(new Set<string>());
   const pendingPinFocus = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
     const id = pendingPinFocus.current;
-    if (id === undefined || pinningIds.has(id)) return;
+    if (id === undefined || projectMutationIds.has(id)) return;
     pendingPinFocus.current = undefined;
     const control = [
       ...document.querySelectorAll<HTMLButtonElement>("[data-project-pin-id]"),
@@ -2873,13 +2963,13 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ?.querySelector<HTMLButtonElement>(".rail-section-label")
       : control;
     target?.focus();
-  }, [pinningIds]);
+  }, [projectMutationIds]);
   const [readingPositions, setReadingPositions] = useState(
     () => new Map<string, ReadingPosition>(),
   );
   const [collapsedSections, setCollapsedSections] = useState<
     Record<RailSection, boolean>
-  >({ Pinned: false, Projects: false });
+  >({ Pinned: false, Projects: false, Archive: false });
   const selectionRequest = useRef(0);
   const activeMutationGeneration = useRef(0);
   const summaryRequest = useRef(0);
@@ -3014,6 +3104,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ...current,
           active: {
             ...detail,
+            archivedAt:
+              summary?.archivedAt === undefined
+                ? detail.archivedAt
+                : summary.archivedAt,
             pinnedAt:
               summary?.pinnedAt === undefined
                 ? detail.pinnedAt
@@ -3055,45 +3149,111 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     focusMobileBackButton();
   }
 
-  async function toggleChatPinned(chat: Chat) {
-    const pinned = chat.pinnedAt == null;
+  async function runProjectMutation(id: string, mutation: () => Promise<void>) {
+    if (projectMutations.current.has(id))
+      throw new Error("Wait for the current project change to finish.");
+    projectMutations.current.add(id);
+    setProjectMutationIds((current) => new Set(current).add(id));
     activeMutationGeneration.current += 1;
     summaryRequest.current += 1;
-    setPinErrors((current) => {
-      const next = { ...current };
-      delete next[chat.id];
-      return next;
-    });
-    setPinningIds((current) => new Set(current).add(chat.id));
     try {
-      const state = await api.setChatPinned(chat.id, pinned);
-      setWorkspace((current) => ({
-        active:
-          current.active?.id === chat.id
-            ? { ...current.active, pinnedAt: state.pinnedAt }
-            : current.active,
-        chats: sortChats(
-          current.chats.map((item) =>
-            item.id === chat.id ? { ...item, pinnedAt: state.pinnedAt } : item,
-          ),
-        ),
-      }));
-    } catch (caught) {
-      setPinErrors((current) => ({
-        ...current,
-        [chat.id]: errorMessage(caught, "The project pin could not be saved."),
-      }));
+      await mutation();
     } finally {
-      pendingPinFocus.current = chat.id;
-      setPinningIds((current) => {
+      activeMutationGeneration.current += 1;
+      summaryRequest.current += 1;
+      projectMutations.current.delete(id);
+      setProjectMutationIds((current) => {
         const next = new Set(current);
-        next.delete(chat.id);
+        next.delete(id);
         return next;
       });
     }
   }
 
-  async function updateChat(input: {
+  function clearProjectError(id: string) {
+    setPinErrors((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  }
+
+  async function toggleChatPinned(chat: Chat) {
+    if (projectMutations.current.has(chat.id)) return;
+    clearProjectError(chat.id);
+    try {
+      await runProjectMutation(chat.id, async () => {
+        const state = await api.setChatPinned(chat.id, chat.pinnedAt == null);
+        setWorkspace((current) => ({
+          active:
+            current.active?.id === chat.id
+              ? { ...current.active, ...state }
+              : current.active,
+          chats: sortChats(
+            current.chats.map((item) =>
+              item.id === chat.id ? { ...item, ...state } : item,
+            ),
+          ),
+        }));
+        pendingPinFocus.current = chat.id;
+      });
+    } catch (caught) {
+      setPinErrors((current) => ({
+        ...current,
+        [chat.id]: errorMessage(caught, "The project pin could not be saved."),
+      }));
+      pendingPinFocus.current = chat.id;
+    }
+  }
+
+  async function setChatArchived(
+    chat: Chat,
+    archived: boolean,
+    fromSidebar = false,
+  ) {
+    clearProjectError(chat.id);
+    await runProjectMutation(chat.id, async () => {
+      try {
+        const state = await api.setChatArchived(chat.id, archived);
+        setWorkspace((current) => ({
+          active:
+            current.active?.id === chat.id
+              ? { ...current.active, ...state }
+              : current.active,
+          chats: sortChats(
+            current.chats.map((item) =>
+              item.id === chat.id ? { ...item, ...state } : item,
+            ),
+          ),
+        }));
+      } finally {
+        if (fromSidebar) pendingPinFocus.current = chat.id;
+      }
+    });
+  }
+
+  async function restoreChat(chat: Chat) {
+    if (projectMutations.current.has(chat.id)) return;
+    try {
+      await setChatArchived(chat, false, true);
+    } catch (caught) {
+      setPinErrors((current) => ({
+        ...current,
+        [chat.id]: errorMessage(caught, "The project could not be restored."),
+      }));
+    }
+  }
+
+  async function updateChat(input: Parameters<typeof updateChatUnlocked>[0]) {
+    if (active)
+      await runProjectMutation(active.id, () => updateChatUnlocked(input));
+  }
+
+  async function deleteChat() {
+    if (active) await runProjectMutation(active.id, deleteChatUnlocked);
+  }
+
+  async function updateChatUnlocked(input: {
     title: string;
     accent: Accent;
     enabledLabels: ConfigurableLabel[];
@@ -3127,7 +3287,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     if (activeId.current === projectId) focusMobileBackButton();
   }
 
-  async function deleteChat() {
+  async function deleteChatUnlocked() {
     if (!active) return;
     const projectId = active.id;
     const selectionAtStart = selectionRequest.current;
@@ -3485,12 +3645,13 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           activeId={active?.id}
           onSelect={selectChat}
           onTogglePinned={toggleChatPinned}
+          onRestore={restoreChat}
           onTemporalBoundary={refreshProjectSummaries}
           onCreate={() => setDialog("create")}
           onSettings={() => setMode("settings")}
           navigationDisabled={savingNote}
           pinErrors={pinErrors}
-          pinningIds={pinningIds}
+          projectMutationIds={projectMutationIds}
         />
       )}
       {!active && error && (
@@ -3509,7 +3670,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         )
       ) : mode === "projectEdit" && active ? (
         <ProjectEditWorkspace
+          key={active.id}
           chat={active}
+          mutationPending={projectMutationIds.has(active.id)}
+          onToggleArchived={() =>
+            setChatArchived(active, active.archivedAt == null)
+          }
           onBack={() => setMode("projects")}
           onSubmit={updateChat}
           onDelete={deleteChat}

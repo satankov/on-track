@@ -122,9 +122,13 @@ a regression-protected alpha, not a dedicated design target.
 
 - Create and switch between personal project chats, return Home through the
   On Track brand, and retain reading positions during the current browser session.
-- Independently collapse the Pinned and Projects sidebar sections during a session.
+- Independently collapse the Pinned, Projects, and Archive sidebar sections during a session.
+  All three headers remain visible when empty.
 - Pin and unpin projects in a stable sidebar section without changing their
   message-activity timestamps.
+- Archive projects from Edit project, then restore through settings or the
+  sidebar restore icon. Archiving clears the pin, preserves all content, and
+  leaves projects editable; restoration returns them to Projects.
 - Rename a project and select a restrained accent color.
 - Add multiline Markdown notes in deterministic chronological order.
 - Attribute notes to a named participant from a compact composer row, or switch

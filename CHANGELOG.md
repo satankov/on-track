@@ -6,6 +6,15 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- Archive project grouping below Projects, with independent sidebar collapse.
+  Pinned, Projects, and Archive headers remain visible when empty.
+  Archive from Edit project; restore from settings or the plain box sidebar restore icon.
+  Archiving clears the project pin and retains editable messages and files.
+- Persistent archive state in database and backup schema 7. Exact schema-6
+  backups join the previously supported schema-3/4/5 restore paths.
+
 ## [0.0.6] - 2026-09-07
 
 ### Added

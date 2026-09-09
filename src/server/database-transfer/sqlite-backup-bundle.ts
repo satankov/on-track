@@ -46,13 +46,14 @@ import {
 
 export const SQL_ON_TRACK_BACKUP_APPLICATION_ID = 0x4f545242;
 export const SQL_ON_TRACK_BACKUP_FORMAT_VERSION = 1;
-export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 6;
+export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 7;
 const LEGACY_SCHEMA_MIGRATIONS: Readonly<
   Record<number, { migrationAt: number; migrationCount: number }>
 > = {
   3: { migrationAt: 1_788_356_400_000, migrationCount: 4 },
   4: { migrationAt: 1_788_516_961_034, migrationCount: 5 },
   5: { migrationAt: 1_788_523_044_823, migrationCount: 6 },
+  6: { migrationAt: 1_788_566_400_000, migrationCount: 7 },
 };
 const SUPPORTED_SQL_ON_TRACK_BACKUP_SCHEMA_VERSIONS = new Set([
   SQL_ON_TRACK_BACKUP_SCHEMA_VERSION,
@@ -799,7 +800,7 @@ function validateApplicationData(
 ): void {
   const chats = database
     .prepare(
-      `SELECT id, title, accent, created_at, updated_at${schemaVersion >= 4 ? ", pinned_at" : ""}${schemaVersion >= 5 ? ", collapse_long_messages" : ""}
+      `SELECT id, title, accent, created_at, updated_at${schemaVersion >= 4 ? ", pinned_at" : ""}${schemaVersion >= 5 ? ", collapse_long_messages" : ""}${schemaVersion >= 7 ? ", archived_at" : ""}
        FROM chats`,
     )
     .all() as Array<{
@@ -809,6 +810,7 @@ function validateApplicationData(
     created_at: unknown;
     updated_at: unknown;
     pinned_at?: unknown;
+    archived_at?: unknown;
     collapse_long_messages?: unknown;
   }>;
   for (const chat of chats) {
@@ -828,6 +830,11 @@ function validateApplicationData(
     requireNonnegativeSafeInteger(chat.updated_at, "project update time");
     if (schemaVersion >= 4 && chat.pinned_at !== null) {
       requireNonnegativeSafeInteger(chat.pinned_at, "project pin time");
+    }
+    if (schemaVersion >= 7 && chat.archived_at !== null) {
+      requireNonnegativeSafeInteger(chat.archived_at, "project archive time");
+      if (chat.pinned_at !== null)
+        throw validationError("An archived project cannot be pinned.");
     }
     if (
       schemaVersion >= 5 &&

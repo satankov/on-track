@@ -57,6 +57,32 @@ describe("SQLite backup bundle", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it.each([-1, 1.5, "bad", 9007199254740992, "pinned"])(
+    "rejects malformed archive state %s",
+    async (value) => {
+      const bundlePath = join(directory, "invalid-archive.on-track-backup");
+      await createSqliteBackupBundle({
+        sourceDatabase,
+        destinationPath: bundlePath,
+        attachmentStore: {
+          read: () => {
+            throw new Error("no files");
+          },
+        },
+      });
+      const database = new Database(bundlePath);
+      database.pragma("ignore_check_constraints = ON");
+      if (value === "pinned")
+        database.exec("UPDATE chats SET archived_at = 10, pinned_at = 20");
+      else database.prepare("UPDATE chats SET archived_at = ?").run(value);
+      database.close();
+      expect(() => validateSqliteBackupBundle(bundlePath)).toThrow();
+      expect(
+        sourceDatabase.prepare("SELECT archived_at FROM chats").pluck().get(),
+      ).toBeNull();
+    },
+  );
+
   it("creates one self-validating bundle from snapshot metadata and managed bytes", async () => {
     insertAttachment(sourceDatabase, {
       id: "attachment-a",
@@ -84,7 +110,7 @@ describe("SQLite backup bundle", () => {
     );
     expect(manifest).toEqual({
       formatVersion: 1,
-      schemaVersion: 6,
+      schemaVersion: 7,
       createdAt: 1_725_000_100_000,
       attachmentCount: 1,
       totalBytes: 12,
@@ -423,7 +449,7 @@ describe("SQLite backup bundle", () => {
         directory,
         `${name.replaceAll(" ", "-")}.sqlite`,
       );
-      const lookalike = createMetadataOnlySchemaV6Database(
+      const lookalike = createMetadataOnlySchemaV7Database(
         lookalikePath,
         schema,
       );
@@ -818,7 +844,7 @@ describe("SQLite backup bundle", () => {
     });
 
     expect(validateSqliteBackupBundle(bundlePath)).toMatchObject({
-      schemaVersion: 6,
+      schemaVersion: 7,
     });
     const prepared = prepareSqliteBackupBundle({
       bundlePath,
@@ -847,6 +873,97 @@ describe("SQLite backup bundle", () => {
     }
   });
 
+  it("preserves archived projects, attribution and attachment bytes through restore preparation", async () => {
+    sourceDatabase.exec(
+      "UPDATE chats SET archived_at = 123; UPDATE notes SET sender = 'Maya';",
+    );
+    insertAttachment(sourceDatabase, {
+      id: "file",
+      filename: "plan.txt",
+      storagePath: "attachments/v1/source/file/plan.txt",
+      byteSize: 4,
+      modifiedAt: 1,
+    });
+    const bundlePath = join(directory, "archive.on-track-backup");
+    await createSqliteBackupBundle({
+      sourceDatabase,
+      destinationPath: bundlePath,
+      attachmentStore: {
+        read: () => ({
+          content: Buffer.from("Plan"),
+          byteSize: 4,
+          modifiedAt: 1,
+        }),
+      },
+    });
+    const prepared = prepareSqliteBackupBundle({
+      bundlePath,
+      workspace: createRestoreWorkspace(directory, "archive"),
+    });
+    const candidate = new Database(prepared.candidateDatabasePath, {
+      readonly: true,
+    });
+    try {
+      expect(
+        candidate
+          .prepare("SELECT archived_at, pinned_at, updated_at FROM chats")
+          .get(),
+      ).toEqual({ archived_at: 123, pinned_at: null, updated_at: 1 });
+      expect(candidate.prepare("SELECT body, sender FROM notes").get()).toEqual(
+        { body: "Plan", sender: "Maya" },
+      );
+      const path = candidate
+        .prepare("SELECT storage_path FROM note_attachments")
+        .pluck()
+        .get() as string;
+      expect(
+        readFileSync(join(prepared.candidateDataDirectory, path), "utf8"),
+      ).toBe("Plan");
+    } finally {
+      candidate.close();
+    }
+  });
+
+  it("strictly accepts schema-6 backups and migrates their projects unarchived", async () => {
+    sourceDatabase.exec(
+      "UPDATE chats SET pinned_at = 123; UPDATE notes SET sender = 'Maya';",
+    );
+    const bundlePath = join(directory, "schema-6.on-track-backup");
+    await createSqliteBackupBundle({
+      sourceDatabase,
+      destinationPath: bundlePath,
+      attachmentStore: {
+        read: () => {
+          throw new Error("no files");
+        },
+      },
+    });
+    mutateBundle(bundlePath, (legacy) =>
+      legacy.exec(`ALTER TABLE chats DROP COLUMN archived_at;
+      DELETE FROM __drizzle_migrations WHERE created_at = 1789027200000;
+      UPDATE app_metadata SET schema_version = 6;
+      UPDATE _on_track_bundle SET schema_version = 6;`),
+    );
+    expect(validateSqliteBackupBundle(bundlePath).schemaVersion).toBe(6);
+    const prepared = prepareSqliteBackupBundle({
+      bundlePath,
+      workspace: createRestoreWorkspace(directory, "schema-6"),
+    });
+    const candidate = new Database(prepared.candidateDatabasePath, {
+      readonly: true,
+    });
+    try {
+      expect(
+        candidate.prepare("SELECT archived_at, pinned_at FROM chats").get(),
+      ).toEqual({ archived_at: null, pinned_at: 123 });
+      expect(candidate.prepare("SELECT sender FROM notes").pluck().get()).toBe(
+        "Maya",
+      );
+    } finally {
+      candidate.close();
+    }
+  });
+
   it("preserves an 80-code-point participant sender through export and restore preparation", async () => {
     const sender = "😀".repeat(80);
     sourceDatabase
@@ -864,7 +981,7 @@ describe("SQLite backup bundle", () => {
     });
 
     expect(validateSqliteBackupBundle(bundlePath)).toMatchObject({
-      schemaVersion: 6,
+      schemaVersion: 7,
     });
     const prepared = prepareSqliteBackupBundle({
       bundlePath,
@@ -923,6 +1040,8 @@ describe("SQLite backup bundle", () => {
     });
     mutateBundle(legacyPath, (legacy) => {
       legacy.exec(`
+        ALTER TABLE chats DROP COLUMN archived_at;
+        DELETE FROM __drizzle_migrations WHERE created_at = 1789027200000;
         ALTER TABLE notes DROP COLUMN sender;
         UPDATE app_metadata SET schema_version = 5 WHERE id = 1;
         UPDATE _on_track_bundle SET schema_version = 5 WHERE id = 1;
@@ -946,7 +1065,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(6);
+      ).toBe(7);
       expect(
         candidate
           .prepare("SELECT sender FROM notes WHERE id = 'note-a'")
@@ -972,6 +1091,8 @@ describe("SQLite backup bundle", () => {
     });
     mutateBundle(legacyPath, (legacy) => {
       legacy.exec(`
+        ALTER TABLE chats DROP COLUMN archived_at;
+        DELETE FROM __drizzle_migrations WHERE created_at = 1789027200000;
         ALTER TABLE notes DROP COLUMN sender;
         ALTER TABLE chats DROP COLUMN collapse_long_messages;
         UPDATE app_metadata SET schema_version = 4 WHERE id = 1;
@@ -997,7 +1118,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(6);
+      ).toBe(7);
       expect(
         candidate
           .prepare(
@@ -1088,6 +1209,8 @@ describe("SQLite backup bundle", () => {
     });
     mutateBundle(legacyPath, (legacy) => {
       legacy.exec(`
+        ALTER TABLE chats DROP COLUMN archived_at;
+        DELETE FROM __drizzle_migrations WHERE created_at = 1789027200000;
         ALTER TABLE notes DROP COLUMN sender;
         ALTER TABLE chats DROP COLUMN collapse_long_messages;
         ALTER TABLE chats DROP COLUMN pinned_at;
@@ -1114,7 +1237,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(6);
+      ).toBe(7);
       expect(
         candidate
           .prepare("SELECT pinned_at FROM chats WHERE id = 'chat-a'")
@@ -1380,7 +1503,7 @@ function createMetadataOnlySchemaV2Database(
   return database;
 }
 
-function createMetadataOnlySchemaV6Database(
+function createMetadataOnlySchemaV7Database(
   path: string,
   options: Parameters<typeof createMetadataOnlySchemaV2Database>[1] = {},
 ): Database.Database {
@@ -1407,7 +1530,8 @@ function createMetadataOnlySchemaV6Database(
     ALTER TABLE chats ADD COLUMN pinned_at INTEGER${omitChecks ? "" : " CONSTRAINT chats_pinned_at_nonnegative CHECK (pinned_at IS NULL OR pinned_at >= 0)"};
     ALTER TABLE chats ADD COLUMN collapse_long_messages INTEGER DEFAULT 1 NOT NULL${omitChecks ? "" : " CONSTRAINT chats_collapse_long_messages_boolean CHECK (collapse_long_messages IN (0, 1))"};
     ALTER TABLE notes ADD COLUMN sender TEXT${omitChecks ? "" : " CONSTRAINT notes_sender_length CHECK (sender IS NULL OR (sender = trim(sender, ' ' || char(9) || char(10) || char(11) || char(12) || char(13) || char(160) || char(5760) || char(8192) || char(8193) || char(8194) || char(8195) || char(8196) || char(8197) || char(8198) || char(8199) || char(8200) || char(8201) || char(8202) || char(8232) || char(8233) || char(8239) || char(8287) || char(12288) || char(65279)) AND length(sender) BETWEEN 1 AND 80))"};
-    UPDATE app_metadata SET schema_version = 6 WHERE id = 1;
+    ALTER TABLE chats ADD COLUMN archived_at INTEGER${omitChecks ? "" : " CONSTRAINT chats_archive_valid CHECK (archived_at IS NULL OR (typeof(archived_at) = 'integer' AND archived_at >= 0 AND archived_at <= 9007199254740991 AND pinned_at IS NULL))"};
+    UPDATE app_metadata SET schema_version = 7 WHERE id = 1;
     INSERT INTO __drizzle_migrations (id, hash, created_at)
       VALUES (2, 'schema-v3', 1788356400000);
   `);

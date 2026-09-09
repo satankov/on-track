@@ -2490,11 +2490,19 @@ kbd {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
+.project-lifecycle-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .project-edit-actions {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 24px;
+}
+.project-edit-actions > span {
+  flex: 1;
 }
 .file-input {
   width: 100%;
@@ -2696,7 +2704,11 @@ kbd {
     grid-template-columns: minmax(0, 1fr);
   }
   .project-edit-actions {
+    display: grid;
     grid-template-columns: minmax(0, 1fr);
+  }
+  .project-edit-actions > span {
+    display: none;
   }
   .theme-options {
     grid-template-columns: minmax(0, 1fr);

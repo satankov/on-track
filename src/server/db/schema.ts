@@ -32,6 +32,7 @@ export const chats = sqliteTable(
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     pinnedAt: integer("pinned_at"),
+    archivedAt: integer("archived_at"),
     collapseLongMessages: integer("collapse_long_messages", {
       mode: "boolean",
     })
@@ -51,6 +52,10 @@ export const chats = sqliteTable(
     check(
       "chats_collapse_long_messages_boolean",
       sql`${table.collapseLongMessages} IN (0, 1)`,
+    ),
+    check(
+      "chats_archive_valid",
+      sql`${table.archivedAt} IS NULL OR (typeof(${table.archivedAt}) = 'integer' AND ${table.archivedAt} >= 0 AND ${table.archivedAt} <= 9007199254740991 AND ${table.pinnedAt} IS NULL)`,
     ),
     index("chats_activity_idx").on(table.updatedAt, table.id),
   ],
