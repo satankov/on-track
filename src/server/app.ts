@@ -7,8 +7,8 @@ import Fastify, {
   type FastifyReply,
   type FastifyRequest,
 } from "fastify";
-import { chmodSync, createReadStream, mkdtempSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { rmSync } from "node:fs";
+import { dirname } from "node:path";
 import { ZodError } from "zod";
 
 import {
@@ -36,18 +36,8 @@ import {
   MaintenanceBusyError,
   MaintenanceGate,
 } from "./database-transfer/maintenance-gate.js";
-import {
-  DEFAULT_SQLITE_BACKUP_BUNDLE_LIMITS,
-  SqliteBackupBundleValidationError,
-  createSqliteBackupBundle,
-  prepareSqliteBackupBundle,
-} from "./database-transfer/sqlite-backup-bundle.js";
-import { ManagedRestoreCoordinator } from "./database-transfer/restore-journal.js";
-import {
-  StagedUploadTooLargeError,
-  stageUpload,
-  type StagedUpload,
-} from "./database-transfer/staged-upload.js";
+import { registerDatabaseTransferRoutes } from "./database-transfer/routes.js";
+import type { StagedUpload } from "./database-transfer/staged-upload.js";
 import {
   MAX_ATTACHMENTS_PER_MESSAGE,
   MAX_ATTACHMENT_BYTES,
@@ -68,7 +58,6 @@ interface BuildAppOptions {
 
 const LOOPBACK_HOST = /^(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/i;
 const LOOPBACK_ORIGIN = /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/i;
-const DATABASE_TRANSFER_RATE_LIMIT_WINDOW_MS = 60_000;
 const NATIVE_ACTION_RATE_LIMIT_WINDOW_MS = 60_000;
 const MULTIPART_BODY_LIMIT_BYTES = 128 * 1024 * 1024;
 
@@ -128,14 +117,6 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     database = openDatabase(databasePath);
     repository = new SqliteChatRepository(database);
     service = createService();
-  }
-
-  function cleanupBestEffort(operation: () => void): void {
-    try {
-      operation();
-    } catch {
-      // A completed transfer remains authoritative; private staging may orphan.
-    }
   }
 
   app.addContentTypeParser(
@@ -523,142 +504,19 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   });
 
   void app.register(async (transferApp) => {
-    await transferApp.register(rateLimit, {
-      global: false,
-      errorResponseBuilder: () => ({
-        statusCode: 429,
-        code: "rate_limited",
-        message: "Database transfer is temporarily rate-limited.",
-      }),
+    await registerDatabaseTransferRoutes(transferApp, {
+      database: () => database,
+      databasePath: options.databasePath,
+      dataDirectory,
+      attachmentStore,
+      maintenanceGate,
+      reopenDatabase,
+      oldStoragePaths: () => repository.listAllAttachmentStoragePaths(),
+      exportDirectoryCleanup,
+      stagedUploadCleanup,
+      clock: options.clock,
+      idFactory: options.idFactory,
     });
-
-    transferApp.get(
-      "/api/database/export",
-      {
-        config: {
-          rateLimit: {
-            max: 3,
-            timeWindow: DATABASE_TRANSFER_RATE_LIMIT_WINDOW_MS,
-          },
-        },
-      },
-      async (_request, reply) => {
-        if (!options.databasePath || !dataDirectory || !attachmentStore) {
-          return reply.code(501).send({
-            code: "unavailable",
-            message: "Database export is unavailable.",
-          });
-        }
-        const exportDirectory = mkdtempSync(
-          join(dataDirectory, ".on-track-export-"),
-        );
-        chmodSync(exportDirectory, 0o700);
-        const exportPath = join(exportDirectory, "backup.on-track-backup");
-        try {
-          await maintenanceGate.runExport(() =>
-            createSqliteBackupBundle({
-              sourceDatabase: database,
-              destinationPath: exportPath,
-              attachmentStore,
-            }),
-          );
-          const backup = createReadStream(exportPath);
-          backup.once("close", () =>
-            cleanupBestEffort(() => exportDirectoryCleanup(exportDirectory)),
-          );
-          return reply
-            .header("Content-Type", "application/vnd.on-track.backup+sqlite")
-            .header(
-              "Content-Disposition",
-              `attachment; filename="on-track-${new Date().toISOString().slice(0, 10)}.on-track-backup"`,
-            )
-            .send(backup);
-        } catch (error) {
-          cleanupBestEffort(() => exportDirectoryCleanup(exportDirectory));
-          throw error;
-        }
-      },
-    );
-
-    transferApp.put(
-      "/api/database/import",
-      {
-        config: {
-          rateLimit: {
-            max: 2,
-            timeWindow: DATABASE_TRANSFER_RATE_LIMIT_WINDOW_MS,
-          },
-        },
-      },
-      async (request, reply) => {
-        if (!options.databasePath || !dataDirectory || !attachmentStore) {
-          return reply.code(501).send({
-            code: "unavailable",
-            message: "Database import is unavailable.",
-          });
-        }
-        let staged: Awaited<ReturnType<typeof stageUpload>> | undefined;
-        try {
-          staged = await stageUpload(
-            dataDirectory,
-            request.body as AsyncIterable<Uint8Array>,
-            {
-              maximumBytes:
-                DEFAULT_SQLITE_BACKUP_BUNDLE_LIMITS.maximumBundleBytes,
-            },
-          );
-          if (staged.byteSize === 0) {
-            throw new SqliteBackupBundleValidationError(
-              "Choose a non-empty On Track backup bundle.",
-            );
-          }
-          await maintenanceGate.runRestore(() => {
-            const oldStoragePaths = repository.listAllAttachmentStoragePaths();
-            const coordinator = new ManagedRestoreCoordinator({
-              dataDirectory,
-              databasePath: options.databasePath!,
-              closeDatabase: () => {
-                database.pragma("wal_checkpoint(TRUNCATE)");
-                database.close();
-              },
-              openDatabase: reopenDatabase,
-            });
-            const workspace = coordinator.createWorkspace();
-            prepareSqliteBackupBundle({
-              bundlePath: staged!.filePath,
-              workspace,
-            });
-            coordinator.activate(workspace.restoreId);
-            for (const storagePath of oldStoragePaths) {
-              try {
-                attachmentStore.remove(storagePath);
-              } catch {
-                // The restore is committed; old-sidecar cleanup is best effort.
-              }
-            }
-          });
-          return reply.code(204).send();
-        } catch (error) {
-          if (
-            error instanceof SqliteBackupBundleValidationError ||
-            error instanceof StagedUploadTooLargeError ||
-            error instanceof TypeError
-          ) {
-            return reply.code(400).send({
-              code: "invalid_backup",
-              message:
-                "The selected file is not a valid supported On Track backup bundle.",
-            });
-          }
-          throw error;
-        } finally {
-          const stagedToCleanup = staged;
-          if (stagedToCleanup) {
-            cleanupBestEffort(() => stagedUploadCleanup(stagedToCleanup));
-          }
-        }
-      },
-    );
   });
 
   app.addHook("onClose", async () => {

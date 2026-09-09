@@ -170,7 +170,8 @@ stale reads at both request start and completion. The rail derives browser-local
 today/earlier Attention state and refreshes at the next future message or
 Attention time, local midnight, and browser focus.
 
-Settings exports one versioned SQLite `.on-track-backup` container, including
+Settings exports all or selected projects to a versioned SQLite
+`.on-track-backup` container, including
 project label configuration and message assignments. An online snapshot
 temporarily gains reserved payload tables containing every readable
 managed file plus size, time, and SHA-256 metadata; strict canonical-schema,
@@ -186,8 +187,36 @@ It then uses the maintenance gate and
 restore journal to replace live state. Exact active-schema expectations come
 from a trusted in-memory database built with checked-in migrations; imported SQL
 never defines its own validation baseline.
-Restore is replacement, not merge. Export is limited to three attempts per
-minute per process; restore is limited to two attempts per minute per process.
+Selective export prunes the private snapshot before reading attachments and
+compacts it to remove excluded content from free pages. Selection never mutates
+the source. Import preview streams and fully validates a private upload, returning
+project summaries and an incremental SHA-256 digest, then disposes of staging.
+Final import reuploads the file with bounded multipart mode/selection/digest
+options and repeats validation; excluded payloads cannot bypass validation.
+Selection is applied only to the validated candidate, before file extraction.
+
+`database-transfer/routes.ts` owns transfer transport; `project-import.ts` prepares
+fresh identities, conflict titles, and managed files; `db/project-import.ts`
+inserts explicit project/note/label/attachment records in one transaction.
+Replace activates the selected candidate through the existing journal. Merge
+uses the exclusive maintenance gate, publishes and flushes only imported files,
+then commits remapped records. Existing identities, files, and missing-file
+records remain unchanged. Exact case-sensitive title conflicts receive one UTC
+operation timestamp and deterministic counters within the title limit.
+Rollback cleans only newly published files. A precommit process interruption may
+leave unreferenced files, consistent with attachment creation; no broad orphan
+cleanup is performed. Connection loss after commit remains an ambiguous result,
+so the client does not retry automatically. Successful commits with failed UI
+refreshes remain explicitly identified as completed imports.
+
+GET/all and POST/selected export share three attempts per minute per process;
+legacy PUT/replace and multipart POST imports share two. Preview has a separate
+two-attempt budget, and only one upload/validation import request runs at a time.
+Client previews are serialized. Bundle limits remain 2 GiB, 10,000 attachments,
+100 MiB per file, and 1 GiB total file bytes; explicit project lists are capped at
+10,000 IDs and 1 MiB options. Merge can grow active data beyond one bundle's
+limits, so partial export remains useful. No schema or backup-format version
+change is introduced by selection or merge.
 
 ## Trust and security boundaries
 

@@ -8,6 +8,10 @@ below `1.0.0`, releases may contain breaking changes.
 
 ### Added
 
+- Selective project export and validated import previews with all projects
+  selected by default. Import can replace the database with selected projects
+  or merge independent copies, renaming title conflicts with the import time.
+  Existing projects and attachments remain unchanged during merge.
 - Archive project grouping below Projects, with independent sidebar collapse.
   Pinned, Projects, and Archive headers remain visible when empty.
   Archive from Edit project; restore from settings or the plain box sidebar restore icon.

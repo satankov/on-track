@@ -46,7 +46,9 @@ services, analytics, or remote runtime assets.
   managed folder. Executable and launcher-like files are blocked from Open.
 - Filter messages containing Markdown/GFM links with the automatic Links filter
   after Files, without applying a label.
-- Export and restore one versioned `.on-track-backup` bundle from Settings.
+- Export selected projects or all projects to one `.on-track-backup` bundle.
+- Preview backup projects, then import selected projects by merging independent
+  copies or replacing the whole database.
 - Keep project data after closing and restarting the application. Reading
   positions and sidebar collapse state reset when the browser reloads.
 - Use the main flow at desktop and mobile browser widths.
@@ -131,10 +133,28 @@ system's application-data folder, **outside the Git checkout**:
 SQLite databases, journals, backups, exports, and common local development
 artifacts are ignored by Git. The release check also fails if a database file is
 ever tracked. Use the Settings button at the bottom of the sidebar to export or
-restore a versioned backup bundle. Restore replaces current local projects and
-files rather than merging them. The current checkout uses schema 6 and accepts
-schema-6 backups plus strictly validated schema-5, schema-4 development, and
-v0.0.4/schema-3 backups; it does not restore v0.0.3/schema-2 bundles. Older
+import a versioned backup bundle. Export and import lists select all projects by
+default, including pinned and archived projects. **Export all** always includes
+every project; **Export selected** includes only checked projects and their files.
+
+Import first previews the backup. **Merge DB** (the default) adds selected projects
+as independent copies, preserving existing projects. Names that exactly match an
+existing or another imported project receive a UTC import timestamp, for example
+`Roadmap_2026-09-09_14-30-00Z`, and a counter when needed. **Replace whole DB**
+removes all current projects and files after confirmation; only the selected
+imported projects remain. Neither mode merges individual messages.
+
+Preview and import each transfer the file locally for validation. Do not retry
+an import automatically if its result could not be confirmed; refresh and inspect
+your projects first. Backups remain plaintext. Each bundle is limited to 2 GiB,
+10,000 attachments, 100 MiB per attachment, and 1 GiB total attachment bytes.
+Explicit project selections allow up to 10,000 projects and 1 MiB of options.
+A merge can grow the workspace beyond one bundle's limits; use selective export
+for smaller project sets.
+
+The current checkout uses schema 7 and accepts schema-7 and schema-6 backups plus
+strictly validated schema-5, schema-4 development, and v0.0.4/schema-3 backups; it
+does not restore v0.0.3/schema-2 bundles. Older
 supported databases migrate during startup. You can isolate evaluation data
 with an absolute disposable path:
 

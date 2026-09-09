@@ -1275,7 +1275,7 @@ test("manages markdown messages and database backups from the UI", async ({
   }
   await page.getByRole("button", { name: /Settings/ }).click();
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export backup" }).click();
+  await page.getByRole("button", { name: "Export all" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(
     /on-track-\d{4}-\d{2}-\d{2}\.on-track-backup/,
@@ -1298,7 +1298,10 @@ test("manages markdown messages and database backups from the UI", async ({
     .getByLabel("Choose On Track backup")
     .setInputFiles(backupPath ?? "");
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Restore backup" }).click();
+  await page.getByRole("radio", { name: "Replace whole DB" }).check();
+  await page.getByRole("button", { name: /Replace with selected/ }).click();
+  await expect(page.getByRole("status")).toContainText("restored");
+  await page.getByRole("button", { name: "Back to projects" }).click();
 
   await expect(
     page.getByRole("button", { name: `Open ${exportedProject.title}` }),

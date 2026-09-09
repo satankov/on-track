@@ -15,6 +15,11 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { BackupSettingsWorkspace } from "./BackupSettingsWorkspace.js";
+import type {
+  ImportOptions,
+  ProjectSelection,
+} from "../domain/database-transfer.js";
 import type { Chat, ChatDetail, Note } from "../domain/types.js";
 import {
   ACCENTS,
@@ -1079,10 +1084,12 @@ type SettingsSection = "appearance" | "backups";
 
 function SettingsRail({
   activeSection,
+  disabled,
   onBack,
   onSelect,
 }: {
   activeSection: SettingsSection;
+  disabled: boolean;
   onBack: () => void;
   onSelect: (section: SettingsSection) => void;
 }) {
@@ -1096,6 +1103,7 @@ function SettingsRail({
         <button
           className="settings-back-button"
           type="button"
+          disabled={disabled}
           onClick={onBack}
           aria-label="Back to projects"
         >
@@ -1110,6 +1118,7 @@ function SettingsRail({
               : ""
           }`}
           type="button"
+          disabled={disabled}
           aria-current={activeSection === "appearance" ? "page" : undefined}
           onClick={() => onSelect("appearance")}
         >
@@ -1126,6 +1135,7 @@ function SettingsRail({
             activeSection === "backups" ? "settings-section-item--active" : ""
           }`}
           type="button"
+          disabled={disabled}
           aria-current={activeSection === "backups" ? "page" : undefined}
           onClick={() => onSelect("backups")}
         >
@@ -1229,122 +1239,6 @@ function AppearanceSettingsWorkspace({
             })}
           </div>
         </fieldset>
-      </section>
-    </main>
-  );
-}
-
-function BackupSettingsWorkspace({
-  onExport,
-  onImport,
-}: {
-  onExport: () => Promise<void>;
-  onImport: (file: File) => Promise<void>;
-}) {
-  const [file, setFile] = useState<File>();
-  const [error, setError] = useState("");
-  const [status, setStatus] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  async function handleExport() {
-    setBusy(true);
-    setError("");
-    setStatus("");
-    try {
-      await onExport();
-      setStatus("Backup export is ready.");
-    } catch (caught) {
-      setError(errorMessage(caught, "The database could not be exported."));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleImport() {
-    if (!file) return;
-    if (
-      !window.confirm(
-        "Restoring this backup will replace all current local projects and attached files. It does not merge data.",
-      )
-    ) {
-      return;
-    }
-    setBusy(true);
-    setError("");
-    setStatus("");
-    try {
-      await onImport(file);
-      setStatus("Backup restored.");
-    } catch (caught) {
-      setError(errorMessage(caught, "The database could not be imported."));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <main className="workspace settings-workspace">
-      <header className="settings-workspace-header">
-        <p className="eyebrow">Backups</p>
-        <h1>Backup settings</h1>
-      </header>
-      <section className="settings-panel" aria-labelledby="database-transfer">
-        <div className="settings-panel-copy">
-          <h2 id="database-transfer">Export and restore</h2>
-          <p>
-            Export one versioned On Track backup containing projects, messages,
-            and attached files. Backups are plaintext and readable. Restoring
-            replaces current local data; it does not merge histories.
-          </p>
-        </div>
-        <div className="settings-control-group">
-          <div className="settings-control-row">
-            <div>
-              <strong>Export backup</strong>
-              <small>
-                Create one restorable copy of current local data and files.
-              </small>
-            </div>
-            <button
-              className="button button-primary"
-              type="button"
-              onClick={handleExport}
-              disabled={busy}
-            >
-              Export backup
-            </button>
-          </div>
-          <div className="settings-control-row settings-control-row--stacked">
-            <label className="field-label" htmlFor="database-import">
-              Choose On Track backup
-            </label>
-            <input
-              id="database-import"
-              className="file-input"
-              type="file"
-              accept=".on-track-backup,application/vnd.on-track.backup+sqlite"
-              onChange={(event) => setFile(event.target.files?.[0])}
-            />
-            <button
-              className="button button-primary"
-              type="button"
-              onClick={handleImport}
-              disabled={busy || !file}
-            >
-              Restore backup
-            </button>
-          </div>
-        </div>
-        {status && (
-          <p role="status" className="form-status">
-            {status}
-          </p>
-        )}
-        {error && (
-          <p role="alert" className="form-error">
-            {error}
-          </p>
-        )}
       </section>
     </main>
   );
@@ -2944,6 +2838,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [composerTimestampOpen, setComposerTimestampOpen] = useState(false);
   const [error, setError] = useState("");
   const [savingNote, setSavingNote] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const importInProgress = useRef(false);
+  const databaseEpoch = useRef(0);
+  const pendingNoteMutations = useRef(0);
+  const previewTail = useRef<Promise<unknown>>(Promise.resolve());
+  const [pendingNoteCount, setPendingNoteCount] = useState(0);
   const [pinErrors, setPinErrors] = useState<Record<string, string>>({});
   const [projectMutationIds, setProjectMutationIds] = useState<
     ReadonlySet<string>
@@ -2991,7 +2891,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     let focusRequest = 0;
     const refreshActiveProject = () => {
       const projectId = activeId.current;
-      if (!projectId) return;
+      if (!projectId || importInProgress.current) return;
       const request = ++focusRequest;
       const selection = selectionRequest.current;
       const mutation = activeMutationGeneration.current;
@@ -3024,6 +2924,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   }, [api]);
 
   function refreshProjectSummaries() {
+    if (importInProgress.current) return;
     const request = ++summaryRequest.current;
     const mutation = activeMutationGeneration.current;
     void api
@@ -3055,7 +2956,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         setLoadState("loaded");
       })
       .catch(() => {
-        if (!current) return;
+        if (!current || request !== summaryRequest.current) return;
         setError("The local project list could not be loaded.");
         setLoadState("error");
       });
@@ -3515,11 +3416,25 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setEditingAttachmentIds([]);
   }
 
+  async function runNoteMutation<T>(operation: () => Promise<T>): Promise<T> {
+    if (importInProgress.current) throw new Error("Wait for import to finish.");
+    pendingNoteMutations.current += 1;
+    setPendingNoteCount(pendingNoteMutations.current);
+    try {
+      return await operation();
+    } finally {
+      pendingNoteMutations.current -= 1;
+      setPendingNoteCount(pendingNoteMutations.current);
+    }
+  }
+
   async function deleteNote(note: Note) {
     if (!active) return;
     if (!window.confirm("Delete this message?")) return;
     const projectId = active.id;
-    await api.deleteNote(projectId, note.id);
+    const epoch = databaseEpoch.current;
+    await runNoteMutation(() => api.deleteNote(projectId, note.id));
+    if (epoch !== databaseEpoch.current) return;
     activeMutationGeneration.current += 1;
     const submittedNotes = active.notes.filter((item) => item.id !== note.id);
     const submittedUpdatedAt = chatActivityFromNotes(active, submittedNotes);
@@ -3548,7 +3463,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function setNoteLabel(note: Note, label: Label, applied: boolean) {
     if (!active) return;
     const projectId = active.id;
-    const labels = await api.setNoteLabel(projectId, note.id, label, applied);
+    const epoch = databaseEpoch.current;
+    const labels = await runNoteMutation(() =>
+      api.setNoteLabel(projectId, note.id, label, applied),
+    );
+    if (epoch !== databaseEpoch.current) return;
     activeMutationGeneration.current += 1;
     const submittedDetail = {
       ...active,
@@ -3571,8 +3490,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     );
   }
 
-  async function exportDatabase() {
-    const blob = await api.exportDatabase();
+  async function exportDatabase(selection: ProjectSelection) {
+    const blob = await api.exportDatabase(selection);
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -3581,21 +3500,75 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     URL.revokeObjectURL(url);
   }
 
-  async function importDatabase(file: File) {
-    await api.importDatabase(file);
-    const importedChats = await api.listChats();
-    setReadingPositions(new Map());
-    selectionRequest.current += 1;
-    activeMutationGeneration.current += 1;
-    setWorkspace({ chats: importedChats });
-    setDraftTimestamp("");
-    resetSenderComposer();
-    setPendingFiles([]);
-    setHistoryFilter("all");
-    setComposerTimestampOpen(false);
-    setMode("projects");
-    setDraft("");
-    setError("");
+  function previewDatabase(file: File) {
+    const next = previewTail.current.then(
+      () => api.previewDatabase(file),
+      () => api.previewDatabase(file),
+    );
+    previewTail.current = next;
+    return next;
+  }
+
+  async function importDatabase(file: File, options: ImportOptions) {
+    if (
+      importInProgress.current ||
+      savingNote ||
+      projectMutations.current.size ||
+      pendingNoteMutations.current > 0
+    )
+      throw new Error(
+        "Wait for the current project change to finish before importing.",
+      );
+    importInProgress.current = true;
+    setImporting(true);
+    const invalidate = () => {
+      databaseEpoch.current += 1;
+      selectionRequest.current += 1;
+      activeMutationGeneration.current += 1;
+      summaryRequest.current += 1;
+    };
+    invalidate();
+    try {
+      const result = await api.importDatabase(file, options);
+      invalidate();
+      if (options.mode === "replace") {
+        activeId.current = undefined;
+        setWorkspace({ chats: [] });
+        setReadingPositions(new Map());
+        setDraftTimestamp("");
+        resetSenderComposer();
+        setPendingFiles([]);
+        setHistoryFilter("all");
+        setComposerTimestampOpen(false);
+        setDraft("");
+        setEditingNote(undefined);
+        setEditingAttachmentIds([]);
+        setCopiedNoteId(undefined);
+        setPinErrors({});
+        pendingPinFocus.current = undefined;
+        setError("");
+      }
+      try {
+        const importedChats = await api.listChats();
+        setLoadState("loaded");
+        setError("");
+        setWorkspace((current) => ({
+          ...current,
+          chats: sortChats(importedChats),
+        }));
+        return result;
+      } catch {
+        return {
+          ...result,
+          refreshWarning:
+            "Import completed, but the project list could not be refreshed. Reload the page to see your projects; do not import again.",
+        };
+      }
+    } finally {
+      invalidate();
+      importInProgress.current = false;
+      setImporting(false);
+    }
   }
 
   function backToProjects() {
@@ -3628,6 +3601,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       {mode === "settings" ? (
         <SettingsRail
           activeSection={settingsSection}
+          disabled={importing}
           onBack={() => setMode("projects")}
           onSelect={setSettingsSection}
         />
@@ -3664,6 +3638,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           <AppearanceSettingsWorkspace theme={theme} onThemeChange={setTheme} />
         ) : (
           <BackupSettingsWorkspace
+            projects={chats}
+            onPreview={previewDatabase}
+            unavailable={
+              importing ||
+              savingNote ||
+              projectMutationIds.size > 0 ||
+              pendingNoteCount > 0
+            }
             onExport={exportDatabase}
             onImport={importDatabase}
           />

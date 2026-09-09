@@ -101,3 +101,15 @@ must not accept a browser-supplied path or shell command.
 - On 2026-09-02, the project owner reported that the current checkout's native
   attachment flow worked on their macOS host. Windows and Linux manual native
   dispatch remain unverified.
+
+## Selective project import extension
+
+The selective-backup slice preserves this file-before-reference decision for
+Merge DB: validate and privately normalize selected imported projects, publish
+fresh-ID managed files, then append all remapped records in one SQLite
+transaction. Existing files and references remain untouched, including missing
+file records. Precommit interruption may orphan newly published files; rollback
+cleanup never removes files after a known commit. Replacement retains the exact
+single-namespace journal protocol. A whole-database swap for merge was rejected
+because its validator requires every attachment in a fresh namespace, forcing
+existing files to be copied and making existing missing files block import.

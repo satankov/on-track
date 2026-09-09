@@ -25,6 +25,11 @@ import {
 } from "node:path";
 
 import Database from "better-sqlite3";
+import {
+  projectSelectionSchema,
+  type ProjectSelection,
+  type BackupProject,
+} from "../../domain/database-transfer.js";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 
 import {
@@ -85,6 +90,7 @@ export interface SqliteBackupBundleManifest {
 }
 
 export interface CreateSqliteBackupBundleOptions {
+  selection?: ProjectSelection;
   sourceDatabase: Database.Database;
   destinationPath: string;
   attachmentStore: Pick<ManagedAttachmentStore, "read">;
@@ -93,6 +99,7 @@ export interface CreateSqliteBackupBundleOptions {
 }
 
 export interface PrepareSqliteBackupBundleOptions {
+  selection?: ProjectSelection;
   bundlePath: string;
   workspace: SqliteBackupPreparationWorkspace;
   limits?: Partial<SqliteBackupBundleLimits>;
@@ -246,6 +253,8 @@ export async function createSqliteBackupBundle(
     bundle = new Database(options.destinationPath);
     bundle.pragma("foreign_keys = ON");
     bundle.pragma("journal_mode = DELETE");
+    pruneProjects(bundle, options.selection ?? "all");
+    bundle.exec("VACUUM");
     validateActiveDatabase(bundle, limits);
 
     const attachments = bundle
@@ -556,6 +565,17 @@ export function prepareSqliteBackupBundle(
     candidate = new Database(candidateDatabasePath);
     candidate.pragma("foreign_keys = ON");
     candidate.pragma("journal_mode = DELETE");
+    pruneProjects(candidate, options.selection ?? "all");
+    const retained = candidate
+      .prepare(
+        "SELECT count(*) AS attachmentCount, coalesce(sum(byte_size), 0) AS totalBytes FROM _on_track_bundle_files",
+      )
+      .get() as { attachmentCount: number; totalBytes: number };
+    candidate
+      .prepare(
+        "UPDATE _on_track_bundle SET attachment_count = ?, total_bytes = ? WHERE id = 1",
+      )
+      .run(retained.attachmentCount, retained.totalBytes);
     const store = new ManagedAttachmentStore(workspace.candidateDataDirectory, {
       namespaceFactory: () => attachmentNamespace,
       maximumReadableBytes: limits.maximumAttachmentBytes,
@@ -647,13 +667,55 @@ export function prepareSqliteBackupBundle(
       candidateDataDirectory: workspace.candidateDataDirectory,
       stagedNamespacePath: workspace.stagedNamespacePath,
       installedNamespaceRelativePath: workspace.installedNamespaceRelativePath,
-      manifest: copiedManifest,
+      manifest: { ...copiedManifest, ...retained },
     };
   } catch (error) {
     if (candidate?.open) candidate.close();
     chmodSync(restoreDirectory, 0o700);
     rmSync(restoreDirectory, { recursive: true, force: true });
     throw error;
+  }
+}
+
+function pruneProjects(
+  database: Database.Database,
+  input: ProjectSelection,
+): void {
+  const selection = projectSelectionSchema.parse(input);
+  if (selection === "all") return;
+  const ids = database
+    .prepare("SELECT id FROM chats ORDER BY id")
+    .pluck()
+    .all() as string[];
+  const existing = new Set(ids);
+  if (selection.some((id) => !existing.has(id)))
+    throw validationError("A selected project no longer exists.");
+  const selected = new Set(selection);
+  const remove = database.prepare("DELETE FROM chats WHERE id = ?");
+  database.transaction(() => {
+    for (const id of ids) if (!selected.has(id)) remove.run(id);
+  })();
+}
+
+/** The caller must validate the complete bundle before reading its catalog. */
+export function readBackupProjects(
+  bundlePath: string,
+  schemaVersion: number,
+): BackupProject[] {
+  const database = openReadOnlyDatabase(bundlePath);
+  try {
+    return database
+      .prepare(
+        `SELECT c.id, c.title, c.created_at AS createdAt,
+      ${schemaVersion >= 4 ? "c.pinned_at" : "NULL"} AS pinnedAt,
+      ${schemaVersion >= 7 ? "c.archived_at" : "NULL"} AS archivedAt,
+      (SELECT count(*) FROM notes n WHERE n.chat_id = c.id) AS messageCount,
+      (SELECT count(*) FROM note_attachments a JOIN notes n ON a.note_id = n.id WHERE n.chat_id = c.id) AS attachmentCount
+      FROM chats c ORDER BY c.title, c.id`,
+      )
+      .all() as BackupProject[];
+  } finally {
+    database.close();
   }
 }
 

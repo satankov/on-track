@@ -153,8 +153,9 @@ a regression-protected alpha, not a dedicated design target.
   or show their safe managed folder; risky executable/launcher types are blocked
   from Open.
 - Copy, edit, timestamp-adjust, and delete notes.
-- Export and restore one versioned `.on-track-backup` bundle containing the
-  metadata database and all readable attachment files.
+- Export all or selected projects to a versioned `.on-track-backup` bundle with
+  their messages and attachments. Preview and select imported projects, then
+  merge independent copies with conflict renaming or replace the whole database.
 - Choose Light, Neutral, or Dark appearance from large previews in Settings;
   the browser-local preference applies immediately and persists across reloads.
 - Persist state across browser and server restarts.
@@ -224,8 +225,9 @@ live in `docs/adr/`; significant work lives in `docs/plans/`.
 
 - A copied On Track database is readable because at-rest encryption is absent.
 - Plaintext backup bundles contain readable database metadata and attached file
-  bytes; restoring replaces current local projects and files rather than merging
-  histories.
+  bytes. Replace mode removes all current projects and files; Merge mode adds
+  selected independent projects. Neither mode merges message histories. A lost
+  import response requires checking current projects before retrying.
 - Source installation requires a supported Node.js LTS line and a native SQLite
   dependency. Node 22 support ends no later than upstream support, currently
   2027-04-30. The next candidate must pass full verification on Node 22.16 and

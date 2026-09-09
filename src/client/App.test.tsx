@@ -47,12 +47,215 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
     openAttachment: vi.fn(),
     revealAttachment: vi.fn(),
     exportDatabase: vi.fn(),
-    importDatabase: vi.fn(),
+    previewDatabase: vi.fn().mockResolvedValue({
+      digest: "a".repeat(64),
+      projects: [
+        {
+          id: "source",
+          title: "Source",
+          createdAt: 1,
+          pinnedAt: null,
+          archivedAt: null,
+          messageCount: 0,
+          attachmentCount: 0,
+        },
+      ],
+    }),
+    importDatabase: vi
+      .fn()
+      .mockResolvedValue({ importedCount: 1, renames: [] }),
     ...overrides,
   };
 }
 
 describe("personal project chat workspace", () => {
+  it("serializes changed backup previews to respect the server import guard", async () => {
+    const user = userEvent.setup();
+    const first = deferred<Awaited<ReturnType<ApiClient["previewDatabase"]>>>();
+    const api = createApi({
+      previewDatabase: vi
+        .fn()
+        .mockReturnValueOnce(first.promise)
+        .mockResolvedValue({ digest: "b".repeat(64), projects: [] }),
+    });
+    render(<App api={api} />);
+    await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.upload(
+      screen.getByLabelText("Choose On Track backup"),
+      new File(["one"], "one.on-track-backup"),
+    );
+    await user.upload(
+      screen.getByLabelText("Choose On Track backup"),
+      new File(["two"], "two.on-track-backup"),
+    );
+    expect(api.previewDatabase).toHaveBeenCalledTimes(1);
+    await act(async () => first.reject(new Error("old error")));
+    await waitFor(() => expect(api.previewDatabase).toHaveBeenCalledTimes(2));
+    expect(
+      await screen.findByText("No projects in this backup."),
+    ).toBeVisible();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+  it.each(["resolve", "reject"])(
+    "ignores a late initial list %s after a successful import",
+    async (outcome) => {
+      const user = userEvent.setup();
+      const initial = deferred<Awaited<ReturnType<ApiClient["listChats"]>>>();
+      const chat = {
+        id: "imported",
+        title: "Imported",
+        accent: "ocean" as const,
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      const api = createApi({
+        listChats: vi
+          .fn()
+          .mockReturnValueOnce(initial.promise)
+          .mockResolvedValue([chat]),
+      });
+      render(<App api={api} />);
+      await user.click(screen.getByRole("button", { name: /Settings/ }));
+      await user.upload(
+        screen.getByLabelText("Choose On Track backup"),
+        new File(["data"], "data.on-track-backup"),
+      );
+      await user.click(
+        await screen.findByRole("button", { name: "Merge selected (1)" }),
+      );
+      await screen.findByText("1 projects imported.");
+      await act(async () => {
+        if (outcome === "resolve") initial.resolve([]);
+        else initial.reject(new Error("stale failure"));
+      });
+      await user.click(
+        screen.getByRole("button", { name: "Back to projects" }),
+      );
+      expect(
+        screen.queryByRole("heading", { name: "Loading your projects." }),
+      ).toBeNull();
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Open Imported" }),
+      ).toBeVisible();
+    },
+  );
+  it.each(["merge", "replace"])(
+    "reports committed %s when refresh fails and preserves the correct draft state",
+    async (mode) => {
+      const user = userEvent.setup();
+      const chat = {
+        id: "original",
+        title: "Original",
+        accent: "ocean" as const,
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      const api = createApi({
+        listChats: vi
+          .fn()
+          .mockResolvedValueOnce([chat])
+          .mockRejectedValue(new Error("refresh failed")),
+        getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      });
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      render(<App api={api} />);
+      await user.click(
+        await screen.findByRole("button", { name: "Open Original" }),
+      );
+      await user.type(
+        screen.getByRole("textbox", { name: "Add a note" }),
+        "Keep my draft",
+      );
+      await user.click(screen.getByRole("button", { name: /Settings/ }));
+      await user.upload(
+        screen.getByLabelText("Choose On Track backup"),
+        new File(["data"], "data.on-track-backup"),
+      );
+      if (mode === "replace")
+        await user.click(
+          await screen.findByRole("radio", { name: "Replace whole DB" }),
+        );
+      await user.click(
+        await screen.findByRole("button", {
+          name:
+            mode === "merge"
+              ? "Merge selected (1)"
+              : "Replace with selected (1)",
+        }),
+      );
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Import completed",
+      );
+      expect(
+        screen.getByRole("button", {
+          name:
+            mode === "merge"
+              ? "Merge selected (1)"
+              : "Replace with selected (1)",
+        }),
+      ).toBeDisabled();
+      await user.click(
+        screen.getByRole("button", { name: "Back to projects" }),
+      );
+      if (mode === "merge")
+        expect(screen.getByRole("textbox", { name: "Add a note" })).toHaveValue(
+          "Keep my draft",
+        );
+      else
+        expect(screen.queryByRole("heading", { name: "Original" })).toBeNull();
+    },
+  );
+  it("defaults to merge and all imported projects, and imports only checked IDs", async () => {
+    const user = userEvent.setup();
+    const preview = {
+      digest: "a".repeat(64),
+      projects: ["one", "two"].map((id) => ({
+        id,
+        title: id,
+        createdAt: 1,
+        pinnedAt: null,
+        archivedAt: null,
+        messageCount: 0,
+        attachmentCount: 0,
+      })),
+    };
+    const api = createApi({
+      previewDatabase: vi.fn().mockResolvedValue(preview),
+      importDatabase: vi.fn().mockResolvedValue({
+        importedCount: 1,
+        renames: [{ original: "one", renamed: "one_timestamp" }],
+      }),
+    });
+    render(<App api={api} />);
+    await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.upload(
+      screen.getByLabelText("Choose On Track backup"),
+      new File(["data"], "data.on-track-backup"),
+    );
+    expect(
+      await screen.findByRole("radio", { name: "Merge DB" }),
+    ).toBeChecked();
+    const group = await screen.findByRole("group", {
+      name: "Projects to import",
+    });
+    expect(within(group).getByRole("checkbox", { name: /one/ })).toBeChecked();
+    await user.click(within(group).getByRole("checkbox", { name: /two/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Merge selected (1)" }),
+    );
+    await waitFor(() =>
+      expect(api.importDatabase).toHaveBeenCalledWith(expect.any(File), {
+        mode: "merge",
+        selection: ["one"],
+        digest: preview.digest,
+      }),
+    );
+    expect(await screen.findByText("one → one_timestamp")).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Backup settings" }),
+    ).toBeVisible();
+  });
   it("keeps all three empty project groups visible and independently collapsible", async () => {
     const user = userEvent.setup();
     render(<App api={createApi()} />);
@@ -2392,7 +2595,7 @@ describe("personal project chat workspace", () => {
     expect(
       screen.getByText(/Backups are plaintext and readable/),
     ).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Export backup" }));
+    await user.click(screen.getByRole("button", { name: "Export all" }));
 
     await waitFor(() => expect(api.exportDatabase).toHaveBeenCalled());
     expect(createObjectURL).toHaveBeenCalled();
@@ -2499,7 +2702,7 @@ describe("personal project chat workspace", () => {
     render(<App api={api} />);
 
     await user.click(screen.getByRole("button", { name: /Settings/ }));
-    await user.click(screen.getByRole("button", { name: "Export backup" }));
+    await user.click(screen.getByRole("button", { name: "Export all" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Export failed");
 
     await user.upload(
@@ -2508,7 +2711,12 @@ describe("personal project chat workspace", () => {
         type: "application/vnd.on-track.backup+sqlite",
       }),
     );
-    await user.click(screen.getByRole("button", { name: "Restore backup" }));
+    await user.click(
+      await screen.findByRole("radio", { name: "Replace whole DB" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Replace with selected (1)" }),
+    );
     expect(await screen.findByRole("alert")).toHaveTextContent("Import failed");
     expect(
       screen.getByRole("heading", { name: "Backup settings" }),
@@ -2528,7 +2736,12 @@ describe("personal project chat workspace", () => {
         type: "application/vnd.on-track.backup+sqlite",
       }),
     );
-    await user.click(screen.getByRole("button", { name: "Restore backup" }));
+    await user.click(
+      await screen.findByRole("radio", { name: "Replace whole DB" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Replace with selected (1)" }),
+    );
 
     expect(api.importDatabase).not.toHaveBeenCalled();
   });
@@ -2548,7 +2761,9 @@ describe("personal project chat workspace", () => {
             updatedAt: 1,
           },
         ]),
-      importDatabase: vi.fn().mockResolvedValue(undefined),
+      importDatabase: vi
+        .fn()
+        .mockResolvedValue({ importedCount: 1, renames: [] }),
     });
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<App api={api} />);
@@ -2560,9 +2775,20 @@ describe("personal project chat workspace", () => {
         type: "application/vnd.on-track.backup+sqlite",
       }),
     );
-    await user.click(screen.getByRole("button", { name: "Restore backup" }));
+    await user.click(
+      await screen.findByRole("radio", { name: "Replace whole DB" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Replace with selected (1)" }),
+    );
 
     await waitFor(() => expect(api.importDatabase).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Back to projects" }),
+      ).toBeEnabled(),
+    );
+    await user.click(screen.getByRole("button", { name: "Back to projects" }));
     expect(
       await screen.findByRole("button", { name: "Open Restored" }),
     ).toBeVisible();

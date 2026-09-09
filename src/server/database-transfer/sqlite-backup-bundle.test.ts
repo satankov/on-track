@@ -32,6 +32,7 @@ import {
 } from "./sqlite-backup-bundle.js";
 import { ManagedRestoreCoordinator } from "./restore-journal.js";
 import { applyBundledMigrations, openDatabase } from "../db/database.js";
+import { mergePreparedProjects } from "./project-import.js";
 
 describe("SQLite backup bundle", () => {
   let directory: string;
@@ -149,6 +150,153 @@ describe("SQLite backup bundle", () => {
     } finally {
       bundle.close();
     }
+  });
+
+  it("exports only selected project records and removes excluded bytes", async () => {
+    const secret = "EXCLUDED_PROJECT_PRIVATE_SENTINEL_912367";
+    sourceDatabase
+      .prepare(
+        "INSERT INTO chats (id,title,accent,created_at,updated_at) VALUES ('excluded',?,'ocean',1,1)",
+      )
+      .run(secret);
+    sourceDatabase
+      .prepare(
+        "INSERT INTO notes (id,chat_id,body,created_at) VALUES ('excluded-note','excluded',?,1)",
+      )
+      .run(secret.repeat(100));
+    const destinationPath = join(directory, "selected.on-track-backup");
+    await createSqliteBackupBundle({
+      sourceDatabase,
+      destinationPath,
+      attachmentStore: { read: vi.fn() },
+      selection: ["chat-a"],
+    });
+    const result = new Database(destinationPath);
+    expect(result.prepare("SELECT id FROM chats").all()).toEqual([
+      { id: "chat-a" },
+    ]);
+    result.close();
+    expect(readFileSync(destinationPath).includes(Buffer.from(secret))).toBe(
+      false,
+    );
+    expect(
+      sourceDatabase.prepare("SELECT count(*) FROM chats").pluck().get(),
+    ).toBe(2);
+  });
+
+  it("does not read an excluded project's broken attachments", async () => {
+    sourceDatabase.exec(
+      "INSERT INTO chats (id,title,accent,created_at,updated_at) VALUES ('other','Other','ocean',1,1)",
+    );
+    insertAttachment(sourceDatabase, {
+      id: "broken",
+      filename: "private.txt",
+      storagePath: "attachments/v1/source/broken/private.txt",
+      byteSize: 1,
+      modifiedAt: 1,
+    });
+    const read = vi.fn(() => {
+      throw new Error("missing file");
+    });
+    const destinationPath = join(directory, "subset.on-track-backup");
+    await createSqliteBackupBundle({
+      sourceDatabase,
+      destinationPath,
+      attachmentStore: { read },
+      selection: ["other"],
+    });
+    expect(read).not.toHaveBeenCalled();
+    expect(
+      readFileSync(destinationPath).includes(Buffer.from("private.txt")),
+    ).toBe(false);
+    await expect(
+      createSqliteBackupBundle({
+        sourceDatabase,
+        destinationPath: join(directory, "broken.on-track-backup"),
+        attachmentStore: { read },
+        selection: ["chat-a"],
+      }),
+    ).rejects.toThrow("missing file");
+  });
+
+  it.each([3, 4, 5, 6])(
+    "selects and merges schema-%i projects through trusted migrations",
+    async (schema) => {
+      sourceDatabase.exec(
+        "INSERT INTO chats (id,title,accent,created_at,updated_at) VALUES ('other','Other','ocean',1,1)",
+      );
+      const bundlePath = join(directory, `legacy-${schema}.on-track-backup`);
+      await createSqliteBackupBundle({
+        sourceDatabase,
+        destinationPath: bundlePath,
+        attachmentStore: { read: vi.fn() },
+      });
+      mutateBundle(bundlePath, (legacy) => {
+        legacy.exec(
+          "ALTER TABLE chats DROP COLUMN archived_at; DELETE FROM __drizzle_migrations WHERE created_at = 1789027200000;",
+        );
+        if (schema < 6)
+          legacy.exec(
+            "ALTER TABLE notes DROP COLUMN sender; DELETE FROM __drizzle_migrations WHERE created_at = 1788566400000;",
+          );
+        if (schema < 5)
+          legacy.exec(
+            "ALTER TABLE chats DROP COLUMN collapse_long_messages; DELETE FROM __drizzle_migrations WHERE created_at = 1788523044823;",
+          );
+        if (schema < 4)
+          legacy.exec(
+            "ALTER TABLE chats DROP COLUMN pinned_at; DELETE FROM __drizzle_migrations WHERE created_at = 1788516961034;",
+          );
+        legacy
+          .prepare("UPDATE app_metadata SET schema_version = ?")
+          .run(schema);
+        legacy
+          .prepare("UPDATE _on_track_bundle SET schema_version = ?")
+          .run(schema);
+      });
+      const prepared = prepareSqliteBackupBundle({
+        bundlePath,
+        workspace: createRestoreWorkspace(directory, `legacy-${schema}`),
+        selection: ["chat-a"],
+      });
+      const result = mergePreparedProjects({
+        database: sourceDatabase,
+        candidateDatabasePath: prepared.candidateDatabasePath,
+        candidateDataDirectory: prepared.candidateDataDirectory,
+        dataDirectory: directory,
+        now: 1000,
+      });
+      expect(result.importedCount).toBe(1);
+      expect(
+        sourceDatabase.prepare("SELECT count(*) FROM chats").pluck().get(),
+      ).toBe(3);
+      expect(
+        sourceDatabase
+          .prepare("SELECT body,sender FROM notes WHERE id != 'note-a'")
+          .get(),
+      ).toEqual({ body: "Plan", sender: null });
+      expect(
+        sourceDatabase
+          .prepare("SELECT count(*) FROM chat_enabled_labels")
+          .pluck()
+          .get(),
+      ).toBe(4);
+    },
+  );
+
+  it.each([
+    { selection: [] },
+    { selection: ["unknown"] },
+    { selection: ["chat-a", "chat-a"] },
+  ])("rejects invalid export selection $selection", async ({ selection }) => {
+    await expect(
+      createSqliteBackupBundle({
+        sourceDatabase,
+        destinationPath: join(directory, "invalid-selection.on-track-backup"),
+        attachmentStore: { read: vi.fn() },
+        selection,
+      }),
+    ).rejects.toThrow();
   });
 
   it("retries only a bounded number of concurrent attachment changes", async () => {
