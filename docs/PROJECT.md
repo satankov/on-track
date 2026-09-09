@@ -15,19 +15,19 @@ recovery parts of that promise.
 
 ## Current phase
 
-Version 0.0.5 is the current published plaintext alpha source release under
-Apache License 2.0. The `release/v0.0.6` checkout contains verified unreleased
-work: compact Markdown authoring assistance, visually unified composer utility
-rows, free-form participant attribution, Home and reading-position navigation,
-collapsible sidebar sections, an eight-line composer, plain-text sidebar
-previews, and automatic Links filtering. Package metadata is 0.0.6 for the release candidate. attribution does not add collaboration or accounts.
+Version 0.0.6 is the current published plaintext alpha source release under
+Apache License 2.0. The `release/v0.0.7` checkout adds verified local work for
+Archive, selective backups/import, composer file drops, filter-position
+restoration, and a full-width add/edit composer. Package metadata remains 0.0.6;
+the next release has not been published.
 
 ## Current objective
 
-Prepare the verified unreleased work as a scoped v0.0.6 alpha release candidate,
-including version and release-document updates, review, and the full platform
-matrix, while retaining the plaintext and portability warnings. Mobile remains
-a regression-protected alpha, not a dedicated design target.
+Consolidate the completed feature slices for the next alpha release, address
+the dependency and manual-validation follow-ups or record accepted limits, and
+verify the supported platform matrix at the selected candidate. Retain plaintext
+and portability warnings. Mobile remains a regression-protected alpha, not a
+dedicated design target.
 
 ## v0.0.1 outcome
 
@@ -101,7 +101,7 @@ a regression-protected alpha, not a dedicated design target.
   Markdown messages can be expanded or collapsed using a project-level default
   that persists through restart and backup restore.
 
-## Current unreleased outcome
+## v0.0.6 outcome
 
 - The shared add/edit composer provides an optional compact Markdown strip with
   selection-aware formatting, GFM table insertion, and familiar textarea-scoped
@@ -117,6 +117,18 @@ a regression-protected alpha, not a dedicated design target.
 - The add/edit composer grows to eight lines, sidebar previews present inert
   plain text extracted from Markdown, and Links filters messages using the same
   parsed Markdown/GFM URL policy as rendering.
+
+## Current unreleased outcome
+
+- [Archive](plans/0018-project-archive.md) adds a third sidebar section and
+  versioned archive state in database/backup schema 7.
+- [Selective backups and import](plans/0019-selective-backups-and-project-import.md)
+  support project selection, validated previews, independent-copy merges, and
+  selected replacement using the existing guarded storage boundaries.
+- [Composer and filter fixes](plans/0020-composer-drop-and-filter-scroll.md)
+  add visible file-drop targets, restore All reading positions after filtering,
+  position other filters near current work, and give add/edit drafts full width
+  above a toolbar that remains reachable in short viewports.
 
 ## Current capabilities
 
@@ -166,8 +178,8 @@ a regression-protected alpha, not a dedicated design target.
 
 ## Near-term priorities
 
-1. Prepare and publish v0.0.6 after release review and the platform-scoped Node
-   22.16/24 release matrix passes.
+1. Prepare the next alpha candidate from the completed slices, with release
+   review and the platform-scoped Node 22.16/24 verification matrix.
 2. Continue hardening backup, restore, integrity checking, recovery, and
    conflict-free import semantics before users entrust irreplaceable data to the
    application.
@@ -215,12 +227,14 @@ The public repository and release are:
 - [v0.0.3 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.3)
 - [v0.0.4 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.4)
 - [v0.0.5 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.5)
+- [v0.0.6 release](https://github.com/satankov/on-track/releases/tag/v0.0.6)
 - [Issues](https://github.com/satankov/on-track/issues)
 
-GitHub Issues is the intended backlog and ownership tracker. Concrete closeout
-follow-ups for the Fastify advisory, v0.0.6 release verification, and native-action
-smoke tests await issue creation; review the
-[tracker drafts](plans/0017-chat-navigation-and-history-polish.md#required-tracker-follow-ups).
+GitHub is the backlog and ownership tracker. The Fastify advisory is tracked by
+open [PR #18](https://github.com/satankov/on-track/pull/18). Native-action smoke
+tests and filesystem drag/drop validation still need issue records; their
+[two drafts](plans/0020-composer-drop-and-filter-scroll.md#required-tracker-follow-ups)
+are awaiting authorization.
 Broader product priorities above remain strategy until scoped. Durable decisions
 live in `docs/adr/`; significant work lives in `docs/plans/`.
 
@@ -246,6 +260,8 @@ live in `docs/adr/`; significant work lives in `docs/plans/`.
 - Native command construction is tested for macOS, Windows, and Linux, but real
   OS dispatch has been manually reported only on one macOS host. Windows and
   Linux desktop integration remains unverified.
+- Browser file-drop regressions pass, but actual Finder-origin dragging and
+  cancellation remain manually unverified; this is separate from native Open.
 - Loopback HTTP narrows exposure but is still a trust boundary requiring Host,
   Origin, content-security, and input-validation controls.
 

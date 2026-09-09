@@ -5,10 +5,13 @@
 Make filesystem file drops discoverable in both add and edit mode, restore the
 expected history position after filter changes, and give multiline drafts the
 full composer width. Approved on 2026-09-09 after review of the interactive
-Add/Edit composer mockup. All three features are implemented; the aggregate
-local verification gate passes.
+Add/Edit composer mockup. All three features are implemented in commit `8f74b00`
+on `release/v0.0.7`; the aggregate local verification gate passes. Package
+metadata remains 0.0.6 and this slice is unreleased.
 
 ## Context and reusable precedent
+
+The following describes the preimplementation baseline.
 
 - `ChatWorkspace` in `src/client/App.tsx` shares one add/edit composer. The file
   picker calls `onFilesSelected`, backed by `addPendingFiles`; there are currently
@@ -185,8 +188,58 @@ styles and design guidance throughout implementation.
 - Reviewer/security review found no actionable findings in file routing,
   directory rejection, save guards, lifecycle cleanup, scroll isolation, or reflow.
 - `git diff --check`: PASS. No dependencies, schema, server contracts, or native
-  OS actions changed. Nothing was committed or published.
+  OS actions changed. The work was subsequently committed as `8f74b00`.
 - Remaining limits: actual Finder-origin dispatch/cancellation has not been
   manually exercised; synthetic browser file drops pass. The production audit
   retains the existing moderate Fastify advisory, below its high-severity gate.
   Vite emits a non-blocking warning for the approximately 505 kB main bundle.
+
+## Required tracker follow-ups
+
+Read-only GitHub inspection on 2026-09-09 found pull requests but no standalone
+issues. The completed feature implementation is verified. Memory closeout is
+NOT READY until the two validation issues below are created or explicitly
+dismissed by the user. These drafts are the sole current authority for those
+unrecorded tasks; no remote mutation is authorized by this closeout.
+
+### Already tracked: Fastify advisories
+
+Open [PR #18](https://github.com/satankov/on-track/pull/18) proposes upgrading
+Fastify 5.8.5 to 5.12.3 and is the existing remote record for this follow-up.
+The installed dependency still reports GHSA-w2qp-rph6-63g4 and
+GHSA-3m5p-2c4r-xxw2. Its
+[CI run](https://github.com/satankov/on-track/actions/runs/34107255809) passed
+for that PR revision; a future integration must verify the current release
+candidate. Do not create a duplicate issue or imply the upgrade is merged.
+
+### Draft: Verify native Open and Show in Folder on Windows and Linux
+
+Existing browser tests use a fake native adapter. Real dispatch has been
+manually reported only on one macOS host; Windows/Linux remain unverified.
+
+Acceptance criteria:
+
+- On Windows with Node 24 and a supported Linux desktop/runtime, test Open for a
+  safe managed document and Show in Folder using disposable evaluation data.
+- Confirm executable/launcher files remain blocked from Open and missing files
+  or absent default associations produce recoverable errors.
+- Record OS/runtime, desktop/file association, tested revision, and outcomes;
+  track any failures or explicitly retain the platform limitation.
+
+### Draft: Verify filesystem-origin drag and drop for new and edited messages
+
+Plan 0020 has component and Chromium DataTransfer coverage, including persisted
+add/edit attachments. Real Finder-origin dragging and cancellation have not
+been manually exercised. This is distinct from native Open/Show dispatch.
+
+Acceptance criteria:
+
+- Record the tested commit, macOS version, and browser/version. Use disposable
+  project data and drag actual files from Finder in Add and Edit modes.
+- Confirm the target appears before dropping; multiple files append once; draft
+  text and retained attachments survive; Add/Save persists the files after reload.
+- Check nested-target movement, window exit, drag cancellation, outside-target
+  drops, saving-in-progress, and detectable folder rejection. No unexpected
+  navigation or upload should occur.
+- Retain the keyboard-accessible file-picker fallback and record any browser
+  limitation or defect with reproduction steps.

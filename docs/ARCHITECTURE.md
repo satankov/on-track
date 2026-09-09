@@ -2,14 +2,12 @@
 
 ## Status
 
-The v0.0.5 plaintext alpha is the published baseline. The `release/v0.0.6`
-checkout contains verified unreleased work: client-only Markdown authoring,
-navigation, reading-position, sidebar disclosure, preview, and Links-filter
-behavior, plus nullable free-form participant attribution in the note and
-versioned-backup contracts. The client-only additions preserve the local
-server/service/repository boundaries; attribution advances the schema to 6.
-The Archive addition advances the database and backup schema to 7.
-Package metadata remains 0.0.6. The core decisions
+The v0.0.6 plaintext alpha is the published baseline. The `release/v0.0.7`
+checkout adds Archive, selective backup/import, and client-only composer and
+filter fixes. Archive advances the database and backup schema from 6 to 7;
+selective transfers and composer/filter changes preserve that schema. Existing
+local server/service/repository boundaries remain in place. Package metadata
+remains 0.0.6. The core decisions
 are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
 encryption limitation in [ADR-0002](adr/0002-defer-at-rest-encryption.md),
 source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the
