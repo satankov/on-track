@@ -69,6 +69,99 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
 }
 
 describe("personal project chat workspace", () => {
+  it.each([false, true])(
+    "attaches dropped files in the shared composer (editing: %s)",
+    async (editing) => {
+      const user = userEvent.setup();
+      const chat = {
+        id: "drop-chat",
+        title: "File drops",
+        accent: "ocean" as const,
+        createdAt: 1,
+        updatedAt: 2,
+      };
+      const note = {
+        id: "drop-note",
+        chatId: chat.id,
+        body: "Original context",
+        createdAt: 2,
+        attachments: [
+          {
+            id: "kept-file",
+            noteId: "drop-note",
+            filename: "kept.txt",
+            mediaType: "text/plain",
+            byteSize: 1,
+            createdAt: 2,
+          },
+        ],
+      };
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+        appendNote: vi.fn().mockResolvedValue({ ...note, id: "new-note" }),
+        updateNote: vi.fn().mockResolvedValue(note),
+      });
+      render(<App api={api} />);
+      await user.click(
+        await screen.findByRole("button", { name: "Open File drops" }),
+      );
+      if (editing)
+        await user.click(screen.getByRole("button", { name: "Edit message" }));
+      const draft = screen.getByRole("textbox", {
+        name: editing ? "Edit message" : "Add a note",
+      });
+      if (!editing) await user.type(draft, "New context");
+      const files = [
+        new File(["dropped"], "dropped.txt", { type: "text/plain" }),
+      ];
+      const transfer = {
+        types: ["Files"],
+        items: [{ kind: "file" }],
+        files: [],
+      };
+      fireEvent.dragEnter(window, { dataTransfer: transfer });
+      expect(
+        screen.getByText(
+          editing
+            ? "Drop files here to attach to this message"
+            : "Drop files here to attach",
+        ),
+      ).toBeVisible();
+      fireEvent.drop(draft, { dataTransfer: { ...transfer, files } });
+      expect(
+        within(screen.getByLabelText("Pending files")).getByText("dropped.txt"),
+      ).toBeVisible();
+      expect(draft).toHaveValue(editing ? "Original context" : "New context");
+      if (editing)
+        expect(
+          within(screen.getByLabelText("Pending files")).getByText("kept.txt"),
+        ).toBeVisible();
+      expect(api.appendNote).not.toHaveBeenCalled();
+      expect(api.updateNote).not.toHaveBeenCalled();
+      await user.click(
+        screen.getByRole("button", {
+          name: editing ? "Save" : "Add note",
+        }),
+      );
+      if (editing)
+        expect(api.updateNote).toHaveBeenCalledWith(
+          chat.id,
+          note.id,
+          expect.objectContaining({
+            body: note.body,
+            files,
+            keepAttachmentIds: ["kept-file"],
+          }),
+        );
+      else
+        expect(api.appendNote).toHaveBeenCalledWith(
+          chat.id,
+          expect.objectContaining({ body: "New context", files }),
+        );
+    },
+  );
+
   it("serializes changed backup previews to respect the server import guard", async () => {
     const user = userEvent.setup();
     const first = deferred<Awaited<ReturnType<ApiClient["previewDatabase"]>>>();

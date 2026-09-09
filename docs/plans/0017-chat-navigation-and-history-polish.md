@@ -2,6 +2,10 @@
 
 ## Status
 
+The filter-transition behavior and composer layout are superseded by
+[plan 0020](0020-composer-drop-and-filter-scroll.md). Historical verification
+below describes the original implementation.
+
 Approved and implemented on 2026-09-07, committed in `d1fe4ae`, including the
 subsequent footer copy change. The user selected remembered last-viewed position
 and normal future-message scrolling without a separate preview. Full feature

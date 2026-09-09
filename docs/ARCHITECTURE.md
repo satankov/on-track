@@ -67,12 +67,20 @@ Local browser -> loopback Fastify server -> application service -> repository ->
   pure client helper applies Markdown transformations and returns explicit
   textarea selection offsets; the shared add/edit composer restores those
   offsets after its controlled draft updates. The shared composer grows to eight
-  content lines. A Markdown analysis helper reuses unified/remark-parse and GFM
+  content lines across its full width, above the add/edit toolbar. In short
+  viewports, composer content scrolls independently above the visible toolbar;
+  opening a utility row brings it into that scroll area's view. Native browser
+  file drops into the composer reuse the picker pending-file and multipart save
+  flow; window-level file-drop guards prevent accidental browser navigation while
+  a chat is active. A Markdown analysis helper reuses unified/remark-parse and GFM
   to derive inert sidebar text and automatic Links filtering, using the renderer's
   URL policy without fetching destinations. Reading anchors and sidebar disclosure
   state live in the app session, outside project data and backups. Returning to a
   chat restores its message anchor and viewport offset; a first visit positions
-  near the current/future boundary. Future messages stay in normal scrolling.
+  near the current/future boundary. Returning to All restores its isolated anchor;
+  each different Files, Links, or label filter opens at its own current/first-future
+  boundary. Ordinary refreshes preserve manual scrolling. Future messages stay in
+  normal scrolling, including short histories that can show several future rows.
   A pure sender helper maps a normalized sender name deterministically onto a closed set of theme-safe color
   roles; only the sender text, not a color value, crosses the API boundary.
 - `src/domain`: shared data contracts, closed built-in label vocabularies, and

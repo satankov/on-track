@@ -50,6 +50,7 @@ import {
 } from "./history-position.js";
 import { analyzeMarkdown } from "./markdown-analysis.js";
 import { senderColor } from "./sender-color.js";
+import { useComposerFileDrop } from "./composer-file-drop.js";
 
 const ACCENT_NAMES: Record<Accent, string> = {
   coral: "Coral",
@@ -2174,13 +2175,15 @@ function ChatWorkspace({
   navigationDisabled: boolean;
 }) {
   const historyRef = useRef<HTMLElement>(null);
-  useHistoryPosition(
+  const beforeFilterChange = useHistoryPosition(
     historyRef,
     detail.id,
-    historyFilter === "all",
+    historyFilter,
     readingPositions,
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const fileDrop = useComposerFileDrop(composerRef, saving, onFilesSelected);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const markdownToolsId = useId();
   const senderToolsId = useId();
@@ -2194,6 +2197,7 @@ function ChatWorkspace({
   const [activeMarkdownAction, setActiveMarkdownAction] =
     useState<MarkdownAction>("bold");
   const [markdownError, setMarkdownError] = useState("");
+  const previousUtilityRows = useRef([false, false, false]);
   const linkedNoteIds = useMemo(
     () =>
       new Set(
@@ -2225,8 +2229,31 @@ function ChatWorkspace({
   const activeMarkdownTool =
     MARKDOWN_TOOLS.find((tool) => tool.action === activeMarkdownAction) ??
     MARKDOWN_TOOLS[0];
-  const visibleComposerError = error || markdownError;
+  const visibleComposerError = error || fileDrop.error || markdownError;
   const currentSender = draftSender.trim() || "You";
+
+  useLayoutEffect(() => {
+    const openRows = [senderOpen, timestampOpen, markdownOpen];
+    const openedIndex = openRows.findIndex(
+      (open, index) => open && !previousUtilityRows.current[index],
+    );
+    previousUtilityRows.current = openRows;
+    if (openedIndex < 0) return;
+    const content = composerRef.current?.querySelector(".composer-content");
+    const row = content?.querySelector(
+      [
+        ".composer-sender-row",
+        ".composer-timestamp-row",
+        ".markdown-tools-strip",
+      ][openedIndex],
+    );
+    if (!content || !row) return;
+    const viewport = content.getBoundingClientRect();
+    const bounds = row.getBoundingClientRect();
+    if (bounds.top < viewport.top || bounds.bottom > viewport.bottom) {
+      content.scrollTop += bounds.top - viewport.top;
+    }
+  }, [senderOpen, timestampOpen, markdownOpen]);
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -2328,18 +2355,21 @@ function ChatWorkspace({
   }
 
   function beginEditingNote(note: Note) {
+    fileDrop.clearError();
     setMarkdownError("");
     lastMarkdownSelection.current = undefined;
     onEditNote(note);
   }
 
   function cancelEditingNote() {
+    fileDrop.clearError();
     setMarkdownError("");
     lastMarkdownSelection.current = undefined;
     onCancelEditNote();
   }
 
   function submitDraft() {
+    fileDrop.clearError();
     setMarkdownError("");
     lastMarkdownSelection.current = undefined;
     onSubmit();
@@ -2373,6 +2403,11 @@ function ChatWorkspace({
       event.preventDefault();
       submitDraft();
     }
+  }
+
+  function changeHistoryFilter(filter: HistoryFilter) {
+    beforeFilterChange(filter);
+    onHistoryFilterChange(filter);
   }
 
   return (
@@ -2411,7 +2446,7 @@ function ChatWorkspace({
             className={`history-filter-button ${historyFilter === "all" ? "history-filter-button--active" : ""}`}
             aria-label={`All ${detail.notes.length}`}
             aria-pressed={historyFilter === "all"}
-            onClick={() => onHistoryFilterChange("all")}
+            onClick={() => changeHistoryFilter("all")}
           >
             <span className="history-filter-icon" aria-hidden="true">
               <ListIcon />
@@ -2424,7 +2459,7 @@ function ChatWorkspace({
             className={`history-filter-button ${historyFilter === "attachments" ? "history-filter-button--active" : ""}`}
             aria-label={`Files ${attachmentCount}`}
             aria-pressed={historyFilter === "attachments"}
-            onClick={() => onHistoryFilterChange("attachments")}
+            onClick={() => changeHistoryFilter("attachments")}
           >
             <span className="history-filter-icon" aria-hidden="true">
               <PaperclipIcon />
@@ -2437,7 +2472,7 @@ function ChatWorkspace({
             className={`history-filter-button ${historyFilter === "links" ? "history-filter-button--active" : ""}`}
             aria-label={`Links ${linkedNoteIds.size}`}
             aria-pressed={historyFilter === "links"}
-            onClick={() => onHistoryFilterChange("links")}
+            onClick={() => changeHistoryFilter("links")}
           >
             <span className="history-filter-icon" aria-hidden="true">
               <LinkIcon />
@@ -2456,7 +2491,7 @@ function ChatWorkspace({
                 aria-label={`${LABEL_NAMES[label]} ${count}`}
                 title={LABEL_NAMES[label]}
                 aria-pressed={historyFilter === label}
-                onClick={() => onHistoryFilterChange(label)}
+                onClick={() => changeHistoryFilter(label)}
                 key={label}
               >
                 <span className="history-filter-icon">
@@ -2534,233 +2569,255 @@ function ChatWorkspace({
           </p>
         )}
         <div
-          className={`composer ${editingNote ? "composer--editing" : ""}`}
+          ref={composerRef}
+          className={`composer ${editingNote ? "composer--editing" : ""} ${fileDrop.active ? "composer--file-drag" : ""} ${fileDrop.over ? "composer--file-over" : ""}`}
           onKeyDown={handleComposerKeyDown}
         >
-          {(editingAttachments.length > 0 || pendingFiles.length > 0) && (
-            <div className="pending-attachments" aria-label="Pending files">
-              {editingAttachments.map((attachment) => (
-                <span className="pending-attachment" key={attachment.id}>
-                  <span>
-                    <strong>{attachment.filename}</strong>
-                    <small>{formatFileSize(attachment.byteSize)}</small>
-                  </span>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${attachment.filename}`}
-                    onClick={() => onRemoveEditingAttachment(attachment.id)}
-                  >
-                    <XIcon />
-                  </button>
-                </span>
-              ))}
-              {pendingFiles.map((file, index) => (
-                <span
-                  className="pending-attachment"
-                  key={`${file.name}-${index}`}
-                >
-                  <span>
-                    <strong>{file.name}</strong>
-                    <small>{formatFileSize(file.size)}</small>
-                  </span>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${file.name}`}
-                    onClick={() => onRemovePendingFile(index)}
-                  >
-                    <XIcon />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-          {senderOpen && (
-            <div
-              id={senderToolsId}
-              className="composer-sender-row"
-              role="group"
-              aria-label="Message sender"
-            >
-              <label className="field-label" htmlFor={`${senderToolsId}-name`}>
-                Sender
-              </label>
-              <button
-                className="composer-sender-you"
-                type="button"
-                aria-pressed={!draftSender.trim()}
-                onClick={() => onDraftSenderChange("")}
-              >
-                You
-              </button>
-              <span className="composer-sender-or" aria-hidden="true">
-                or
-              </span>
-              <input
-                id={`${senderToolsId}-name`}
-                className="text-input composer-sender-input"
-                type="text"
-                aria-label="Sender name"
-                value={draftSender}
-                maxLength={80}
-                placeholder="Type a sender name…"
-                onChange={(event) => onDraftSenderChange(event.target.value)}
-              />
-              <span className="composer-sender-hint" aria-hidden="true">
-                Participant messages appear on the left
+          {fileDrop.active && (
+            <div className="composer-drop-target" role="status">
+              <PaperclipIcon />
+              <span>
+                {editingNote
+                  ? "Drop files here to attach to this message"
+                  : "Drop files here to attach"}
               </span>
             </div>
           )}
-          {timestampOpen && (
-            <div className="composer-timestamp-row">
-              <label className="field-label" htmlFor="composer-timestamp">
-                Timestamp
-              </label>
-              <input
-                id="composer-timestamp"
-                className="text-input composer-timestamp-input"
-                type="datetime-local"
-                aria-label="Message timestamp"
-                value={draftTimestamp}
-                onChange={(event) => onDraftTimestampChange(event.target.value)}
-              />
-            </div>
-          )}
-          {markdownOpen && (
-            <div
-              id={markdownToolsId}
-              className="markdown-tools-strip"
-              role="group"
-              aria-label="Markdown assistance"
-            >
-              <span className="markdown-tools-label">Format</span>
-              <div className="markdown-tools-scroll">
-                {MARKDOWN_TOOLS.map((tool) => (
-                  <button
-                    className="markdown-tool-button"
-                    type="button"
-                    key={tool.action}
-                    aria-label={
-                      tool.shortcutLabel
-                        ? `${tool.label} (${tool.shortcutLabel})`
-                        : tool.label
-                    }
-                    aria-keyshortcuts={tool.ariaKeyShortcuts}
-                    title={`${tool.label} · ${tool.syntax}${tool.shortcutLabel ? ` · ${tool.shortcutLabel}` : ""}`}
-                    onPointerDown={rememberMarkdownSelection}
-                    onFocus={() => setActiveMarkdownAction(tool.action)}
-                    onMouseEnter={() => setActiveMarkdownAction(tool.action)}
-                    onClick={() => applyMarkdownFormatting(tool.action)}
+          <div className="composer-content">
+            {(editingAttachments.length > 0 || pendingFiles.length > 0) && (
+              <div className="pending-attachments" aria-label="Pending files">
+                {editingAttachments.map((attachment) => (
+                  <span className="pending-attachment" key={attachment.id}>
+                    <span>
+                      <strong>{attachment.filename}</strong>
+                      <small>{formatFileSize(attachment.byteSize)}</small>
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${attachment.filename}`}
+                      onClick={() => onRemoveEditingAttachment(attachment.id)}
+                    >
+                      <XIcon />
+                    </button>
+                  </span>
+                ))}
+                {pendingFiles.map((file, index) => (
+                  <span
+                    className="pending-attachment"
+                    key={`${file.name}-${index}`}
                   >
-                    <MarkdownToolGlyph action={tool.action} />
-                  </button>
+                    <span>
+                      <strong>{file.name}</strong>
+                      <small>{formatFileSize(file.size)}</small>
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${file.name}`}
+                      onClick={() => onRemovePendingFile(index)}
+                    >
+                      <XIcon />
+                    </button>
+                  </span>
                 ))}
               </div>
-              <span className="markdown-tool-hint" aria-hidden="true">
-                <strong>{activeMarkdownTool.label}</strong>
-                <code>{activeMarkdownTool.syntax}</code>
-                {activeMarkdownTool.shortcutLabel && (
-                  <span>{activeMarkdownTool.shortcutLabel}</span>
-                )}
-              </span>
-              <span className="markdown-tools-escape" aria-hidden="true">
-                Esc
-              </span>
+            )}
+            {senderOpen && (
+              <div
+                id={senderToolsId}
+                className="composer-sender-row"
+                role="group"
+                aria-label="Message sender"
+              >
+                <label
+                  className="field-label"
+                  htmlFor={`${senderToolsId}-name`}
+                >
+                  Sender
+                </label>
+                <button
+                  className="composer-sender-you"
+                  type="button"
+                  aria-pressed={!draftSender.trim()}
+                  onClick={() => onDraftSenderChange("")}
+                >
+                  You
+                </button>
+                <span className="composer-sender-or" aria-hidden="true">
+                  or
+                </span>
+                <input
+                  id={`${senderToolsId}-name`}
+                  className="text-input composer-sender-input"
+                  type="text"
+                  aria-label="Sender name"
+                  value={draftSender}
+                  maxLength={80}
+                  placeholder="Type a sender name…"
+                  onChange={(event) => onDraftSenderChange(event.target.value)}
+                />
+                <span className="composer-sender-hint" aria-hidden="true">
+                  Participant messages appear on the left
+                </span>
+              </div>
+            )}
+            {timestampOpen && (
+              <div className="composer-timestamp-row">
+                <label className="field-label" htmlFor="composer-timestamp">
+                  Timestamp
+                </label>
+                <input
+                  id="composer-timestamp"
+                  className="text-input composer-timestamp-input"
+                  type="datetime-local"
+                  aria-label="Message timestamp"
+                  value={draftTimestamp}
+                  onChange={(event) =>
+                    onDraftTimestampChange(event.target.value)
+                  }
+                />
+              </div>
+            )}
+            {markdownOpen && (
+              <div
+                id={markdownToolsId}
+                className="markdown-tools-strip"
+                role="group"
+                aria-label="Markdown assistance"
+              >
+                <span className="markdown-tools-label">Format</span>
+                <div className="markdown-tools-scroll">
+                  {MARKDOWN_TOOLS.map((tool) => (
+                    <button
+                      className="markdown-tool-button"
+                      type="button"
+                      key={tool.action}
+                      aria-label={
+                        tool.shortcutLabel
+                          ? `${tool.label} (${tool.shortcutLabel})`
+                          : tool.label
+                      }
+                      aria-keyshortcuts={tool.ariaKeyShortcuts}
+                      title={`${tool.label} · ${tool.syntax}${tool.shortcutLabel ? ` · ${tool.shortcutLabel}` : ""}`}
+                      onPointerDown={rememberMarkdownSelection}
+                      onFocus={() => setActiveMarkdownAction(tool.action)}
+                      onMouseEnter={() => setActiveMarkdownAction(tool.action)}
+                      onClick={() => applyMarkdownFormatting(tool.action)}
+                    >
+                      <MarkdownToolGlyph action={tool.action} />
+                    </button>
+                  ))}
+                </div>
+                <span className="markdown-tool-hint" aria-hidden="true">
+                  <strong>{activeMarkdownTool.label}</strong>
+                  <code>{activeMarkdownTool.syntax}</code>
+                  {activeMarkdownTool.shortcutLabel && (
+                    <span>{activeMarkdownTool.shortcutLabel}</span>
+                  )}
+                </span>
+                <span className="markdown-tools-escape" aria-hidden="true">
+                  Esc
+                </span>
+              </div>
+            )}
+            <div className="composer-input-row">
+              <textarea
+                ref={textareaRef}
+                data-composer-textarea
+                aria-label={editingNote ? "Edit message" : "Add a note"}
+                placeholder={
+                  editingNote
+                    ? "Edit this message…"
+                    : "Add a note to this project…"
+                }
+                value={draft}
+                maxLength={10_000}
+                onChange={(event) => {
+                  fileDrop.clearError();
+                  setMarkdownError("");
+                  onDraftChange(event.target.value);
+                }}
+                onSelect={rememberMarkdownSelection}
+                onBlur={rememberMarkdownSelection}
+                onKeyDown={handleKeyDown}
+              />
             </div>
-          )}
-          <div className="composer-input-row">
-            <textarea
-              ref={textareaRef}
-              data-composer-textarea
-              aria-label={editingNote ? "Edit message" : "Add a note"}
-              placeholder={
-                editingNote
-                  ? "Edit this message…"
-                  : "Add a note to this project…"
-              }
-              value={draft}
-              maxLength={10_000}
-              onChange={(event) => {
-                setMarkdownError("");
-                onDraftChange(event.target.value);
-              }}
-              onSelect={rememberMarkdownSelection}
-              onBlur={rememberMarkdownSelection}
-              onKeyDown={handleKeyDown}
-            />
-            <div className="composer-bar">
-              <span>
+          </div>
+          <div className="composer-bar">
+            <div className="composer-tools">
+              <button
+                className={`composer-icon-button ${draftSender.trim() ? "composer-icon-button--active" : ""}`}
+                type="button"
+                onClick={() => onSenderOpenChange(!senderOpen)}
+                aria-label={`${senderOpen ? "Hide" : "Show"} sender options. Current sender: ${currentSender}`}
+                aria-expanded={senderOpen}
+                aria-controls={senderToolsId}
+                title={`Sender: ${currentSender}`}
+              >
+                <SenderIcon />
+              </button>
+              <button
+                className="composer-icon-button composer-markdown-button"
+                type="button"
+                onClick={() => {
+                  setMarkdownOpen((open) => !open);
+                  setMarkdownError("");
+                }}
+                onPointerDown={rememberMarkdownSelection}
+                aria-label={
+                  markdownOpen
+                    ? "Hide Markdown assistance"
+                    : "Show Markdown assistance"
+                }
+                aria-expanded={markdownOpen}
+                aria-controls={markdownToolsId}
+                title={
+                  markdownOpen
+                    ? "Hide Markdown assistance"
+                    : "Show Markdown assistance"
+                }
+              >
+                <span className="markdown-mark" aria-hidden="true">
+                  M↓
+                </span>
+              </button>
+              <input
+                ref={fileInputRef}
+                className="visually-hidden-file"
+                type="file"
+                multiple
+                aria-label="Attach files"
+                onChange={(event) => {
+                  fileDrop.clearError();
+                  onFilesSelected(Array.from(event.target.files ?? []));
+                  event.target.value = "";
+                }}
+              />
+              <button
+                className="composer-icon-button"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                aria-label="Open file picker"
+                title="Attach files"
+              >
+                <PaperclipIcon />
+              </button>
+              <button
+                className="composer-icon-button"
+                type="button"
+                onClick={onToggleTimestamp}
+                aria-label={
+                  timestampOpen ? "Hide timestamp" : "Choose timestamp"
+                }
+                aria-expanded={timestampOpen}
+                title={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
+              >
+                <ClockIcon />
+              </button>
+            </div>
+            <div className="composer-actions">
+              <span className="composer-shortcut">
                 <kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd>
               </span>
-              <div className="composer-tools">
-                <button
-                  className={`composer-icon-button ${draftSender.trim() ? "composer-icon-button--active" : ""}`}
-                  type="button"
-                  onClick={() => onSenderOpenChange(!senderOpen)}
-                  aria-label={`${senderOpen ? "Hide" : "Show"} sender options. Current sender: ${currentSender}`}
-                  aria-expanded={senderOpen}
-                  aria-controls={senderToolsId}
-                  title={`Sender: ${currentSender}`}
-                >
-                  <SenderIcon />
-                </button>
-                <button
-                  className="composer-icon-button composer-markdown-button"
-                  type="button"
-                  onClick={() => {
-                    setMarkdownOpen((open) => !open);
-                    setMarkdownError("");
-                  }}
-                  onPointerDown={rememberMarkdownSelection}
-                  aria-label={
-                    markdownOpen
-                      ? "Hide Markdown assistance"
-                      : "Show Markdown assistance"
-                  }
-                  aria-expanded={markdownOpen}
-                  aria-controls={markdownToolsId}
-                  title={
-                    markdownOpen
-                      ? "Hide Markdown assistance"
-                      : "Show Markdown assistance"
-                  }
-                >
-                  <span className="markdown-mark" aria-hidden="true">
-                    M↓
-                  </span>
-                </button>
-                <input
-                  ref={fileInputRef}
-                  className="visually-hidden-file"
-                  type="file"
-                  multiple
-                  aria-label="Attach files"
-                  onChange={(event) => {
-                    onFilesSelected(Array.from(event.target.files ?? []));
-                    event.target.value = "";
-                  }}
-                />
-                <button
-                  className="composer-icon-button"
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  aria-label="Open file picker"
-                  title="Attach files"
-                >
-                  <PaperclipIcon />
-                </button>
-                <button
-                  className="composer-icon-button"
-                  type="button"
-                  onClick={onToggleTimestamp}
-                  aria-label={
-                    timestampOpen ? "Hide timestamp" : "Choose timestamp"
-                  }
-                  aria-expanded={timestampOpen}
-                  title={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
-                >
-                  <ClockIcon />
-                </button>
-              </div>
               {editingNote && (
                 <button
                   className="composer-cancel-button"

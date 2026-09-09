@@ -8,6 +8,8 @@ below `1.0.0`, releases may contain breaking changes.
 
 ### Added
 
+- Filesystem drag-and-drop attachments in both new and edited messages, with a
+  visible composer drop target and the existing pending-file/save workflow.
 - Selective project export and validated import previews with all projects
   selected by default. Import can replace the database with selected projects
   or merge independent copies, renaming title conflicts with the import time.
@@ -18,6 +20,17 @@ below `1.0.0`, releases may contain breaking changes.
   Archiving clears the project pin and retains editable messages and files.
 - Persistent archive state in database and backup schema 7. Exact schema-6
   backups join the previously supported schema-3/4/5 restore paths.
+
+### Changed
+
+- Add and Edit use a full-width, eight-line-growing textarea above a compact
+  toolbar; Cancel and Save no longer reduce the text width.
+
+### Fixed
+
+- Returning to All after filtering restores its remembered reading position.
+  Switching to Files, Links, or a label filter opens around the latest matching
+  current message and the first matching future message.
 
 ## [0.0.6] - 2026-09-07
 

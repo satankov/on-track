@@ -70,36 +70,61 @@ export function restoreReadingPosition(
 export function useHistoryPosition(
   historyRef: RefObject<HTMLElement | null>,
   projectId: string,
-  unfiltered: boolean,
+  filter: string,
   positions: Map<string, ReadingPosition>,
-): void {
-  const isUnfiltered = useRef(unfiltered);
+): (nextFilter: string) => void {
+  const active = useRef<{
+    filter: string;
+    save: () => void;
+    pause: () => void;
+  } | null>(null);
+
+  // Registered before the transition effect so unmount captures the current
+  // workspace before that effect disables saving and cancels its frame.
   useLayoutEffect(() => {
-    isUnfiltered.current = unfiltered;
-  }, [unfiltered]);
+    return () => active.current?.save();
+  }, [historyRef, projectId, positions]);
 
   useLayoutEffect(() => {
     const history = historyRef.current;
     if (!history) return;
     let initialized = false;
     const save = () => {
-      if (!initialized || !isUnfiltered.current) return;
+      if (!initialized || filter !== "all") return;
       const position = captureReadingPosition(history);
       if (position) positions.set(projectId, position);
     };
-    // Child layout effects first settle collapsed Markdown heights. Restore once,
-    // after their synchronous updates, without reacting to edits or clock ticks.
+    // Child layout effects first settle collapsed Markdown heights. Restore once
+    // per actual filter transition, without reacting to edits or clock ticks.
     const frame = requestAnimationFrame(() => {
-      if (isUnfiltered.current)
-        restoreReadingPosition(history, positions.get(projectId));
+      restoreReadingPosition(
+        history,
+        filter === "all" ? positions.get(projectId) : undefined,
+      );
       initialized = true;
       save();
     });
+    active.current = {
+      filter,
+      save,
+      pause: () => {
+        initialized = false;
+        cancelAnimationFrame(frame);
+      },
+    };
     history.addEventListener("scroll", save, { passive: true });
     return () => {
+      initialized = false;
       cancelAnimationFrame(frame);
-      save();
       history.removeEventListener("scroll", save);
     };
-  }, [historyRef, projectId, positions]);
+  }, [historyRef, projectId, positions, filter]);
+
+  return (nextFilter) => {
+    if (!active.current || active.current.filter === nextFilter) return;
+    // Capture All while its rows still exist. Scroll events caused by replacing
+    // them must not overwrite that anchor before the next restoration frame.
+    active.current.save();
+    active.current.pause();
+  };
 }

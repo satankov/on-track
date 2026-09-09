@@ -140,9 +140,12 @@ a regression-protected alpha, not a dedicated design target.
 - Schedule future-dated messages and see a live, unobtrusive boundary between
   current history and messages whose timestamps have not arrived.
 - Add local files to project messages with optional text context, including
-  attachment add/remove while editing a message.
+  attachment add/remove while editing a message. Drag files onto the highlighted
+  composer or use Attach; both add/edit modes use a full-width text field above
+  their controls.
 - Filter the open project history to messages with attached files or automatically
-  detected Markdown/GFM links.
+  detected Markdown/GFM links. Returning to All restores the reading position;
+  other filters open around their latest current and first future messages.
 - Apply permanent Pin and Attention labels plus project-enabled Todo, Decision,
   Open question, Risk, and Milestone labels to messages, then filter history by
   active labels.
