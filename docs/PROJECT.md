@@ -15,19 +15,27 @@ recovery parts of that promise.
 
 ## Current phase
 
-Version 0.0.5 is the current published plaintext alpha source release under
-Apache License 2.0. The `release/v0.0.6` checkout contains verified unreleased
-work: compact Markdown authoring assistance, visually unified composer utility
-rows, free-form participant attribution, Home and reading-position navigation,
-collapsible sidebar sections, an eight-line composer, plain-text sidebar
-previews, and automatic Links filtering. Package metadata is 0.0.6 for the release candidate. attribution does not add collaboration or accounts.
+Version 0.0.6 is the current published plaintext alpha source release under
+Apache License 2.0. The `release/v0.0.7` checkout adds verified local work for
+Archive, selective backups/import, composer file drops, filter-position
+restoration, and a full-width add/edit composer. Package metadata is prepared as
+0.0.7; the next release has not been published. The approved
+[managed installation and CLI](plans/0021-managed-install-and-cli.md) adds a
+second installation path while retaining manual Node/npm setup. v0.0.7 is the
+first managed-compatible release (floor `0.0.7`). Installer assets await
+publication. The user accepted experimental delivery with real
+end-user installation/OS validation deferred to the next release; automated
+release checks remain required.
 
 ## Current objective
 
-Prepare the verified unreleased work as a scoped v0.0.6 alpha release candidate,
-including version and release-document updates, review, and the full platform
-matrix, while retaining the plaintext and portability warnings. Mobile remains
-a regression-protected alpha, not a dedicated design target.
+Consolidate the completed feature slices for the next alpha release, address
+the dependency and manual-validation follow-ups or record accepted limits, and
+publish the experimental managed installer under the v0.0.7 exception. Complete
+its deferred real installation/OS validation for the next release.
+Verify the supported manual Node matrix at the selected candidate. Retain plaintext
+and portability warnings. Mobile remains a regression-protected alpha, not a
+dedicated design target.
 
 ## v0.0.1 outcome
 
@@ -101,7 +109,7 @@ a regression-protected alpha, not a dedicated design target.
   Markdown messages can be expanded or collapsed using a project-level default
   that persists through restart and backup restore.
 
-## Current unreleased outcome
+## v0.0.6 outcome
 
 - The shared add/edit composer provides an optional compact Markdown strip with
   selection-aware formatting, GFM table insertion, and familiar textarea-scoped
@@ -118,13 +126,35 @@ a regression-protected alpha, not a dedicated design target.
   plain text extracted from Markdown, and Links filters messages using the same
   parsed Markdown/GFM URL policy as rendering.
 
+## v0.0.7 candidate outcome
+
+- [Archive](plans/0018-project-archive.md) adds a third sidebar section and
+  versioned archive state in database/backup schema 7.
+- [Selective backups and import](plans/0019-selective-backups-and-project-import.md)
+  support project selection, validated previews, independent-copy merges, and
+  selected replacement using the existing guarded storage boundaries.
+- [Composer and filter fixes](plans/0020-composer-drop-and-filter-scroll.md)
+  add visible file-drop targets, restore All reading positions after filtering,
+  position other filters near current work, and give add/edit drafts full width
+  above a toolbar that remains reachable in short viewports.
+- [Managed installation and CLI](plans/0021-managed-install-and-cli.md) is the
+  active delivery slice: private Node, Git-free source installation, background
+  lifecycle commands, and version-specific updates with database recovery.
+  [Separate OS guides](install/README.md) retain full manual instructions.
+  Installer publication is pending, and clean installation/platform validation
+  is explicitly deferred to the next release.
+
 ## Current capabilities
 
 - Create and switch between personal project chats, return Home through the
   On Track brand, and retain reading positions during the current browser session.
-- Independently collapse the Pinned and Projects sidebar sections during a session.
+- Independently collapse the Pinned, Projects, and Archive sidebar sections during a session.
+  All three headers remain visible when empty.
 - Pin and unpin projects in a stable sidebar section without changing their
   message-activity timestamps.
+- Archive projects from Edit project, then restore through settings or the
+  sidebar restore icon. Archiving clears the pin, preserves all content, and
+  leaves projects editable; restoration returns them to Projects.
 - Rename a project and select a restrained accent color.
 - Add multiline Markdown notes in deterministic chronological order.
 - Attribute notes to a named participant from a compact composer row, or switch
@@ -136,9 +166,12 @@ a regression-protected alpha, not a dedicated design target.
 - Schedule future-dated messages and see a live, unobtrusive boundary between
   current history and messages whose timestamps have not arrived.
 - Add local files to project messages with optional text context, including
-  attachment add/remove while editing a message.
+  attachment add/remove while editing a message. Drag files onto the highlighted
+  composer or use Attach; both add/edit modes use a full-width text field above
+  their controls.
 - Filter the open project history to messages with attached files or automatically
-  detected Markdown/GFM links.
+  detected Markdown/GFM links. Returning to All restores the reading position;
+  other filters open around their latest current and first future messages.
 - Apply permanent Pin and Attention labels plus project-enabled Todo, Decision,
   Open question, Risk, and Milestone labels to messages, then filter history by
   active labels.
@@ -149,8 +182,9 @@ a regression-protected alpha, not a dedicated design target.
   or show their safe managed folder; risky executable/launcher types are blocked
   from Open.
 - Copy, edit, timestamp-adjust, and delete notes.
-- Export and restore one versioned `.on-track-backup` bundle containing the
-  metadata database and all readable attachment files.
+- Export all or selected projects to a versioned `.on-track-backup` bundle with
+  their messages and attachments. Preview and select imported projects, then
+  merge independent copies with conflict renaming or replace the whole database.
 - Choose Light, Neutral, or Dark appearance from large previews in Settings;
   the browser-local preference applies immediately and persists across reloads.
 - Persist state across browser and server restarts.
@@ -158,8 +192,9 @@ a regression-protected alpha, not a dedicated design target.
 
 ## Near-term priorities
 
-1. Prepare and publish v0.0.6 after release review and the platform-scoped Node
-   22.16/24 release matrix passes.
+1. Complete managed CLI installation and recovery gates, then prepare the next
+   alpha candidate with release review and the preserved platform-scoped manual
+   Node 22.16/24 verification matrix.
 2. Continue hardening backup, restore, integrity checking, recovery, and
    conflict-free import semantics before users entrust irreplaceable data to the
    application.
@@ -192,9 +227,10 @@ hosting, analytics, and telemetry.
 - The sidebar footer uses only “Local only” beside Settings. Plaintext alpha
   limitations remain documented in the README and backup settings; locality is
   not encryption.
-- Distribution is a GitHub source release supporting Node.js 22 from 22.16.0 on
-  macOS and Linux and Node.js 24 on Windows, macOS, and Linux, not an npm package
-  or native installer.
+- Manual GitHub source installation supports Node.js 22 from 22.16.0 on macOS
+  and Linux and Node.js 24 on Windows, macOS, and Linux. Managed CLI delivery
+  adds a private pinned runtime and fixed source assets alongside that workflow;
+  no desktop wrapper or global npm package is introduced.
 - The project is open source under Apache License 2.0, including commercial use.
 
 ## Roadmap and tracker
@@ -207,12 +243,17 @@ The public repository and release are:
 - [v0.0.3 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.3)
 - [v0.0.4 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.4)
 - [v0.0.5 release tag](https://github.com/satankov/on-track/releases/tag/v0.0.5)
+- [v0.0.6 release](https://github.com/satankov/on-track/releases/tag/v0.0.6)
 - [Issues](https://github.com/satankov/on-track/issues)
 
-GitHub Issues is the intended backlog and ownership tracker. Concrete closeout
-follow-ups for the Fastify advisory, v0.0.6 release verification, and native-action
-smoke tests await issue creation; review the
-[tracker drafts](plans/0017-chat-navigation-and-history-polish.md#required-tracker-follow-ups).
+GitHub is the backlog and ownership tracker. The Fastify advisory is tracked by
+open [PR #26](https://github.com/satankov/on-track/pull/26); it supersedes closed
+PR #18. Native-action smoke
+tests and filesystem drag/drop validation still need issue records; their
+[two drafts](plans/0020-composer-drop-and-filter-scroll.md#required-tracker-follow-ups)
+are awaiting authorization. The [installer validation draft](plans/0021-managed-install-and-cli.md#required-tracker-follow-up)
+is also awaiting an issue record for the next release.
+[v0.0.7 publication commands](releases/v0.0.7.md) describe the remaining release steps.
 Broader product priorities above remain strategy until scoped. Durable decisions
 live in `docs/adr/`; significant work lives in `docs/plans/`.
 
@@ -220,14 +261,20 @@ live in `docs/adr/`; significant work lives in `docs/plans/`.
 
 - A copied On Track database is readable because at-rest encryption is absent.
 - Plaintext backup bundles contain readable database metadata and attached file
-  bytes; restoring replaces current local projects and files rather than merging
-  histories.
+  bytes. Replace mode removes all current projects and files; Merge mode adds
+  selected independent projects. Neither mode merges message histories. A lost
+  import response requires checking current projects before retrying.
 - Source installation requires a supported Node.js LTS line and a native SQLite
   dependency. Node 22 support ends no later than upstream support, currently
   2027-04-30. The next candidate must pass full verification on Node 22.16 and
   24 on Linux, plus native SQLite install/test coverage on macOS for both lines
   and on Windows for Node 24; every future release candidate must pass those
   gates, and dependency upgrades can still affect portability.
+- Managed installation requires additional clean-machine, background-process,
+  and interrupted-update evidence for each advertised OS/architecture. Its
+  database checkpoints remain plaintext, need free disk space, and are not
+  independent backups of attachment files. Existing pre-protocol source releases
+  must be stopped and upgraded manually before explicit adoption.
 - The configured production audit passes its high-severity gate but currently
   reports a moderate Fastify advisory. The available fixed version is outside
   the exact declared dependency and requires explicit upgrade verification.
@@ -237,6 +284,8 @@ live in `docs/adr/`; significant work lives in `docs/plans/`.
 - Native command construction is tested for macOS, Windows, and Linux, but real
   OS dispatch has been manually reported only on one macOS host. Windows and
   Linux desktop integration remains unverified.
+- Browser file-drop regressions pass, but actual Finder-origin dragging and
+  cancellation remain manually unverified; this is separate from native Open.
 - Loopback HTTP narrows exposure but is still a trust boundary requiring Host,
   Origin, content-security, and input-validation controls.
 

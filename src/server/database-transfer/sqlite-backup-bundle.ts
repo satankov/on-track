@@ -25,6 +25,11 @@ import {
 } from "node:path";
 
 import Database from "better-sqlite3";
+import {
+  projectSelectionSchema,
+  type ProjectSelection,
+  type BackupProject,
+} from "../../domain/database-transfer.js";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 
 import {
@@ -46,13 +51,14 @@ import {
 
 export const SQL_ON_TRACK_BACKUP_APPLICATION_ID = 0x4f545242;
 export const SQL_ON_TRACK_BACKUP_FORMAT_VERSION = 1;
-export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 6;
+export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 7;
 const LEGACY_SCHEMA_MIGRATIONS: Readonly<
   Record<number, { migrationAt: number; migrationCount: number }>
 > = {
   3: { migrationAt: 1_788_356_400_000, migrationCount: 4 },
   4: { migrationAt: 1_788_516_961_034, migrationCount: 5 },
   5: { migrationAt: 1_788_523_044_823, migrationCount: 6 },
+  6: { migrationAt: 1_788_566_400_000, migrationCount: 7 },
 };
 const SUPPORTED_SQL_ON_TRACK_BACKUP_SCHEMA_VERSIONS = new Set([
   SQL_ON_TRACK_BACKUP_SCHEMA_VERSION,
@@ -84,6 +90,7 @@ export interface SqliteBackupBundleManifest {
 }
 
 export interface CreateSqliteBackupBundleOptions {
+  selection?: ProjectSelection;
   sourceDatabase: Database.Database;
   destinationPath: string;
   attachmentStore: Pick<ManagedAttachmentStore, "read">;
@@ -92,6 +99,7 @@ export interface CreateSqliteBackupBundleOptions {
 }
 
 export interface PrepareSqliteBackupBundleOptions {
+  selection?: ProjectSelection;
   bundlePath: string;
   workspace: SqliteBackupPreparationWorkspace;
   limits?: Partial<SqliteBackupBundleLimits>;
@@ -245,6 +253,8 @@ export async function createSqliteBackupBundle(
     bundle = new Database(options.destinationPath);
     bundle.pragma("foreign_keys = ON");
     bundle.pragma("journal_mode = DELETE");
+    pruneProjects(bundle, options.selection ?? "all");
+    bundle.exec("VACUUM");
     validateActiveDatabase(bundle, limits);
 
     const attachments = bundle
@@ -555,6 +565,17 @@ export function prepareSqliteBackupBundle(
     candidate = new Database(candidateDatabasePath);
     candidate.pragma("foreign_keys = ON");
     candidate.pragma("journal_mode = DELETE");
+    pruneProjects(candidate, options.selection ?? "all");
+    const retained = candidate
+      .prepare(
+        "SELECT count(*) AS attachmentCount, coalesce(sum(byte_size), 0) AS totalBytes FROM _on_track_bundle_files",
+      )
+      .get() as { attachmentCount: number; totalBytes: number };
+    candidate
+      .prepare(
+        "UPDATE _on_track_bundle SET attachment_count = ?, total_bytes = ? WHERE id = 1",
+      )
+      .run(retained.attachmentCount, retained.totalBytes);
     const store = new ManagedAttachmentStore(workspace.candidateDataDirectory, {
       namespaceFactory: () => attachmentNamespace,
       maximumReadableBytes: limits.maximumAttachmentBytes,
@@ -646,13 +667,55 @@ export function prepareSqliteBackupBundle(
       candidateDataDirectory: workspace.candidateDataDirectory,
       stagedNamespacePath: workspace.stagedNamespacePath,
       installedNamespaceRelativePath: workspace.installedNamespaceRelativePath,
-      manifest: copiedManifest,
+      manifest: { ...copiedManifest, ...retained },
     };
   } catch (error) {
     if (candidate?.open) candidate.close();
     chmodSync(restoreDirectory, 0o700);
     rmSync(restoreDirectory, { recursive: true, force: true });
     throw error;
+  }
+}
+
+function pruneProjects(
+  database: Database.Database,
+  input: ProjectSelection,
+): void {
+  const selection = projectSelectionSchema.parse(input);
+  if (selection === "all") return;
+  const ids = database
+    .prepare("SELECT id FROM chats ORDER BY id")
+    .pluck()
+    .all() as string[];
+  const existing = new Set(ids);
+  if (selection.some((id) => !existing.has(id)))
+    throw validationError("A selected project no longer exists.");
+  const selected = new Set(selection);
+  const remove = database.prepare("DELETE FROM chats WHERE id = ?");
+  database.transaction(() => {
+    for (const id of ids) if (!selected.has(id)) remove.run(id);
+  })();
+}
+
+/** The caller must validate the complete bundle before reading its catalog. */
+export function readBackupProjects(
+  bundlePath: string,
+  schemaVersion: number,
+): BackupProject[] {
+  const database = openReadOnlyDatabase(bundlePath);
+  try {
+    return database
+      .prepare(
+        `SELECT c.id, c.title, c.created_at AS createdAt,
+      ${schemaVersion >= 4 ? "c.pinned_at" : "NULL"} AS pinnedAt,
+      ${schemaVersion >= 7 ? "c.archived_at" : "NULL"} AS archivedAt,
+      (SELECT count(*) FROM notes n WHERE n.chat_id = c.id) AS messageCount,
+      (SELECT count(*) FROM note_attachments a JOIN notes n ON a.note_id = n.id WHERE n.chat_id = c.id) AS attachmentCount
+      FROM chats c ORDER BY c.title, c.id`,
+      )
+      .all() as BackupProject[];
+  } finally {
+    database.close();
   }
 }
 
@@ -799,7 +862,7 @@ function validateApplicationData(
 ): void {
   const chats = database
     .prepare(
-      `SELECT id, title, accent, created_at, updated_at${schemaVersion >= 4 ? ", pinned_at" : ""}${schemaVersion >= 5 ? ", collapse_long_messages" : ""}
+      `SELECT id, title, accent, created_at, updated_at${schemaVersion >= 4 ? ", pinned_at" : ""}${schemaVersion >= 5 ? ", collapse_long_messages" : ""}${schemaVersion >= 7 ? ", archived_at" : ""}
        FROM chats`,
     )
     .all() as Array<{
@@ -809,6 +872,7 @@ function validateApplicationData(
     created_at: unknown;
     updated_at: unknown;
     pinned_at?: unknown;
+    archived_at?: unknown;
     collapse_long_messages?: unknown;
   }>;
   for (const chat of chats) {
@@ -828,6 +892,11 @@ function validateApplicationData(
     requireNonnegativeSafeInteger(chat.updated_at, "project update time");
     if (schemaVersion >= 4 && chat.pinned_at !== null) {
       requireNonnegativeSafeInteger(chat.pinned_at, "project pin time");
+    }
+    if (schemaVersion >= 7 && chat.archived_at !== null) {
+      requireNonnegativeSafeInteger(chat.archived_at, "project archive time");
+      if (chat.pinned_at !== null)
+        throw validationError("An archived project cannot be pinned.");
     }
     if (
       schemaVersion >= 5 &&

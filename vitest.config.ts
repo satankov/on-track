@@ -7,6 +7,9 @@ export default defineConfig({
     environment: "node",
     exclude: ["e2e/**", "node_modules/**", "dist/**"],
     globals: true,
+    // Native Windows ACL verification invokes PowerShell at filesystem boundaries.
+    testTimeout: process.platform === "win32" ? 30_000 : 5_000,
+    hookTimeout: process.platform === "win32" ? 30_000 : 10_000,
     setupFiles: ["./src/test/setup.ts"],
     coverage: {
       provider: "v8",

@@ -1,6 +1,6 @@
 {
   "name": "on-track",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -30,7 +30,10 @@
     "test:e2e": "npm run build && playwright test",
     "security:check": "npm audit --omit=dev --audit-level=high",
     "release:check": "node scripts/release-check.mjs",
-    "verify": "npm run release:check && npm run build && npm run typecheck && npm run lint && npm run format:check && npm run test:coverage && npm run test:migrations && npm run test:e2e && npm run security:check"
+    "verify": "npm run release:check && npm run build && npm run typecheck && npm run lint && npm run format:check && npm run test:coverage && npm run test:migrations && npm run test:e2e && npm run security:check && node scripts/managed-smoke.mjs && node scripts/managed-smoke.mjs --updates",
+    "test:managed-install": "npm run build && node scripts/managed-smoke.mjs",
+    "test:managed-update": "npm run build && node scripts/managed-smoke.mjs --updates",
+    "release:managed": "node scripts/managed-release.mjs"
   },
   "dependencies": {
     "@fastify/multipart": "9.3.0",

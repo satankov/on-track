@@ -210,6 +210,14 @@ describe("release contract", () => {
 });
 
 describe("tracked data-file protection", () => {
+  it("forbids operational capability and update journals in source releases", () => {
+    const paths = [
+      "private/.on-track-instance.json",
+      ".on-track-update-journal.json",
+      "data/.on-track-restore-journal.json",
+    ];
+    expect(findForbiddenTrackedDataFiles(paths)).toEqual(paths);
+  });
   it("finds SQLite, journal, WAL, shared-memory, backup, and generic DB files", () => {
     expect(
       findForbiddenTrackedDataFiles([

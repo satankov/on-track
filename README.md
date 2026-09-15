@@ -17,6 +17,55 @@ services, analytics, or remote runtime assets.
 > but local data and backups are not yet encrypted. Do not use it for
 > confidential, NDA-bound, or irreplaceable information yet.
 
+## Quick start
+
+### macOS and Linux
+
+> **Experimental in v0.0.7:** end-user installation and OS validation are
+> deferred to the next release. This command requires a published v0.0.7 or
+> later with installer files. [Manual setup](#manual-setup) remains available.
+
+Open Terminal and run:
+
+```sh
+curl -fsSL https://github.com/satankov/on-track/releases/latest/download/install.sh -o ontrack-install.sh && bash ontrack-install.sh
+```
+
+Setup downloads Node and the application dependencies, builds On Track, and
+opens it in your browser with the server running in the background. Git and a
+preinstalled Node are not required. You can close Terminal after setup finishes.
+
+Open a new terminal to use:
+
+```sh
+ontrack stop              # Stop the server
+ontrack run               # Start it again
+ontrack update            # Install the latest stable version and start it
+```
+
+After restarting your computer, run `ontrack run` again.
+
+Full guides, including specific versions and custom settings:
+[macOS](docs/install/macos.md) · [Linux](docs/install/linux.md) ·
+[Windows](docs/install/windows.md).
+
+### Manual setup
+
+1. Install [Node.js](https://nodejs.org/en/download): **24** on Windows;
+   **24** or **22.16+ on the Node 22 line** on macOS/Linux. npm is included.
+2. Download **Source code (zip)** from [Releases](https://github.com/satankov/on-track/releases)
+   and extract it, or clone this repository with Git.
+3. Open a terminal in the extracted folder and run:
+
+   ```sh
+   npm run quickstart
+   ```
+
+Open [On Track](http://127.0.0.1:4173). Keep the terminal open; **Ctrl+C** stops
+it. For later starts, run `npm start` from the same folder. After downloading a
+new source version, run `npm run quickstart` there again. On PowerShell, use
+`npm.cmd` in place of `npm` if script execution is blocked.
+
 ## What works in this checkout
 
 - Create and switch between personal project chats; click On Track to return Home.
@@ -46,7 +95,9 @@ services, analytics, or remote runtime assets.
   managed folder. Executable and launcher-like files are blocked from Open.
 - Filter messages containing Markdown/GFM links with the automatic Links filter
   after Files, without applying a label.
-- Export and restore one versioned `.on-track-backup` bundle from Settings.
+- Export selected projects or all projects to one `.on-track-backup` bundle.
+- Preview backup projects, then import selected projects by merging independent
+  copies or replacing the whole database.
 - Keep project data after closing and restarting the application. Reading
   positions and sidebar collapse state reset when the browser reloads.
 - Use the main flow at desktop and mobile browser widths.
@@ -86,37 +137,6 @@ composer for consecutive messages until you choose **You**. Sender names are
 plain attribution text; On Track still has no participant accounts or shared
 project access.
 
-## Quick start
-
-### Prerequisite
-
-On Windows, install [Node.js](https://nodejs.org/) 24 LTS. On macOS or Linux,
-install Node.js 22.16 or newer on the Node 22 LTS line, or Node.js 24 LTS (npm is
-included). Then download or clone this repository and open a terminal in its
-folder. Odd-numbered Node releases are not supported.
-
-### First run — one command
-
-```sh
-npm run quickstart
-```
-
-This installs the exact locked dependencies, builds the browser UI and local
-server, applies database migrations, and starts On Track. Open
-[http://127.0.0.1:4173](http://127.0.0.1:4173).
-
-Press **Ctrl+C** in that terminal to stop the application. Your project data
-remains on your computer for the next start.
-
-### Later starts
-
-```sh
-npm start
-```
-
-If you download a newer source version, run `npm run quickstart` once again so
-its exact dependencies and build output are refreshed.
-
 ## Where your data lives
 
 On Track stores `on-track.sqlite` and managed attachment files in the operating
@@ -131,10 +151,28 @@ system's application-data folder, **outside the Git checkout**:
 SQLite databases, journals, backups, exports, and common local development
 artifacts are ignored by Git. The release check also fails if a database file is
 ever tracked. Use the Settings button at the bottom of the sidebar to export or
-restore a versioned backup bundle. Restore replaces current local projects and
-files rather than merging them. The current checkout uses schema 6 and accepts
-schema-6 backups plus strictly validated schema-5, schema-4 development, and
-v0.0.4/schema-3 backups; it does not restore v0.0.3/schema-2 bundles. Older
+import a versioned backup bundle. Export and import lists select all projects by
+default, including pinned and archived projects. **Export all** always includes
+every project; **Export selected** includes only checked projects and their files.
+
+Import first previews the backup. **Merge DB** (the default) adds selected projects
+as independent copies, preserving existing projects. Names that exactly match an
+existing or another imported project receive a UTC import timestamp, for example
+`Roadmap_2026-09-09_14-30-00Z`, and a counter when needed. **Replace whole DB**
+removes all current projects and files after confirmation; only the selected
+imported projects remain. Neither mode merges individual messages.
+
+Preview and import each transfer the file locally for validation. Do not retry
+an import automatically if its result could not be confirmed; refresh and inspect
+your projects first. Backups remain plaintext. Each bundle is limited to 2 GiB,
+10,000 attachments, 100 MiB per attachment, and 1 GiB total attachment bytes.
+Explicit project selections allow up to 10,000 projects and 1 MiB of options.
+A merge can grow the workspace beyond one bundle's limits; use selective export
+for smaller project sets.
+
+The current checkout uses schema 7 and accepts schema-7 and schema-6 backups plus
+strictly validated schema-5, schema-4 development, and v0.0.4/schema-3 backups; it
+does not restore v0.0.3/schema-2 bundles. Older
 supported databases migrate during startup. You can isolate evaluation data
 with an absolute disposable path:
 
@@ -163,6 +201,7 @@ application-data directory can currently read the database and attachments.
 - [Apache-2.0 license decision](docs/adr/0005-apache-2-license.md)
 - [Managed attachment and native-action decision](docs/adr/0006-managed-mutable-attachments-and-native-file-actions.md)
 - [Node 22/24 runtime decision](docs/adr/0007-node-22-and-24-runtime-support.md)
+- [Managed CLI delivery decision](docs/adr/0008-managed-install-and-cli.md)
 - [Security policy](SECURITY.md)
 
 ## License

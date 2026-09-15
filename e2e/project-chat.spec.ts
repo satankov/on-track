@@ -675,8 +675,8 @@ test("uses compact desktop chrome and an auto-growing composer", async ({
   });
 
   expect(geometry.header.height).toBeLessThanOrEqual(64);
-  expect(geometry.composer.height).toBeLessThanOrEqual(72);
-  expect(geometry.history.height).toBeGreaterThanOrEqual(672);
+  expect(geometry.composer.height).toBeLessThanOrEqual(116);
+  expect(geometry.history.height).toBeGreaterThanOrEqual(628);
   expect(geometry.filters.top).toBeCloseTo(geometry.history.top, 0);
   expect(geometry.filters.bottom).toBeCloseTo(geometry.history.bottom, 0);
   expect(geometry.filters.right).toBeLessThanOrEqual(geometry.history.left + 1);
@@ -1275,7 +1275,7 @@ test("manages markdown messages and database backups from the UI", async ({
   }
   await page.getByRole("button", { name: /Settings/ }).click();
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export backup" }).click();
+  await page.getByRole("button", { name: "Export all" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(
     /on-track-\d{4}-\d{2}-\d{2}\.on-track-backup/,
@@ -1298,7 +1298,10 @@ test("manages markdown messages and database backups from the UI", async ({
     .getByLabel("Choose On Track backup")
     .setInputFiles(backupPath ?? "");
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Restore backup" }).click();
+  await page.getByRole("radio", { name: "Replace whole DB" }).check();
+  await page.getByRole("button", { name: /Replace with selected/ }).click();
+  await expect(page.getByRole("status")).toContainText("restored");
+  await page.getByRole("button", { name: "Back to projects" }).click();
 
   await expect(
     page.getByRole("button", { name: `Open ${exportedProject.title}` }),
@@ -2052,4 +2055,400 @@ test("keeps keyboard focus when a project moves into a collapsed section", async
     .focus();
   await page.keyboard.press("Enter");
   await expect(projectsHeader).toBeFocused();
+});
+
+test("drops files into new and edited messages with a visible target", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chromium");
+  const project = await createProject(request, localApp.url, {
+    title: "Dropped attachments",
+    accent: "ocean",
+  });
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  const composer = page.locator(".composer");
+  await page.getByLabel("Add a note").fill("Keep this draft while dropping");
+
+  const firstDrop = await page.evaluateHandle(() => {
+    const transfer = new DataTransfer();
+    transfer.items.add(
+      new File(["original file"], "original.txt", { type: "text/plain" }),
+    );
+    return transfer;
+  });
+  await page
+    .locator(".history")
+    .dispatchEvent("dragenter", { dataTransfer: firstDrop });
+  const addPrompt = page.getByText("Drop files here to attach", {
+    exact: true,
+  });
+  await expect(addPrompt).toBeVisible();
+  await composer.dispatchEvent("dragenter", { dataTransfer: firstDrop });
+  await composer.dispatchEvent("dragover", { dataTransfer: firstDrop });
+  await expect(addPrompt).toBeVisible();
+  await composer.dispatchEvent("drop", { dataTransfer: firstDrop });
+  await expect(addPrompt).toBeHidden();
+  await expect(page.getByLabel("Add a note")).toHaveValue(
+    "Keep this draft while dropping",
+  );
+  await expect(composer.locator(".pending-attachment")).toHaveCount(1);
+  await expect(page.locator(".message-row")).toHaveCount(0);
+  await page.getByRole("button", { name: "Add note", exact: true }).click();
+  const message = page.locator(".message-row");
+  await expect(message.locator(".attachment-card")).toHaveCount(1);
+  await message.getByRole("button", { name: "Edit message" }).click();
+  const secondDrop = await page.evaluateHandle(() => {
+    const transfer = new DataTransfer();
+    transfer.items.add(
+      new File(["added file"], "added.txt", { type: "text/plain" }),
+    );
+    return transfer;
+  });
+  await page
+    .locator(".history")
+    .dispatchEvent("dragenter", { dataTransfer: secondDrop });
+  await expect(
+    page.getByText("Drop files here to attach to this message", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await composer.dispatchEvent("dragover", { dataTransfer: secondDrop });
+  await composer.dispatchEvent("drop", { dataTransfer: secondDrop });
+  await expect(composer.locator(".pending-attachment")).toHaveCount(2);
+  await expect(
+    composer.getByText("original.txt", { exact: true }),
+  ).toBeVisible();
+  await expect(composer.getByText("added.txt", { exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Edit message" })).toHaveValue(
+    "Keep this draft while dropping",
+  );
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(message.locator(".attachment-card")).toHaveCount(2);
+  await page.reload();
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  await expect(
+    message.getByRole("button", { name: "Open original.txt", exact: true }),
+  ).toBeVisible();
+  await expect(
+    message.getByRole("button", { name: "Open added.txt", exact: true }),
+  ).toBeVisible();
+  await firstDrop.dispose();
+  await secondDrop.dispose();
+});
+
+test("keeps full-width add and edit text above the composer toolbar", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  const project = await createProject(request, localApp.url, {
+    title: "Full width composer",
+    accent: "ocean",
+  });
+  await addNote(request, localApp.url, project.id, "An editable message");
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  const widths =
+    testInfo.project.name === "desktop-chromium"
+      ? [1440, 1024, 800]
+      : [390, 320];
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: 900 });
+    const textarea = page.locator("[data-composer-textarea]");
+    const readLayout = () =>
+      page.locator(".composer").evaluate((element) => {
+        const field = element
+          .querySelector("textarea")!
+          .getBoundingClientRect();
+        const bar = element
+          .querySelector(".composer-bar")!
+          .getBoundingClientRect();
+        const tools = element
+          .querySelector(".composer-tools")!
+          .getBoundingClientRect();
+        const shell = element.getBoundingClientRect();
+        const buttons = [
+          ...element.querySelectorAll(".composer-bar button"),
+        ].map((button) => button.getBoundingClientRect());
+        return {
+          width: field.width,
+          fieldBottom: field.bottom,
+          barTop: bar.top,
+          barLeft: bar.left,
+          barRight: bar.right,
+          fieldLeft: field.left,
+          fieldRight: field.right,
+          toolsLeft: tools.left,
+          shellLeft: shell.left,
+          shellRight: shell.right,
+          buttonTops: buttons.map((box) => box.top),
+          buttonRights: buttons.map((box) => box.right),
+        };
+      });
+    await textarea.fill("One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight");
+    await expect(textarea).toHaveCSS("overflow-y", "hidden");
+    const add = await readLayout();
+    expect(add.barTop).toBeGreaterThanOrEqual(add.fieldBottom - 1);
+    expect(add.fieldLeft).toBeCloseTo(add.barLeft, 0);
+    expect(add.fieldRight).toBeCloseTo(add.barRight, 0);
+    expect(add.toolsLeft).toBeGreaterThanOrEqual(add.barLeft);
+    expect(add.toolsLeft - add.barLeft).toBeLessThanOrEqual(12);
+    expect(Math.min(...add.buttonTops)).toBeGreaterThanOrEqual(
+      add.fieldBottom - 1,
+    );
+    expect(Math.max(...add.buttonRights)).toBeLessThanOrEqual(add.shellRight);
+    const height = await textarea.evaluate((element) => element.clientHeight);
+    await textarea.fill("One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine");
+    await expect(textarea).toHaveCSS("overflow-y", "auto");
+    expect(await textarea.evaluate((element) => element.clientHeight)).toBe(
+      height,
+    );
+    await textarea.fill("");
+    await page
+      .getByRole("button", { name: "Edit message", exact: true })
+      .click();
+    await textarea.fill("One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight");
+    const edit = await readLayout();
+    expect(edit.width).toBeCloseTo(add.width, 0);
+    expect(edit.barTop).toBeGreaterThanOrEqual(edit.fieldBottom - 1);
+    expect(Math.min(...edit.buttonTops)).toBeGreaterThanOrEqual(
+      edit.fieldBottom - 1,
+    );
+    expect(Math.max(...edit.buttonRights)).toBeLessThanOrEqual(edit.shellRight);
+    await expect(
+      page.getByRole("button", { name: "Cancel", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Save", exact: true }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath(`composer-edit-${width}.png`),
+    });
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  }
+});
+
+test("restores All after filters and positions each filtered current-future boundary", async ({
+  page,
+  request,
+  localApp,
+}) => {
+  const project = await createProject(request, localApp.url, {
+    title: "Filter reading positions",
+    accent: "ocean",
+  });
+  const now = Date.now();
+  for (let index = 0; index < 32; index += 1) {
+    const kind = index % 2 === 0 ? "File" : "Link";
+    const future = index >= 24;
+    const response = await request.post(
+      `${localApp.url}/api/chats/${project.id}/notes`,
+      {
+        multipart: {
+          body: `${kind} ${future ? "future" : "current"} ${index}. ${"Reading context. ".repeat(20)}${kind === "Link" ? " https://example.com" : ""}`,
+          createdAt: String(
+            future
+              ? now + (index - 23) * 86_400_000
+              : now - (24 - index) * 60_000,
+          ),
+          ...(kind === "File"
+            ? {
+                files: {
+                  name: `context-${index}.txt`,
+                  mimeType: "text/plain",
+                  buffer: Buffer.from("context"),
+                },
+              }
+            : {}),
+        },
+      },
+    );
+    expect(response.ok()).toBe(true);
+  }
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  const history = page.locator(".history");
+  await expect
+    .poll(() => history.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(300);
+  await history.evaluate(async (element) => {
+    element.scrollTop = 310;
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+  });
+  const remembered = await history.evaluate((element) => element.scrollTop);
+  const assertBoundary = async (kind: string, firstIndex: number) => {
+    await expect(page.locator(".message-row")).toHaveCount(16);
+    const geometry = () =>
+      history.evaluate(
+        (element, input) => {
+          const rows = [
+            ...element.querySelectorAll<HTMLElement>(".message-row"),
+          ];
+          const rowBox = (text: string) =>
+            rows
+              .find((row) => row.textContent?.includes(text))!
+              .getBoundingClientRect();
+          const first = rowBox(`${input.kind} future ${input.firstIndex}.`);
+          const second = rowBox(
+            `${input.kind} future ${input.firstIndex + 2}.`,
+          );
+          const current = rowBox(
+            `${input.kind} current ${input.firstIndex - 2}.`,
+          );
+          const viewport = element.getBoundingClientRect();
+          return {
+            top: element.scrollTop,
+            firstTop: first.top,
+            firstBottom: first.bottom,
+            secondTop: second.top,
+            currentBottom: current.bottom,
+            viewportTop: viewport.top,
+            viewportBottom: viewport.bottom,
+          };
+        },
+        { kind, firstIndex },
+      );
+    await expect.poll(async () => (await geometry()).top).toBeGreaterThan(300);
+    await expect
+      .poll(
+        async () =>
+          (await geometry()).firstTop - (await geometry()).viewportBottom,
+      )
+      .toBeLessThan(0);
+    const placed = await geometry();
+    expect(placed.firstBottom).toBeGreaterThan(placed.viewportTop);
+    expect(placed.secondTop).toBeGreaterThanOrEqual(placed.viewportBottom - 2);
+    expect(placed.currentBottom).toBeGreaterThan(placed.viewportTop);
+  };
+  await page.getByRole("button", { name: "Files 16", exact: true }).click();
+  await assertBoundary("File", 24);
+  await history.evaluate((element) => {
+    element.scrollTop = 110;
+  });
+  await page.getByRole("button", { name: "Links 16", exact: true }).click();
+  await assertBoundary("Link", 25);
+  await history.evaluate(async (element) => {
+    element.scrollTop = 140;
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+  });
+  await page.getByRole("button", { name: "Links 16", exact: true }).click();
+  expect(await history.evaluate((element) => element.scrollTop)).toBeCloseTo(
+    140,
+    0,
+  );
+  await page.getByRole("button", { name: "All 32", exact: true }).click();
+  await expect
+    .poll(() => history.evaluate((element) => element.scrollTop))
+    .toBeCloseTo(remembered, 0);
+});
+
+test("keeps expanded edit controls reachable at 200 percent reflow", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chromium");
+  const project = await createProject(request, localApp.url, {
+    title: "Expanded composer reflow",
+    accent: "ocean",
+  });
+  await addNote(request, localApp.url, project.id, "Keep editing available");
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  await page.getByRole("button", { name: "Edit message", exact: true }).click();
+  await page.getByRole("button", { name: /Show sender options/ }).click();
+  await page.getByRole("textbox", { name: "Sender name" }).fill("Alex Morgan");
+  await page
+    .getByRole("button", { name: "Choose timestamp", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Show Markdown assistance", exact: true })
+    .click();
+  await page.getByLabel("Attach files", { exact: true }).setInputFiles({
+    name: "review-notes.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Keep this file while editing"),
+  });
+  const field = page.getByRole("textbox", {
+    name: "Edit message",
+    exact: true,
+  });
+  await field.fill("One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine");
+  // 720 × 450 CSS pixels applies the reflow pressure of 1440 × 900 at 200%.
+  await page.setViewportSize({ width: 720, height: 450 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const save = page.getByRole("button", { name: "Save", exact: true });
+  const cancel = page.getByRole("button", { name: "Cancel", exact: true });
+  await expect(save).toBeInViewport({ ratio: 1 });
+  await expect(cancel).toBeInViewport({ ratio: 1 });
+  const layout = await page.locator(".composer").evaluate((element) => ({
+    right: element.getBoundingClientRect().right,
+    bottom: element.getBoundingClientRect().bottom,
+    width: window.innerWidth,
+    height: window.innerHeight,
+    documentWidth: document.documentElement.scrollWidth,
+    top: element.getBoundingClientRect().top,
+    historyBottom: document.querySelector(".history")!.getBoundingClientRect()
+      .bottom,
+  }));
+  expect(layout.historyBottom).toBeLessThanOrEqual(layout.top);
+  expect(layout.right).toBeLessThanOrEqual(layout.width);
+  expect(layout.bottom).toBeLessThanOrEqual(layout.height);
+  expect(layout.documentWidth).toBeLessThanOrEqual(layout.width);
+  await field.focus();
+  await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("button", { name: /Hide sender options/ }),
+  ).toBeFocused();
+  for (
+    let index = 0;
+    index < 8 &&
+    !(await save.evaluate((element) => element === document.activeElement));
+    index += 1
+  ) {
+    await page.keyboard.press("Tab");
+  }
+  await expect(save).toBeFocused();
+  await expect(save).toBeInViewport({ ratio: 1 });
+  expect(
+    await save.evaluate((element) =>
+      parseFloat(getComputedStyle(element).outlineWidth),
+    ),
+  ).toBeGreaterThan(0);
+  await page.getByRole("button", { name: /Hide sender options/ }).click();
+  await page.locator(".composer-content").evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await page.getByRole("button", { name: /Show sender options/ }).click();
+  await expect(
+    page.getByRole("textbox", { name: "Sender name" }),
+  ).toBeInViewport({ ratio: 1 });
+  for (const utility of [
+    {
+      hide: "Hide timestamp",
+      show: "Choose timestamp",
+      selector: ".composer-timestamp-row",
+    },
+    {
+      hide: "Hide Markdown assistance",
+      show: "Show Markdown assistance",
+      selector: ".markdown-tools-strip",
+    },
+  ]) {
+    await page.getByRole("button", { name: utility.hide, exact: true }).click();
+    await page.locator(".composer-content").evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await page.getByRole("button", { name: utility.show, exact: true }).click();
+    await expect(page.locator(utility.selector)).toBeInViewport({ ratio: 1 });
+  }
+  await expect(save).toBeInViewport({ ratio: 1 });
+  await page.screenshot({
+    path: testInfo.outputPath("composer-expanded-200-percent-reflow.png"),
+  });
 });

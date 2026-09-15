@@ -1,0 +1,59 @@
+name: Managed lifecycle and update fixtures
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: managed-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  managed:
+    name: Managed Node 24 (${{ matrix.os }}, ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: x64
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x64
+          - os: windows-2025
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Use Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          architecture: ${{ matrix.arch }}
+          cache: npm
+      - name: Verify runtime architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: node -e "require('node:assert/strict').equal(process.arch, process.env.EXPECTED_ARCH)"
+      - name: Install locked test dependencies
+        run: npm ci
+      - name: Test ownership, authenticated control, and durable recovery
+        run: npm test -- src/server/runtime src/server/cli
+      - name: Exercise prepared installation and background commands
+        run: npm run test:managed-install
+      - name: Exercise real migration, failed-candidate recovery, and restart
+        run: npm run test:managed-update
+
+# These tests use copied Node/built sources and existing dependency junctions in
+# disposable roots. They do not claim clean online bootstrap, absence of compiler
+# tools, or actual GUI-terminal-close behavior; those remain separate release
+# evidence. Keep the existing manual Node 22.16/24 CI matrix intact.

@@ -47,20 +47,46 @@ jobs:
       - name: Run authoritative verification
         run: npm run verify
 
+  managed:
+    name: Verify managed platforms
+    uses: ./.github/workflows/managed-install.yml
+
   publish:
     name: Publish GitHub Release
-    needs: verify
+    needs: [verify, managed]
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
-      - name: Create immutable release record
+      - name: Check out verified source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Use pinned managed Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.14.0
+          cache: npm
+      - name: Build packaging tools
+        run: |
+          npm ci
+          npm run build
+      - name: Verify official private runtime archives
+        run: node scripts/verify-managed-runtime.mjs
+      - name: Build fixed release assets
+        env:
+          MANAGED_MINIMUM_VERSION: ${{ vars.MANAGED_MINIMUM_VERSION }}
+        run: |
+          if [ -z "$MANAGED_MINIMUM_VERSION" ]; then
+            echo 'Set MANAGED_MINIMUM_VERSION to the reviewed first protocol-aware release before publishing.' >&2
+            exit 1
+          fi
+          npm run release:managed -- --output "$RUNNER_TEMP/ontrack-managed-assets" --minimum-version "$MANAGED_MINIMUM_VERSION"
+      - name: Upload all assets to draft before immutable publication
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "$GITHUB_REF_NAME"
-          --repo "$GITHUB_REPOSITORY"
-          --verify-tag
-          --generate-notes
-          --title "On Track $GITHUB_REF_NAME"
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP"/ontrack-managed-assets/* \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --draft --generate-notes \
+            --notes-file "$RUNNER_TEMP/ontrack-managed-assets/INSTALL.md" \
+            --title "On Track $GITHUB_REF_NAME"
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false

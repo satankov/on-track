@@ -3,8 +3,23 @@ import type {
   ChatDetail,
   Note,
   ProjectPinState,
+  ProjectArchiveState,
 } from "../domain/types.js";
 import type { Label } from "../domain/validation.js";
+import type {
+  BackupPreview,
+  ImportOptions,
+  ImportResult,
+  ProjectSelection,
+} from "../domain/database-transfer.js";
+export class ImportOutcomeUnknownError extends Error {
+  constructor() {
+    super(
+      "The import result could not be confirmed. Refresh and check your projects before importing again.",
+    );
+    this.name = "ImportOutcomeUnknownError";
+  }
+}
 import type {
   CreateChatInput,
   CreateNoteInput,
@@ -17,6 +32,7 @@ export interface ApiClient {
   getChat(id: string): Promise<ChatDetail>;
   createChat(input: CreateChatInput): Promise<Chat>;
   updateChat(id: string, input: UpdateChatInput): Promise<Chat>;
+  setChatArchived(id: string, archived: boolean): Promise<ProjectArchiveState>;
   setChatPinned(id: string, pinned: boolean): Promise<ProjectPinState>;
   deleteChat(id: string): Promise<void>;
   appendNote(id: string, input: CreateNoteInput): Promise<Note>;
@@ -42,8 +58,9 @@ export interface ApiClient {
     noteId: string,
     attachmentId: string,
   ): Promise<void>;
-  exportDatabase(): Promise<Blob>;
-  importDatabase(file: Blob): Promise<void>;
+  exportDatabase(selection?: ProjectSelection): Promise<Blob>;
+  previewDatabase(file: Blob): Promise<BackupPreview>;
+  importDatabase(file: Blob, options: ImportOptions): Promise<ImportResult>;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -83,6 +100,13 @@ export const apiClient: ApiClient = {
       method: "PATCH",
       body: JSON.stringify(input),
     }),
+  setChatArchived: (id, archived) =>
+    request<ProjectArchiveState>(
+      `/api/chats/${encodeURIComponent(id)}/archive`,
+      {
+        method: archived ? "PUT" : "DELETE",
+      },
+    ),
   setChatPinned: (id, pinned) =>
     request<ProjectPinState>(`/api/chats/${encodeURIComponent(id)}/pin`, {
       method: pinned ? "PUT" : "DELETE",
@@ -132,14 +156,23 @@ export const apiClient: ApiClient = {
       { method: "POST", body: "{}" },
     );
   },
-  exportDatabase: async () => {
-    const response = await fetch("/api/database/export");
+  exportDatabase: async (selection = "all") => {
+    const response = await fetch(
+      "/api/database/export",
+      selection === "all"
+        ? undefined
+        : {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ selection }),
+          },
+    );
     if (!response.ok) throw new Error("The database could not be exported.");
     return response.blob();
   },
-  importDatabase: async (file) => {
-    const response = await fetch("/api/database/import", {
-      method: "PUT",
+  previewDatabase: async (file) => {
+    const response = await fetch("/api/database/import/preview", {
+      method: "POST",
       headers: {
         "Content-Type": "application/vnd.on-track.backup+sqlite",
       },
@@ -149,9 +182,35 @@ export const apiClient: ApiClient = {
       const payload = (await response.json().catch(() => null)) as {
         message?: string;
       } | null;
+      throw new Error(payload?.message ?? "The backup could not be previewed.");
+    }
+    return response.json() as Promise<BackupPreview>;
+  },
+  importDatabase: async (file, options) => {
+    const form = new FormData();
+    form.set("options", JSON.stringify(options));
+    form.append("file", file, "backup.on-track-backup");
+    let response: Response;
+    try {
+      response = await fetch("/api/database/import", {
+        method: "POST",
+        body: form,
+      });
+    } catch {
+      throw new ImportOutcomeUnknownError();
+    }
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as {
+        message?: string;
+      } | null;
       throw new Error(
         payload?.message ?? "The database could not be imported.",
       );
+    }
+    try {
+      return (await response.json()) as ImportResult;
+    } catch {
+      throw new ImportOutcomeUnknownError();
     }
   },
 };

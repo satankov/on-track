@@ -5,6 +5,7 @@ import type {
   Note,
   NoteAttachment,
   ProjectPinState,
+  ProjectArchiveState,
   StoredNoteAttachment,
 } from "../../domain/types.js";
 import { MAX_PROJECT_PREVIEW_SOURCE_LENGTH } from "../../domain/types.js";
@@ -24,6 +25,7 @@ interface ChatRow {
   accent: Accent;
   created_at: number;
   updated_at: number;
+  archived_at: number | null;
   pinned_at: number | null;
   collapse_long_messages: 0 | 1;
 }
@@ -72,6 +74,7 @@ function toChat(
     collapseLongMessages: row.collapse_long_messages === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    archivedAt: row.archived_at,
     pinnedAt: row.pinned_at,
     ...summary,
   };
@@ -113,6 +116,12 @@ function toNote(
   };
 }
 
+export class ArchivedProjectPinError extends Error {
+  constructor() {
+    super("Restore this project before pinning it.");
+  }
+}
+
 export class InvalidAttachmentSelectionError extends Error {
   constructor() {
     super("An attachment selection does not belong to this message.");
@@ -152,9 +161,11 @@ export class SqliteChatRepository {
     const rows = this.database
       .prepare(
         `SELECT * FROM chats
-         ORDER BY pinned_at IS NULL ASC,
+         ORDER BY archived_at IS NOT NULL ASC,
+                  archived_at DESC,
+                  pinned_at IS NULL ASC,
                   pinned_at DESC,
-                  CASE WHEN pinned_at IS NULL THEN updated_at END DESC,
+                  CASE WHEN pinned_at IS NULL AND archived_at IS NULL THEN updated_at END DESC,
                   id ASC`,
       )
       .all() as ChatRow[];
@@ -236,6 +247,9 @@ export class SqliteChatRepository {
     pinned: boolean,
     now: number,
   ): ProjectPinState | undefined {
+    if (pinned && this.getChat(id, now)?.archivedAt != null) {
+      throw new ArchivedProjectPinError();
+    }
     this.database
       .prepare(
         pinned
@@ -251,6 +265,27 @@ export class SqliteChatRepository {
       .prepare("SELECT pinned_at FROM chats WHERE id = ?")
       .get(id) as { pinned_at: number | null } | undefined;
     return row ? { pinnedAt: row.pinned_at } : undefined;
+  }
+
+  setChatArchived(
+    id: string,
+    archived: boolean,
+    now: number,
+  ): ProjectArchiveState | undefined {
+    this.database
+      .prepare(
+        archived
+          ? `UPDATE chats SET archived_at = COALESCE(archived_at, @now), pinned_at = NULL WHERE id = @id`
+          : `UPDATE chats SET archived_at = NULL WHERE id = @id`,
+      )
+      .run({ id, now });
+    const row = this.database
+      .prepare("SELECT archived_at, pinned_at FROM chats WHERE id = ?")
+      .get(id) as
+      { archived_at: number | null; pinned_at: number | null } | undefined;
+    return row
+      ? { archivedAt: row.archived_at, pinnedAt: row.pinned_at }
+      : undefined;
   }
 
   deleteChat(id: string): { deleted: boolean; storagePaths: string[] } {

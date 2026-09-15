@@ -10,11 +10,17 @@ export interface Chat {
   collapseLongMessages: boolean;
   createdAt: number;
   updatedAt: number;
+  archivedAt: number | null;
   pinnedAt: number | null;
   latestMessagePreview: string | null;
   nextMessageAt: number | null;
   latestAttentionAt: number | null;
   nextAttentionAt: number | null;
+}
+
+export interface ProjectArchiveState {
+  archivedAt: number | null;
+  pinnedAt: number | null;
 }
 
 export interface ProjectPinState {

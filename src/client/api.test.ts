@@ -5,6 +5,64 @@ import { apiClient } from "./api.js";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("browser API client", () => {
+  it("sends selection options, validates preview flow, and distinguishes unknown import outcomes", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("backup"))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ digest: "a".repeat(64), projects: [] })),
+      )
+      .mockRejectedValueOnce(new Error("network lost"))
+      .mockResolvedValueOnce(new Response("not-json"));
+    vi.stubGlobal("fetch", fetchMock);
+    await apiClient.exportDatabase(["project-a"]);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/database/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selection: ["project-a"] }),
+    });
+    expect(await apiClient.previewDatabase(new Blob(["backup"]))).toEqual({
+      digest: "a".repeat(64),
+      projects: [],
+    });
+    const options = {
+      mode: "merge" as const,
+      selection: "all" as const,
+      digest: "a".repeat(64),
+    };
+    await expect(
+      apiClient.importDatabase(new Blob(["backup"]), options),
+    ).rejects.toThrow("Refresh and check your projects");
+    await expect(
+      apiClient.importDatabase(new Blob(["backup"]), options),
+    ).rejects.toThrow("Refresh and check your projects");
+    const form = fetchMock.mock.calls[2][1].body as FormData;
+    expect([...form.keys()]).toEqual(["options", "file"]);
+    expect(form.get("options")).toBe(JSON.stringify(options));
+  });
+  it("uses idempotent archive routes with encoded project IDs", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ archivedAt: null, pinnedAt: null }), {
+          status: 200,
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await apiClient.setChatArchived("project/one", true);
+    await apiClient.setChatArchived("project/one", false);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/chats/project%2Fone/archive",
+      expect.objectContaining({ method: "PUT" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/chats/project%2Fone/archive",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
   it("does not expose the removed browser attachment download API", () => {
     expect(apiClient).not.toHaveProperty("downloadAttachment");
   });
@@ -102,7 +160,11 @@ describe("browser API client", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/chats/project%2Fone", {
       method: "DELETE",
     });
-    expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/database/export");
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/database/export",
+      undefined,
+    );
     expect(await exported.text()).toBe("SQLite format 3");
   });
 
@@ -160,7 +222,11 @@ describe("browser API client", () => {
       files: [],
     });
     await apiClient.deleteNote("project/one", "note/two");
-    await apiClient.importDatabase(new Blob(["SQLite format 3"]));
+    await apiClient.importDatabase(new Blob(["SQLite format 3"]), {
+      mode: "merge",
+      selection: "all",
+      digest: "a".repeat(64),
+    });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -181,11 +247,8 @@ describe("browser API client", () => {
       { method: "DELETE" },
     );
     expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/database/import", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/vnd.on-track.backup+sqlite",
-      },
-      body: expect.any(Blob),
+      method: "POST",
+      body: expect.any(FormData),
     });
   });
 
@@ -353,11 +416,19 @@ describe("browser API client", () => {
     await expect(apiClient.exportDatabase()).rejects.toThrow(
       "The database could not be exported.",
     );
-    await expect(apiClient.importDatabase(new Blob(["bad"]))).rejects.toThrow(
-      "Invalid backup.",
-    );
-    await expect(apiClient.importDatabase(new Blob(["bad"]))).rejects.toThrow(
-      "The database could not be imported.",
-    );
+    await expect(
+      apiClient.importDatabase(new Blob(["bad"]), {
+        mode: "merge",
+        selection: "all",
+        digest: "a".repeat(64),
+      }),
+    ).rejects.toThrow("Invalid backup.");
+    await expect(
+      apiClient.importDatabase(new Blob(["bad"]), {
+        mode: "merge",
+        selection: "all",
+        digest: "a".repeat(64),
+      }),
+    ).rejects.toThrow("The database could not be imported.");
   });
 });

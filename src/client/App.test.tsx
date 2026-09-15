@@ -38,6 +38,7 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
     }),
     updateChat: vi.fn(),
     setChatPinned: vi.fn(),
+    setChatArchived: vi.fn(),
     deleteChat: vi.fn(),
     appendNote: vi.fn(),
     updateNote: vi.fn(),
@@ -46,12 +47,532 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
     openAttachment: vi.fn(),
     revealAttachment: vi.fn(),
     exportDatabase: vi.fn(),
-    importDatabase: vi.fn(),
+    previewDatabase: vi.fn().mockResolvedValue({
+      digest: "a".repeat(64),
+      projects: [
+        {
+          id: "source",
+          title: "Source",
+          createdAt: 1,
+          pinnedAt: null,
+          archivedAt: null,
+          messageCount: 0,
+          attachmentCount: 0,
+        },
+      ],
+    }),
+    importDatabase: vi
+      .fn()
+      .mockResolvedValue({ importedCount: 1, renames: [] }),
     ...overrides,
   };
 }
 
 describe("personal project chat workspace", () => {
+  it.each([false, true])(
+    "attaches dropped files in the shared composer (editing: %s)",
+    async (editing) => {
+      const user = userEvent.setup();
+      const chat = {
+        id: "drop-chat",
+        title: "File drops",
+        accent: "ocean" as const,
+        createdAt: 1,
+        updatedAt: 2,
+      };
+      const note = {
+        id: "drop-note",
+        chatId: chat.id,
+        body: "Original context",
+        createdAt: 2,
+        attachments: [
+          {
+            id: "kept-file",
+            noteId: "drop-note",
+            filename: "kept.txt",
+            mediaType: "text/plain",
+            byteSize: 1,
+            createdAt: 2,
+          },
+        ],
+      };
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+        appendNote: vi.fn().mockResolvedValue({ ...note, id: "new-note" }),
+        updateNote: vi.fn().mockResolvedValue(note),
+      });
+      render(<App api={api} />);
+      await user.click(
+        await screen.findByRole("button", { name: "Open File drops" }),
+      );
+      if (editing)
+        await user.click(screen.getByRole("button", { name: "Edit message" }));
+      const draft = screen.getByRole("textbox", {
+        name: editing ? "Edit message" : "Add a note",
+      });
+      if (!editing) await user.type(draft, "New context");
+      const files = [
+        new File(["dropped"], "dropped.txt", { type: "text/plain" }),
+      ];
+      const transfer = {
+        types: ["Files"],
+        items: [{ kind: "file" }],
+        files: [],
+      };
+      fireEvent.dragEnter(window, { dataTransfer: transfer });
+      expect(
+        screen.getByText(
+          editing
+            ? "Drop files here to attach to this message"
+            : "Drop files here to attach",
+        ),
+      ).toBeVisible();
+      fireEvent.drop(draft, { dataTransfer: { ...transfer, files } });
+      expect(
+        within(screen.getByLabelText("Pending files")).getByText("dropped.txt"),
+      ).toBeVisible();
+      expect(draft).toHaveValue(editing ? "Original context" : "New context");
+      if (editing)
+        expect(
+          within(screen.getByLabelText("Pending files")).getByText("kept.txt"),
+        ).toBeVisible();
+      expect(api.appendNote).not.toHaveBeenCalled();
+      expect(api.updateNote).not.toHaveBeenCalled();
+      await user.click(
+        screen.getByRole("button", {
+          name: editing ? "Save" : "Add note",
+        }),
+      );
+      if (editing)
+        expect(api.updateNote).toHaveBeenCalledWith(
+          chat.id,
+          note.id,
+          expect.objectContaining({
+            body: note.body,
+            files,
+            keepAttachmentIds: ["kept-file"],
+          }),
+        );
+      else
+        expect(api.appendNote).toHaveBeenCalledWith(
+          chat.id,
+          expect.objectContaining({ body: "New context", files }),
+        );
+    },
+  );
+
+  it("serializes changed backup previews to respect the server import guard", async () => {
+    const user = userEvent.setup();
+    const first = deferred<Awaited<ReturnType<ApiClient["previewDatabase"]>>>();
+    const api = createApi({
+      previewDatabase: vi
+        .fn()
+        .mockReturnValueOnce(first.promise)
+        .mockResolvedValue({ digest: "b".repeat(64), projects: [] }),
+    });
+    render(<App api={api} />);
+    await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.upload(
+      screen.getByLabelText("Choose On Track backup"),
+      new File(["one"], "one.on-track-backup"),
+    );
+    await user.upload(
+      screen.getByLabelText("Choose On Track backup"),
+      new File(["two"], "two.on-track-backup"),
+    );
+    expect(api.previewDatabase).toHaveBeenCalledTimes(1);
+    await act(async () => first.reject(new Error("old error")));
+    await waitFor(() => expect(api.previewDatabase).toHaveBeenCalledTimes(2));
+    expect(
+      await screen.findByText("No projects in this backup."),
+    ).toBeVisible();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+  it.each(["resolve", "reject"])(
+    "ignores a late initial list %s after a successful import",
+    async (outcome) => {
+      const user = userEvent.setup();
+      const initial = deferred<Awaited<ReturnType<ApiClient["listChats"]>>>();
+      const chat = {
+        id: "imported",
+        title: "Imported",
+        accent: "ocean" as const,
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      const api = createApi({
+        listChats: vi
+          .fn()
+          .mockReturnValueOnce(initial.promise)
+          .mockResolvedValue([chat]),
+      });
+      render(<App api={api} />);
+      await user.click(screen.getByRole("button", { name: /Settings/ }));
+      await user.upload(
+        screen.getByLabelText("Choose On Track backup"),
+        new File(["data"], "data.on-track-backup"),
+      );
+      await user.click(
+        await screen.findByRole("button", { name: "Merge selected (1)" }),
+      );
+      await screen.findByText("1 projects imported.");
+      await act(async () => {
+        if (outcome === "resolve") initial.resolve([]);
+        else initial.reject(new Error("stale failure"));
+      });
+      await user.click(
+        screen.getByRole("button", { name: "Back to projects" }),
+      );
+      expect(
+        screen.queryByRole("heading", { name: "Loading your projects." }),
+      ).toBeNull();
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Open Imported" }),
+      ).toBeVisible();
+    },
+  );
+  it.each(["merge", "replace"])(
+    "reports committed %s when refresh fails and preserves the correct draft state",
+    async (mode) => {
+      const user = userEvent.setup();
+      const chat = {
+        id: "original",
+        title: "Original",
+        accent: "ocean" as const,
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      const api = createApi({
+        listChats: vi
+          .fn()
+          .mockResolvedValueOnce([chat])
+          .mockRejectedValue(new Error("refresh failed")),
+        getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      });
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      render(<App api={api} />);
+      await user.click(
+        await screen.findByRole("button", { name: "Open Original" }),
+      );
+      await user.type(
+        screen.getByRole("textbox", { name: "Add a note" }),
+        "Keep my draft",
+      );
+      await user.click(screen.getByRole("button", { name: /Settings/ }));
+      await user.upload(
+        screen.getByLabelText("Choose On Track backup"),
+        new File(["data"], "data.on-track-backup"),
+      );
+      if (mode === "replace")
+        await user.click(
+          await screen.findByRole("radio", { name: "Replace whole DB" }),
+        );
+      await user.click(
+        await screen.findByRole("button", {
+          name:
+            mode === "merge"
+              ? "Merge selected (1)"
+              : "Replace with selected (1)",
+        }),
+      );
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Import completed",
+      );
+      expect(
+        screen.getByRole("button", {
+          name:
+            mode === "merge"
+              ? "Merge selected (1)"
+              : "Replace with selected (1)",
+        }),
+      ).toBeDisabled();
+      await user.click(
+        screen.getByRole("button", { name: "Back to projects" }),
+      );
+      if (mode === "merge")
+        expect(screen.getByRole("textbox", { name: "Add a note" })).toHaveValue(
+          "Keep my draft",
+        );
+      else
+        expect(screen.queryByRole("heading", { name: "Original" })).toBeNull();
+    },
+  );
+  it("defaults to merge and all imported projects, and imports only checked IDs", async () => {
+    const user = userEvent.setup();
+    const preview = {
+      digest: "a".repeat(64),
+      projects: ["one", "two"].map((id) => ({
+        id,
+        title: id,
+        createdAt: 1,
+        pinnedAt: null,
+        archivedAt: null,
+        messageCount: 0,
+        attachmentCount: 0,
+      })),
+    };
+    const api = createApi({
+      previewDatabase: vi.fn().mockResolvedValue(preview),
+      importDatabase: vi.fn().mockResolvedValue({
+        importedCount: 1,
+        renames: [{ original: "one", renamed: "one_timestamp" }],
+      }),
+    });
+    render(<App api={api} />);
+    await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.upload(
+      screen.getByLabelText("Choose On Track backup"),
+      new File(["data"], "data.on-track-backup"),
+    );
+    expect(
+      await screen.findByRole("radio", { name: "Merge DB" }),
+    ).toBeChecked();
+    const group = await screen.findByRole("group", {
+      name: "Projects to import",
+    });
+    expect(within(group).getByRole("checkbox", { name: /one/ })).toBeChecked();
+    await user.click(within(group).getByRole("checkbox", { name: /two/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Merge selected (1)" }),
+    );
+    await waitFor(() =>
+      expect(api.importDatabase).toHaveBeenCalledWith(expect.any(File), {
+        mode: "merge",
+        selection: ["one"],
+        digest: preview.digest,
+      }),
+    );
+    expect(await screen.findByText("one → one_timestamp")).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Backup settings" }),
+    ).toBeVisible();
+  });
+  it("keeps all three empty project groups visible and independently collapsible", async () => {
+    const user = userEvent.setup();
+    render(<App api={createApi()} />);
+    for (const name of ["Pinned", "Projects", "Archive"]) {
+      const header = await screen.findByRole("button", { name });
+      expect(header).toHaveTextContent("00");
+      expect(header).toHaveAttribute("aria-expanded", "true");
+      await user.click(header);
+      expect(header).toHaveAttribute("aria-expanded", "false");
+    }
+  });
+
+  it("keeps settings drafts and group state on archive failure and associates the error", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "archive",
+      title: "Failed archive",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const pending = deferred<{ archivedAt: number; pinnedAt: null }>();
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      setChatArchived: vi.fn().mockReturnValue(pending.promise),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Failed archive" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.type(screen.getByLabelText("Project name"), " draft");
+    const button = screen.getByRole("button", { name: "Archive project" });
+    await user.click(button);
+    for (const name of ["Save changes", "Delete project", "Pin Failed archive"])
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+    await act(async () => pending.reject(new Error("Try again")));
+    expect(button).toHaveFocus();
+    expect(button).toHaveAccessibleDescription("Try again");
+    expect(screen.getByLabelText("Project name")).toHaveValue(
+      "Failed archive draft",
+    );
+    expect(screen.getByRole("button", { name: "Archive" })).toHaveTextContent(
+      "00",
+    );
+  });
+
+  it("ignores stale archive reads started during a restore and preserves the selected draft", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "archive",
+      title: "Restore race",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+      archivedAt: 20,
+      pinnedAt: null,
+    };
+    const pending = deferred<{ archivedAt: null; pinnedAt: null }>();
+    const list = deferred<(typeof chat)[]>();
+    const detail = deferred<typeof chat & { notes: [] }>();
+    const api = createApi({
+      listChats: vi
+        .fn()
+        .mockResolvedValueOnce([chat])
+        .mockReturnValue(list.promise),
+      getChat: vi
+        .fn()
+        .mockResolvedValueOnce({ ...chat, notes: [] })
+        .mockReturnValue(detail.promise),
+      setChatArchived: vi.fn().mockReturnValue(pending.promise),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Restore race" }),
+    );
+    await user.type(screen.getByLabelText("Add a note"), "Keep my draft");
+    await user.click(
+      screen.getByRole("button", { name: "Restore Restore race from archive" }),
+    );
+    fireEvent(window, new Event("focus"));
+    await act(async () =>
+      pending.resolve({ archivedAt: null, pinnedAt: null }),
+    );
+    await act(async () => {
+      list.resolve([chat]);
+      detail.resolve({ ...chat, notes: [] });
+    });
+    expect(screen.getByRole("button", { name: "Archive" })).toHaveTextContent(
+      "00",
+    );
+    expect(
+      screen.getByRole("button", { name: "Pin Restore race" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByLabelText("Add a note")).toHaveValue("Keep my draft");
+  });
+
+  it("keeps failed sidebar restores in Archive with a retryable error", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "archive",
+      title: "Retry restore",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+      archivedAt: 20,
+      pinnedAt: null,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      setChatArchived: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Try again"))
+        .mockResolvedValueOnce({ archivedAt: null, pinnedAt: null }),
+    });
+    render(<App api={api} />);
+    const button = await screen.findByRole("button", {
+      name: "Restore Retry restore from archive",
+    });
+    await user.click(button);
+    expect(button).toHaveFocus();
+    expect(button).toHaveAccessibleDescription("Try again");
+    expect(screen.getByRole("button", { name: "Archive" })).toBeVisible();
+    await user.click(button);
+    expect(screen.getByRole("button", { name: "Archive" })).toHaveTextContent(
+      "00",
+    );
+  });
+
+  it("archives only from settings and preserves unsaved fields through both settings actions", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "archive",
+      title: "Archive journey",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+      archivedAt: null,
+      pinnedAt: 10,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      setChatArchived: vi
+        .fn()
+        .mockResolvedValueOnce({ archivedAt: 20, pinnedAt: null })
+        .mockResolvedValueOnce({ archivedAt: null, pinnedAt: null }),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Archive journey" }),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Archive project" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.clear(screen.getByLabelText("Project name"));
+    await user.type(screen.getByLabelText("Project name"), "Unsaved name");
+    await user.click(screen.getByRole("button", { name: "Archive project" }));
+    expect(api.setChatArchived).toHaveBeenCalledWith("archive", true);
+    expect(screen.getByRole("button", { name: "Archive" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(
+      screen.getByRole("button", { name: "Restore project" }),
+    ).toHaveFocus();
+    expect(screen.getByLabelText("Project name")).toHaveValue("Unsaved name");
+    expect(
+      screen.queryByRole("button", { name: "Pin Archive journey" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Restore project" }));
+    expect(api.setChatArchived).toHaveBeenLastCalledWith("archive", false);
+    expect(screen.getByRole("button", { name: "Archive" })).toHaveTextContent(
+      "00",
+    );
+    expect(screen.getByLabelText("Project name")).toHaveValue("Unsaved name");
+    expect(
+      screen.getByRole("button", { name: "Archive project" }),
+    ).toHaveFocus();
+  });
+
+  it.each([false, true])(
+    "restores an archived row with post-commit focus (Projects collapsed: %s)",
+    async (collapsed) => {
+      const user = userEvent.setup();
+      const chat = {
+        id: "archive",
+        title: "Archive journey",
+        accent: "ocean" as const,
+        createdAt: 1,
+        updatedAt: 1,
+        archivedAt: 20,
+        pinnedAt: null,
+      };
+      const pending = deferred<{ archivedAt: null; pinnedAt: null }>();
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        setChatArchived: vi.fn().mockReturnValue(pending.promise),
+      });
+      render(<App api={api} />);
+      const restore = await screen.findByRole("button", {
+        name: "Restore Archive journey from archive",
+      });
+      if (collapsed)
+        await user.click(screen.getByRole("button", { name: "Projects" }));
+      await user.click(restore);
+      expect(restore).toBeDisabled();
+      await act(async () =>
+        pending.resolve({ archivedAt: null, pinnedAt: null }),
+      );
+      expect(api.getChat).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "Archive" })).toHaveTextContent(
+        "00",
+      );
+      expect(
+        screen.getByRole("button", {
+          name: collapsed ? "Projects" : "Pin Archive journey",
+        }),
+      ).toHaveFocus();
+    },
+  );
+
   it("returns Home from a project and its editor, cancelling stale selections", async () => {
     const user = userEvent.setup();
     const chat = {
@@ -148,6 +669,7 @@ describe("personal project chat workspace", () => {
       accent: "ocean" as const,
       createdAt: 1,
       updatedAt: 1,
+      archivedAt: null,
       latestMessagePreview:
         "### Header\n\n**bold text** [Guide](https://example.com)",
     };
@@ -300,6 +822,7 @@ describe("personal project chat workspace", () => {
       accent: "moss" as const,
       enabledLabels: ["todo"] as ["todo"],
       createdAt: 1,
+      archivedAt: null,
       latestMessagePreview: null,
       nextMessageAt: null,
       latestAttentionAt: null,
@@ -313,6 +836,7 @@ describe("personal project chat workspace", () => {
           title: "Recent",
           updatedAt: 30,
           pinnedAt: null,
+          archivedAt: null,
           latestMessagePreview: "The latest project message",
           latestAttentionAt: now - 60_000,
         },
@@ -322,6 +846,7 @@ describe("personal project chat workspace", () => {
           title: "Pinned",
           updatedAt: 10,
           pinnedAt: 20,
+          archivedAt: null,
           latestMessagePreview: "A pinned project stays fixed",
           latestAttentionAt: now - 86_400_000,
         },
@@ -367,6 +892,7 @@ describe("personal project chat workspace", () => {
         createdAt: 1,
         updatedAt: 2,
         pinnedAt: null,
+        archivedAt: null,
         latestMessagePreview: "Ready to pin",
         nextMessageAt: null,
         latestAttentionAt: null,
@@ -415,6 +941,7 @@ describe("personal project chat workspace", () => {
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
+      archivedAt: null,
       latestMessagePreview: "Ready to pin",
       nextMessageAt: null,
       latestAttentionAt: null,
@@ -471,6 +998,7 @@ describe("personal project chat workspace", () => {
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
+      archivedAt: null,
       latestMessagePreview: "Ready to pin",
       nextMessageAt: null,
       latestAttentionAt: null,
@@ -487,9 +1015,9 @@ describe("personal project chat workspace", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Database busy");
     expect(pin).toHaveAttribute("aria-pressed", "false");
-    expect(
-      screen.queryByText("Pinned", { selector: ".rail-section-label span" }),
-    ).toBeNull();
+    expect(screen.getByRole("button", { name: "Pinned" })).toHaveTextContent(
+      "00",
+    );
     await waitFor(() => expect(pin).toHaveFocus());
   });
 
@@ -506,6 +1034,7 @@ describe("personal project chat workspace", () => {
       createdAt: now - 3_000,
       updatedAt: now - 1_000,
       pinnedAt: null,
+      archivedAt: null,
       latestMessagePreview: "Remove me",
       nextMessageAt: null,
       latestAttentionAt: null,
@@ -515,6 +1044,7 @@ describe("personal project chat workspace", () => {
       ...alpha,
       id: "beta",
       title: "Beta",
+      archivedAt: null,
       latestMessagePreview: "Beta note",
     };
     const api = createApi({
@@ -584,6 +1114,7 @@ describe("personal project chat workspace", () => {
       createdAt: now - 2_000,
       updatedAt: now - 1_000,
       pinnedAt: null,
+      archivedAt: null,
       latestMessagePreview: "Needs attention",
       nextMessageAt: null,
       latestAttentionAt: null,
@@ -593,6 +1124,7 @@ describe("personal project chat workspace", () => {
       ...alpha,
       id: "beta",
       title: "Beta",
+      archivedAt: null,
       latestMessagePreview: "Beta note",
     };
     const api = createApi({
@@ -644,6 +1176,7 @@ describe("personal project chat workspace", () => {
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
+      archivedAt: null,
       latestMessagePreview: "Future alert",
       nextMessageAt: null,
       latestAttentionAt: null,
@@ -681,6 +1214,7 @@ describe("personal project chat workspace", () => {
       createdAt: 1,
       updatedAt: now + 1_000,
       pinnedAt: null,
+      archivedAt: null,
       latestMessagePreview: "Current update",
       nextMessageAt: now + 1_000,
       latestAttentionAt: null,
@@ -692,6 +1226,7 @@ describe("personal project chat workspace", () => {
       .mockResolvedValueOnce([
         {
           ...chat,
+          archivedAt: null,
           latestMessagePreview: "Scheduled update",
           nextMessageAt: null,
         },
@@ -725,6 +1260,7 @@ describe("personal project chat workspace", () => {
       createdAt: 1,
       updatedAt: now + 1_000,
       pinnedAt: null,
+      archivedAt: null,
       latestMessagePreview: "Current update",
       nextMessageAt: now + 1_000,
       latestAttentionAt: null,
@@ -736,6 +1272,7 @@ describe("personal project chat workspace", () => {
       .mockResolvedValueOnce([
         {
           ...chat,
+          archivedAt: null,
           latestMessagePreview: "Scheduled update",
           nextMessageAt: null,
         },
@@ -2151,7 +2688,7 @@ describe("personal project chat workspace", () => {
     expect(
       screen.getByText(/Backups are plaintext and readable/),
     ).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Export backup" }));
+    await user.click(screen.getByRole("button", { name: "Export all" }));
 
     await waitFor(() => expect(api.exportDatabase).toHaveBeenCalled());
     expect(createObjectURL).toHaveBeenCalled();
@@ -2258,7 +2795,7 @@ describe("personal project chat workspace", () => {
     render(<App api={api} />);
 
     await user.click(screen.getByRole("button", { name: /Settings/ }));
-    await user.click(screen.getByRole("button", { name: "Export backup" }));
+    await user.click(screen.getByRole("button", { name: "Export all" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Export failed");
 
     await user.upload(
@@ -2267,7 +2804,12 @@ describe("personal project chat workspace", () => {
         type: "application/vnd.on-track.backup+sqlite",
       }),
     );
-    await user.click(screen.getByRole("button", { name: "Restore backup" }));
+    await user.click(
+      await screen.findByRole("radio", { name: "Replace whole DB" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Replace with selected (1)" }),
+    );
     expect(await screen.findByRole("alert")).toHaveTextContent("Import failed");
     expect(
       screen.getByRole("heading", { name: "Backup settings" }),
@@ -2287,7 +2829,12 @@ describe("personal project chat workspace", () => {
         type: "application/vnd.on-track.backup+sqlite",
       }),
     );
-    await user.click(screen.getByRole("button", { name: "Restore backup" }));
+    await user.click(
+      await screen.findByRole("radio", { name: "Replace whole DB" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Replace with selected (1)" }),
+    );
 
     expect(api.importDatabase).not.toHaveBeenCalled();
   });
@@ -2307,7 +2854,9 @@ describe("personal project chat workspace", () => {
             updatedAt: 1,
           },
         ]),
-      importDatabase: vi.fn().mockResolvedValue(undefined),
+      importDatabase: vi
+        .fn()
+        .mockResolvedValue({ importedCount: 1, renames: [] }),
     });
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<App api={api} />);
@@ -2319,9 +2868,20 @@ describe("personal project chat workspace", () => {
         type: "application/vnd.on-track.backup+sqlite",
       }),
     );
-    await user.click(screen.getByRole("button", { name: "Restore backup" }));
+    await user.click(
+      await screen.findByRole("radio", { name: "Replace whole DB" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Replace with selected (1)" }),
+    );
 
     await waitFor(() => expect(api.importDatabase).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Back to projects" }),
+      ).toBeEnabled(),
+    );
+    await user.click(screen.getByRole("button", { name: "Back to projects" }));
     expect(
       await screen.findByRole("button", { name: "Open Restored" }),
     ).toBeVisible();
@@ -3291,6 +3851,7 @@ describe("personal project chat workspace", () => {
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
+      archivedAt: null,
       latestMessagePreview: null,
       nextMessageAt: null,
       latestAttentionAt: null,
@@ -3331,6 +3892,7 @@ describe("personal project chat workspace", () => {
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
+      archivedAt: null,
       latestMessagePreview: null,
       nextMessageAt: null,
       latestAttentionAt: null,
@@ -3388,6 +3950,7 @@ describe("personal project chat workspace", () => {
       createdAt: 1,
       updatedAt: 3,
       pinnedAt: null,
+      archivedAt: null,
       latestMessagePreview: "Remove me",
       nextMessageAt: null,
       latestAttentionAt: null,
@@ -3453,6 +4016,7 @@ describe("personal project chat workspace", () => {
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
+      archivedAt: null,
       latestMessagePreview: null,
       nextMessageAt: null,
       latestAttentionAt: null,
@@ -3500,6 +4064,7 @@ describe("personal project chat workspace", () => {
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
+      archivedAt: null,
       latestMessagePreview: null,
       nextMessageAt: null,
       latestAttentionAt: null,
@@ -3610,6 +4175,7 @@ describe("personal project chat workspace", () => {
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
+      archivedAt: null,
       latestMessagePreview: null,
       nextMessageAt: null,
       latestAttentionAt: null,

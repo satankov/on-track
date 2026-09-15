@@ -15,6 +15,11 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { BackupSettingsWorkspace } from "./BackupSettingsWorkspace.js";
+import type {
+  ImportOptions,
+  ProjectSelection,
+} from "../domain/database-transfer.js";
 import type { Chat, ChatDetail, Note } from "../domain/types.js";
 import {
   ACCENTS,
@@ -45,6 +50,7 @@ import {
 } from "./history-position.js";
 import { analyzeMarkdown } from "./markdown-analysis.js";
 import { senderColor } from "./sender-color.js";
+import { useComposerFileDrop } from "./composer-file-drop.js";
 
 const ACCENT_NAMES: Record<Accent, string> = {
   coral: "Coral",
@@ -80,7 +86,7 @@ const ICON_ONLY_MESSAGE_LABELS = new Set<Label>(["pin", "attention"]);
 const MESSAGE_COLLAPSED_HEIGHT_PX = 192;
 
 type HistoryFilter = "all" | "attachments" | "links" | Label;
-type RailSection = "Pinned" | "Projects";
+type RailSection = "Pinned" | "Projects" | "Archive";
 
 interface WorkspaceServerState {
   chats: Chat[];
@@ -89,6 +95,13 @@ interface WorkspaceServerState {
 
 function sortChats(chats: Chat[]): Chat[] {
   return [...chats].sort((a, b) => {
+    const aArchivedAt = a.archivedAt ?? null;
+    const bArchivedAt = b.archivedAt ?? null;
+    if (aArchivedAt !== null || bArchivedAt !== null) {
+      if (aArchivedAt === null) return -1;
+      if (bArchivedAt === null) return 1;
+      return bArchivedAt - aArchivedAt || a.id.localeCompare(b.id);
+    }
     const aPinnedAt = a.pinnedAt ?? null;
     const bPinnedAt = b.pinnedAt ?? null;
     if (aPinnedAt !== null || bPinnedAt !== null) {
@@ -139,6 +152,7 @@ function chatFromDetail(detail: ChatDetail, now = Date.now()): Chat {
     collapseLongMessages: detail.collapseLongMessages ?? true,
     createdAt: detail.createdAt,
     updatedAt: detail.updatedAt,
+    archivedAt: detail.archivedAt ?? null,
     pinnedAt: detail.pinnedAt ?? null,
     latestMessagePreview: latest?.body.slice(0, 512) ?? null,
     nextMessageAt:
@@ -493,8 +507,12 @@ function ProjectEditWorkspace({
   onBack,
   onSubmit,
   onDelete,
+  onToggleArchived,
+  mutationPending,
 }: {
   chat: ChatDetail;
+  onToggleArchived: () => Promise<void>;
+  mutationPending: boolean;
   onBack: () => void;
   onSubmit: (input: {
     title: string;
@@ -515,6 +533,33 @@ function ProjectEditWorkspace({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [archiveStatus, setArchiveStatus] = useState("");
+  const archiveButton = useRef<HTMLButtonElement>(null);
+  const pendingArchiveFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (!mutationPending && pendingArchiveFocus.current) {
+      pendingArchiveFocus.current = false;
+      archiveButton.current?.focus();
+    }
+  }, [mutationPending]);
+
+  async function handleArchive() {
+    setError("");
+    setArchiveStatus("");
+    pendingArchiveFocus.current = true;
+    try {
+      await onToggleArchived();
+      setArchiveStatus(
+        chat.archivedAt == null
+          ? "Project moved to Archive."
+          : "Project restored to Projects.",
+      );
+    } catch (caught) {
+      setError(
+        errorMessage(caught, "The project archive state could not be saved."),
+      );
+    }
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -556,7 +601,10 @@ function ProjectEditWorkspace({
       <section className="settings-panel" aria-labelledby="project-edit-title">
         <div className="settings-panel-copy">
           <h2 id="project-edit-title">{chat.title}</h2>
-          <p>Change the project name, accent color, or delete this project.</p>
+          <p>
+            Change project settings, or archive it while keeping its messages
+            and files.
+          </p>
         </div>
         <form className="project-edit-form" onSubmit={handleSubmit}>
           <label className="field-label" htmlFor="project-edit-name">
@@ -641,32 +689,50 @@ function ProjectEditWorkspace({
             </label>
           </fieldset>
           {error && (
-            <p role="alert" className="form-error">
+            <p id="project-edit-error" role="alert" className="form-error">
               {error}
             </p>
           )}
+          <p role="status" className="visually-hidden">
+            {archiveStatus}
+          </p>
           <div className="project-edit-actions">
-            <button
-              className="button button-danger"
-              type="button"
-              onClick={handleDelete}
-              disabled={saving || deleting}
-            >
-              {deleting ? "Deleting…" : "Delete project"}
-            </button>
+            <div className="project-lifecycle-actions">
+              <button
+                className="button button-danger"
+                type="button"
+                onClick={handleDelete}
+                disabled={saving || deleting || mutationPending}
+              >
+                {deleting ? "Deleting…" : "Delete project"}
+              </button>
+              <button
+                ref={archiveButton}
+                className="button button-quiet"
+                type="button"
+                onClick={handleArchive}
+                disabled={saving || deleting || mutationPending}
+                aria-busy={mutationPending || undefined}
+                aria-describedby={error ? "project-edit-error" : undefined}
+              >
+                {chat.archivedAt == null
+                  ? "Archive project"
+                  : "Restore project"}
+              </button>
+            </div>
             <span />
             <button
               className="button button-quiet"
               type="button"
               onClick={onBack}
-              disabled={saving || deleting}
+              disabled={saving || deleting || mutationPending}
             >
               Back to project
             </button>
             <button
               className="button button-primary"
               type="submit"
-              disabled={saving || deleting}
+              disabled={saving || deleting || mutationPending}
             >
               {saving ? "Saving…" : "Save changes"}
             </button>
@@ -685,12 +751,13 @@ function ProjectRail({
   activeId,
   onSelect,
   onTogglePinned,
+  onRestore,
   onTemporalBoundary,
   onCreate,
   onSettings,
   navigationDisabled,
   pinErrors,
-  pinningIds,
+  projectMutationIds,
 }: {
   onHome: () => void;
   collapsedSections: Record<RailSection, boolean>;
@@ -699,12 +766,13 @@ function ProjectRail({
   activeId?: string;
   onSelect: (id: string) => void;
   onTogglePinned: (chat: Chat) => void;
+  onRestore: (chat: Chat) => void;
   onTemporalBoundary: () => void;
   onCreate: () => void;
   onSettings: () => void;
   navigationDisabled: boolean;
   pinErrors: Record<string, string>;
-  pinningIds: ReadonlySet<string>;
+  projectMutationIds: ReadonlySet<string>;
 }) {
   const [now, setNow] = useState(() => Date.now());
   const boundaryCallback = useRef(onTemporalBoundary);
@@ -713,8 +781,13 @@ function ProjectRail({
     () => new Map(chats.map((chat) => [chat.id, projectPreview(chat)])),
     [chats],
   );
-  const pinned = chats.filter((chat) => chat.pinnedAt != null);
-  const projects = chats.filter((chat) => chat.pinnedAt == null);
+  const pinned = chats.filter(
+    (chat) => chat.archivedAt == null && chat.pinnedAt != null,
+  );
+  const projects = chats.filter(
+    (chat) => chat.archivedAt == null && chat.pinnedAt == null,
+  );
+  const archived = chats.filter((chat) => chat.archivedAt != null);
   const temporalKey = chats
     .map(
       (chat) =>
@@ -779,7 +852,6 @@ function ProjectRail({
   }, [temporalKey]);
 
   function renderSection(label: RailSection, items: Chat[]) {
-    if (label === "Pinned" && items.length === 0) return null;
     return (
       <section className="project-section" aria-labelledby={`rail-${label}`}>
         <button
@@ -805,6 +877,7 @@ function ProjectRail({
             const attention = projectAttentionState(chat, now);
             const error = pinErrors[chat.id];
             const isPinned = chat.pinnedAt != null;
+            const isArchived = chat.archivedAt != null;
             const statusId = `project-status-${chat.id}`;
             const errorId = `project-pin-error-${chat.id}`;
             return (
@@ -833,13 +906,22 @@ function ProjectRail({
                   className="project-pin-button"
                   data-project-pin-id={chat.id}
                   type="button"
-                  aria-label={`Pin ${chat.title}`}
-                  aria-pressed={isPinned}
+                  aria-label={
+                    isArchived
+                      ? `Restore ${chat.title} from archive`
+                      : `Pin ${chat.title}`
+                  }
+                  title={isArchived ? "Restore project" : undefined}
+                  aria-pressed={isArchived ? undefined : isPinned}
                   aria-describedby={error ? errorId : undefined}
-                  disabled={navigationDisabled || pinningIds.has(chat.id)}
-                  onClick={() => onTogglePinned(chat)}
+                  disabled={
+                    navigationDisabled || projectMutationIds.has(chat.id)
+                  }
+                  onClick={() =>
+                    isArchived ? onRestore(chat) : onTogglePinned(chat)
+                  }
                 >
-                  <PinIcon />
+                  {isArchived ? <ArchiveRestoreIcon /> : <PinIcon />}
                 </button>
                 {attention && (
                   <span
@@ -848,7 +930,11 @@ function ProjectRail({
                   />
                 )}
                 <span className="visually-hidden" id={statusId}>
-                  {isPinned ? "Pinned project. " : ""}
+                  {isArchived
+                    ? "Archived project. "
+                    : isPinned
+                      ? "Pinned project. "
+                      : ""}
                   {attention === "today"
                     ? "Attention today."
                     : attention === "earlier"
@@ -913,6 +999,7 @@ function ProjectRail({
       <nav aria-label="Projects" className="project-list">
         {renderSection("Pinned", pinned)}
         {renderSection("Projects", projects)}
+        {renderSection("Archive", archived)}
       </nav>
 
       <footer className="local-footnote">
@@ -998,10 +1085,12 @@ type SettingsSection = "appearance" | "backups";
 
 function SettingsRail({
   activeSection,
+  disabled,
   onBack,
   onSelect,
 }: {
   activeSection: SettingsSection;
+  disabled: boolean;
   onBack: () => void;
   onSelect: (section: SettingsSection) => void;
 }) {
@@ -1015,6 +1104,7 @@ function SettingsRail({
         <button
           className="settings-back-button"
           type="button"
+          disabled={disabled}
           onClick={onBack}
           aria-label="Back to projects"
         >
@@ -1029,6 +1119,7 @@ function SettingsRail({
               : ""
           }`}
           type="button"
+          disabled={disabled}
           aria-current={activeSection === "appearance" ? "page" : undefined}
           onClick={() => onSelect("appearance")}
         >
@@ -1045,6 +1136,7 @@ function SettingsRail({
             activeSection === "backups" ? "settings-section-item--active" : ""
           }`}
           type="button"
+          disabled={disabled}
           aria-current={activeSection === "backups" ? "page" : undefined}
           onClick={() => onSelect("backups")}
         >
@@ -1148,122 +1240,6 @@ function AppearanceSettingsWorkspace({
             })}
           </div>
         </fieldset>
-      </section>
-    </main>
-  );
-}
-
-function BackupSettingsWorkspace({
-  onExport,
-  onImport,
-}: {
-  onExport: () => Promise<void>;
-  onImport: (file: File) => Promise<void>;
-}) {
-  const [file, setFile] = useState<File>();
-  const [error, setError] = useState("");
-  const [status, setStatus] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  async function handleExport() {
-    setBusy(true);
-    setError("");
-    setStatus("");
-    try {
-      await onExport();
-      setStatus("Backup export is ready.");
-    } catch (caught) {
-      setError(errorMessage(caught, "The database could not be exported."));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleImport() {
-    if (!file) return;
-    if (
-      !window.confirm(
-        "Restoring this backup will replace all current local projects and attached files. It does not merge data.",
-      )
-    ) {
-      return;
-    }
-    setBusy(true);
-    setError("");
-    setStatus("");
-    try {
-      await onImport(file);
-      setStatus("Backup restored.");
-    } catch (caught) {
-      setError(errorMessage(caught, "The database could not be imported."));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <main className="workspace settings-workspace">
-      <header className="settings-workspace-header">
-        <p className="eyebrow">Backups</p>
-        <h1>Backup settings</h1>
-      </header>
-      <section className="settings-panel" aria-labelledby="database-transfer">
-        <div className="settings-panel-copy">
-          <h2 id="database-transfer">Export and restore</h2>
-          <p>
-            Export one versioned On Track backup containing projects, messages,
-            and attached files. Backups are plaintext and readable. Restoring
-            replaces current local data; it does not merge histories.
-          </p>
-        </div>
-        <div className="settings-control-group">
-          <div className="settings-control-row">
-            <div>
-              <strong>Export backup</strong>
-              <small>
-                Create one restorable copy of current local data and files.
-              </small>
-            </div>
-            <button
-              className="button button-primary"
-              type="button"
-              onClick={handleExport}
-              disabled={busy}
-            >
-              Export backup
-            </button>
-          </div>
-          <div className="settings-control-row settings-control-row--stacked">
-            <label className="field-label" htmlFor="database-import">
-              Choose On Track backup
-            </label>
-            <input
-              id="database-import"
-              className="file-input"
-              type="file"
-              accept=".on-track-backup,application/vnd.on-track.backup+sqlite"
-              onChange={(event) => setFile(event.target.files?.[0])}
-            />
-            <button
-              className="button button-primary"
-              type="button"
-              onClick={handleImport}
-              disabled={busy || !file}
-            >
-              Restore backup
-            </button>
-          </div>
-        </div>
-        {status && (
-          <p role="status" className="form-status">
-            {status}
-          </p>
-        )}
-        {error && (
-          <p role="alert" className="form-error">
-            {error}
-          </p>
-        )}
       </section>
     </main>
   );
@@ -1439,6 +1415,14 @@ function ListIcon() {
       <circle cx="4" cy="6" r="1" />
       <circle cx="4" cy="12" r="1" />
       <circle cx="4" cy="18" r="1" />
+    </svg>
+  );
+}
+
+function ArchiveRestoreIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M4 10v11h16V10M3 6h18v4H3zM9 14h6" />
     </svg>
   );
 }
@@ -2191,13 +2175,15 @@ function ChatWorkspace({
   navigationDisabled: boolean;
 }) {
   const historyRef = useRef<HTMLElement>(null);
-  useHistoryPosition(
+  const beforeFilterChange = useHistoryPosition(
     historyRef,
     detail.id,
-    historyFilter === "all",
+    historyFilter,
     readingPositions,
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const fileDrop = useComposerFileDrop(composerRef, saving, onFilesSelected);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const markdownToolsId = useId();
   const senderToolsId = useId();
@@ -2211,6 +2197,7 @@ function ChatWorkspace({
   const [activeMarkdownAction, setActiveMarkdownAction] =
     useState<MarkdownAction>("bold");
   const [markdownError, setMarkdownError] = useState("");
+  const previousUtilityRows = useRef([false, false, false]);
   const linkedNoteIds = useMemo(
     () =>
       new Set(
@@ -2242,8 +2229,31 @@ function ChatWorkspace({
   const activeMarkdownTool =
     MARKDOWN_TOOLS.find((tool) => tool.action === activeMarkdownAction) ??
     MARKDOWN_TOOLS[0];
-  const visibleComposerError = error || markdownError;
+  const visibleComposerError = error || fileDrop.error || markdownError;
   const currentSender = draftSender.trim() || "You";
+
+  useLayoutEffect(() => {
+    const openRows = [senderOpen, timestampOpen, markdownOpen];
+    const openedIndex = openRows.findIndex(
+      (open, index) => open && !previousUtilityRows.current[index],
+    );
+    previousUtilityRows.current = openRows;
+    if (openedIndex < 0) return;
+    const content = composerRef.current?.querySelector(".composer-content");
+    const row = content?.querySelector(
+      [
+        ".composer-sender-row",
+        ".composer-timestamp-row",
+        ".markdown-tools-strip",
+      ][openedIndex],
+    );
+    if (!content || !row) return;
+    const viewport = content.getBoundingClientRect();
+    const bounds = row.getBoundingClientRect();
+    if (bounds.top < viewport.top || bounds.bottom > viewport.bottom) {
+      content.scrollTop += bounds.top - viewport.top;
+    }
+  }, [senderOpen, timestampOpen, markdownOpen]);
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -2345,18 +2355,21 @@ function ChatWorkspace({
   }
 
   function beginEditingNote(note: Note) {
+    fileDrop.clearError();
     setMarkdownError("");
     lastMarkdownSelection.current = undefined;
     onEditNote(note);
   }
 
   function cancelEditingNote() {
+    fileDrop.clearError();
     setMarkdownError("");
     lastMarkdownSelection.current = undefined;
     onCancelEditNote();
   }
 
   function submitDraft() {
+    fileDrop.clearError();
     setMarkdownError("");
     lastMarkdownSelection.current = undefined;
     onSubmit();
@@ -2390,6 +2403,11 @@ function ChatWorkspace({
       event.preventDefault();
       submitDraft();
     }
+  }
+
+  function changeHistoryFilter(filter: HistoryFilter) {
+    beforeFilterChange(filter);
+    onHistoryFilterChange(filter);
   }
 
   return (
@@ -2428,7 +2446,7 @@ function ChatWorkspace({
             className={`history-filter-button ${historyFilter === "all" ? "history-filter-button--active" : ""}`}
             aria-label={`All ${detail.notes.length}`}
             aria-pressed={historyFilter === "all"}
-            onClick={() => onHistoryFilterChange("all")}
+            onClick={() => changeHistoryFilter("all")}
           >
             <span className="history-filter-icon" aria-hidden="true">
               <ListIcon />
@@ -2441,7 +2459,7 @@ function ChatWorkspace({
             className={`history-filter-button ${historyFilter === "attachments" ? "history-filter-button--active" : ""}`}
             aria-label={`Files ${attachmentCount}`}
             aria-pressed={historyFilter === "attachments"}
-            onClick={() => onHistoryFilterChange("attachments")}
+            onClick={() => changeHistoryFilter("attachments")}
           >
             <span className="history-filter-icon" aria-hidden="true">
               <PaperclipIcon />
@@ -2454,7 +2472,7 @@ function ChatWorkspace({
             className={`history-filter-button ${historyFilter === "links" ? "history-filter-button--active" : ""}`}
             aria-label={`Links ${linkedNoteIds.size}`}
             aria-pressed={historyFilter === "links"}
-            onClick={() => onHistoryFilterChange("links")}
+            onClick={() => changeHistoryFilter("links")}
           >
             <span className="history-filter-icon" aria-hidden="true">
               <LinkIcon />
@@ -2473,7 +2491,7 @@ function ChatWorkspace({
                 aria-label={`${LABEL_NAMES[label]} ${count}`}
                 title={LABEL_NAMES[label]}
                 aria-pressed={historyFilter === label}
-                onClick={() => onHistoryFilterChange(label)}
+                onClick={() => changeHistoryFilter(label)}
                 key={label}
               >
                 <span className="history-filter-icon">
@@ -2551,233 +2569,255 @@ function ChatWorkspace({
           </p>
         )}
         <div
-          className={`composer ${editingNote ? "composer--editing" : ""}`}
+          ref={composerRef}
+          className={`composer ${editingNote ? "composer--editing" : ""} ${fileDrop.active ? "composer--file-drag" : ""} ${fileDrop.over ? "composer--file-over" : ""}`}
           onKeyDown={handleComposerKeyDown}
         >
-          {(editingAttachments.length > 0 || pendingFiles.length > 0) && (
-            <div className="pending-attachments" aria-label="Pending files">
-              {editingAttachments.map((attachment) => (
-                <span className="pending-attachment" key={attachment.id}>
-                  <span>
-                    <strong>{attachment.filename}</strong>
-                    <small>{formatFileSize(attachment.byteSize)}</small>
-                  </span>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${attachment.filename}`}
-                    onClick={() => onRemoveEditingAttachment(attachment.id)}
-                  >
-                    <XIcon />
-                  </button>
-                </span>
-              ))}
-              {pendingFiles.map((file, index) => (
-                <span
-                  className="pending-attachment"
-                  key={`${file.name}-${index}`}
-                >
-                  <span>
-                    <strong>{file.name}</strong>
-                    <small>{formatFileSize(file.size)}</small>
-                  </span>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${file.name}`}
-                    onClick={() => onRemovePendingFile(index)}
-                  >
-                    <XIcon />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-          {senderOpen && (
-            <div
-              id={senderToolsId}
-              className="composer-sender-row"
-              role="group"
-              aria-label="Message sender"
-            >
-              <label className="field-label" htmlFor={`${senderToolsId}-name`}>
-                Sender
-              </label>
-              <button
-                className="composer-sender-you"
-                type="button"
-                aria-pressed={!draftSender.trim()}
-                onClick={() => onDraftSenderChange("")}
-              >
-                You
-              </button>
-              <span className="composer-sender-or" aria-hidden="true">
-                or
-              </span>
-              <input
-                id={`${senderToolsId}-name`}
-                className="text-input composer-sender-input"
-                type="text"
-                aria-label="Sender name"
-                value={draftSender}
-                maxLength={80}
-                placeholder="Type a sender name…"
-                onChange={(event) => onDraftSenderChange(event.target.value)}
-              />
-              <span className="composer-sender-hint" aria-hidden="true">
-                Participant messages appear on the left
+          {fileDrop.active && (
+            <div className="composer-drop-target" role="status">
+              <PaperclipIcon />
+              <span>
+                {editingNote
+                  ? "Drop files here to attach to this message"
+                  : "Drop files here to attach"}
               </span>
             </div>
           )}
-          {timestampOpen && (
-            <div className="composer-timestamp-row">
-              <label className="field-label" htmlFor="composer-timestamp">
-                Timestamp
-              </label>
-              <input
-                id="composer-timestamp"
-                className="text-input composer-timestamp-input"
-                type="datetime-local"
-                aria-label="Message timestamp"
-                value={draftTimestamp}
-                onChange={(event) => onDraftTimestampChange(event.target.value)}
-              />
-            </div>
-          )}
-          {markdownOpen && (
-            <div
-              id={markdownToolsId}
-              className="markdown-tools-strip"
-              role="group"
-              aria-label="Markdown assistance"
-            >
-              <span className="markdown-tools-label">Format</span>
-              <div className="markdown-tools-scroll">
-                {MARKDOWN_TOOLS.map((tool) => (
-                  <button
-                    className="markdown-tool-button"
-                    type="button"
-                    key={tool.action}
-                    aria-label={
-                      tool.shortcutLabel
-                        ? `${tool.label} (${tool.shortcutLabel})`
-                        : tool.label
-                    }
-                    aria-keyshortcuts={tool.ariaKeyShortcuts}
-                    title={`${tool.label} · ${tool.syntax}${tool.shortcutLabel ? ` · ${tool.shortcutLabel}` : ""}`}
-                    onPointerDown={rememberMarkdownSelection}
-                    onFocus={() => setActiveMarkdownAction(tool.action)}
-                    onMouseEnter={() => setActiveMarkdownAction(tool.action)}
-                    onClick={() => applyMarkdownFormatting(tool.action)}
+          <div className="composer-content">
+            {(editingAttachments.length > 0 || pendingFiles.length > 0) && (
+              <div className="pending-attachments" aria-label="Pending files">
+                {editingAttachments.map((attachment) => (
+                  <span className="pending-attachment" key={attachment.id}>
+                    <span>
+                      <strong>{attachment.filename}</strong>
+                      <small>{formatFileSize(attachment.byteSize)}</small>
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${attachment.filename}`}
+                      onClick={() => onRemoveEditingAttachment(attachment.id)}
+                    >
+                      <XIcon />
+                    </button>
+                  </span>
+                ))}
+                {pendingFiles.map((file, index) => (
+                  <span
+                    className="pending-attachment"
+                    key={`${file.name}-${index}`}
                   >
-                    <MarkdownToolGlyph action={tool.action} />
-                  </button>
+                    <span>
+                      <strong>{file.name}</strong>
+                      <small>{formatFileSize(file.size)}</small>
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${file.name}`}
+                      onClick={() => onRemovePendingFile(index)}
+                    >
+                      <XIcon />
+                    </button>
+                  </span>
                 ))}
               </div>
-              <span className="markdown-tool-hint" aria-hidden="true">
-                <strong>{activeMarkdownTool.label}</strong>
-                <code>{activeMarkdownTool.syntax}</code>
-                {activeMarkdownTool.shortcutLabel && (
-                  <span>{activeMarkdownTool.shortcutLabel}</span>
-                )}
-              </span>
-              <span className="markdown-tools-escape" aria-hidden="true">
-                Esc
-              </span>
+            )}
+            {senderOpen && (
+              <div
+                id={senderToolsId}
+                className="composer-sender-row"
+                role="group"
+                aria-label="Message sender"
+              >
+                <label
+                  className="field-label"
+                  htmlFor={`${senderToolsId}-name`}
+                >
+                  Sender
+                </label>
+                <button
+                  className="composer-sender-you"
+                  type="button"
+                  aria-pressed={!draftSender.trim()}
+                  onClick={() => onDraftSenderChange("")}
+                >
+                  You
+                </button>
+                <span className="composer-sender-or" aria-hidden="true">
+                  or
+                </span>
+                <input
+                  id={`${senderToolsId}-name`}
+                  className="text-input composer-sender-input"
+                  type="text"
+                  aria-label="Sender name"
+                  value={draftSender}
+                  maxLength={80}
+                  placeholder="Type a sender name…"
+                  onChange={(event) => onDraftSenderChange(event.target.value)}
+                />
+                <span className="composer-sender-hint" aria-hidden="true">
+                  Participant messages appear on the left
+                </span>
+              </div>
+            )}
+            {timestampOpen && (
+              <div className="composer-timestamp-row">
+                <label className="field-label" htmlFor="composer-timestamp">
+                  Timestamp
+                </label>
+                <input
+                  id="composer-timestamp"
+                  className="text-input composer-timestamp-input"
+                  type="datetime-local"
+                  aria-label="Message timestamp"
+                  value={draftTimestamp}
+                  onChange={(event) =>
+                    onDraftTimestampChange(event.target.value)
+                  }
+                />
+              </div>
+            )}
+            {markdownOpen && (
+              <div
+                id={markdownToolsId}
+                className="markdown-tools-strip"
+                role="group"
+                aria-label="Markdown assistance"
+              >
+                <span className="markdown-tools-label">Format</span>
+                <div className="markdown-tools-scroll">
+                  {MARKDOWN_TOOLS.map((tool) => (
+                    <button
+                      className="markdown-tool-button"
+                      type="button"
+                      key={tool.action}
+                      aria-label={
+                        tool.shortcutLabel
+                          ? `${tool.label} (${tool.shortcutLabel})`
+                          : tool.label
+                      }
+                      aria-keyshortcuts={tool.ariaKeyShortcuts}
+                      title={`${tool.label} · ${tool.syntax}${tool.shortcutLabel ? ` · ${tool.shortcutLabel}` : ""}`}
+                      onPointerDown={rememberMarkdownSelection}
+                      onFocus={() => setActiveMarkdownAction(tool.action)}
+                      onMouseEnter={() => setActiveMarkdownAction(tool.action)}
+                      onClick={() => applyMarkdownFormatting(tool.action)}
+                    >
+                      <MarkdownToolGlyph action={tool.action} />
+                    </button>
+                  ))}
+                </div>
+                <span className="markdown-tool-hint" aria-hidden="true">
+                  <strong>{activeMarkdownTool.label}</strong>
+                  <code>{activeMarkdownTool.syntax}</code>
+                  {activeMarkdownTool.shortcutLabel && (
+                    <span>{activeMarkdownTool.shortcutLabel}</span>
+                  )}
+                </span>
+                <span className="markdown-tools-escape" aria-hidden="true">
+                  Esc
+                </span>
+              </div>
+            )}
+            <div className="composer-input-row">
+              <textarea
+                ref={textareaRef}
+                data-composer-textarea
+                aria-label={editingNote ? "Edit message" : "Add a note"}
+                placeholder={
+                  editingNote
+                    ? "Edit this message…"
+                    : "Add a note to this project…"
+                }
+                value={draft}
+                maxLength={10_000}
+                onChange={(event) => {
+                  fileDrop.clearError();
+                  setMarkdownError("");
+                  onDraftChange(event.target.value);
+                }}
+                onSelect={rememberMarkdownSelection}
+                onBlur={rememberMarkdownSelection}
+                onKeyDown={handleKeyDown}
+              />
             </div>
-          )}
-          <div className="composer-input-row">
-            <textarea
-              ref={textareaRef}
-              data-composer-textarea
-              aria-label={editingNote ? "Edit message" : "Add a note"}
-              placeholder={
-                editingNote
-                  ? "Edit this message…"
-                  : "Add a note to this project…"
-              }
-              value={draft}
-              maxLength={10_000}
-              onChange={(event) => {
-                setMarkdownError("");
-                onDraftChange(event.target.value);
-              }}
-              onSelect={rememberMarkdownSelection}
-              onBlur={rememberMarkdownSelection}
-              onKeyDown={handleKeyDown}
-            />
-            <div className="composer-bar">
-              <span>
+          </div>
+          <div className="composer-bar">
+            <div className="composer-tools">
+              <button
+                className={`composer-icon-button ${draftSender.trim() ? "composer-icon-button--active" : ""}`}
+                type="button"
+                onClick={() => onSenderOpenChange(!senderOpen)}
+                aria-label={`${senderOpen ? "Hide" : "Show"} sender options. Current sender: ${currentSender}`}
+                aria-expanded={senderOpen}
+                aria-controls={senderToolsId}
+                title={`Sender: ${currentSender}`}
+              >
+                <SenderIcon />
+              </button>
+              <button
+                className="composer-icon-button composer-markdown-button"
+                type="button"
+                onClick={() => {
+                  setMarkdownOpen((open) => !open);
+                  setMarkdownError("");
+                }}
+                onPointerDown={rememberMarkdownSelection}
+                aria-label={
+                  markdownOpen
+                    ? "Hide Markdown assistance"
+                    : "Show Markdown assistance"
+                }
+                aria-expanded={markdownOpen}
+                aria-controls={markdownToolsId}
+                title={
+                  markdownOpen
+                    ? "Hide Markdown assistance"
+                    : "Show Markdown assistance"
+                }
+              >
+                <span className="markdown-mark" aria-hidden="true">
+                  M↓
+                </span>
+              </button>
+              <input
+                ref={fileInputRef}
+                className="visually-hidden-file"
+                type="file"
+                multiple
+                aria-label="Attach files"
+                onChange={(event) => {
+                  fileDrop.clearError();
+                  onFilesSelected(Array.from(event.target.files ?? []));
+                  event.target.value = "";
+                }}
+              />
+              <button
+                className="composer-icon-button"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                aria-label="Open file picker"
+                title="Attach files"
+              >
+                <PaperclipIcon />
+              </button>
+              <button
+                className="composer-icon-button"
+                type="button"
+                onClick={onToggleTimestamp}
+                aria-label={
+                  timestampOpen ? "Hide timestamp" : "Choose timestamp"
+                }
+                aria-expanded={timestampOpen}
+                title={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
+              >
+                <ClockIcon />
+              </button>
+            </div>
+            <div className="composer-actions">
+              <span className="composer-shortcut">
                 <kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd>
               </span>
-              <div className="composer-tools">
-                <button
-                  className={`composer-icon-button ${draftSender.trim() ? "composer-icon-button--active" : ""}`}
-                  type="button"
-                  onClick={() => onSenderOpenChange(!senderOpen)}
-                  aria-label={`${senderOpen ? "Hide" : "Show"} sender options. Current sender: ${currentSender}`}
-                  aria-expanded={senderOpen}
-                  aria-controls={senderToolsId}
-                  title={`Sender: ${currentSender}`}
-                >
-                  <SenderIcon />
-                </button>
-                <button
-                  className="composer-icon-button composer-markdown-button"
-                  type="button"
-                  onClick={() => {
-                    setMarkdownOpen((open) => !open);
-                    setMarkdownError("");
-                  }}
-                  onPointerDown={rememberMarkdownSelection}
-                  aria-label={
-                    markdownOpen
-                      ? "Hide Markdown assistance"
-                      : "Show Markdown assistance"
-                  }
-                  aria-expanded={markdownOpen}
-                  aria-controls={markdownToolsId}
-                  title={
-                    markdownOpen
-                      ? "Hide Markdown assistance"
-                      : "Show Markdown assistance"
-                  }
-                >
-                  <span className="markdown-mark" aria-hidden="true">
-                    M↓
-                  </span>
-                </button>
-                <input
-                  ref={fileInputRef}
-                  className="visually-hidden-file"
-                  type="file"
-                  multiple
-                  aria-label="Attach files"
-                  onChange={(event) => {
-                    onFilesSelected(Array.from(event.target.files ?? []));
-                    event.target.value = "";
-                  }}
-                />
-                <button
-                  className="composer-icon-button"
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  aria-label="Open file picker"
-                  title="Attach files"
-                >
-                  <PaperclipIcon />
-                </button>
-                <button
-                  className="composer-icon-button"
-                  type="button"
-                  onClick={onToggleTimestamp}
-                  aria-label={
-                    timestampOpen ? "Hide timestamp" : "Choose timestamp"
-                  }
-                  aria-expanded={timestampOpen}
-                  title={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
-                >
-                  <ClockIcon />
-                </button>
-              </div>
               {editingNote && (
                 <button
                   className="composer-cancel-button"
@@ -2855,14 +2895,21 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [composerTimestampOpen, setComposerTimestampOpen] = useState(false);
   const [error, setError] = useState("");
   const [savingNote, setSavingNote] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const importInProgress = useRef(false);
+  const databaseEpoch = useRef(0);
+  const pendingNoteMutations = useRef(0);
+  const previewTail = useRef<Promise<unknown>>(Promise.resolve());
+  const [pendingNoteCount, setPendingNoteCount] = useState(0);
   const [pinErrors, setPinErrors] = useState<Record<string, string>>({});
-  const [pinningIds, setPinningIds] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
+  const [projectMutationIds, setProjectMutationIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const projectMutations = useRef(new Set<string>());
   const pendingPinFocus = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
     const id = pendingPinFocus.current;
-    if (id === undefined || pinningIds.has(id)) return;
+    if (id === undefined || projectMutationIds.has(id)) return;
     pendingPinFocus.current = undefined;
     const control = [
       ...document.querySelectorAll<HTMLButtonElement>("[data-project-pin-id]"),
@@ -2873,13 +2920,13 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ?.querySelector<HTMLButtonElement>(".rail-section-label")
       : control;
     target?.focus();
-  }, [pinningIds]);
+  }, [projectMutationIds]);
   const [readingPositions, setReadingPositions] = useState(
     () => new Map<string, ReadingPosition>(),
   );
   const [collapsedSections, setCollapsedSections] = useState<
     Record<RailSection, boolean>
-  >({ Pinned: false, Projects: false });
+  >({ Pinned: false, Projects: false, Archive: false });
   const selectionRequest = useRef(0);
   const activeMutationGeneration = useRef(0);
   const summaryRequest = useRef(0);
@@ -2901,7 +2948,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     let focusRequest = 0;
     const refreshActiveProject = () => {
       const projectId = activeId.current;
-      if (!projectId) return;
+      if (!projectId || importInProgress.current) return;
       const request = ++focusRequest;
       const selection = selectionRequest.current;
       const mutation = activeMutationGeneration.current;
@@ -2934,6 +2981,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   }, [api]);
 
   function refreshProjectSummaries() {
+    if (importInProgress.current) return;
     const request = ++summaryRequest.current;
     const mutation = activeMutationGeneration.current;
     void api
@@ -2965,7 +3013,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         setLoadState("loaded");
       })
       .catch(() => {
-        if (!current) return;
+        if (!current || request !== summaryRequest.current) return;
         setError("The local project list could not be loaded.");
         setLoadState("error");
       });
@@ -3014,6 +3062,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ...current,
           active: {
             ...detail,
+            archivedAt:
+              summary?.archivedAt === undefined
+                ? detail.archivedAt
+                : summary.archivedAt,
             pinnedAt:
               summary?.pinnedAt === undefined
                 ? detail.pinnedAt
@@ -3055,45 +3107,111 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     focusMobileBackButton();
   }
 
-  async function toggleChatPinned(chat: Chat) {
-    const pinned = chat.pinnedAt == null;
+  async function runProjectMutation(id: string, mutation: () => Promise<void>) {
+    if (projectMutations.current.has(id))
+      throw new Error("Wait for the current project change to finish.");
+    projectMutations.current.add(id);
+    setProjectMutationIds((current) => new Set(current).add(id));
     activeMutationGeneration.current += 1;
     summaryRequest.current += 1;
-    setPinErrors((current) => {
-      const next = { ...current };
-      delete next[chat.id];
-      return next;
-    });
-    setPinningIds((current) => new Set(current).add(chat.id));
     try {
-      const state = await api.setChatPinned(chat.id, pinned);
-      setWorkspace((current) => ({
-        active:
-          current.active?.id === chat.id
-            ? { ...current.active, pinnedAt: state.pinnedAt }
-            : current.active,
-        chats: sortChats(
-          current.chats.map((item) =>
-            item.id === chat.id ? { ...item, pinnedAt: state.pinnedAt } : item,
-          ),
-        ),
-      }));
-    } catch (caught) {
-      setPinErrors((current) => ({
-        ...current,
-        [chat.id]: errorMessage(caught, "The project pin could not be saved."),
-      }));
+      await mutation();
     } finally {
-      pendingPinFocus.current = chat.id;
-      setPinningIds((current) => {
+      activeMutationGeneration.current += 1;
+      summaryRequest.current += 1;
+      projectMutations.current.delete(id);
+      setProjectMutationIds((current) => {
         const next = new Set(current);
-        next.delete(chat.id);
+        next.delete(id);
         return next;
       });
     }
   }
 
-  async function updateChat(input: {
+  function clearProjectError(id: string) {
+    setPinErrors((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  }
+
+  async function toggleChatPinned(chat: Chat) {
+    if (projectMutations.current.has(chat.id)) return;
+    clearProjectError(chat.id);
+    try {
+      await runProjectMutation(chat.id, async () => {
+        const state = await api.setChatPinned(chat.id, chat.pinnedAt == null);
+        setWorkspace((current) => ({
+          active:
+            current.active?.id === chat.id
+              ? { ...current.active, ...state }
+              : current.active,
+          chats: sortChats(
+            current.chats.map((item) =>
+              item.id === chat.id ? { ...item, ...state } : item,
+            ),
+          ),
+        }));
+        pendingPinFocus.current = chat.id;
+      });
+    } catch (caught) {
+      setPinErrors((current) => ({
+        ...current,
+        [chat.id]: errorMessage(caught, "The project pin could not be saved."),
+      }));
+      pendingPinFocus.current = chat.id;
+    }
+  }
+
+  async function setChatArchived(
+    chat: Chat,
+    archived: boolean,
+    fromSidebar = false,
+  ) {
+    clearProjectError(chat.id);
+    await runProjectMutation(chat.id, async () => {
+      try {
+        const state = await api.setChatArchived(chat.id, archived);
+        setWorkspace((current) => ({
+          active:
+            current.active?.id === chat.id
+              ? { ...current.active, ...state }
+              : current.active,
+          chats: sortChats(
+            current.chats.map((item) =>
+              item.id === chat.id ? { ...item, ...state } : item,
+            ),
+          ),
+        }));
+      } finally {
+        if (fromSidebar) pendingPinFocus.current = chat.id;
+      }
+    });
+  }
+
+  async function restoreChat(chat: Chat) {
+    if (projectMutations.current.has(chat.id)) return;
+    try {
+      await setChatArchived(chat, false, true);
+    } catch (caught) {
+      setPinErrors((current) => ({
+        ...current,
+        [chat.id]: errorMessage(caught, "The project could not be restored."),
+      }));
+    }
+  }
+
+  async function updateChat(input: Parameters<typeof updateChatUnlocked>[0]) {
+    if (active)
+      await runProjectMutation(active.id, () => updateChatUnlocked(input));
+  }
+
+  async function deleteChat() {
+    if (active) await runProjectMutation(active.id, deleteChatUnlocked);
+  }
+
+  async function updateChatUnlocked(input: {
     title: string;
     accent: Accent;
     enabledLabels: ConfigurableLabel[];
@@ -3127,7 +3245,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     if (activeId.current === projectId) focusMobileBackButton();
   }
 
-  async function deleteChat() {
+  async function deleteChatUnlocked() {
     if (!active) return;
     const projectId = active.id;
     const selectionAtStart = selectionRequest.current;
@@ -3355,11 +3473,25 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setEditingAttachmentIds([]);
   }
 
+  async function runNoteMutation<T>(operation: () => Promise<T>): Promise<T> {
+    if (importInProgress.current) throw new Error("Wait for import to finish.");
+    pendingNoteMutations.current += 1;
+    setPendingNoteCount(pendingNoteMutations.current);
+    try {
+      return await operation();
+    } finally {
+      pendingNoteMutations.current -= 1;
+      setPendingNoteCount(pendingNoteMutations.current);
+    }
+  }
+
   async function deleteNote(note: Note) {
     if (!active) return;
     if (!window.confirm("Delete this message?")) return;
     const projectId = active.id;
-    await api.deleteNote(projectId, note.id);
+    const epoch = databaseEpoch.current;
+    await runNoteMutation(() => api.deleteNote(projectId, note.id));
+    if (epoch !== databaseEpoch.current) return;
     activeMutationGeneration.current += 1;
     const submittedNotes = active.notes.filter((item) => item.id !== note.id);
     const submittedUpdatedAt = chatActivityFromNotes(active, submittedNotes);
@@ -3388,7 +3520,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function setNoteLabel(note: Note, label: Label, applied: boolean) {
     if (!active) return;
     const projectId = active.id;
-    const labels = await api.setNoteLabel(projectId, note.id, label, applied);
+    const epoch = databaseEpoch.current;
+    const labels = await runNoteMutation(() =>
+      api.setNoteLabel(projectId, note.id, label, applied),
+    );
+    if (epoch !== databaseEpoch.current) return;
     activeMutationGeneration.current += 1;
     const submittedDetail = {
       ...active,
@@ -3411,8 +3547,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     );
   }
 
-  async function exportDatabase() {
-    const blob = await api.exportDatabase();
+  async function exportDatabase(selection: ProjectSelection) {
+    const blob = await api.exportDatabase(selection);
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -3421,21 +3557,75 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     URL.revokeObjectURL(url);
   }
 
-  async function importDatabase(file: File) {
-    await api.importDatabase(file);
-    const importedChats = await api.listChats();
-    setReadingPositions(new Map());
-    selectionRequest.current += 1;
-    activeMutationGeneration.current += 1;
-    setWorkspace({ chats: importedChats });
-    setDraftTimestamp("");
-    resetSenderComposer();
-    setPendingFiles([]);
-    setHistoryFilter("all");
-    setComposerTimestampOpen(false);
-    setMode("projects");
-    setDraft("");
-    setError("");
+  function previewDatabase(file: File) {
+    const next = previewTail.current.then(
+      () => api.previewDatabase(file),
+      () => api.previewDatabase(file),
+    );
+    previewTail.current = next;
+    return next;
+  }
+
+  async function importDatabase(file: File, options: ImportOptions) {
+    if (
+      importInProgress.current ||
+      savingNote ||
+      projectMutations.current.size ||
+      pendingNoteMutations.current > 0
+    )
+      throw new Error(
+        "Wait for the current project change to finish before importing.",
+      );
+    importInProgress.current = true;
+    setImporting(true);
+    const invalidate = () => {
+      databaseEpoch.current += 1;
+      selectionRequest.current += 1;
+      activeMutationGeneration.current += 1;
+      summaryRequest.current += 1;
+    };
+    invalidate();
+    try {
+      const result = await api.importDatabase(file, options);
+      invalidate();
+      if (options.mode === "replace") {
+        activeId.current = undefined;
+        setWorkspace({ chats: [] });
+        setReadingPositions(new Map());
+        setDraftTimestamp("");
+        resetSenderComposer();
+        setPendingFiles([]);
+        setHistoryFilter("all");
+        setComposerTimestampOpen(false);
+        setDraft("");
+        setEditingNote(undefined);
+        setEditingAttachmentIds([]);
+        setCopiedNoteId(undefined);
+        setPinErrors({});
+        pendingPinFocus.current = undefined;
+        setError("");
+      }
+      try {
+        const importedChats = await api.listChats();
+        setLoadState("loaded");
+        setError("");
+        setWorkspace((current) => ({
+          ...current,
+          chats: sortChats(importedChats),
+        }));
+        return result;
+      } catch {
+        return {
+          ...result,
+          refreshWarning:
+            "Import completed, but the project list could not be refreshed. Reload the page to see your projects; do not import again.",
+        };
+      }
+    } finally {
+      invalidate();
+      importInProgress.current = false;
+      setImporting(false);
+    }
   }
 
   function backToProjects() {
@@ -3468,6 +3658,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       {mode === "settings" ? (
         <SettingsRail
           activeSection={settingsSection}
+          disabled={importing}
           onBack={() => setMode("projects")}
           onSelect={setSettingsSection}
         />
@@ -3485,12 +3676,13 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           activeId={active?.id}
           onSelect={selectChat}
           onTogglePinned={toggleChatPinned}
+          onRestore={restoreChat}
           onTemporalBoundary={refreshProjectSummaries}
           onCreate={() => setDialog("create")}
           onSettings={() => setMode("settings")}
           navigationDisabled={savingNote}
           pinErrors={pinErrors}
-          pinningIds={pinningIds}
+          projectMutationIds={projectMutationIds}
         />
       )}
       {!active && error && (
@@ -3503,13 +3695,26 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           <AppearanceSettingsWorkspace theme={theme} onThemeChange={setTheme} />
         ) : (
           <BackupSettingsWorkspace
+            projects={chats}
+            onPreview={previewDatabase}
+            unavailable={
+              importing ||
+              savingNote ||
+              projectMutationIds.size > 0 ||
+              pendingNoteCount > 0
+            }
             onExport={exportDatabase}
             onImport={importDatabase}
           />
         )
       ) : mode === "projectEdit" && active ? (
         <ProjectEditWorkspace
+          key={active.id}
           chat={active}
+          mutationPending={projectMutationIds.has(active.id)}
+          onToggleArchived={() =>
+            setChatArchived(active, active.archivedAt == null)
+          }
           onBack={() => setMode("projects")}
           onSubmit={updateChat}
           onDelete={deleteChat}

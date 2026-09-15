@@ -2,13 +2,12 @@
 
 ## Status
 
-The v0.0.5 plaintext alpha is the published baseline. The `release/v0.0.6`
-checkout contains verified unreleased work: client-only Markdown authoring,
-navigation, reading-position, sidebar disclosure, preview, and Links-filter
-behavior, plus nullable free-form participant attribution in the note and
-versioned-backup contracts. The client-only additions preserve the local
-server/service/repository boundaries; attribution advances the schema to 6.
-Package metadata is 0.0.6 for the release candidate. The core decisions
+The v0.0.6 plaintext alpha is the published baseline. The `release/v0.0.7`
+checkout adds Archive, selective backup/import, and client-only composer and
+filter fixes. Archive advances the database and backup schema from 6 to 7;
+selective transfers and composer/filter changes preserve that schema. Existing
+local server/service/repository boundaries remain in place. Package metadata
+is prepared as 0.0.7. The core decisions
 are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
 encryption limitation in [ADR-0002](adr/0002-defer-at-rest-encryption.md),
 source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the
@@ -16,15 +15,25 @@ current license in [ADR-0005](adr/0005-apache-2-license.md). Managed mutable
 attachments and guarded native actions are recorded in
 [ADR-0006](adr/0006-managed-mutable-attachments-and-native-file-actions.md), and
 platform-scoped Node 22.16/24 support in
-[ADR-0007](adr/0007-node-22-and-24-runtime-support.md).
+[ADR-0007](adr/0007-node-22-and-24-runtime-support.md). The active managed
+installation/CLI slice is recorded in
+[ADR-0008](adr/0008-managed-install-and-cli.md) and
+[plan 0021](plans/0021-managed-install-and-cli.md); it preserves manual source
+installation. v0.0.7 selects managed compatibility floor `0.0.7`; assets await
+publication. Real installation/platform validation is deferred to the next
+release under the explicit experimental-delivery exception in ADR-0008.
 
 ## System context
 
 One person runs one trusted Node.js process on their computer and opens the UI in
 a normal browser. The process binds to `127.0.0.1`, serves the built UI and a
-same-origin JSON API, owns the SQLite connection, and writes only to the local
-application-data directory. There are no accounts, cloud services, telemetry,
-remote assets, or required internet requests at runtime.
+same-origin JSON API, and owns the SQLite connection and local application-data
+directory. Managed diagnostics also live in the separate runtime directory.
+There are no accounts, cloud services for projects,
+telemetry, remote UI assets, or required internet requests during normal use.
+The optional managed CLI downloads software during installation and explicit
+updates; it uses a separate private runtime/code directory and does not poll for
+updates while the application runs.
 
 ```text
 Local browser -> loopback Fastify server -> application service -> repository -> SQLite
@@ -48,10 +57,55 @@ Local browser -> loopback Fastify server -> application service -> repository ->
 - Zod validates untrusted transport/domain input.
 - Vitest and Testing Library cover domain, database, API, client, and component
   behavior; Playwright covers the persisted browser journey.
-- npm lockfile installation and GitHub source releases are the current packaging
-  model. Node.js 22 is supported from 22.16.0 on macOS and Linux; Windows
+- npm lockfile installation and GitHub source releases remain the manual delivery
+  model. The managed CLI adds fixed source assets and a pinned private Node
+  runtime, without a desktop wrapper or permanent supervisor. Node.js 22 is
+  supported for manual use from 22.16.0 on macOS and Linux; Windows
   requires Node.js 24. Odd-numbered and unknown future majors are excluded, and
   server startup enforces this platform-specific contract.
+
+## Managed installation and process lifecycle
+
+Manual `npm run quickstart` still installs/builds/starts in the foreground;
+`npm start` reuses that build. Managed setup instead retains versioned source
+releases, private Node runtimes, logs, and installation selection beneath
+`~/Library/Application Support/On Track Runtime/` on macOS,
+`%LOCALAPPDATA%/On Track Runtime/` on Windows, or
+`${XDG_DATA_HOME:-~/.local/share}/on-track-runtime/` on Linux. Project data
+stays at the existing locations below. The short-lived `ontrack` CLI records an
+explicit data path and port, starts the existing server detached from terminal
+stdio, and verifies authenticated instance readiness. There is no resident
+launcher, login service, or automatic crash restart. Windows helpers restrict
+module lookup to their own PowerShell installation's built-in modules, so a
+PowerShell 7 parent cannot supply incompatible modules to Windows PowerShell 5.1.
+Private-directory ACLs retain only the current user's inheritable full control.
+
+Participating manual and managed startups acquire an OS-held SQLite ownership
+lock in an auxiliary `.on-track-owner.sqlite` before import recovery or schema
+migration. A different HTTP port does not bypass data ownership. Managed
+mutations also require installation ownership. Private IPC capabilities and
+instance identity authorize status and graceful stop; these are not browser API
+operations. Maintenance freezes admission and drains accepted work before
+shutdown. Legacy releases cannot retroactively honor these locks and must be
+stopped before adoption.
+
+Updates stage verified source/runtime assets and locked dependency builds before
+interruption. Activation journals coordinate selection with a SQLite backup
+checkpoint and database-only startup migrations. A candidate cannot accept
+project requests before durable commit. Precommit recovery restores the matching
+old code/database pair under ownership; committed recovery preserves later
+writes. Unknown or corrupt state fails closed. The checkpoint does not copy or
+roll back external attachment edits and is independent of portable-export
+limits. This feature adds operational metadata, not project tables or a new
+portable backup schema.
+
+Release hashes and HTTPS authenticate the chosen distribution channel, not an
+independent signing identity. Installer/build code executes with user privileges;
+dependency review and native prebuild checks remain release requirements. No
+project content is uploaded. Per-platform [installation guides](install/README.md)
+cover adoption, offline local commands, and manual fallback. Published installer
+URLs require actual release assets. v0.0.7 offers experimental installation;
+validated OS support remains contingent on the deferred platform evidence.
 
 ## Components and dependency direction
 
@@ -66,12 +120,20 @@ Local browser -> loopback Fastify server -> application service -> repository ->
   pure client helper applies Markdown transformations and returns explicit
   textarea selection offsets; the shared add/edit composer restores those
   offsets after its controlled draft updates. The shared composer grows to eight
-  content lines. A Markdown analysis helper reuses unified/remark-parse and GFM
+  content lines across its full width, above the add/edit toolbar. In short
+  viewports, composer content scrolls independently above the visible toolbar;
+  opening a utility row brings it into that scroll area's view. Native browser
+  file drops into the composer reuse the picker pending-file and multipart save
+  flow; window-level file-drop guards prevent accidental browser navigation while
+  a chat is active. A Markdown analysis helper reuses unified/remark-parse and GFM
   to derive inert sidebar text and automatic Links filtering, using the renderer's
   URL policy without fetching destinations. Reading anchors and sidebar disclosure
   state live in the app session, outside project data and backups. Returning to a
   chat restores its message anchor and viewport offset; a first visit positions
-  near the current/future boundary. Future messages stay in normal scrolling.
+  near the current/future boundary. Returning to All restores its isolated anchor;
+  each different Files, Links, or label filter opens at its own current/first-future
+  boundary. Ordinary refreshes preserve manual scrolling. Future messages stay in
+  normal scrolling, including short histories that can show several future rows.
   A pure sender helper maps a normalized sender name deterministically onto a closed set of theme-safe color
   roles; only the sender text, not a color value, crosses the API boundary.
 - `src/domain`: shared data contracts, closed built-in label vocabularies, and
@@ -83,9 +145,15 @@ Local browser -> loopback Fastify server -> application service -> repository ->
   managed-file resolution and shell-free platform dispatch.
 - `src/server/db`: the sole SQLite boundary, repositories, schema, migration
   startup, permissions, integrity checks, and downgrade refusal.
+- `src/server/runtime`: shared data ownership, authenticated local process
+  control, build identity, and journaled update/checkpoint primitives. Operational
+  locks use auxiliary SQLite files outside the project schema.
+- `src/server/cli`: managed installation selection, detached process lifecycle,
+  and update coordination. It invokes the same server entry point with explicit
+  working/data directories and private Node, independently of a user's shell cwd.
 - `drizzle/`: immutable checked-in migrations and migration metadata.
-- `scripts/`: dependency-free release-contract validation; it inspects filenames
-  and release metadata, never user database contents.
+- `scripts/`: release-contract validation, managed packaging, and OS bootstrap
+  entry points. Release checks inspect filenames/metadata, not user databases.
 
 Dependencies point inward from transport/UI and persistence adapters toward
 shared contracts and use cases. Browser code accesses persistence only through
@@ -106,7 +174,11 @@ in a transaction. Each note has a nullable, trimmed sender of at most 80
 characters: null means You, while a name changes only attribution and
 presentation. Label changes do not alter message time or project activity.
 Project-level `pinned_at` is nullable, nonnegative, and updated separately from
-activity. Each project also stores a checked integer boolean controlling whether
+activity. Nullable `archived_at` stores archive time; its check enforces a
+nonnegative safe integer and excludes simultaneous pin state. Archive writes
+clear the pin atomically without changing activity; restore returns to Projects.
+Archive is ordered by archive time descending and ID, and remains fully editable.
+Each project also stores a checked integer boolean controlling whether
 long messages start collapsed; new and migrated projects default to enabled.
 Sidebar reads batch the latest bounded message preview at or before the service
 clock, the nearest future message timestamp, and the nearest past/future
@@ -159,11 +231,14 @@ All browser note creation and editing uses the same bounded multipart contract,
 whether or not files are attached. The client keeps project summaries and the
 active project detail in one canonical server-state value so mutations update
 both views atomically without duplicated synchronization branches. Dedicated
-idempotent pin routes patch only pin state. The rail derives browser-local
+idempotent pin routes patch only pin state; archive routes return only archive
+and pin state. The client excludes conflicting project mutations and invalidates
+stale reads at both request start and completion. The rail derives browser-local
 today/earlier Attention state and refreshes at the next future message or
 Attention time, local midnight, and browser focus.
 
-Settings exports one versioned SQLite `.on-track-backup` container, including
+Settings exports all or selected projects to a versioned SQLite
+`.on-track-backup` container, including
 project label configuration and message assignments. An online snapshot
 temporarily gains reserved payload tables containing every readable
 managed file plus size, time, and SHA-256 metadata; strict canonical-schema,
@@ -171,15 +246,44 @@ integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
 fresh managed paths, removes bundle payload tables, and compacts the current-
-schema candidate. Exact schema-5, schema-4 development, and schema-3 v0.0.4
-bundles are accepted through fixed legacy descriptors and migrated to schema 6
-only after copying into the staging workspace; older notes receive a null sender.
+schema candidate. Exact schema-6, schema-5, schema-4 development, and schema-3 v0.0.4
+bundles are accepted through fixed legacy descriptors and migrated to schema 7
+only after copying into the staging workspace; older notes receive a null sender
+and all older projects receive null archive state.
 It then uses the maintenance gate and
 restore journal to replace live state. Exact active-schema expectations come
 from a trusted in-memory database built with checked-in migrations; imported SQL
 never defines its own validation baseline.
-Restore is replacement, not merge. Export is limited to three attempts per
-minute per process; restore is limited to two attempts per minute per process.
+Selective export prunes the private snapshot before reading attachments and
+compacts it to remove excluded content from free pages. Selection never mutates
+the source. Import preview streams and fully validates a private upload, returning
+project summaries and an incremental SHA-256 digest, then disposes of staging.
+Final import reuploads the file with bounded multipart mode/selection/digest
+options and repeats validation; excluded payloads cannot bypass validation.
+Selection is applied only to the validated candidate, before file extraction.
+
+`database-transfer/routes.ts` owns transfer transport; `project-import.ts` prepares
+fresh identities, conflict titles, and managed files; `db/project-import.ts`
+inserts explicit project/note/label/attachment records in one transaction.
+Replace activates the selected candidate through the existing journal. Merge
+uses the exclusive maintenance gate, publishes and flushes only imported files,
+then commits remapped records. Existing identities, files, and missing-file
+records remain unchanged. Exact case-sensitive title conflicts receive one UTC
+operation timestamp and deterministic counters within the title limit.
+Rollback cleans only newly published files. A precommit process interruption may
+leave unreferenced files, consistent with attachment creation; no broad orphan
+cleanup is performed. Connection loss after commit remains an ambiguous result,
+so the client does not retry automatically. Successful commits with failed UI
+refreshes remain explicitly identified as completed imports.
+
+GET/all and POST/selected export share three attempts per minute per process;
+legacy PUT/replace and multipart POST imports share two. Preview has a separate
+two-attempt budget, and only one upload/validation import request runs at a time.
+Client previews are serialized. Bundle limits remain 2 GiB, 10,000 attachments,
+100 MiB per file, and 1 GiB total file bytes; explicit project lists are capped at
+10,000 IDs and 1 MiB options. Merge can grow active data beyond one bundle's
+limits, so partial export remains useful. No schema or backup-format version
+change is introduced by selection or merge.
 
 ## Trust and security boundaries
 

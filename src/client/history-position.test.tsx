@@ -127,12 +127,12 @@ describe("message reading positions", () => {
       ["chat", { noteId: "n1", createdAt: 2, offset: -10 }],
     ]);
     let history: HTMLElement;
-    function Workspace({ all }: { all: boolean }) {
+    function Workspace({ filter }: { filter: string }) {
       const ref = useRef<HTMLElement>(null);
-      useHistoryPosition(ref, "chat", all, positions);
+      useHistoryPosition(ref, "chat", filter, positions);
       return <section ref={ref} data-testid="history" />;
     }
-    const view = render(<Workspace all />);
+    const view = render(<Workspace filter="all" />);
     history = view.getByTestId("history");
     geometry(history);
     act(() => vi.advanceTimersByTime(20));
@@ -140,15 +140,15 @@ describe("message reading positions", () => {
     history.scrollTop = 270;
     history.dispatchEvent(new Event("scroll"));
     expect(positions.get("chat")?.noteId).toBe("n2");
-    view.rerender(<Workspace all={false} />);
+    view.rerender(<Workspace filter="attachments" />);
     history.scrollTop = 0;
     history.dispatchEvent(new Event("scroll"));
     act(() => vi.advanceTimersByTime(20));
-    expect(history.scrollTop).toBe(0);
+    expect(history.scrollTop).toBe(600);
     expect(positions.get("chat")?.noteId).toBe("n2");
     view.unmount();
     expect(positions.get("chat")?.noteId).toBe("n2");
-    const second = render(<Workspace all />);
+    const second = render(<Workspace filter="all" />);
     history = second.getByTestId("history");
     geometry(history);
     act(() => vi.advanceTimersByTime(20));
@@ -156,5 +156,157 @@ describe("message reading positions", () => {
     history.scrollTop = 390;
     second.unmount();
     expect(positions.get("chat")?.noteId).toBe("n3");
+  });
+
+  it("repositions for each filter identity and restores All without saving filtered scrolls", () => {
+    vi.useFakeTimers();
+    vi.spyOn(Date, "now").mockReturnValue(3);
+    const anchor = { noteId: "n1", createdAt: 2, offset: -10 };
+    const positions = new Map<string, ReadingPosition>([["chat", anchor]]);
+    function Workspace({ filter }: { filter: string }) {
+      const ref = useRef<HTMLElement>(null);
+      useHistoryPosition(ref, "chat", filter, positions);
+      return <section ref={ref} data-testid="history" />;
+    }
+    const view = render(<Workspace filter="all" />);
+    const history = view.getByTestId("history");
+    geometry(history);
+    act(() => vi.advanceTimersByTime(20));
+    expect(history.scrollTop).toBe(150);
+    view.rerender(<Workspace filter="attachments" />);
+    history.scrollTop = 0;
+    history.dispatchEvent(new Event("scroll"));
+    act(() => vi.advanceTimersByTime(20));
+    expect(history.scrollTop).toBe(280);
+    history.scrollTop = 390;
+    history.dispatchEvent(new Event("scroll"));
+    expect(positions.get("chat")).toEqual(anchor);
+    view.rerender(<Workspace filter="links" />);
+    act(() => vi.advanceTimersByTime(20));
+    expect(history.scrollTop).toBe(280);
+    view.rerender(<Workspace filter="todo" />);
+    history.scrollTop = 0;
+    act(() => vi.advanceTimersByTime(20));
+    expect(history.scrollTop).toBe(280);
+    view.rerender(<Workspace filter="all" />);
+    history.scrollTop = 0;
+    history.dispatchEvent(new Event("scroll"));
+    act(() => vi.advanceTimersByTime(20));
+    expect(history.scrollTop).toBe(150);
+    view.unmount();
+  });
+
+  it("captures All before its rows change and ignores transition-generated scroll events", () => {
+    vi.useFakeTimers();
+    vi.spyOn(Date, "now").mockReturnValue(3);
+    const positions = new Map<string, ReadingPosition>();
+    let beforeFilterChange: (filter: string) => void;
+    function Workspace({ filter }: { filter: string }) {
+      const ref = useRef<HTMLElement>(null);
+      beforeFilterChange = useHistoryPosition(ref, "chat", filter, positions);
+      return <section ref={ref} data-testid="history" />;
+    }
+    const view = render(<Workspace filter="all" />);
+    const history = view.getByTestId("history");
+    geometry(history);
+    act(() => vi.advanceTimersByTime(20));
+    // A final scroll need not have dispatched its asynchronous scroll event yet.
+    history.scrollTop = 150;
+    beforeFilterChange!("attachments");
+    geometry(history, [99]);
+    history.scrollTop = 0;
+    history.dispatchEvent(new Event("scroll"));
+    view.rerender(<Workspace filter="attachments" />);
+    act(() => vi.advanceTimersByTime(20));
+    expect(positions.get("chat")).toEqual({
+      noteId: "n1",
+      createdAt: 2,
+      offset: -10,
+    });
+    beforeFilterChange!("all");
+    view.rerender(<Workspace filter="all" />);
+    geometry(history);
+    history.dispatchEvent(new Event("scroll"));
+    act(() => vi.advanceTimersByTime(20));
+    expect(history.scrollTop).toBe(150);
+    view.unmount();
+  });
+
+  it("preserves manual reading on same-filter clicks, clock ticks, and row refreshes", () => {
+    vi.useFakeTimers();
+    vi.spyOn(Date, "now").mockReturnValue(3);
+    const positions = new Map<string, ReadingPosition>();
+    let beforeFilterChange: (filter: string) => void;
+    function Workspace() {
+      const ref = useRef<HTMLElement>(null);
+      beforeFilterChange = useHistoryPosition(ref, "chat", "links", positions);
+      return <section ref={ref} data-testid="history" />;
+    }
+    const view = render(<Workspace />);
+    const history = view.getByTestId("history");
+    geometry(history);
+    act(() => vi.advanceTimersByTime(20));
+    expect(history.scrollTop).toBe(280);
+    history.scrollTop = 75;
+    beforeFilterChange!("links");
+    vi.mocked(Date.now).mockReturnValue(99);
+    geometry(history, [1, 2, 3]);
+    view.rerender(<Workspace />);
+    act(() => vi.advanceTimersByTime(20));
+    expect(history.scrollTop).toBe(75);
+    expect(positions.size).toBe(0);
+    view.unmount();
+  });
+
+  it("cancels pending frames on rapid filter and project changes and unmount", () => {
+    vi.useFakeTimers();
+    vi.spyOn(Date, "now").mockReturnValue(3);
+    const chatAnchor = { noteId: "n1", createdAt: 2, offset: -10 };
+    const otherAnchor = { noteId: "n3", createdAt: 4, offset: -10 };
+    const positions = new Map<string, ReadingPosition>([
+      ["chat", chatAnchor],
+      ["other", otherAnchor],
+    ]);
+    function Workspace({
+      filter,
+      project = "chat",
+    }: {
+      filter: string;
+      project?: string;
+    }) {
+      const ref = useRef<HTMLElement>(null);
+      useHistoryPosition(ref, project, filter, positions);
+      return <section ref={ref} data-testid="history" />;
+    }
+    const view = render(<Workspace filter="all" />);
+    const history = view.getByTestId("history");
+    geometry(history);
+    view.rerender(<Workspace filter="attachments" />);
+    view.rerender(<Workspace filter="links" />);
+    view.rerender(<Workspace filter="all" project="other" />);
+    act(() => vi.advanceTimersByTime(20));
+    expect(history.scrollTop).toBe(390);
+    expect(positions.get("chat")).toEqual(chatAnchor);
+    view.rerender(<Workspace filter="todo" project="other" />);
+    view.unmount();
+    history.scrollTop = 123;
+    act(() => vi.advanceTimersByTime(20));
+    expect(history.scrollTop).toBe(123);
+    expect(positions.get("other")).toEqual(otherAnchor);
+  });
+
+  it("bounds a tall first-future preview to preserve current context", () => {
+    const history = document.createElement("section");
+    geometry(history);
+    vi.mocked(history.children[3].getBoundingClientRect).mockImplementation(
+      () =>
+        ({
+          top: 480 - history.scrollTop,
+          bottom: 1480 - history.scrollTop,
+          height: 1000,
+        }) as DOMRect,
+    );
+    restoreReadingPosition(history, undefined, 3);
+    expect(history.scrollTop).toBe(280);
   });
 });

@@ -2,11 +2,16 @@
 
 ## Status
 
+The filter-transition behavior and composer layout are superseded by
+[plan 0020](0020-composer-drop-and-filter-scroll.md). Historical verification
+below describes the original implementation.
+
 Approved and implemented on 2026-09-07, committed in `d1fe4ae`, including the
 subsequent footer copy change. The user selected remembered last-viewed position
 and normal future-message scrolling without a separate preview. Full feature
-verification and the narrower footer verification are recorded below. Required
-tracker follow-ups remain pending; the next release has not been prepared.
+verification and the narrower footer verification are recorded below. This
+slice shipped in v0.0.6; remaining validation follow-ups are consolidated in
+[plan 0020](0020-composer-drop-and-filter-scroll.md#required-tracker-follow-ups).
 
 ## Goal
 
@@ -225,61 +230,22 @@ Final verification:
 - Closeout rechecked the three affected client test files (110 passed),
   documentation formatting, release contract, whitespace, and the production
   audit. The moderate Fastify advisory remains; no production code changed.
-- Package metadata is still 0.0.5 on `release/v0.0.6`. Local macOS verification
+- At that verification, package metadata was 0.0.5 on `release/v0.0.6`. Local macOS verification
   does not establish a passing platform matrix for a future release candidate.
 
 ## Required tracker follow-ups
 
-Read-only GitHub inspection on 2026-09-07 found no issue records in the repository
-(the issues API returned pull requests only). These are proposed issue bodies,
-not remotely created issues. Closeout remains NOT READY until these required
-records are created or the user explicitly dismisses them. Strategic roadmap
-items stay in PROJECT.md until a concrete implementation slice is selected.
+The original v0.0.6 release follow-up is complete: the
+[published release](https://github.com/satankov/on-track/releases/tag/v0.0.6)
+uses `87b6da3`, with successful
+[CI](https://github.com/satankov/on-track/actions/runs/34108534343),
+[CodeQL](https://github.com/satankov/on-track/actions/runs/34108534295), and
+[release workflow](https://github.com/satankov/on-track/actions/runs/34108643882).
+These records do not verify later commits on `release/v0.0.7`.
 
-### 1. Resolve the Fastify moderate advisories before v0.0.6
-
-The production audit reports GHSA-w2qp-rph6-63g4 and GHSA-3m5p-2c4r-xxw2 for the
-exact Fastify 5.8.5 dependency. The high-severity gate passes; this does not mean
-there are no advisories. The audit currently offers 5.12.3 as a fix outside the
-pinned version.
-
-Acceptance criteria:
-
-- Assess applicability to the existing schema validation and proxy configuration.
-- Select and explicitly pin a compatible fixed Fastify version with a reviewed
-  lockfile diff, or document an explicit risk acceptance with its rationale.
-- Preserve Host/Origin enforcement, validation/error behavior, multipart limits,
-  rate limits, backup/restore, and native-file route contracts.
-- Run the relevant transport/security regressions and `npm run verify`; record
-  the resulting advisory status and supported-runtime compatibility.
-
-### 2. Prepare and verify the v0.0.6 release candidate
-
-The feature work is committed on `release/v0.0.6`, while manifest/lockfile metadata
-remains 0.0.5 and new changes remain under Unreleased.
-
-Acceptance criteria:
-
-- Agree the release scope and update matching manifests and dated changelog using
-  docs/RELEASING.md; retain accurate schema-6 backup compatibility documentation.
-- Record the Fastify follow-up disposition before calling the candidate ready.
-- Pass `RELEASE_TAG=v0.0.6 npm run release:check`, local `npm run verify`, full
-  Linux verification on Node 22.16/24, and native-install tests on supported
-  Node/OS combinations at the candidate revision.
-- Complete review and link exact CI evidence. Publishing, merging, tagging, and
-  pushing remain separately authorized actions.
-
-### 3. Verify native Open and Show in Folder on Windows and Linux
-
-Existing browser tests use a fake native adapter. Real dispatch has been
-manually reported only on one macOS host; Windows/Linux remain unverified.
-
-Acceptance criteria:
-
-- On Windows with Node 24 and a supported Linux desktop/runtime, test Open for a
-  safe managed document and Show in Folder against disposable evaluation data.
-- Confirm executable/launcher files remain blocked from Open and that missing
-  files or absent default associations produce useful recoverable errors.
-- Record OS/runtime, desktop/file association, tested revision, and outcomes;
-  create defect records for any failure or explicitly retain the platform
-  limitation in release documentation.
+The Fastify advisory is tracked by open
+[PR #18](https://github.com/satankov/on-track/pull/18). Native-action validation
+and the newer filesystem-drop validation are consolidated in
+[plan 0020's follow-ups](0020-composer-drop-and-filter-scroll.md#required-tracker-follow-ups).
+That section is the current authority for pending tracker authorization;
+the earlier uncreated issue drafts are superseded.

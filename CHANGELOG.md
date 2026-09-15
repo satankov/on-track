@@ -6,6 +6,47 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-09-15
+
+### Added
+
+- Optional managed installation with a private pinned Node runtime and
+  `ontrack run`, `stop`, `status`, `logs`, and `update [vX.Y.Z]` commands.
+  Background startup, authenticated local control, data ownership, staged
+  updates, and database checkpoints preserve the existing manual installation
+  workflow. The installer is experimental in v0.0.7: clean end-user installation
+  and OS validation are deferred to the next release; automated release gates
+  remain required.
+- Separate macOS, Windows, and Linux guides covering managed quick setup and
+  manual Node/source installation.
+- Filesystem drag-and-drop attachments in both new and edited messages, with a
+  visible composer drop target and the existing pending-file/save workflow.
+- Selective project export and validated import previews with all projects
+  selected by default. Import can replace the database with selected projects
+  or merge independent copies, renaming title conflicts with the import time.
+  Existing projects and attachments remain unchanged during merge.
+- Archive project grouping below Projects, with independent sidebar collapse.
+  Pinned, Projects, and Archive headers remain visible when empty.
+  Archive from Edit project; restore from settings or the plain box sidebar restore icon.
+  Archiving clears the project pin and retains editable messages and files.
+- Persistent archive state in database and backup schema 7. Exact schema-6
+  backups join the previously supported schema-3/4/5 restore paths.
+
+### Changed
+
+- Add and Edit use a full-width, eight-line-growing textarea above a compact
+  toolbar; Cancel and Save no longer reduce the text width.
+
+### Fixed
+
+- Backup controls stay within the viewport at 200% zoom, including narrow
+  WebKit layouts, with wrapped action labels and constrained form columns.
+- Windows helper compatibility when launched through Node from PowerShell 7,
+  including private-directory permissions and source archive verification.
+- Returning to All after filtering restores its remembered reading position.
+  Switching to Files, Links, or a label filter opens around the latest matching
+  current message and the first matching future message.
+
 ## [0.0.6] - 2026-09-07
 
 ### Added

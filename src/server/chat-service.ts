@@ -4,6 +4,7 @@ import type {
   Note,
   NoteAttachment,
   ProjectPinState,
+  ProjectArchiveState,
   StoredNoteAttachment,
 } from "../domain/types.js";
 import { z } from "zod";
@@ -208,6 +209,12 @@ export class ChatService {
 
   setChatPinned(id: string, pinned: boolean): ProjectPinState {
     const state = this.repository.setChatPinned(id, pinned, this.clock());
+    if (!state) throw new ProjectNotFoundError();
+    return state;
+  }
+
+  setChatArchived(id: string, archived: boolean): ProjectArchiveState {
+    const state = this.repository.setChatArchived(id, archived, this.clock());
     if (!state) throw new ProjectNotFoundError();
     return state;
   }

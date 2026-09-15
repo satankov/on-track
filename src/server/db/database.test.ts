@@ -24,6 +24,118 @@ describe("SQLite project-chat persistence", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it("persists archive membership with exclusive groups and unchanged content", () => {
+    for (const id of ["a", "b", "c", "d"])
+      repository.createChat({ id, title: id, accent: "ocean", now: 10 });
+    repository.appendNote({
+      id: "note",
+      chatId: "a",
+      body: "Keep me",
+      sender: "Maya",
+      now: 20,
+    });
+    expect(repository.getChat("a")?.archivedAt).toBeNull();
+    repository.setChatPinned("a", true, 30);
+    repository.setChatPinned("d", true, 30);
+    expect(repository.setChatArchived("a", true, 40)).toEqual({
+      archivedAt: 40,
+      pinnedAt: null,
+    });
+    expect(repository.setChatArchived("a", true, 50)).toEqual({
+      archivedAt: 40,
+      pinnedAt: null,
+    });
+    repository.setChatArchived("b", true, 40);
+    expect(repository.listChats().map((chat) => chat.id)).toEqual([
+      "d",
+      "c",
+      "a",
+      "b",
+    ]);
+    repository.appendNote({
+      id: "new-note",
+      chatId: "b",
+      body: "Still editable",
+      now: 60,
+    });
+    expect(repository.listChats().map((chat) => chat.id)).toEqual([
+      "d",
+      "c",
+      "a",
+      "b",
+    ]);
+    for (const value of [-1, 1.5, "bad", 9007199254740992]) {
+      expect(() =>
+        database
+          .prepare("UPDATE chats SET archived_at = ? WHERE id = 'a'")
+          .run(value),
+      ).toThrow();
+    }
+    expect(() =>
+      database.prepare("UPDATE chats SET pinned_at = 1 WHERE id = 'a'").run(),
+    ).toThrow();
+    expect(repository.setChatArchived("missing", true, 1)).toBeUndefined();
+    database.close();
+    database = openDatabase(join(directory, "on-track.sqlite"));
+    repository = new SqliteChatRepository(database);
+    expect(repository.getChat("a")).toMatchObject({
+      archivedAt: 40,
+      pinnedAt: null,
+      updatedAt: 20,
+    });
+    expect(repository.listNotes("a")[0]).toMatchObject({
+      body: "Keep me",
+      sender: "Maya",
+    });
+    expect(repository.setChatArchived("a", false, 70)).toEqual({
+      archivedAt: null,
+      pinnedAt: null,
+    });
+    expect(repository.setChatArchived("a", false, 80)).toEqual({
+      archivedAt: null,
+      pinnedAt: null,
+    });
+    expect(repository.getChat("a")?.updatedAt).toBe(20);
+    expect(repository.listChats().map((chat) => chat.id)).toEqual([
+      "d",
+      "a",
+      "c",
+      "b",
+    ]);
+  });
+
+  it("migrates schema 6 without disturbing pins or notes", () => {
+    repository.createChat({
+      id: "a",
+      title: "Legacy",
+      accent: "ocean",
+      now: 10,
+    });
+    repository.setChatPinned("a", true, 20);
+    repository.appendNote({
+      id: "note",
+      chatId: "a",
+      body: "Retained",
+      sender: "Maya",
+      now: 30,
+    });
+    database.exec(`ALTER TABLE chats DROP COLUMN archived_at;
+      DELETE FROM __drizzle_migrations WHERE created_at = 1789027200000;
+      UPDATE app_metadata SET schema_version = 6;`);
+    database.close();
+    database = openDatabase(join(directory, "on-track.sqlite"));
+    repository = new SqliteChatRepository(database);
+    expect(repository.getChat("a")).toMatchObject({
+      archivedAt: null,
+      pinnedAt: 20,
+      updatedAt: 30,
+    });
+    expect(repository.listNotes("a")[0]).toMatchObject({
+      body: "Retained",
+      sender: "Maya",
+    });
+  });
+
   it("migrates an empty database and enforces foreign keys", () => {
     const tables = database
       .prepare(
@@ -94,12 +206,13 @@ describe("SQLite project-chat persistence", () => {
     database.close();
     const legacy = new Database(databasePath);
     legacy.exec(`
+      ALTER TABLE chats DROP COLUMN archived_at;
       ALTER TABLE chats DROP COLUMN collapse_long_messages;
       ALTER TABLE chats DROP COLUMN pinned_at;
       ALTER TABLE notes DROP COLUMN sender;
       UPDATE app_metadata SET schema_version = 3 WHERE id = 1;
       DELETE FROM __drizzle_migrations
-      WHERE created_at IN (1788516961034, 1788523044823, 1788566400000);
+      WHERE created_at IN (1788516961034, 1788523044823, 1788566400000, 1789027200000);
     `);
     legacy.close();
 
@@ -111,7 +224,7 @@ describe("SQLite project-chat persistence", () => {
         .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
         .pluck()
         .get(),
-    ).toBe(6);
+    ).toBe(7);
     expect(repository.getChat("chat-a")?.pinnedAt).toBeNull();
     expect(repository.getChat("chat-a")?.collapseLongMessages).toBe(true);
     expect(repository.listNotes("chat-a")).toMatchObject([

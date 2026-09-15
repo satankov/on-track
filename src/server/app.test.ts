@@ -75,6 +75,66 @@ describe("local project-chat API", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it("archives projects independently of edits and rejects pinning until restored", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      payload: { title: "Archive me", accent: "ocean" },
+    });
+    const project = created.json();
+    const url = `/api/chats/${project.id}`;
+    await app.inject({ method: "PUT", url: `${url}/pin` });
+    const archived = await app.inject({ method: "PUT", url: `${url}/archive` });
+    expect(archived.statusCode).toBe(200);
+    expect(archived.json()).toEqual({
+      archivedAt: expect.any(Number),
+      pinnedAt: null,
+    });
+    expect(
+      (await app.inject({ method: "PUT", url: `${url}/archive` })).json(),
+    ).toEqual(archived.json());
+    expect((await app.inject({ method: "GET", url })).json()).toMatchObject({
+      updatedAt: project.updatedAt,
+      ...archived.json(),
+    });
+    expect(
+      (await app.inject({ method: "PUT", url: `${url}/pin` })).statusCode,
+    ).toBe(409);
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url,
+          payload: { title: "Still editable" },
+        })
+      ).json(),
+    ).toMatchObject({ title: "Still editable", ...archived.json() });
+    expect(
+      (await app.inject({ method: "DELETE", url: `${url}/archive` })).json(),
+    ).toEqual({ archivedAt: null, pinnedAt: null });
+    expect(
+      (await app.inject({ method: "DELETE", url: `${url}/archive` })).json(),
+    ).toEqual({ archivedAt: null, pinnedAt: null });
+    expect(
+      (await app.inject({ method: "PUT", url: `${url}/pin` })).statusCode,
+    ).toBe(200);
+    for (const method of ["PUT", "DELETE"] as const) {
+      expect(
+        (await app.inject({ method, url: "/api/chats/missing/archive" }))
+          .statusCode,
+      ).toBe(404);
+      expect(
+        (
+          await app.inject({
+            method,
+            url: `${url}/archive`,
+            headers: { origin: "https://example.com" },
+          })
+        ).statusCode,
+      ).toBe(403);
+    }
+  });
+
   it("creates and customizes through JSON and appends through multipart", async () => {
     const created = await app.inject({
       method: "POST",
