@@ -42,14 +42,14 @@ it("repeatedly protects a directory and makes newly written capabilities owner-o
     // Inspect the actual Windows ACL, independently of the production verifier.
     const script = `
 $ErrorActionPreference = 'Stop'
-$env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
+$PSModuleAutoLoadingPreference = 'None'
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
-foreach ($target in @($env:ONTRACK_TEST_DIRECTORY, $env:ONTRACK_TEST_CAPABILITY)) {
-  $acl = Get-Acl -LiteralPath $target
+$directory = [IO.DirectoryInfo]::new($env:ONTRACK_TEST_DIRECTORY).GetAccessControl()
+$capability = [IO.FileInfo]::new($env:ONTRACK_TEST_CAPABILITY).GetAccessControl()
+foreach ($acl in @($directory, $capability)) {
   $rules = @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
   if ($rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $sid.Value -or $rules[0].AccessControlType -ne 'Allow' -or $rules[0].FileSystemRights -ne [Security.AccessControl.FileSystemRights]::FullControl) { throw 'Unexpected capability access' }
 }
-$directory = Get-Acl -LiteralPath $env:ONTRACK_TEST_DIRECTORY
 if (-not $directory.AreAccessRulesProtected -or $directory.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) { throw 'Unexpected directory owner or inheritance' }
 `;
     execFileSync(

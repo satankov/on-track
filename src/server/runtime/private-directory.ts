@@ -4,19 +4,20 @@ import { isAbsolute } from "node:path";
 
 const WINDOWS_PRIVATE_DIRECTORY = `
 $ErrorActionPreference = 'Stop'
-# A pwsh -> Node -> powershell.exe chain inherits incompatible PS7 modules.
+# Use .NET directly: cold cmdlet module discovery can exceed the startup budget.
+$PSModuleAutoLoadingPreference = 'None'
 $env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
 $path = $env:ON_TRACK_PRIVATE_DIRECTORY
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-$acl = New-Object System.Security.AccessControl.DirectorySecurity
+$acl = [System.Security.AccessControl.DirectorySecurity]::new()
 $acl.SetOwner($sid)
 $acl.SetAccessRuleProtection($true, $false)
-$rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+$rule = [System.Security.AccessControl.FileSystemAccessRule]::new($sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
 $acl.AddAccessRule($rule)
-# Set-Acl copies every descriptor section, including this fresh descriptor's
-# unset group/audit sections. Persist only the owner and DACL we changed.
-(Get-Item -LiteralPath $path).SetAccessControl($acl)
-$actual = Get-Acl -LiteralPath $path
+# Persist only the owner and DACL we changed, not unset group/audit sections.
+$directory = [IO.DirectoryInfo]::new($path)
+$directory.SetAccessControl($acl)
+$actual = $directory.GetAccessControl()
 $rules = @($actual.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
 if (-not $actual.AreAccessRulesProtected -or $actual.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value -or $rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $sid.Value -or $rules[0].AccessControlType -ne 'Allow' -or $rules[0].FileSystemRights -ne [System.Security.AccessControl.FileSystemRights]::FullControl -or $rules[0].InheritanceFlags -ne [System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit' -or $rules[0].PropagationFlags -ne [System.Security.AccessControl.PropagationFlags]::None) { throw 'Unexpected directory access' }
 `;
@@ -47,6 +48,10 @@ export function ensurePrivateDirectory(path: string): string {
         env: { ...process.env, ON_TRACK_PRIVATE_DIRECTORY: path },
       },
     );
+    if (
+      (result.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT"
+    )
+      throw new Error("Private On Track directory permission check timed out.");
     if (result.error || result.status !== 0)
       throw new Error(
         "Could not establish private On Track directory permissions.",

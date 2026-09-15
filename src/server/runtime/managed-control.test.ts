@@ -15,6 +15,10 @@ it("resumes after a busy drain, keeps controls available while frozen, and ackno
   const root = mkdtempSync(join(tmpdir(), "on-track-control-"));
   const gate = new MaintenanceGate();
   let stopped = false;
+  let finishShutdown!: () => void;
+  const shutdownAllowed = new Promise<void>((resolve) => {
+    finishShutdown = resolve;
+  });
   const launch: ManagedLaunch = {
     installRoot: join(root, "install"),
     dataDirectory: root,
@@ -30,6 +34,7 @@ it("resumes after a busy drain, keeps controls available while frozen, and ackno
     gate,
     drainTimeoutMs: 5,
     closeServer: async () => {
+      await shutdownAllowed;
       stopped = true;
     },
   });
@@ -51,8 +56,12 @@ it("resumes after a busy drain, keeps controls available while frozen, and ackno
       /refused/,
     );
     expect((await requestControl(instance, "stop")).state).toBe("stopping");
-    expect(stopped).toBe(true);
+    // The acknowledgment is flushed before the asynchronous close completes.
+    expect(stopped).toBe(false);
+    finishShutdown();
+    await expect.poll(() => stopped).toBe(true);
   } finally {
+    finishShutdown();
     await controller.close();
     rmSync(root, { recursive: true, force: true });
   }
