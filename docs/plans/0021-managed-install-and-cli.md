@@ -734,3 +734,27 @@ the selected compatibility floor with the publication commands. No real
 installation or full suite was rerun for this metadata/documentation preparation;
 the runbook and release CI retain those automated gates before publication.
 The earlier implementation verification above remains historical evidence.
+
+## PR #30 CI regression verification — 2026-09-15
+
+The initial Linux jobs exposed backup form overflow at 200% zoom. The document
+no longer forces a 320px minimum through zoom; backup columns, children, and
+buttons shrink/wrap within the available width. The E2E assertion now checks
+panel width and both button edges. It reproduced a 544px panel in a 390px
+viewport locally before the fix and passed afterward.
+
+Windows helpers now isolate their built-in PowerShell modules from inherited
+PowerShell 7 module paths. ACL application persists only changed owner/access
+sections and verifies private inheritable access. Partial subprocess mocks keep
+Windows permission calls available, and the profile test preserves actual
+platform permissions. New conflicting-module and native ACL/capability tests
+cover these boundaries; bootstrap ZIP tests now run on Windows too. Extraction
+errors expose only fixed stage names and numeric codes.
+
+`RELEASE_TAG=v0.0.7 npm run verify` passed locally on macOS: 779 unit/component/
+integration tests (one existing skip), 39 browser tests (five existing skips),
+91.23% line and 83.94% branch coverage, migrations, static checks, release
+contract, high-severity audit gate, and prepared lifecycle/recovery fixtures.
+The audit still reports one existing moderate advisory. Independent review found
+no unresolved issue. Fresh Windows and Linux WebKit CI results remain required;
+local verification is not evidence that the remote failures have passed.

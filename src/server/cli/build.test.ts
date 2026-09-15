@@ -5,7 +5,10 @@ import { tmpdir } from "node:os";
 import { afterEach, expect, it, vi } from "vitest";
 import { buildEnvironment, buildPreparedSource } from "./build.js";
 const boundary = vi.hoisted(() => ({ spawn: vi.fn() }));
-vi.mock("node:child_process", () => boundary);
+vi.mock("node:child_process", async (original) => ({
+  ...(await original<typeof import("node:child_process")>()),
+  spawn: boundary.spawn,
+}));
 const roots: string[] = [];
 afterEach(() => {
   vi.unstubAllEnvs();

@@ -63,9 +63,10 @@ test("atomic profile replacement preserves existing permissions and content", as
   roots.push(root);
   const path = join(root, "profile");
   writeFileSync(path, "# custom\n", { mode: 0o640 });
+  const originalMode = statSync(path).mode & 0o777;
   writeProfileAtomically(path, "/some/bin");
   writeProfileAtomically(path, "/some/bin");
   expect(readFileSync(path, "utf8")).toContain("# custom\n");
-  expect(statSync(path).mode & 0o777).toBe(0o640);
+  expect(statSync(path).mode & 0o777).toBe(originalMode);
   expect(readdirSync(root)).toEqual(["profile"]);
 });

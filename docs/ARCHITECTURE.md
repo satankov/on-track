@@ -75,7 +75,10 @@ releases, private Node runtimes, logs, and installation selection beneath
 stays at the existing locations below. The short-lived `ontrack` CLI records an
 explicit data path and port, starts the existing server detached from terminal
 stdio, and verifies authenticated instance readiness. There is no resident
-launcher, login service, or automatic crash restart.
+launcher, login service, or automatic crash restart. Windows helpers restrict
+module lookup to their own PowerShell installation's built-in modules, so a
+PowerShell 7 parent cannot supply incompatible modules to Windows PowerShell 5.1.
+Private-directory ACLs retain only the current user's inheritable full control.
 
 Participating manual and managed startups acquire an OS-held SQLite ownership
 lock in an auxiliary `.on-track-owner.sqlite` before import recovery or schema

@@ -8,6 +8,8 @@ param(
  [switch]$Help
 )
 $ErrorActionPreference = 'Stop'
+# Use this PowerShell's built-in modules even when launched through Node from pwsh.
+$env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
 $Release = '__ONTRACK_RELEASE__'
 $BootstrapHash = '__ONTRACK_BOOTSTRAP_SHA256__'
 $ManifestHash = '__ONTRACK_MANIFEST_SHA256__'
@@ -53,7 +55,8 @@ $acl.SetOwner($sid)
 $acl.SetAccessRuleProtection($true, $false)
 $rule = New-Object Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
 $acl.AddAccessRule($rule)
-Set-Acl -LiteralPath $Root -AclObject $acl
+# Persist only the changed owner/DACL, not an unset primary group or audit section.
+(Get-Item -LiteralPath $Root).SetAccessControl($acl)
 $verified = Get-Acl -LiteralPath $Root
 $rules = @($verified.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
 if (-not $verified.AreAccessRulesProtected -or $verified.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $sid.Value -or $rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $sid.Value -or $rules[0].AccessControlType -ne 'Allow' -or $rules[0].FileSystemRights -ne [Security.AccessControl.FileSystemRights]::FullControl) { throw 'Could not protect installation directory.' }

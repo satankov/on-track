@@ -39,6 +39,10 @@ below `1.0.0`, releases may contain breaking changes.
 
 ### Fixed
 
+- Backup controls stay within the viewport at 200% zoom, including narrow
+  WebKit layouts, with wrapped action labels and constrained form columns.
+- Windows helper compatibility when launched through Node from PowerShell 7,
+  including private-directory permissions and source archive verification.
 - Returning to All after filtering restores its remembered reading position.
   Switching to Files, Links, or a label filter opens around the latest matching
   current message and the first matching future message.

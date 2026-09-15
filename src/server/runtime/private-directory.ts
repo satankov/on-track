@@ -4,6 +4,8 @@ import { isAbsolute } from "node:path";
 
 const WINDOWS_PRIVATE_DIRECTORY = `
 $ErrorActionPreference = 'Stop'
+# A pwsh -> Node -> powershell.exe chain inherits incompatible PS7 modules.
+$env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
 $path = $env:ON_TRACK_PRIVATE_DIRECTORY
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 $acl = New-Object System.Security.AccessControl.DirectorySecurity
@@ -11,12 +13,12 @@ $acl.SetOwner($sid)
 $acl.SetAccessRuleProtection($true, $false)
 $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
 $acl.AddAccessRule($rule)
-Set-Acl -LiteralPath $path -AclObject $acl
+# Set-Acl copies every descriptor section, including this fresh descriptor's
+# unset group/audit sections. Persist only the owner and DACL we changed.
+(Get-Item -LiteralPath $path).SetAccessControl($acl)
 $actual = Get-Acl -LiteralPath $path
-if (-not $actual.AreAccessRulesProtected) { throw 'Unprotected directory' }
-foreach ($access in $actual.Access) {
- if ($access.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value -or $access.AccessControlType -ne 'Allow') { throw 'Unexpected directory access' }
-}
+$rules = @($actual.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
+if (-not $actual.AreAccessRulesProtected -or $actual.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value -or $rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $sid.Value -or $rules[0].AccessControlType -ne 'Allow' -or $rules[0].FileSystemRights -ne [System.Security.AccessControl.FileSystemRights]::FullControl -or $rules[0].InheritanceFlags -ne [System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit' -or $rules[0].PropagationFlags -ne [System.Security.AccessControl.PropagationFlags]::None) { throw 'Unexpected directory access' }
 `;
 
 /** Restrict operational capabilities before writing metadata or checkpoints. */

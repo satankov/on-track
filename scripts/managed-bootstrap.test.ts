@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { afterEach, expect, test } from "vitest";
 // @ts-expect-error Maintainer/bootstrap entry is plain JavaScript.
 import {
@@ -75,32 +75,33 @@ test("downloader refuses hostile redirect and oversized response", async () => {
     ).toString(),
   ).toBe("1234");
 });
-test.skipIf(process.platform === "win32")(
-  "source extraction validates real ZIP bytes before writing and rejects extra entries",
-  () => {
-    const root = mkdtempSync(join(tmpdir(), "ontrack-zip-"));
-    dirs.push(root);
-    writeFileSync(join(root, "package.json"), "{}");
-    writeFileSync(join(root, "package-lock.json"), "{}");
-    const archive = join(root, "source.zip");
-    expect(
-      spawnSync("zip", ["-q", archive, "package.json", "package-lock.json"], {
-        cwd: root,
-      }).status,
-    ).toBe(0);
-    extractSource(archive, join(root, "out"), manifest().sourceFiles);
-    expect(readFileSync(join(root, "out/package.json"), "utf8")).toBe("{}");
-    expect(() =>
-      extractSource(archive, join(root, "wrong"), { "package.json": file }),
-    ).toThrow(/entries/);
-    expect(() =>
-      extractSource(archive, join(root, "hash"), {
-        "package.json": { size: 2, sha256: "0".repeat(64) },
-        "package-lock.json": file,
-      }),
-    ).toThrow(/integrity/);
-  },
-);
+test("source extraction validates real ZIP bytes before writing and rejects extra entries", () => {
+  const root = mkdtempSync(join(tmpdir(), "ontrack-zip-"));
+  dirs.push(root);
+  writeFileSync(join(root, "package.json"), "{}");
+  writeFileSync(join(root, "package-lock.json"), "{}");
+  const archive = join(root, "source.zip");
+  execFileSync("git", ["init", "-q", root]);
+  execFileSync("git", ["-C", root, "add", "package.json", "package-lock.json"]);
+  const tree = execFileSync("git", ["-C", root, "write-tree"], {
+    encoding: "utf8",
+  }).trim();
+  writeFileSync(
+    archive,
+    execFileSync("git", ["-C", root, "archive", "--format=zip", tree]),
+  );
+  extractSource(archive, join(root, "out"), manifest().sourceFiles);
+  expect(readFileSync(join(root, "out/package.json"), "utf8")).toBe("{}");
+  expect(() =>
+    extractSource(archive, join(root, "wrong"), { "package.json": file }),
+  ).toThrow(/entries|preparation/);
+  expect(() =>
+    extractSource(archive, join(root, "hash"), {
+      "package.json": { size: 2, sha256: "0".repeat(64) },
+      "package-lock.json": file,
+    }),
+  ).toThrow(/integrity|preparation/);
+});
 test("unpublished bootstrap help succeeds without networking", () => {
   const result = spawnSync("bash", ["scripts/install.sh", "--help"], {
     encoding: "utf8",
@@ -142,10 +143,14 @@ test("bootstrap uses identical filename and expansion limits as managed CLI", ()
 });
 test("installer verifies private root and manifest before executable preparation", () => {
   const ps = readFileSync("scripts/install.ps1", "utf8");
-  expect(ps.indexOf("Set-Acl -LiteralPath $Root")).toBeLessThan(
-    ps.indexOf("$claim = Join-Path"),
+  const protect = ps.indexOf(
+    "(Get-Item -LiteralPath $Root).SetAccessControl($acl)",
   );
-  expect(ps).toContain("$verified.AreAccessRulesProtected");
+  const verify = ps.indexOf("$verified.AreAccessRulesProtected");
+  const claim = ps.indexOf("$claim = Join-Path");
+  expect(protect).toBeGreaterThanOrEqual(0);
+  expect(verify).toBeGreaterThan(protect);
+  expect(claim).toBeGreaterThan(verify);
   expect(ps).toContain("__ONTRACK_MANIFEST_SHA256__");
   const shell = readFileSync("scripts/install.sh", "utf8");
   expect(shell.indexOf('chmod 700 "$root"')).toBeLessThan(

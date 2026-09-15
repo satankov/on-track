@@ -64,10 +64,14 @@ test("selects exported projects, merges independent copies, and replaces with se
   await page
     .getByRole("button", { name: "Replace with selected (1)" })
     .scrollIntoViewIfNeeded();
+  const panelBounds = await page.locator(".backup-panel").last().boundingBox();
+  expect(panelBounds).toBeTruthy();
+  expect(panelBounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
   const bounds = await page
     .getByRole("button", { name: "Replace with selected (1)" })
     .boundingBox();
   expect(bounds).toBeTruthy();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(
     page.viewportSize()!.width + 1,
   );

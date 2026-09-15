@@ -47,13 +47,21 @@ async function capture(
     child.on("close", (code) => {
       clearTimeout(timer);
       if (failed) return;
-      if (code !== 0)
+      if (code !== 0) {
+        const diagnostic = Buffer.concat(chunks, length)
+          .toString("utf8")
+          .match(
+            /^ONTRACK_ARCHIVE_FAILURE:(inventory|open|entry|write|checksum|complete):(-?\d+)\r?\n$/,
+          );
         reject(
           new Error(
-            "Archive extraction failed. Use the manual installation guide.",
+            "Archive extraction failed. Use the manual installation guide." +
+              (diagnostic
+                ? ` (stage: ${diagnostic[1]}, code: ${diagnostic[2]})`
+                : ""),
           ),
         );
-      else resolvePromise(Buffer.concat(chunks, length));
+      } else resolvePromise(Buffer.concat(chunks, length));
     });
   });
 }

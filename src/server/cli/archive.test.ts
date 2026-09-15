@@ -10,11 +10,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { extractVerifiedSource } from "./archive.js";
 import type { ManagedReleaseManifest } from "./release.js";
+import { conflictingPowerShellModulePath } from "../../test/powershell-module-fixture.js";
 const roots: string[] = [];
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const root of roots.splice(0))
     rmSync(root, { recursive: true, force: true });
 });
@@ -60,6 +62,8 @@ function fixture(link = false) {
 }
 it("extracts fixed ZIP entries as regular files only after checking their individual digests", async () => {
   const f = fixture();
+  if (process.platform === "win32")
+    vi.stubEnv("PSModulePath", conflictingPowerShellModulePath(f.base));
   await extractVerifiedSource(f.archive, f.destination, f.manifest);
   expect(readFileSync(join(f.destination, "nested/file.txt"), "utf8")).toBe(
     "verified content",

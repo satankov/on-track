@@ -41,7 +41,10 @@ const boundary = vi.hoisted(() => ({
   requestControl: vi.fn(),
   readInstance: vi.fn(),
 }));
-vi.mock("node:child_process", () => ({ spawn: boundary.spawn }));
+vi.mock("node:child_process", async (original) => ({
+  ...(await original<typeof import("node:child_process")>()),
+  spawn: boundary.spawn,
+}));
 vi.mock("./process.js", () => ({
   ...boundary,
   softwareEnvironment: () => ({}),
