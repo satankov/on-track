@@ -28,7 +28,9 @@ const onTrackBackupOrExportPattern =
 export function findForbiddenTrackedDataFiles(trackedFiles) {
   return trackedFiles.filter(
     (path) =>
-      databasePathPattern.test(path) || onTrackBackupOrExportPattern.test(path),
+      databasePathPattern.test(path) ||
+      onTrackBackupOrExportPattern.test(path) ||
+      /(?:^|\/)\.on-track-[^/]*\.json$/i.test(path),
   );
 }
 

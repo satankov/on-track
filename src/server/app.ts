@@ -49,6 +49,7 @@ interface BuildAppOptions {
   dataDirectory?: string;
   attachmentStore?: AttachmentStore & Pick<ManagedAttachmentStore, "read">;
   maintenanceGate?: MaintenanceGate;
+  onDatabaseClosed?: () => void | Promise<void>;
   exportDirectoryCleanup?: (path: string) => void;
   stagedUploadCleanup?: (staged: StagedUpload) => void;
   idFactory?: () => string;
@@ -215,6 +216,16 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     };
   }
 
+  const requestLeases = new WeakMap<object, () => void>();
+  app.addHook("onResponse", async (request) => {
+    requestLeases.get(request)?.();
+    requestLeases.delete(request);
+  });
+  app.addHook("onRequestAbort", async (request) => {
+    requestLeases.get(request)?.();
+    requestLeases.delete(request);
+  });
+
   app.addHook("onRequest", async (request, reply) => {
     reply
       .header(
@@ -240,6 +251,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         code: "invalid_origin",
         message: "Request origin is not allowed.",
       });
+    }
+    if (request.url.split("?")[0] !== "/api/health") {
+      requestLeases.set(request, maintenanceGate.enterRequest());
     }
   });
 
@@ -520,7 +534,11 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   });
 
   app.addHook("onClose", async () => {
-    if (database.open) database.close();
+    try {
+      if (database.open) database.close();
+    } finally {
+      await options.onDatabaseClosed?.();
+    }
   });
 
   return app;

@@ -7,7 +7,7 @@ expected history position after filter changes, and give multiline drafts the
 full composer width. Approved on 2026-09-09 after review of the interactive
 Add/Edit composer mockup. All three features are implemented in commit `8f74b00`
 on `release/v0.0.7`; the aggregate local verification gate passes. Package
-metadata remains 0.0.6 and this slice is unreleased.
+metadata is prepared as 0.0.7; publication is pending.
 
 ## Context and reusable precedent
 
@@ -204,13 +204,11 @@ unrecorded tasks; no remote mutation is authorized by this closeout.
 
 ### Already tracked: Fastify advisories
 
-Open [PR #18](https://github.com/satankov/on-track/pull/18) proposes upgrading
-Fastify 5.8.5 to 5.12.3 and is the existing remote record for this follow-up.
-The installed dependency still reports GHSA-w2qp-rph6-63g4 and
-GHSA-3m5p-2c4r-xxw2. Its
-[CI run](https://github.com/satankov/on-track/actions/runs/34107255809) passed
-for that PR revision; a future integration must verify the current release
-candidate. Do not create a duplicate issue or imply the upgrade is merged.
+Read-only tracker verification on 2026-09-15 found open
+[PR #26](https://github.com/satankov/on-track/pull/26), proposing Fastify 5.8.5
+to 5.12.4 and superseding closed PR #18. PR #26 is the authoritative follow-up;
+it is not merged. The installed dependency remains 5.8.5; a future integration
+must verify the then-current release candidate. Do not create a duplicate issue.
 
 ### Draft: Verify native Open and Show in Folder on Windows and Linux
 

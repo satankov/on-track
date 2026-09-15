@@ -22,6 +22,8 @@ test-results/
 *.on-track-export
 on-track-backups/
 on-track-exports/
+.on-track-*.json
+.bootstrap-claim/
 .env
 .env.*
 !.env.example

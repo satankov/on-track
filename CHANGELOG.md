@@ -6,8 +6,19 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-09-15
+
 ### Added
 
+- Optional managed installation with a private pinned Node runtime and
+  `ontrack run`, `stop`, `status`, `logs`, and `update [vX.Y.Z]` commands.
+  Background startup, authenticated local control, data ownership, staged
+  updates, and database checkpoints preserve the existing manual installation
+  workflow. The installer is experimental in v0.0.7: clean end-user installation
+  and OS validation are deferred to the next release; automated release gates
+  remain required.
+- Separate macOS, Windows, and Linux guides covering managed quick setup and
+  manual Node/source installation.
 - Filesystem drag-and-drop attachments in both new and edited messages, with a
   visible composer drop target and the existing pending-file/save workflow.
 - Selective project export and validated import previews with all projects

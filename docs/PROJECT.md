@@ -18,14 +18,22 @@ recovery parts of that promise.
 Version 0.0.6 is the current published plaintext alpha source release under
 Apache License 2.0. The `release/v0.0.7` checkout adds verified local work for
 Archive, selective backups/import, composer file drops, filter-position
-restoration, and a full-width add/edit composer. Package metadata remains 0.0.6;
-the next release has not been published.
+restoration, and a full-width add/edit composer. Package metadata is prepared as
+0.0.7; the next release has not been published. The approved
+[managed installation and CLI](plans/0021-managed-install-and-cli.md) adds a
+second installation path while retaining manual Node/npm setup. v0.0.7 is the
+first managed-compatible release (floor `0.0.7`). Installer assets await
+publication. The user accepted experimental delivery with real
+end-user installation/OS validation deferred to the next release; automated
+release checks remain required.
 
 ## Current objective
 
 Consolidate the completed feature slices for the next alpha release, address
 the dependency and manual-validation follow-ups or record accepted limits, and
-verify the supported platform matrix at the selected candidate. Retain plaintext
+publish the experimental managed installer under the v0.0.7 exception. Complete
+its deferred real installation/OS validation for the next release.
+Verify the supported manual Node matrix at the selected candidate. Retain plaintext
 and portability warnings. Mobile remains a regression-protected alpha, not a
 dedicated design target.
 
@@ -118,7 +126,7 @@ dedicated design target.
   plain text extracted from Markdown, and Links filters messages using the same
   parsed Markdown/GFM URL policy as rendering.
 
-## Current unreleased outcome
+## v0.0.7 candidate outcome
 
 - [Archive](plans/0018-project-archive.md) adds a third sidebar section and
   versioned archive state in database/backup schema 7.
@@ -129,6 +137,12 @@ dedicated design target.
   add visible file-drop targets, restore All reading positions after filtering,
   position other filters near current work, and give add/edit drafts full width
   above a toolbar that remains reachable in short viewports.
+- [Managed installation and CLI](plans/0021-managed-install-and-cli.md) is the
+  active delivery slice: private Node, Git-free source installation, background
+  lifecycle commands, and version-specific updates with database recovery.
+  [Separate OS guides](install/README.md) retain full manual instructions.
+  Installer publication is pending, and clean installation/platform validation
+  is explicitly deferred to the next release.
 
 ## Current capabilities
 
@@ -178,8 +192,9 @@ dedicated design target.
 
 ## Near-term priorities
 
-1. Prepare the next alpha candidate from the completed slices, with release
-   review and the platform-scoped Node 22.16/24 verification matrix.
+1. Complete managed CLI installation and recovery gates, then prepare the next
+   alpha candidate with release review and the preserved platform-scoped manual
+   Node 22.16/24 verification matrix.
 2. Continue hardening backup, restore, integrity checking, recovery, and
    conflict-free import semantics before users entrust irreplaceable data to the
    application.
@@ -212,9 +227,10 @@ hosting, analytics, and telemetry.
 - The sidebar footer uses only “Local only” beside Settings. Plaintext alpha
   limitations remain documented in the README and backup settings; locality is
   not encryption.
-- Distribution is a GitHub source release supporting Node.js 22 from 22.16.0 on
-  macOS and Linux and Node.js 24 on Windows, macOS, and Linux, not an npm package
-  or native installer.
+- Manual GitHub source installation supports Node.js 22 from 22.16.0 on macOS
+  and Linux and Node.js 24 on Windows, macOS, and Linux. Managed CLI delivery
+  adds a private pinned runtime and fixed source assets alongside that workflow;
+  no desktop wrapper or global npm package is introduced.
 - The project is open source under Apache License 2.0, including commercial use.
 
 ## Roadmap and tracker
@@ -231,10 +247,13 @@ The public repository and release are:
 - [Issues](https://github.com/satankov/on-track/issues)
 
 GitHub is the backlog and ownership tracker. The Fastify advisory is tracked by
-open [PR #18](https://github.com/satankov/on-track/pull/18). Native-action smoke
+open [PR #26](https://github.com/satankov/on-track/pull/26); it supersedes closed
+PR #18. Native-action smoke
 tests and filesystem drag/drop validation still need issue records; their
 [two drafts](plans/0020-composer-drop-and-filter-scroll.md#required-tracker-follow-ups)
-are awaiting authorization.
+are awaiting authorization. The [installer validation draft](plans/0021-managed-install-and-cli.md#required-tracker-follow-up)
+is also awaiting an issue record for the next release.
+[v0.0.7 publication commands](releases/v0.0.7.md) describe the remaining release steps.
 Broader product priorities above remain strategy until scoped. Durable decisions
 live in `docs/adr/`; significant work lives in `docs/plans/`.
 
@@ -251,6 +270,11 @@ live in `docs/adr/`; significant work lives in `docs/plans/`.
   24 on Linux, plus native SQLite install/test coverage on macOS for both lines
   and on Windows for Node 24; every future release candidate must pass those
   gates, and dependency upgrades can still affect portability.
+- Managed installation requires additional clean-machine, background-process,
+  and interrupted-update evidence for each advertised OS/architecture. Its
+  database checkpoints remain plaintext, need free disk space, and are not
+  independent backups of attachment files. Existing pre-protocol source releases
+  must be stopped and upgraded manually before explicit adoption.
 - The configured production audit passes its high-severity gate but currently
   reports a moderate Fastify advisory. The available fixed version is outside
   the exact declared dependency and requires explicit upgrade verification.

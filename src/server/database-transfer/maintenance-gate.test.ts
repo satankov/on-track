@@ -142,3 +142,53 @@ describe("database transfer maintenance gate", () => {
     await exporting;
   });
 });
+
+it("freezes all new operations, drains accepted work, and resumes admission", async () => {
+  const gate = new MaintenanceGate();
+  const pending = deferred();
+  const active = gate.runRead(() => pending.promise);
+  const drained = gate.freezeAndDrain(500);
+  for (const run of [
+    () => gate.runRead(() => 1),
+    () => gate.runMutation(() => 1),
+    () => gate.runExport(() => 1),
+    () => gate.runRestore(() => 1),
+  ])
+    await expect(run()).rejects.toMatchObject({
+      blockingOperation: "maintenance",
+    });
+  pending.resolve();
+  await active;
+  await drained;
+  gate.resume();
+  await expect(gate.runMutation(() => 42)).resolves.toBe(42);
+});
+it("a drain timeout never releases active work or silently reopens admission", async () => {
+  const gate = new MaintenanceGate();
+  const pending = deferred();
+  const active = gate.runExport(() => pending.promise);
+  await expect(gate.freezeAndDrain(1)).rejects.toThrow(/timed out/);
+  await expect(gate.runRead(() => 1)).rejects.toThrow(MaintenanceBusyError);
+  pending.resolve();
+  await active;
+  gate.resume();
+});
+
+it("drains complete HTTP leases even before domain work has started", async () => {
+  const gate = new MaintenanceGate();
+  const release = gate.enterRequest();
+  let drained = false;
+  const pending = gate.freezeAndDrain(500).then(() => {
+    drained = true;
+  });
+  await Promise.resolve();
+  expect(drained).toBe(false);
+  expect(() => gate.enterRequest()).toThrow(MaintenanceBusyError);
+  release();
+  release();
+  await pending;
+  gate.resume();
+  const next = gate.enterRequest();
+  next();
+  await gate.freezeAndDrain(1);
+});
