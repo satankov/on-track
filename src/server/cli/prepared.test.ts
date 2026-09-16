@@ -19,7 +19,7 @@ afterEach(() => {
     rmSync(root, { recursive: true, force: true });
 });
 function fixture() {
-  const base = mkdtempSync(join(tmpdir(), "ontrack-retain-"));
+  const base = mkdtempSync(join(tmpdir(), "threadstr-retain-"));
   roots.push(base);
   const sourceDirectory = join(base, "source");
   const runtimeDirectory = join(base, "node");

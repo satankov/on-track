@@ -30,7 +30,7 @@ jobs:
           - os: windows-2025
             arch: x64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -55,8 +55,14 @@ jobs:
         run: npm run test:managed-install
       - name: Exercise real migration, failed-candidate recovery, and restart
         run: npm run test:managed-update
+      - name: Upgrade unchanged published v0.0.8 through both command names
+        run: node scripts/managed-upgrade-compat.mjs --baseline v0.0.8
 
 # These tests use copied Node/built sources and existing dependency junctions in
 # disposable roots. They do not claim clean online bootstrap, absence of compiler
 # tools, or actual GUI-terminal-close behavior; those remain separate release
 # evidence. Keep the existing manual Node 22.16/24 CI matrix intact.
+
+# The baseline gate additionally downloads checksum-pinned published v0.0.8 and
+# official Node bytes, builds its unchanged source, and drives its real launcher
+# through a disposable HTTPS publisher fixture. It is not a live published upgrade.

@@ -44,3 +44,12 @@ precommit interruption may leave unreferenced new files. A lost response can be
 ambiguous, so users check Projects before retrying. Visibility does not follow
 backups or different browser origins. Storytelling and broader feature coverage
 are deliberately deferred; the first story stays simple.
+
+## Identity supersession — next release
+
+The historical names and examples above are preserved. The approved
+[threadstr transition](../adr/0010-threadstr-identity-and-cli-transition.md)
+supersedes current product/command naming with `threadstr` / `thr`, retaining
+`ontrack` as a compatibility alias and the documented storage/update identifiers.
+The latest published release is v0.0.8; the next version remains unselected.
+Use [current installation guidance](../install/README.md) for new work.

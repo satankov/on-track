@@ -15,7 +15,7 @@ let directory: string;
 let database: Database.Database;
 let store: ManagedAttachmentStore;
 beforeEach(() => {
-  directory = mkdtempSync(join(tmpdir(), "on-track-example-copy-"));
+  directory = mkdtempSync(join(tmpdir(), "threadstr-example-copy-"));
   database = openDatabase(join(directory, "on-track.sqlite"));
   store = new ManagedAttachmentStore(directory);
 });

@@ -97,7 +97,7 @@ export async function registerDatabaseTransferRoutes(
         code: "invalid_backup",
         message:
           error instanceof SqliteBackupBundleValidationError
-            ? "The selected file is not a valid supported On Track backup bundle."
+            ? "The selected file is not a valid supported threadstr backup bundle."
             : "Check the backup file and project selection, then preview it again.",
       });
     }
@@ -132,7 +132,7 @@ export async function registerDatabaseTransferRoutes(
         .header("Content-Type", "application/vnd.on-track.backup+sqlite")
         .header(
           "Content-Disposition",
-          `attachment; filename="on-track-${new Date().toISOString().slice(0, 10)}.on-track-backup"`,
+          `attachment; filename="threadstr-${new Date().toISOString().slice(0, 10)}.on-track-backup"`,
         )
         .send(stream);
     } catch (error) {

@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-On Track is pre-1.0 alpha software. Security fixes are made only on the latest
+threadstr is pre-1.0 alpha software. Security fixes are made only on the latest
 released version.
 
 | Version        | Supported |
@@ -23,7 +23,7 @@ within seven days and coordinate disclosure after a fix is available.
 
 ## Current data-safety posture
 
-On Track keeps data on the local machine and binds only to loopback, but its
+threadstr keeps data on the local machine and binds only to loopback, but its
 SQLite database, managed attachments, and exported backups are **not encrypted**.
 Backup restore replaces current local projects and files rather than merging
 them. The application is not suitable for confidential, NDA-bound, or

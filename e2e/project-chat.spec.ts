@@ -1281,7 +1281,7 @@ test("manages markdown messages and database backups from the UI", async ({
   await page.getByRole("button", { name: "Export all" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(
-    /on-track-\d{4}-\d{2}-\d{2}\.on-track-backup/,
+    /threadstr-\d{4}-\d{2}-\d{2}\.on-track-backup/,
   );
   const backupPath = await download.path();
   expect(backupPath).toBeTruthy();
@@ -1299,7 +1299,7 @@ test("manages markdown messages and database backups from the UI", async ({
   await page.getByRole("button", { name: /Settings/ }).click();
   await page.getByRole("button", { name: /Backups/ }).click();
   await page
-    .getByLabel("Choose On Track backup")
+    .getByLabel("Choose threadstr backup")
     .setInputFiles(backupPath ?? "");
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("radio", { name: "Replace whole DB" }).check();

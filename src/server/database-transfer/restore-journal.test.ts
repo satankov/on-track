@@ -30,7 +30,7 @@ const createdDirectories: string[] = [];
 function makeDataDirectory(): string {
   const path = join(
     tmpdir(),
-    `on-track-restore-test-${process.pid}-${randomUUID()}`,
+    `threadstr-restore-test-${process.pid}-${randomUUID()}`,
   );
   mkdirSync(path, { mode: 0o700 });
   createdDirectories.push(path);

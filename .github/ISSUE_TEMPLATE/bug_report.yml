@@ -6,12 +6,12 @@ body:
   - type: markdown
     attributes:
       value: |
-        Never attach a real On Track database, export, secret, or NDA material.
+        Never attach a real threadstr database, export, secret, or NDA material.
         Report security vulnerabilities privately as described in SECURITY.md.
   - type: input
     id: version
     attributes:
-      label: On Track version
+      label: threadstr version
       placeholder: 0.0.1
     validations:
       required: true

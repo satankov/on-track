@@ -21,7 +21,7 @@ afterEach(() => {
     rmSync(root, { recursive: true, force: true });
 });
 function fixture(link = false) {
-  const base = mkdtempSync(join(tmpdir(), "ontrack-archive-"));
+  const base = mkdtempSync(join(tmpdir(), "threadstr-archive-"));
   roots.push(base);
   const root = join(base, "source");
   mkdirSync(root);

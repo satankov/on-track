@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
+import { prepareCommands } from "./launchers.js";
 import {
-  chmodSync,
   existsSync,
   lstatSync,
   readFileSync,
@@ -11,7 +11,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, join, posix, win32 } from "node:path";
-import { privateDirectory, writeJsonFile } from "./state.js";
+import { privateDirectory } from "./state.js";
 
 export function defaultInstallRoot(
   platform: string = process.platform,
@@ -80,7 +80,7 @@ export function updateProfile(text: string, bin: string): string {
   const start = text.indexOf(START),
     end = text.indexOf(END);
   if (start < 0 !== end < 0 || (start >= 0 && end < start))
-    throw new Error("Incomplete On Track profile block.");
+    throw new Error("Incomplete threadstr compatibility profile block.");
   const clean =
     start >= 0
       ? text.slice(0, start) +
@@ -117,50 +117,8 @@ export async function installCommand(
   options: { noProfile?: boolean; runtimeExecutable?: string } = {},
 ): Promise<string> {
   root = privateDirectory(root);
-  const interpreter = options.runtimeExecutable ?? process.execPath;
-  writeJsonFile(join(root, "shim-runtime.json"), {
-    protocol: 1,
-    runtimeExecutable: interpreter,
-  });
-  const bin = privateDirectory(join(root, "bin"));
-  const dispatcher = join(bin, "command.mjs");
-  const code = `import {readFileSync} from 'node:fs';\nimport {join} from 'node:path';\nimport {spawnSync} from 'node:child_process';\nconst root=${JSON.stringify(root)};\nconst a=JSON.parse(readFileSync(join(root,'active.json'),'utf8'));\nif(a.protocol!==1||!/^v(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$/.test(a.releaseId)||!/^node-v24\\.\\d+\\.\\d+-(darwin|linux|win)-(arm64|x64)$/.test(a.runtimeId))throw Error('Invalid managed selection');\nconst node=join(root,'runtimes',a.runtimeId,process.platform==='win32'?'node.exe':'bin/node');\nconst cwd=join(root,'releases',a.releaseId);\nconst result=spawnSync(node,[join(cwd,'dist/server/server/cli/main.js'),...process.argv.slice(2),'--root',root],{cwd,stdio:'inherit',shell:false});\nif(result.error)throw result.error;\nprocess.exitCode=result.status??1;\n`;
-  for (const path of [
-    dispatcher,
-    join(bin, "ontrack"),
-    join(bin, "ontrack.cmd"),
-  ])
-    if (
-      existsSync(path) &&
-      (!lstatSync(path).isFile() || lstatSync(path).isSymbolicLink())
-    )
-      throw new Error("Unsafe command path.");
-  writeFileSync(dispatcher, code, { mode: 0o600 });
-  const command = join(
-    bin,
-    process.platform === "win32" ? "ontrack.cmd" : "ontrack",
-  );
-  // The bootstrap runtime is retained as the small dispatcher interpreter across updates.
-  if (process.platform === "win32") {
-    if (/[\r\n%!"]/u.test(interpreter + dispatcher))
-      throw new Error("Unsupported Windows command path.");
-    writeFileSync(
-      command,
-      `@echo off\r\nsetlocal\r\nset "NODE_OPTIONS="\r\nset "NODE_PATH="\r\n"${interpreter}" "${dispatcher}" %*\r\n`,
-      { mode: 0o700 },
-    );
-  } else {
-    writeFileSync(
-      command,
-      "#!/bin/sh\nunset NODE_OPTIONS NODE_PATH\nexec " +
-        quote(interpreter) +
-        " " +
-        quote(dispatcher) +
-        ' "$@"\n',
-      { mode: 0o700 },
-    );
-    chmodSync(command, 0o700);
-  }
+  const command = prepareCommands(root, options.runtimeExecutable);
+  const bin = join(root, "bin");
   if (options.noProfile) return command;
   if (process.platform === "win32") {
     const script =

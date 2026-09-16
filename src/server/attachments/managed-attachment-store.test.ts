@@ -31,7 +31,7 @@ describe("managed attachment storage", () => {
   let dataDirectory: string;
 
   beforeEach(() => {
-    dataDirectory = mkdtempSync(join(tmpdir(), "on-track-attachments-"));
+    dataDirectory = mkdtempSync(join(tmpdir(), "threadstr-attachments-"));
   });
 
   afterEach(() => {

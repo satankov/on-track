@@ -27,14 +27,24 @@ import { defaultInstallRoot, openLocalBrowser } from "./platform.js";
 import { installManaged } from "./install.js";
 import { updateFromRelease } from "./distribution.js";
 
-const HELP = `On Track — private project notes in your browser
+const HELP = `threadstr — private project notes in your browser
 
-  ontrack run [--no-open]         Start in the background and open the browser
-  ontrack stop                    Gracefully stop the managed server
-  ontrack status                  Show the server version and local address
-  ontrack logs                    Show recent diagnostics
-  ontrack update [vX.Y.Z] [--yes] Install a published release and restart
-  ontrack --help                  Show this help
+  thr run [--no-open]         Start in the background and open the browser
+  thr stop                    Gracefully stop the managed server
+  thr status                  Show the server version and local address
+  thr logs                    Show recent diagnostics
+  thr update [vX.Y.Z] [--yes] [--no-open]
+                                Install a published release and restart
+  thr --help                  Show this help
+
+Compatibility: ontrack remains a supported alias throughout 0.x and until
+separately approved removal (with at least two published releases of notice).
+All commands accept --root <absolute-runtime-directory>.
+  thr --version                 Show the installed version and status
+  thr install --release-dir <path> --runtime-dir <path> --manifest <path>
+      [--data-dir <path>] [--port <number>] [--adopt-from <path>]
+      [--no-profile] [--no-open]  Prepared installer entry point
+Internal: maintenance-recover-import and --describe-runtime remain supported.
 
 Manual source installations still use npm run quickstart and npm start.
 Background operation survives terminal closure, not a reboot or logout.
@@ -62,7 +72,7 @@ async function confirmUpdate(): Promise<boolean> {
     return /^y(es)?$/i.test(
       (
         await prompt.question(
-          "Save browser drafts first. Update and restart On Track? [y/N] ",
+          "Save browser drafts first. Update and restart threadstr? [y/N] ",
         )
       ).trim(),
     );
@@ -93,7 +103,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   }
   if (!existsSync(join(root, "install.json")))
     throw new Error(
-      "On Track managed setup is not installed. Use an installation guide or npm run quickstart for manual setup.",
+      "threadstr managed setup is not installed. Use an installation guide or npm run quickstart for manual setup.",
     );
   const canonicalRoot = realpathSync(root);
   const state = readInstallState(canonicalRoot);
@@ -154,8 +164,8 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     const status = await managedStatus(canonicalRoot);
     console.log(
       status
-        ? `On Track ${status.version}: ${status.state}\n${status.url}`
-        : `On Track ${readActiveRelease(canonicalRoot).releaseId.slice(1)} (managed): stopped. Run ontrack run to start it.`,
+        ? `threadstr ${status.version}: ${status.state}\n${status.url}`
+        : `threadstr ${readActiveRelease(canonicalRoot).releaseId.slice(1)} (managed): stopped. Run thr run to start it.`,
     );
     return;
   }
@@ -170,7 +180,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       });
       const status = await managedStatus(canonicalRoot);
       console.log(
-        `On Track updated.${status ? `\n${status.url}` : ""}\nRefresh existing browser tabs to load this version.`,
+        `threadstr updated.${status ? `\n${status.url}` : ""}\nRefresh existing browser tabs to load this version.`,
       );
       if (status && !args.options["no-open"]) {
         try {
@@ -191,14 +201,14 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     if (args.command === "stop") {
       console.log(
         (await stopManagedWith(adapter))
-          ? "On Track stopped. Your projects remain saved."
-          : "On Track is already stopped.",
+          ? "threadstr stopped. Your projects remain saved."
+          : "threadstr is already stopped.",
       );
       return;
     }
     const status = await runManagedWith(adapter, !args.options["no-open"]);
     console.log(
-      `On Track ${status.version} is running. You can close this terminal.\n${status.url}`,
+      `threadstr ${status.version} is running. You can close this terminal.\n${status.url}`,
     );
   } finally {
     owner.release();
@@ -213,7 +223,7 @@ if (
       printable(
         error instanceof Error
           ? error.message
-          : "On Track could not complete this command.",
+          : "threadstr could not complete this command.",
       ),
     );
     process.exitCode = 1;

@@ -7,7 +7,7 @@ import * as ownership from "./instance-owner.js";
 const directories: string[] = [];
 const releases: Array<() => void> = [];
 function directory() {
-  const dir = mkdtempSync(join(tmpdir(), "on-track-owner-"));
+  const dir = mkdtempSync(join(tmpdir(), "threadstr-owner-"));
   directories.push(dir);
   return dir;
 }

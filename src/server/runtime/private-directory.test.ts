@@ -22,7 +22,7 @@ afterEach(() => {
     rmSync(root, { recursive: true, force: true });
 });
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), "ontrack-private-"));
+  const root = mkdtempSync(join(tmpdir(), "threadstr-private-"));
   roots.push(root);
   return root;
 }
@@ -44,8 +44,8 @@ it("repeatedly protects a directory and makes newly written capabilities owner-o
 $ErrorActionPreference = 'Stop'
 $PSModuleAutoLoadingPreference = 'None'
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
-$directory = [IO.DirectoryInfo]::new($env:ONTRACK_TEST_DIRECTORY).GetAccessControl()
-$capability = [IO.FileInfo]::new($env:ONTRACK_TEST_CAPABILITY).GetAccessControl()
+$directory = [IO.DirectoryInfo]::new($env:THREADSTR_TEST_DIRECTORY).GetAccessControl()
+$capability = [IO.FileInfo]::new($env:THREADSTR_TEST_CAPABILITY).GetAccessControl()
 foreach ($acl in @($directory, $capability)) {
   $rules = @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
   if ($rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $sid.Value -or $rules[0].AccessControlType -ne 'Allow' -or $rules[0].FileSystemRights -ne [Security.AccessControl.FileSystemRights]::FullControl) { throw 'Unexpected capability access' }
@@ -63,8 +63,8 @@ if (-not $directory.AreAccessRulesProtected -or $directory.GetOwner([Security.Pr
       {
         env: {
           ...process.env,
-          ONTRACK_TEST_DIRECTORY: path,
-          ONTRACK_TEST_CAPABILITY: capability,
+          THREADSTR_TEST_DIRECTORY: path,
+          THREADSTR_TEST_CAPABILITY: capability,
         },
         windowsHide: true,
         timeout: 15_000,

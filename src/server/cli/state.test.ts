@@ -16,7 +16,7 @@ import {
 } from "./state.js";
 const roots: string[] = [];
 const root = () => {
-  const r = mkdtempSync(join(tmpdir(), "ontrack-state-"));
+  const r = mkdtempSync(join(tmpdir(), "threadstr-state-"));
   roots.push(r);
   return r;
 };

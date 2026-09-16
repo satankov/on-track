@@ -157,7 +157,7 @@ export async function fetchTrusted(
           current.hostname === "api.github.com"
             ? "application/vnd.github+json"
             : "application/octet-stream",
-        "User-Agent": "OnTrack-Installer",
+        "User-Agent": "threadstr-Installer",
       },
     });
     if ([301, 302, 303, 307, 308].includes(response.status)) {

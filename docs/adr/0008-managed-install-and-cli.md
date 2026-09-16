@@ -123,3 +123,12 @@ fallback. Download commands require the corresponding published release assets.
 
 The accepted plan records the detailed protocol and evidence expected for each
 phase. Acceptance of this ADR alone does not claim those gates passed.
+
+## Identity supersession — next release
+
+The historical names and examples above are preserved. The approved
+[threadstr transition](../adr/0010-threadstr-identity-and-cli-transition.md)
+supersedes current product/command naming with `threadstr` / `thr`, retaining
+`ontrack` as a compatibility alias and the documented storage/update identifiers.
+The latest published release is v0.0.8; the next version remains unselected.
+Use [current installation guidance](../install/README.md) for new work.

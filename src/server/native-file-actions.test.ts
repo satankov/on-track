@@ -138,7 +138,7 @@ describe("system native file actions", () => {
     ).rejects.toThrow(NativeFileActionFailedError);
     await expect(
       runNativeCommand({
-        executable: "/definitely-missing-on-track-launcher",
+        executable: "/definitely-missing-threadstr-launcher",
         args: [],
         shell: false,
       }),

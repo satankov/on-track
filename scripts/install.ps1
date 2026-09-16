@@ -90,7 +90,7 @@ try {
  & (Join-Path $nodeDir 'node.exe') $bootstrap $Root $nodeDir @forward
  if ($LASTEXITCODE -ne 0) { throw 'Setup failed. Preserve the bootstrap directory for diagnostics.' }
  Remove-Item -LiteralPath $stage -Recurse -Force
- Write-Output 'On Track is ready. Open a new terminal to use ontrack.'
+ Write-Output 'threadstr is ready. Open a new terminal to use thr.'
 } finally {
  $claimStream.Dispose()
  Remove-Item -LiteralPath $claim

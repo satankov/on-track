@@ -15,3 +15,9 @@ expressive designs, the preference for D and H, and the final density study.
 This directory is an asset handoff. It does not update the running app, replace
 existing product-title mentions, change package metadata, or migrate data paths.
 Those changes belong to a separate rebranding task.
+
+## Product integration
+
+The next-release rebrand now integrates the approved v1 assets into the product.
+The handoff and exploration provenance above remain historical; v1 artwork and
+archive bytes are unchanged. See the [transition decision](../../docs/adr/0010-threadstr-identity-and-cli-transition.md).

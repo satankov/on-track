@@ -54,4 +54,4 @@ unset NODE_OPTIONS NODE_PATH
 # retaining one argument per array element and no argument for an empty array.
 ONTRACK_BOOTSTRAP_MANIFEST_SHA256="$manifest_sha" ONTRACK_BOOTSTRAP_RELEASE="$release" "$node_dir/bin/node" "$bootstrap" "$root" "$node_dir" ${forward[@]+"${forward[@]}"}
 rm -rf -- "$stage"
-echo 'On Track is ready. Open a new terminal to use ontrack.'
+echo 'threadstr is ready. Open a new terminal to use thr.'

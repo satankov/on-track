@@ -134,14 +134,14 @@ export async function startLocalServer(
             await running.close();
           } catch {
             gate.resume();
-            console.error("On Track is busy; shutdown was not completed.");
+            console.error("threadstr is busy; shutdown was not completed.");
           }
         })();
       };
       signalHandlers.set(signal, handler);
       process.on(signal, handler);
     }
-    console.log(`On Track is available at http://127.0.0.1:${port}`);
+    console.log(`threadstr is available at http://127.0.0.1:${port}`);
     return app;
   } catch (error) {
     try {

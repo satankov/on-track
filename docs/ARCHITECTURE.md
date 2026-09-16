@@ -1,29 +1,23 @@
-# On Track architecture
+# threadstr architecture
 
 ## Status
 
-The v0.0.7 plaintext alpha is the published baseline. It adds
-Archive, selective backup/import, and client-only composer and
-filter fixes. Archive advances the database and backup schema from 6 to 7;
-selective transfers and composer/filter changes preserve that schema. Existing
-local server/service/repository boundaries remain in place. Package metadata
-is prepared as 0.0.7. The core decisions
-are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md), the
-encryption limitation in [ADR-0002](adr/0002-defer-at-rest-encryption.md),
-source delivery in [ADR-0003](adr/0003-source-release-pipeline.md), and the
-current license in [ADR-0005](adr/0005-apache-2-license.md). Managed mutable
-attachments and guarded native actions are recorded in
-[ADR-0006](adr/0006-managed-mutable-attachments-and-native-file-actions.md), and
-platform-scoped Node 22.16/24 support in
-[ADR-0007](adr/0007-node-22-and-24-runtime-support.md). The active managed
-installation/CLI slice is recorded in
-[ADR-0008](adr/0008-managed-install-and-cli.md) and
-[plan 0021](plans/0021-managed-install-and-cli.md); it preserves manual source
-installation. v0.0.7 selects managed compatibility floor `0.0.7`; assets are
-published. Real installation/platform validation is in progress under the
-experimental-delivery exception in ADR-0008. Local fixes address macOS Bash 3.2
-empty-array forwarding and GitHub metadata content negotiation; they are not
-yet available in published installers/clients. See plan 0021 for evidence limits.
+The published baseline is v0.0.8 (On Track), which fixes the initial managed
+installer/updater defects. Current source prepares threadstr and the primary
+`thr` CLI for the next release; the next version is not selected. Database and
+backup schema remain 7. The managed compatibility floor remains `0.0.7`.
+
+Core boundaries are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md),
+encryption limits in [ADR-0002](adr/0002-defer-at-rest-encryption.md), source
+delivery in [ADR-0003](adr/0003-source-release-pipeline.md), licensing in
+[ADR-0005](adr/0005-apache-2-license.md), attachments/native actions in
+[ADR-0006](adr/0006-managed-mutable-attachments-and-native-file-actions.md),
+runtime support in [ADR-0007](adr/0007-node-22-and-24-runtime-support.md), and
+managed delivery in [ADR-0008](adr/0008-managed-install-and-cli.md).
+[ADR-0010](adr/0010-threadstr-identity-and-cli-transition.md) records the identity
+transition; [compatibility guidance](compatibility.md) inventories retained
+storage, environment, protocol, and distribution names. Platform validation
+remains incomplete; see [plan 0021](plans/0021-managed-install-and-cli.md).
 
 ## System context
 
@@ -74,7 +68,7 @@ releases, private Node runtimes, logs, and installation selection beneath
 `~/Library/Application Support/On Track Runtime/` on macOS,
 `%LOCALAPPDATA%/On Track Runtime/` on Windows, or
 `${XDG_DATA_HOME:-~/.local/share}/on-track-runtime/` on Linux. Project data
-stays at the existing locations below. The short-lived `ontrack` CLI records an
+stays at the existing locations below. The short-lived `thr` CLI (also available as `ontrack`) records an
 explicit data path and port, starts the existing server detached from terminal
 stdio, and verifies authenticated instance readiness. There is no resident
 launcher, login service, or automatic crash restart. Windows helpers restrict
@@ -224,7 +218,7 @@ recoverable DTO states. DTOs also expose server-derived Open/Show capability
 states. Scoped POST routes resolve IDs to canonical managed targets and dispatch
 eligible files through fixed, shell-free macOS, Windows, or Linux commands.
 Known executable, installer, script, shortcut, application, and desktop-launcher
-types—and executable POSIX files—cannot be opened from On Track; safe folder
+types—and executable POSIX files—cannot be opened from threadstr; safe folder
 reveal remains independent. Browser focus refreshes attachment metadata after a
 user returns from an external application. Attachment bytes are not exposed by a
 browser download route.

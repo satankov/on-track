@@ -370,7 +370,7 @@ export async function packageManagedRelease({
   write(
     "INSTALL.md",
     [
-      `# Install On Track ${description.releaseId}`,
+      `# Install threadstr ${description.releaseId}`,
       "",
       ...(description.version === "0.0.7"
         ? [
@@ -389,10 +389,10 @@ export async function packageManagedRelease({
       "## Windows PowerShell",
       "",
       "```powershell",
-      `$installer=Join-Path ([IO.Path]::GetTempPath()) ('ontrack-install-'+[guid]::NewGuid()+'.ps1'); try { Invoke-WebRequest -UseBasicParsing '${base}/install.ps1' -OutFile $installer; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer; if($LASTEXITCODE -ne 0){throw 'On Track installation failed'} } finally { Remove-Item -LiteralPath $installer -ErrorAction SilentlyContinue }`,
+      `$installer=Join-Path ([IO.Path]::GetTempPath()) ('thr-install-'+[guid]::NewGuid()+'.ps1'); try { Invoke-WebRequest -UseBasicParsing '${base}/install.ps1' -OutFile $installer; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer; if($LASTEXITCODE -ne 0){throw 'threadstr installation failed'} } finally { Remove-Item -LiteralPath $installer -ErrorAction SilentlyContinue }`,
       "```",
       "",
-      "Open a new terminal after installation. Use `ontrack run`, `ontrack stop`, or `ontrack update`. Background startup does not run automatically after a reboot.",
+      "Open a new terminal after installation. Use `thr run`, `thr stop`, or `thr update`. `ontrack` remains a supported compatibility alias. Background startup does not run automatically after a reboot.",
       "",
       "Manual setup remains available: install supported Node, extract the source ZIP, and run `npm run quickstart`. Later use `npm start`.",
       "",

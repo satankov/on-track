@@ -28,7 +28,7 @@ afterEach(() => {
     rmSync(root, { recursive: true, force: true });
 });
 function fixture() {
-  const top = realpathSync(mkdtempSync(join(tmpdir(), "ontrack-retention-")));
+  const top = realpathSync(mkdtempSync(join(tmpdir(), "threadstr-retention-")));
   roots.push(top);
   const root = join(top, "install");
   const data = join(top, "data");

@@ -76,3 +76,12 @@ Fastify so a future desktop shell can reuse or replace the transport.
 - [Drizzle migrations](https://orm.drizzle.team/docs/migrations)
 - [better-sqlite3](https://github.com/WiseLibs/better-sqlite3)
 - [When to use SQLite](https://www.sqlite.org/whentouse.html)
+
+## Identity supersession — next release
+
+The historical names and examples above are preserved. The approved
+[threadstr transition](../adr/0010-threadstr-identity-and-cli-transition.md)
+supersedes current product/command naming with `threadstr` / `thr`, retaining
+`ontrack` as a compatibility alias and the documented storage/update identifiers.
+The latest published release is v0.0.8; the next version remains unselected.
+Use [current installation guidance](../install/README.md) for new work.

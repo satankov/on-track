@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to On Track are documented here. The project follows
+All notable changes to threadstr (formerly On Track) are documented here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). While the version is
 below `1.0.0`, releases may contain breaking changes.
 
@@ -12,6 +12,12 @@ below `1.0.0`, releases may contain breaking changes.
   independent editable copies, including its packing-list attachment. App updates
   maintain the original without changing user copies or adding examples to backups.
 - Settings → General → Show examples, enabled by default and saved in this browser.
+
+### Changed
+
+- The next release introduces the threadstr identity and primary `thr` command.
+  `ontrack` remains a supported compatibility alias; existing data, settings,
+  backups, installation paths, and update assets keep their compatibility identifiers.
 
 ## [0.0.8] - 2026-09-16
 

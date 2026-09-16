@@ -52,7 +52,7 @@ export class AttachmentUnavailableError extends Error {
 export class AttachmentOpenBlockedError extends Error {
   constructor() {
     super(
-      "This file type cannot be opened from On Track. You can still show it in its folder.",
+      "This file type cannot be opened from threadstr. You can still show it in its folder.",
     );
     this.name = "AttachmentOpenBlockedError";
   }

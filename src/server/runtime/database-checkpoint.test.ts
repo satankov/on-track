@@ -27,7 +27,7 @@ import {
 const roots: string[] = [];
 const connections: Database.Database[] = [];
 function fixture() {
-  const dataDirectory = mkdtempSync(join(tmpdir(), "ontrack-checkpoint-"));
+  const dataDirectory = mkdtempSync(join(tmpdir(), "threadstr-checkpoint-"));
   roots.push(dataDirectory);
   const databasePath = join(dataDirectory, "on-track.sqlite");
   const sqlite = new Database(databasePath);
@@ -195,7 +195,7 @@ it("refuses checkpoint paths outside the owned directory and symbolic-link sidec
 });
 
 it("round-trips the actual released schema 6 through bundled schema 7 migration and recovery", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "ontrack-schema-update-"));
+  const directory = mkdtempSync(join(tmpdir(), "threadstr-schema-update-"));
   roots.push(directory);
   const migrationsFolder = join(directory, "old-migrations");
   mkdirSync(join(migrationsFolder, "meta"), { recursive: true });

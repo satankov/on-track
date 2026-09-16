@@ -9,7 +9,7 @@ describe("runtime support policy", () => {
   it("requires Node 24 on Windows", () => {
     expect(
       runtimeSupportError({ platform: "win32", nodeVersion: "22.16.0" }),
-    ).toBe("On Track requires Node.js 24 on Windows; found Node.js 22.16.0.");
+    ).toBe("threadstr requires Node.js 24 on Windows; found Node.js 22.16.0.");
     expect(
       runtimeSupportError({ platform: "win32", nodeVersion: "24.0.0" }),
     ).toBeUndefined();
@@ -49,7 +49,7 @@ describe("runtime support policy", () => {
     expect(
       runtimeSupportError({ platform: "freebsd", nodeVersion: "24.0.0" }),
     ).toBe(
-      "Unsupported operating system: freebsd. On Track supports Windows, macOS, and Linux.",
+      "Unsupported operating system: freebsd. threadstr supports Windows, macOS, and Linux.",
     );
   });
 });

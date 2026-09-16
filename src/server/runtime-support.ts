@@ -20,7 +20,7 @@ export function runtimeSupportError({
   }
 
   if (!supportedPlatforms.has(platform)) {
-    return `Unsupported operating system: ${platform}. On Track supports Windows, macOS, and Linux.`;
+    return `Unsupported operating system: ${platform}. threadstr supports Windows, macOS, and Linux.`;
   }
 
   const major = Number(match[1]);
@@ -29,14 +29,14 @@ export function runtimeSupportError({
   if (platform === "win32") {
     return major === 24
       ? undefined
-      : `On Track requires Node.js 24 on Windows; found Node.js ${nodeVersion}.`;
+      : `threadstr requires Node.js 24 on Windows; found Node.js ${nodeVersion}.`;
   }
 
   if (major === 24 || (major === 22 && minor >= 16)) {
     return undefined;
   }
 
-  return `On Track requires Node.js 22.16 or Node.js 24; found Node.js ${nodeVersion}.`;
+  return `threadstr requires Node.js 22.16 or Node.js 24; found Node.js ${nodeVersion}.`;
 }
 
 export function assertSupportedRuntime(

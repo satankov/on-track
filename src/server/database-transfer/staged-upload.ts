@@ -144,7 +144,7 @@ export async function stageUpload(
 
 function requireStageInputs(dataDirectory: string, maximumBytes: number): void {
   if (!isAbsolute(dataDirectory)) {
-    throw new TypeError("The On Track data directory must be absolute.");
+    throw new TypeError("The threadstr data directory must be absolute.");
   }
   if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1) {
     throw new TypeError("The staging size limit is invalid.");
@@ -158,7 +158,7 @@ function ensurePrivateStagingDirectory(dataDirectory: string): {
   mkdirSync(dataDirectory, { recursive: true, mode: 0o700 });
   const dataIdentity = lstatSync(dataDirectory);
   if (dataIdentity.isSymbolicLink() || !dataIdentity.isDirectory()) {
-    throw new Error("The On Track data directory is unsafe.");
+    throw new Error("The threadstr data directory is unsafe.");
   }
 
   const stagingDirectory = join(dataDirectory, STAGING_DIRECTORY_NAME);

@@ -39,6 +39,9 @@ const { managedStatus, stopManaged } = await import(
 const { activatePrepared } = await import(
   pathToFileURL(join(compiled, "cli/update.js"))
 );
+const { prepareCommands } = await import(
+  pathToFileURL(join(compiled, "cli/launchers.js"))
+);
 const {
   managedPaths,
   readActiveRelease,
@@ -50,7 +53,7 @@ const { openDatabase } = await import(
 );
 const execute = promisify(execFile);
 const base = realpathSync(
-  mkdtempSync(join(tmpdir(), "ontrack-managed-smoke-")),
+  mkdtempSync(join(tmpdir(), "threadstr-managed-smoke-")),
 );
 const root = join(base, "Runtime with spaces — test");
 const dataDirectory = join(base, "Data with spaces — test");
@@ -237,6 +240,7 @@ try {
   const privateNode = managedPaths(root, initial).node;
   mkdirSync(dirname(privateNode), { recursive: true, mode: 0o700 });
   copyFileSync(process.execPath, privateNode);
+  prepareCommands(root, privateNode);
   writeInstallState(root, {
     protocol: 1,
     dataDirectory,

@@ -21,7 +21,7 @@ afterEach(() => {
     rmSync(root, { recursive: true, force: true });
 });
 function fixture() {
-  const base = mkdtempSync(join(tmpdir(), "ontrack-install-data-"));
+  const base = mkdtempSync(join(tmpdir(), "threadstr-install-data-"));
   roots.push(base);
   const data = join(base, "data"),
     root = join(base, "runtime");
@@ -148,7 +148,7 @@ function sourceFixture(base: string, version: string) {
 }
 function preparedInstall() {
   const base = realpathSync(
-    mkdtempSync(join(tmpdir(), "ontrack-prepared-install-")),
+    mkdtempSync(join(tmpdir(), "threadstr-prepared-install-")),
   );
   roots.push(base);
   const current = sourceFixture(base, "0.0.9");
@@ -176,8 +176,13 @@ function preparedInstall() {
 beforeEach(() => {
   vi.resetAllMocks();
   vi.spyOn(console, "log").mockImplementation(() => undefined);
-  boundary.spawn.mockReturnValue({ status: 0, stdout: "24.14.0\n" });
-  boundary.command.mockResolvedValue("fixture-ontrack");
+  boundary.spawn.mockImplementation((_command: string, args: string[]) => ({
+    status: 0,
+    stdout: args.some((arg) => arg.includes("ConvertTo-Json"))
+      ? '{"path":"","extensions":""}'
+      : "24.14.0\n",
+  }));
+  boundary.command.mockResolvedValue("fixture-thr");
   boundary.status.mockResolvedValue(undefined);
   boundary.select.mockImplementation(actualState.selectActiveRelease);
   boundary.save.mockImplementation(actualState.writeInstallState);
@@ -275,6 +280,8 @@ it("adoption rebuilds verified previous source with the private Node runtime and
     writeFileSync(join(source, "dist/server/server/main.js"), "rebuilt server");
   });
   boundary.activate.mockImplementation(async () => {
+    expect(existsSync(join(f.root, "shim-runtime.json"))).toBe(true);
+    expect(existsSync(join(f.root, "bin/command.mjs"))).toBe(true);
     expect(readActiveRelease(f.root).releaseId).toBe("v0.0.8");
     expect(
       readFileSync(

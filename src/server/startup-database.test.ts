@@ -16,7 +16,7 @@ afterEach(() => {
 
 describe("database startup recovery", () => {
   it("recovers an interrupted restore before opening the database", () => {
-    const dataDirectory = mkdtempSync(join(tmpdir(), "on-track-startup-"));
+    const dataDirectory = mkdtempSync(join(tmpdir(), "threadstr-startup-"));
     directories.push(dataDirectory);
     const databasePath = join(dataDirectory, "on-track.sqlite");
     const events: string[] = [];
@@ -42,7 +42,7 @@ describe("database startup recovery", () => {
   });
 
   it("does not open SQLite when recovery fails closed", () => {
-    const dataDirectory = mkdtempSync(join(tmpdir(), "on-track-startup-"));
+    const dataDirectory = mkdtempSync(join(tmpdir(), "threadstr-startup-"));
     directories.push(dataDirectory);
     const openDatabase = vi.fn();
 

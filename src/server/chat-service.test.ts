@@ -35,7 +35,7 @@ describe("managed attachment service lifecycle", () => {
   let ids: string[];
 
   beforeEach(() => {
-    directory = mkdtempSync(join(tmpdir(), "on-track-service-"));
+    directory = mkdtempSync(join(tmpdir(), "threadstr-service-"));
     database = openDatabase(join(directory, "on-track.sqlite"));
     repository = new SqliteChatRepository(database);
     store = new ManagedAttachmentStore(directory, {
@@ -640,7 +640,7 @@ describe("managed attachment service lifecycle", () => {
     const chatService = service(store, {
       ...nativeActions,
       open: vi.fn(async () => {
-        throw new Error("failed at /private/on-track/attachments/secret.txt");
+        throw new Error("failed at /private/threadstr/attachments/secret.txt");
       }),
     });
     chatService.createChat({ title: "Files", accent: "ocean" });
@@ -660,7 +660,7 @@ describe("managed attachment service lifecycle", () => {
       .openAttachment("chat-a", "note-a", "attachment-a")
       .catch((caught) => caught);
     expect(error).toBeInstanceOf(NativeFileActionFailedError);
-    expect(String(error)).not.toContain("/private/on-track");
+    expect(String(error)).not.toContain("/private/threadstr");
   });
 
   it("reports unsupported native actions in DTOs and at action time", async () => {

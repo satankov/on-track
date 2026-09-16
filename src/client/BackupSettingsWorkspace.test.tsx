@@ -43,7 +43,7 @@ it("keeps duplicate-title choices independent and disables an empty selection", 
   const user = userEvent.setup();
   const p = props();
   render(<BackupSettingsWorkspace {...p} />);
-  await user.upload(screen.getByLabelText("Choose On Track backup"), file());
+  await user.upload(screen.getByLabelText("Choose threadstr backup"), file());
   const group = await screen.findByRole("group", {
     name: "Projects to import",
   });
@@ -73,9 +73,9 @@ it("ignores stale preview errors after a newer file succeeds", async () => {
       }),
   );
   render(<BackupSettingsWorkspace {...p} />);
-  await user.upload(screen.getByLabelText("Choose On Track backup"), file());
+  await user.upload(screen.getByLabelText("Choose threadstr backup"), file());
   await user.upload(
-    screen.getByLabelText("Choose On Track backup"),
+    screen.getByLabelText("Choose threadstr backup"),
     new File(["other"], "other.on-track-backup"),
   );
   expect(
@@ -93,7 +93,7 @@ it("allows retry after preview errors and prevents retry of an unknown commit ou
   p.onPreview.mockRejectedValueOnce(new Error("Invalid backup"));
   p.onImport.mockRejectedValue(new ImportOutcomeUnknownError());
   render(<BackupSettingsWorkspace {...p} />);
-  await user.upload(screen.getByLabelText("Choose On Track backup"), file());
+  await user.upload(screen.getByLabelText("Choose threadstr backup"), file());
   expect(await screen.findByRole("alert")).toHaveTextContent("Invalid backup");
   await user.click(screen.getByRole("button", { name: "Check backup again" }));
   await user.click(
@@ -112,7 +112,7 @@ it("allows an originally empty backup but never treats cleared selection as empt
   p.onPreview.mockResolvedValue({ digest: preview.digest, projects: [] });
   p.onImport.mockResolvedValue({ importedCount: 0, renames: [] });
   render(<BackupSettingsWorkspace {...p} />);
-  await user.upload(screen.getByLabelText("Choose On Track backup"), file());
+  await user.upload(screen.getByLabelText("Choose threadstr backup"), file());
   await user.click(
     await screen.findByRole("button", { name: "Merge selected (0)" }),
   );

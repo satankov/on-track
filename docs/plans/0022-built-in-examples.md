@@ -443,6 +443,15 @@ with the existing moderate Fastify advisory. The managed lifecycle smoke passes.
 `npm run test:managed-update` also passes successful activation, failed-candidate
 recovery, attachments, and postcommit restart checks.
 
+## Identity supersession — next release
+
+The historical names and examples above are preserved. The approved
+[threadstr transition](../adr/0010-threadstr-identity-and-cli-transition.md)
+supersedes current product/command naming with `threadstr` / `thr`, retaining
+`ontrack` as a compatibility alias and the documented storage/update identifiers.
+The latest published release is v0.0.8; the next version remains unselected.
+Use [current installation guidance](../install/README.md) for new work.
+
 ## Amsterdam story refinement — 2026-09-16
 
 The user approved replacing the simple Weekend trip content with one natural

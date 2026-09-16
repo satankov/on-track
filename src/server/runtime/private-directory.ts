@@ -51,10 +51,12 @@ export function ensurePrivateDirectory(path: string): string {
     if (
       (result.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT"
     )
-      throw new Error("Private On Track directory permission check timed out.");
+      throw new Error(
+        "Private threadstr directory permission check timed out.",
+      );
     if (result.error || result.status !== 0)
       throw new Error(
-        "Could not establish private On Track directory permissions.",
+        "Could not establish private threadstr directory permissions.",
       );
   } else chmodSync(path, 0o700);
   return realpathSync(path);

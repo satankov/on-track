@@ -176,7 +176,7 @@ describe("managed release packaging", () => {
     ).toThrow(/runtime/i);
   });
   it("packages committed source only and renders versioned installer assets", async () => {
-    const temporary = mkdtempSync(join(tmpdir(), "ontrack-package-test-"));
+    const temporary = mkdtempSync(join(tmpdir(), "threadstr-package-test-"));
     cleanup.push(temporary);
     const root = join(temporary, "repo");
     mkdirSync(join(root, "scripts"), { recursive: true });
@@ -225,6 +225,12 @@ describe("managed release packaging", () => {
     expect(instructions).toContain("/releases/download/v0.0.9/install.sh");
     expect(instructions).toContain("/releases/download/v0.0.9/install.ps1");
     expect(instructions).toContain("npm run quickstart");
+    expect(instructions).toContain("# Install threadstr v0.0.9");
+    expect(instructions).toContain("`thr run`");
+    expect(instructions).toContain(
+      "`ontrack` remains a supported compatibility alias",
+    );
+    expect(manifest.source.name).toBe("on-track-v0.0.9.zip");
     const names = execFileSync(
       "unzip",
       ["-Z1", join(output, manifest.source.name)],

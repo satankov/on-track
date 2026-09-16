@@ -11,7 +11,7 @@ async function readOfficial(url, limit, fetcher, consume) {
     signal: globalThis.AbortSignal.timeout(180_000),
     headers: {
       Accept: "application/octet-stream",
-      "User-Agent": "OnTrack-Release-Verification",
+      "User-Agent": "threadstr-Release-Verification",
     },
   });
   if (!response.ok) {

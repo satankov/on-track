@@ -6,7 +6,7 @@ import { describeRuntime } from "./build-info.js";
 
 const roots: string[] = [];
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), "ontrack-build-"));
+  const root = mkdtempSync(join(tmpdir(), "threadstr-build-"));
   roots.push(root);
   mkdirSync(join(root, "src/server/db"), { recursive: true });
   mkdirSync(join(root, "drizzle/meta"), { recursive: true });

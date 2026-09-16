@@ -234,7 +234,8 @@ label {
 .rail-header {
   flex: 0 0 auto;
   min-height: 68px;
-  padding: 14px 18px;
+  padding: 14px 12px;
+  gap: 6px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -255,6 +256,35 @@ label {
 }
 .brand-mark:hover {
   color: var(--focus);
+}
+
+.brand-wordmark {
+  display: block;
+  width: 115.2px;
+  height: auto;
+}
+.brand-wordmark--dark,
+.brand-fallback {
+  display: none;
+}
+:root[data-theme="neutral"] .brand-wordmark--light,
+:root[data-theme="dark"] .brand-wordmark--light {
+  display: none;
+}
+:root[data-theme="neutral"] .brand-wordmark--dark,
+:root[data-theme="dark"] .brand-wordmark--dark {
+  display: block;
+}
+@media (forced-colors: active) {
+  .brand-wordmark,
+  :root[data-theme="neutral"] .brand-wordmark--dark,
+  :root[data-theme="dark"] .brand-wordmark--dark {
+    display: none;
+  }
+  .brand-fallback {
+    display: block;
+    color: LinkText;
+  }
 }
 
 .brand-subtitle {

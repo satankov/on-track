@@ -66,3 +66,12 @@ Unit tests cover the release contract. CI exercises the project on the supported
 operating-system matrix. The tag workflow reruns the authoritative local
 verification command before any release write. A fresh-copy smoke test verifies
 the documented quick-start path and confirms data stays outside the checkout.
+
+## Identity supersession — next release
+
+The historical names and examples above are preserved. The approved
+[threadstr transition](../adr/0010-threadstr-identity-and-cli-transition.md)
+supersedes current product/command naming with `threadstr` / `thr`, retaining
+`ontrack` as a compatibility alias and the documented storage/update identifiers.
+The latest published release is v0.0.8; the next version remains unselected.
+Use [current installation guidance](../install/README.md) for new work.

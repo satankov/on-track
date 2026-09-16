@@ -121,7 +121,7 @@ function feed(
   });
 }
 function rootFixture() {
-  const root = mkdtempSync(join(tmpdir(), "ontrack-distribution-"));
+  const root = mkdtempSync(join(tmpdir(), "threadstr-distribution-"));
   roots.push(root);
   selectActiveRelease(root, {
     protocol: 1,

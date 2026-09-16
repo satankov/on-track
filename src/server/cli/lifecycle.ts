@@ -12,7 +12,7 @@ export async function runManagedWith(
   const status = (await adapter.status()) ?? (await adapter.start());
   if (status.state !== "ready")
     throw new Error(
-      "On Track is in maintenance. Finish or recover the update first.",
+      "threadstr is in maintenance. Finish or recover the update first.",
     );
   if (open) {
     try {

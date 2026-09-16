@@ -26,7 +26,7 @@ test("platform defaults separate runtime from data", () => {
     /supported/,
   );
 });
-test("browser adapter accepts only local On Track addresses", () => {
+test("browser adapter accepts only local threadstr addresses", () => {
   expect(validateLocalBrowserUrl("http://127.0.0.1:3000/")).toBe(
     "http://127.0.0.1:3000/",
   );
@@ -46,7 +46,7 @@ test("profile block preserves content and is idempotent", () => {
   expect(text).toContain("export PATH=");
 });
 test("no-profile creates executable command without touching home profile", async () => {
-  const root = mkdtempSync(join(tmpdir(), "ontrack-platform-"));
+  const root = mkdtempSync(join(tmpdir(), "threadstr-platform-"));
   roots.push(root);
   mkdirSync(join(root, "runtimes"), { recursive: true });
   const command = await installCommand(root, { noProfile: true });
@@ -59,7 +59,7 @@ test("no-profile creates executable command without touching home profile", asyn
 test("atomic profile replacement preserves existing permissions and content", async () => {
   const { writeProfileAtomically } = await import("./platform.js");
   const { writeFileSync, statSync, readdirSync } = await import("node:fs");
-  const root = mkdtempSync(join(tmpdir(), "ontrack-profile-"));
+  const root = mkdtempSync(join(tmpdir(), "threadstr-profile-"));
   roots.push(root);
   const path = join(root, "profile");
   writeFileSync(path, "# custom\n", { mode: 0o640 });
