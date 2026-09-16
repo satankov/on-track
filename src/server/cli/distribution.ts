@@ -1,4 +1,8 @@
-import { createHash } from "node:crypto";
+import {
+  publishedSchema,
+  manifestFor,
+  type PublishedRelease,
+} from "./release-metadata.js";
 import {
   closeSync,
   existsSync,
@@ -19,7 +23,6 @@ import {
   compareReleaseVersions,
   downloadVerifiedAsset,
   fetchTrusted,
-  parseManagedReleaseManifest,
   REPOSITORY,
   type ManagedReleaseManifest,
 } from "./release.js";
@@ -31,21 +34,6 @@ import {
   assertRegularFile,
 } from "./state.js";
 import { activatePrepared, type ActivateOptions } from "./update.js";
-const publishedSchema = z.object({
-  tag_name: z.string(),
-  draft: z.boolean(),
-  prerelease: z.boolean(),
-  immutable: z.boolean(),
-  assets: z.array(
-    z.object({
-      name: z.string(),
-      browser_download_url: z.string(),
-      size: z.number().int().positive(),
-      digest: z.string().nullable().optional(),
-    }),
-  ),
-});
-type PublishedRelease = z.infer<typeof publishedSchema>;
 export function currentManagedPlatform():
   "darwin-arm64" | "darwin-x64" | "linux-x64" | "win-x64" {
   const key = `${process.platform === "win32" ? "win" : process.platform}-${process.arch}`;
@@ -67,47 +55,6 @@ async function metadata(url: string): Promise<unknown> {
   return JSON.parse(
     Buffer.from(await fetchTrusted(url, 2 * 1024 * 1024)).toString("utf8"),
   ) as unknown;
-}
-async function manifestFor(
-  release: PublishedRelease,
-): Promise<ManagedReleaseManifest> {
-  const tag = releaseIdSchema.parse(release.tag_name);
-  if (release.draft || release.prerelease || !release.immutable)
-    throw new Error("Choose a published immutable stable release.");
-  const asset = release.assets.find(
-    (asset) => asset.name === "managed-release.json",
-  );
-  const url = `https://github.com/${REPOSITORY}/releases/download/${tag}/managed-release.json`;
-  if (
-    !asset ||
-    asset.browser_download_url !== url ||
-    !asset.digest?.match(/^sha256:[a-f0-9]{64}$/)
-  )
-    throw new Error(
-      "This source release does not support managed installation. Use its manual guide.",
-    );
-  const bytes = await fetchTrusted(url, Math.min(asset.size, 2 * 1024 * 1024));
-  if (
-    bytes.length !== asset.size ||
-    createHash("sha256").update(bytes).digest("hex") !== asset.digest.slice(7)
-  )
-    throw new Error("Release manifest checksum mismatch.");
-  const result = parseManagedReleaseManifest(
-    JSON.parse(Buffer.from(bytes).toString("utf8")),
-  );
-  if (`v${result.version}` !== tag)
-    throw new Error("Release identity mismatch.");
-  const source = release.assets.find(
-    (asset) => asset.name === result.source.name,
-  );
-  if (
-    !source ||
-    source.browser_download_url !== result.source.url ||
-    source.size !== result.source.size ||
-    source.digest !== `sha256:${result.source.sha256}`
-  )
-    throw new Error("Published source asset does not match its manifest.");
-  return result;
 }
 export async function getPublishedManifest(
   tag: string,

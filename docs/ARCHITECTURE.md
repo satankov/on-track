@@ -29,7 +29,9 @@ There are no accounts, cloud services for projects,
 telemetry, remote UI assets, or required internet requests during normal use.
 The optional managed CLI downloads software during installation and explicit
 updates; it uses a separate private runtime/code directory and does not poll for
-updates while the application runs.
+updates while the application runs. Home can explicitly check the fixed GitHub
+release channel through a guarded local POST. It does not download software or
+execute update commands. Normal project work still requires no internet.
 
 ```text
 Local browser -> loopback Fastify server -> application service -> repository -> SQLite
@@ -154,6 +156,28 @@ validated OS support remains contingent on the deferred platform evidence.
 Dependencies point inward from transport/UI and persistence adapters toward
 shared contracts and use cases. Browser code accesses persistence only through
 the local API; raw SQL and filesystem paths never cross that boundary.
+
+## Home release information
+
+`src/server/home` owns local version information and read-only release checks.
+Startup supplies a safe projection of its already-validated runtime identity;
+private process capabilities and data paths do not cross the browser boundary.
+Checks reuse the CLI's published-manifest integrity validation, use an explicit
+same-origin/Fetch Metadata guarded POST, a six-per-minute process limit, a
+12-second total network deadline and a five-minute in-memory result cache. No
+startup/focus polling, project upload, persistent cache or runtime downloads occur.
+
+The client retains check results across navigation for the current app session.
+Managed instructions validate version/platform/minimum-version and schema/migration
+compatibility. Manual or unverified builds receive explicit manual guidance.
+Only exact launcher command display may reveal a trusted installation path;
+commands remain inert text and are never sent to GitHub. See
+[ADR-0011](adr/0011-explicit-home-release-checks.md).
+
+The help block reserves “Report a bug — coming soon”; there is no reporting API
+or receiver. Fixed guide/source links are bundled with the UI. Community/social
+links are omitted until actual destinations are provided. The same utility block
+appears below project sections on mobile without replacing navigation or Settings.
 
 ## Data design and location
 

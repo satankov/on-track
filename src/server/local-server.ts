@@ -1,3 +1,6 @@
+import { createHomeService } from "./home/service.js";
+import { defaultInstallRoot } from "./cli/platform.js";
+import { currentManagedPlatform } from "./cli/distribution.js";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import fastifyStatic from "@fastify/static";
@@ -90,7 +93,25 @@ export async function startLocalServer(
       )
         throw new Error("Candidate database validation failed.");
     }
+    let managedPlatform: ReturnType<typeof currentManagedPlatform> | undefined;
+    try {
+      managedPlatform = currentManagedPlatform();
+    } catch {
+      /* Manual use remains supported. */
+    }
+    const homeService = createHomeService({
+      version: description.version,
+      buildId: description.buildId,
+      schemaVersion: description.schemaVersion,
+      migrationMarker: description.migrationMarker,
+      platform: process.platform,
+      managedPlatform,
+      ...(launch
+        ? { installRoot: launch.installRoot, defaultRoot: defaultInstallRoot() }
+        : {}),
+    });
     app = buildApp({
+      homeService,
       database,
       databasePath,
       dataDirectory,
@@ -130,6 +151,7 @@ export async function startLocalServer(
       const handler = () => {
         void (async () => {
           try {
+            homeService.close();
             await gate.freezeAndDrain(options.drainTimeoutMs);
             await running.close();
           } catch {

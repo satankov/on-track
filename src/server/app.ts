@@ -1,3 +1,5 @@
+import { createHomeService, type HomeService } from "./home/service.js";
+import { registerHomeRoutes } from "./home/routes.js";
 import { registerExampleRoutes } from "./examples/routes.js";
 import { ArchivedProjectPinError } from "./db/repository.js";
 import type Database from "better-sqlite3";
@@ -45,6 +47,7 @@ import {
 } from "../domain/validation.js";
 
 interface BuildAppOptions {
+  homeService?: HomeService;
   database: Database.Database;
   databasePath?: string;
   dataDirectory?: string;
@@ -324,6 +327,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       .code(500)
       .send({ code: "internal_error", message: "Something went wrong." });
   });
+
+  registerHomeRoutes(
+    app,
+    options.homeService ??
+      createHomeService({ version: null, platform: process.platform }),
+  );
 
   app.get("/api/health", async () => ({ status: "ok" }));
   void app.register(async (examples) =>

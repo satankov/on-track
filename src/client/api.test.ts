@@ -5,6 +5,24 @@ import { apiClient } from "./api.js";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("browser API client", () => {
+  it("reads local Home info and explicitly posts an empty release check", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ version: "0.0.8", installation: "manual" }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({ status: "empty", checkedAt: 1, releases: [] }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await apiClient.homeInfo()).toMatchObject({ version: "0.0.8" });
+    expect(await apiClient.checkReleases()).toMatchObject({ status: "empty" });
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/home/releases/check", {
+      method: "POST",
+      body: "{}",
+      headers: { "Content-Type": "application/json" },
+    });
+  });
   it("reads example resources and reports ambiguous copies without retrying", async () => {
     const fetchMock = vi
       .fn()

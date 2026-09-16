@@ -1,3 +1,4 @@
+import type { HomeCheck, HomeInfo } from "../domain/home.js";
 import type {
   ExampleSummary,
   ExampleDetail,
@@ -33,6 +34,8 @@ import type {
 } from "../domain/validation.js";
 
 export interface ApiClient {
+  homeInfo(): Promise<HomeInfo>;
+  checkReleases(): Promise<HomeCheck>;
   listExamples(): Promise<ExampleSummary[]>;
   getExample(slug: string): Promise<ExampleDetail>;
   copyExample(slug: string, revision: number): Promise<CopyExampleResult>;
@@ -96,6 +99,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const apiClient: ApiClient = {
+  homeInfo: () => request<HomeInfo>("/api/home/info"),
+  checkReleases: () =>
+    request<HomeCheck>("/api/home/releases/check", {
+      method: "POST",
+      body: "{}",
+    }),
   listExamples: () => request<ExampleSummary[]>("/api/examples"),
   getExample: (slug) =>
     request<ExampleDetail>(`/api/examples/${encodeURIComponent(slug)}`),
