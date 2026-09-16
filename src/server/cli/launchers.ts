@@ -150,22 +150,47 @@ function createOwned(path: string, bytes: string, mode: number): void {
   }
 }
 
-function windowsSearchConfig(): { path: string; extensions: string } {
+export function windowsSearchConfig(): { path: string; extensions: string } {
   const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT;
   if (!systemRoot || !isAbsolute(systemRoot))
     throw new Error("Cannot inspect Windows command search paths.");
+  const powershellHome = join(
+    systemRoot,
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+  );
+  // Establish the matching system modules before PowerShell initializes. A
+  // managed child has a reduced environment; a PowerShell 7 parent may instead
+  // supply incompatible modules. Neither should affect command collision checks.
+  const environment = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) =>
+        !["psmodulepath", "winpsmodulepath"].includes(key.toLowerCase()),
+    ),
+  );
+  environment.PSModulePath = join(powershellHome, "Modules");
+  environment.WinPSModulePath = environment.PSModulePath;
   const result = spawnSync(
-    join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+    join(powershellHome, "powershell.exe"),
     [
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $env:PSModulePath=Join-Path $PSHOME 'Modules'; [pscustomobject]@{path=[Environment]::ExpandEnvironmentVariables([Environment]::GetEnvironmentVariable('Path','User')+';'+[Environment]::GetEnvironmentVariable('Path','Machine')); extensions=([Environment]::GetEnvironmentVariable('PATHEXT','User')+';'+[Environment]::GetEnvironmentVariable('PATHEXT','Machine'))} | ConvertTo-Json -Compress",
+      "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $env:PSModulePath=[System.IO.Path]::Combine($PSHOME,'Modules'); [pscustomobject]@{path=[Environment]::ExpandEnvironmentVariables([Environment]::GetEnvironmentVariable('Path','User')+';'+[Environment]::GetEnvironmentVariable('Path','Machine')); extensions=([Environment]::GetEnvironmentVariable('PATHEXT','User')+';'+[Environment]::GetEnvironmentVariable('PATHEXT','Machine'))} | ConvertTo-Json -Compress",
     ],
-    { encoding: "utf8", shell: false, windowsHide: true, timeout: 10_000 },
+    {
+      encoding: "utf8",
+      shell: false,
+      windowsHide: true,
+      timeout: 10_000,
+      env: environment,
+    },
   );
   if (result.status !== 0)
-    throw new Error("Cannot inspect Windows command search paths.");
+    throw new Error(
+      `Cannot inspect Windows command search paths (${(result.error as NodeJS.ErrnoException | undefined)?.code ?? `exit ${result.status ?? "unknown"}`}).`,
+    );
   const config: unknown = JSON.parse(result.stdout);
   if (
     !config ||

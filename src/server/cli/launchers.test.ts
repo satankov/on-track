@@ -15,14 +15,20 @@ import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import { installCommand } from "./platform.js";
+import { softwareEnvironment } from "./process.js";
 import { randomUUID } from "node:crypto";
-import { checkCommandPath } from "./launchers.js";
+import { checkCommandPath, windowsSearchConfig } from "./launchers.js";
 
 const roots: string[] = [];
 const failures = vi.hoisted(() => ({ write: false, exists: false }));
 const windowsSearch = vi.hoisted(() => ({
   registeredPath: undefined as string | undefined,
   output: undefined as string | undefined,
+  stub: false,
+  status: 0 as number | null,
+  error: undefined as NodeJS.ErrnoException | undefined,
+  options: undefined as
+    import("node:child_process").SpawnSyncOptions | undefined,
 }));
 vi.mock("node:child_process", async (original) => {
   const child = await original<typeof import("node:child_process")>();
@@ -30,6 +36,14 @@ vi.mock("node:child_process", async (original) => {
     ...child,
     spawnSync: (...args: Parameters<typeof child.spawnSync>) => {
       const [command, arguments_, options] = args;
+      if (windowsSearch.stub) {
+        windowsSearch.options = options;
+        return {
+          status: windowsSearch.status,
+          error: windowsSearch.error,
+          stdout: '{"path":"","extensions":""}',
+        };
+      }
       if (windowsSearch.registeredPath && Array.isArray(arguments_)) {
         const scriptIndex = arguments_.indexOf("-Command") + 1;
         const script = arguments_[scriptIndex];
@@ -89,10 +103,40 @@ afterEach(() => {
   failures.exists = false;
   windowsSearch.registeredPath = undefined;
   windowsSearch.output = undefined;
+  windowsSearch.stub = false;
+  windowsSearch.status = 0;
+  windowsSearch.error = undefined;
+  windowsSearch.options = undefined;
   vi.unstubAllEnvs();
   for (const root of roots.splice(0))
     rmSync(root, { recursive: true, force: true });
 });
+
+test("isolates Windows PowerShell module discovery before startup", () => {
+  const systemRoot = fixture();
+  vi.stubEnv("SystemRoot", systemRoot);
+  vi.stubEnv("PSModulePath", "/untrusted/powershell/modules");
+  windowsSearch.stub = true;
+  expect(windowsSearchConfig()).toEqual({ path: "", extensions: "" });
+  expect(windowsSearch.options?.env?.PSModulePath).toBe(
+    join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "Modules"),
+  );
+});
+
+test.each(["ETIMEDOUT", "ENOENT"])(
+  "reports bounded Windows process failure %s",
+  (code) => {
+    vi.stubEnv("SystemRoot", fixture());
+    windowsSearch.stub = true;
+    windowsSearch.status = null;
+    windowsSearch.error = Object.assign(new Error("private process details"), {
+      code,
+    });
+    expect(() => windowsSearchConfig()).toThrow(
+      `Cannot inspect Windows command search paths (${code}).`,
+    );
+  },
+);
 
 test.skipIf(process.platform !== "win32")(
   "detects a registered Unicode PATH collision through real PowerShell serialization",
@@ -108,6 +152,24 @@ test.skipIf(process.platform !== "win32")(
     expect(() => checkCommandPath(root, "unused")).toThrow(conflictingCommand);
     expect(JSON.parse(windowsSearch.output!).path).toBe(directory);
     expect(readFileSync(conflictingCommand, "utf8")).toBe("unrelated");
+  },
+);
+
+test.skipIf(process.platform !== "win32")(
+  "detects registered collisions from the reduced managed-server environment",
+  () => {
+    const root = fixture();
+    const directory = join(fixture(), "Команды 日本語 — café");
+    mkdirSync(directory);
+    const conflictingCommand = join(directory, "thr.exe");
+    writeFileSync(conflictingCommand, "unrelated");
+    const managedEnvironment = softwareEnvironment();
+    for (const key of Object.keys(process.env)) {
+      if (!(key in managedEnvironment)) vi.stubEnv(key, undefined);
+    }
+    windowsSearch.registeredPath = directory;
+    expect(() => checkCommandPath(root, "unused")).toThrow(conflictingCommand);
+    expect(JSON.parse(windowsSearch.output!).path).toBe(directory);
   },
 );
 
