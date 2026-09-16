@@ -923,6 +923,40 @@ describe("personal project chat workspace", () => {
     expect(screen.queryByRole("button", { name: "Open Priority" })).toBeNull();
   });
 
+  it("keeps footnote references and backlinks in the current project", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "footnotes",
+      title: "Footnotes",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+      archivedAt: null,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({
+        ...chat,
+        notes: [
+          {
+            id: "fn",
+            chatId: chat.id,
+            body: "Note[^1]\n\n[^1]: Detail",
+            createdAt: 1,
+          },
+        ],
+      }),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Footnotes" }),
+    );
+    const links = document.querySelectorAll('.note-body a[href^="#"]');
+    expect(links).toHaveLength(2);
+    for (const link of links)
+      expect(link).not.toHaveAttribute("target", "_blank");
+  });
+
   it("shows plain Markdown previews and automatically filters messages containing links", async () => {
     const user = userEvent.setup();
     const chat = {
@@ -960,6 +994,14 @@ describe("personal project chat workspace", () => {
     expect(within(project).getByText("Header bold text Guide")).toBeVisible();
     expect(within(project).queryByRole("link")).toBeNull();
     await user.click(project);
+    for (const link of document.querySelectorAll(".note-body a")) {
+      expect(link).toHaveAttribute("target", "_blank");
+      expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    }
+    expect(screen.getByRole("link", { name: "Guide" })).toHaveAttribute(
+      "target",
+      "_blank",
+    );
     const filters = within(
       screen.getByRole("navigation", { name: "History filters" }),
     ).getAllByRole("button");
