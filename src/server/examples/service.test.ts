@@ -36,9 +36,11 @@ it("rolls back all rows and newly published files if the transaction fails", () 
   expect(database.prepare("SELECT COUNT(*) AS n FROM chats").get()).toEqual({
     n: 0,
   });
-  const path = created.mock.results[0].value.storagePath;
-  expect(removed).toHaveBeenCalledWith(path);
-  expect(existsSync(join(directory, path))).toBe(false);
+  for (const result of created.mock.results) {
+    const path = result.value.storagePath;
+    expect(removed).toHaveBeenCalledWith(path);
+    expect(existsSync(join(directory, path))).toBe(false);
+  }
 });
 
 it("cleans the first file if later publication fails, and leaves prior copies intact", () => {
@@ -59,10 +61,10 @@ it("cleans the first file if later publication fails, and leaves prior copies in
     { id: first },
   ]);
   const original = database
-    .prepare("SELECT storage_path FROM note_attachments")
-    .get() as { storage_path: string };
+    .prepare("SELECT storage_path FROM note_attachments WHERE filename = ?")
+    .get("packing-list.txt") as { storage_path: string };
   expect(store.read(original.storage_path).content.toString()).toContain(
-    "Weekend packing list",
+    "AMSTERDAM — PACKING LIST",
   );
 });
 
@@ -80,7 +82,7 @@ it("keeps committed rows and files even when preparing the response fails", asyn
   const response = await app.inject({
     method: "POST",
     url: "/api/examples/weekend-trip/copies",
-    payload: { revision: 1 },
+    payload: { revision: 3 },
   });
   expect(response.statusCode).toBe(201);
   expect(response.json()).toEqual({ id: expect.any(String) });
@@ -89,7 +91,7 @@ it("keeps committed rows and files even when preparing the response fails", asyn
   );
   expect(
     database.prepare("SELECT COUNT(*) AS n FROM note_attachments").get(),
-  ).toEqual({ n: 1 });
+  ).toEqual({ n: 3 });
   await app.close();
 });
 
@@ -117,7 +119,7 @@ it("excludes copying while restore owns the maintenance gate", async () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/examples/weekend-trip/copies",
-      payload: { revision: 1 },
+      payload: { revision: 3 },
     });
     expect(response.statusCode).not.toBe(201);
   });

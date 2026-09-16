@@ -7,7 +7,9 @@ test("examples can be explored, copied, edited, backed up and hidden", async ({
   localApp,
 }, testInfo) => {
   await page.goto(localApp.url);
-  await page.getByRole("button", { name: "Open example Weekend trip" }).click();
+  await page
+    .getByRole("button", { name: "Open example 🇳🇱 Trip to Amsterdam" })
+    .click();
   await expect(
     page.getByText("Read-only example.", { exact: false }),
   ).toBeVisible();
@@ -69,7 +71,7 @@ test("examples can be explored, copied, edited, backed up and hidden", async ({
     exact: true,
   });
   await expect(open).toHaveAttribute("aria-disabled", "true");
-  await page.getByRole("button", { name: "Files 1", exact: true }).click();
+  await page.getByRole("button", { name: "Files 2", exact: true }).click();
   await expect(composer).not.toHaveAttribute("data-readonly-highlight", "true");
   for (const name of [
     "Edit message",
@@ -77,7 +79,7 @@ test("examples can be explored, copied, edited, backed up and hidden", async ({
     "Change labels",
     "Open packing-list.txt",
   ]) {
-    const action = page.getByRole("button", { name, exact: true });
+    const action = page.getByRole("button", { name, exact: true }).first();
     await action.focus();
     await page.keyboard.press("Enter");
     await expect(composer).toHaveAttribute("data-readonly-highlight", "true");
@@ -123,6 +125,7 @@ test("examples can be explored, copied, edited, backed up and hidden", async ({
     ).toBe(true);
     const filename = await page
       .locator(".attachment-copy strong")
+      .first()
       .boundingBox();
     expect(filename!.width).toBeGreaterThan(90);
     await page.evaluate(() => (document.documentElement.style.zoom = ""));
@@ -139,20 +142,28 @@ test("examples can be explored, copied, edited, backed up and hidden", async ({
   }
   await page.getByRole("button", { name: "Create editable copy" }).click();
   await expect(
-    page.getByRole("heading", { name: "Weekend trip (copy)", exact: true }),
+    page.getByRole("heading", {
+      name: "🇳🇱 Trip to Amsterdam (copy)",
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Weekend trip (copy)", exact: true }),
+    page.getByRole("heading", {
+      name: "🇳🇱 Trip to Amsterdam (copy)",
+      exact: true,
+    }),
   ).toBeFocused();
-  await page.getByRole("button", { name: "Files 1", exact: true }).click();
+  await page.getByRole("button", { name: "Files 2", exact: true }).click();
   await open.click();
   await expect.poll(() => localApp.nativeActionReceipts().length).toBe(1);
   const receipt = localApp.nativeActionReceipts()[0];
-  expect(readFileSync(receipt.path, "utf8")).toContain("Weekend packing list");
+  expect(readFileSync(receipt.path, "utf8")).toContain(
+    "AMSTERDAM — PACKING LIST",
+  );
   writeFileSync(receipt.path, "My own packing list\n");
   const chats = await (await request.get(`${localApp.url}/api/chats`)).json();
   const copied = chats.find(
-    (chat: { title: string }) => chat.title === "Weekend trip (copy)",
+    (chat: { title: string }) => chat.title === "🇳🇱 Trip to Amsterdam (copy)",
   );
   const backup = await request.post(`${localApp.url}/api/database/export`, {
     data: { selection: [copied.id] },
@@ -183,7 +194,10 @@ test("examples can be explored, copied, edited, backed up and hidden", async ({
     page.getByRole("button", { name: "Examples", exact: true }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Open Weekend trip (copy)", exact: true }),
+    page.getByRole("button", {
+      name: "Open 🇳🇱 Trip to Amsterdam (copy)",
+      exact: true,
+    }),
   ).toBeVisible();
   // Replace with the saved user copy. Catalog originals never enter the backup.
   const restored = await request.put(`${localApp.url}/api/database/import`, {
@@ -200,13 +214,64 @@ test("examples can be explored, copied, edited, backed up and hidden", async ({
   await page
     .getByRole("button", { name: "Back to projects", exact: true })
     .click();
-  await page.getByRole("button", { name: "Open example Weekend trip" }).click();
+  await page
+    .getByRole("button", { name: "Open example 🇳🇱 Trip to Amsterdam" })
+    .click();
   await expect(
-    page.getByRole("heading", { name: "Weekend trip", exact: true }),
+    page.getByRole("heading", { name: "🇳🇱 Trip to Amsterdam", exact: true }),
   ).toBeVisible();
   // Copy again after database replacement, exercising current connection ownership.
   await page.getByRole("button", { name: "Create editable copy" }).click();
   await expect(
-    page.getByRole("heading", { name: "Weekend trip (copy 2)", exact: true }),
+    page.getByRole("heading", {
+      name: "🇳🇱 Trip to Amsterdam (copy 2)",
+      exact: true,
+    }),
   ).toBeVisible();
+});
+
+test("Amsterdam story renders rich content and future plans", async ({
+  page,
+  localApp,
+}, testInfo) => {
+  await page.clock.setFixedTime(new Date("2026-09-16T12:00:00Z"));
+  await page.goto(localApp.url);
+  await page
+    .getByRole("button", { name: "Open example 🇳🇱 Trip to Amsterdam" })
+    .click();
+  const itinerary = page.locator(".message-row", {
+    hasText: "Three days, with breathing room",
+  });
+  await itinerary.getByRole("button", { name: "Show more" }).click();
+  await expect(
+    itinerary.getByText("If plans change", { exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("amsterdam-itinerary.png"),
+    fullPage: true,
+  });
+  await itinerary.getByRole("button", { name: "Show less" }).click();
+  const boundary = page.getByRole("separator", { name: "Future messages" });
+  await boundary.scrollIntoViewIfNeeded();
+  await expect(boundary).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("amsterdam-future.png"),
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Links 1", exact: true }).click();
+  await expect(
+    page.getByRole("link", { name: "Amsterdam city guide" }),
+  ).toHaveAttribute("href", "https://www.iamsterdam.com/en");
+  await page.getByRole("button", { name: "Files 2", exact: true }).click();
+  await expect(page.locator(".message-row")).toHaveCount(2);
+  await expect(page.locator(".attachment-copy strong")).toHaveCount(3);
+  await page.screenshot({
+    path: testInfo.outputPath("amsterdam-files.png"),
+    fullPage: true,
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
 });

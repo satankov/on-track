@@ -289,7 +289,7 @@ change is introduced by selection or merge.
 
 ## Built-in examples
 
-The server-owned Examples catalog contains one small trip story and embedded
+The server-owned Examples catalog contains one Amsterdam trip story and embedded
 plain-text attachment content. Separate example list/detail/copy routes keep
 originals outside SQLite and ordinary chat/backup lists. Reading performs no user
 content writes. Stable slugs and content revisions travel with installed code;

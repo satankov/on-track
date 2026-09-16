@@ -26,7 +26,7 @@ it("reads one trip example without seeding user projects or attachments, then cr
   const example = (
     await app.inject(`/api/examples/${listed.json()[0].slug}`)
   ).json();
-  expect(example.title).toBe("Weekend trip");
+  expect(example.title).toBe("🇳🇱 Trip to Amsterdam");
   expect((await app.inject("/api/chats")).json()).toEqual([]);
   expect(readdirSync(directory, { recursive: true })).toEqual(filesBefore);
   const first = await app.inject({
@@ -37,7 +37,7 @@ it("reads one trip example without seeding user projects or attachments, then cr
   expect(first.statusCode).toBe(201);
   const project = first.json().project;
   expect(project).toMatchObject({
-    title: "Weekend trip (copy)",
+    title: "🇳🇱 Trip to Amsterdam (copy)",
     archivedAt: null,
     pinnedAt: null,
   });
@@ -45,7 +45,7 @@ it("reads one trip example without seeding user projects or attachments, then cr
   expect(project.notes[0].id).not.toBe(example.notes[0].id);
   expect(
     project.notes.flatMap((n: { attachments: unknown[] }) => n.attachments),
-  ).toHaveLength(1);
+  ).toHaveLength(3);
   const second = (
     await app.inject({
       method: "POST",
@@ -53,7 +53,7 @@ it("reads one trip example without seeding user projects or attachments, then cr
       payload: { revision: example.revision },
     })
   ).json().project;
-  expect(second.title).toBe("Weekend trip (copy 2)");
+  expect(second.title).toBe("🇳🇱 Trip to Amsterdam (copy 2)");
   expect(second.notes[0].id).not.toBe(project.notes[0].id);
   await app.inject({ method: "DELETE", url: `/api/chats/${project.id}` });
   expect((await app.inject(`/api/chats/${second.id}`)).statusCode).toBe(200);
@@ -66,7 +66,7 @@ it("rejects missing, stale and malformed copy requests and original mutations", 
   expect((await app.inject("/api/examples/missing")).statusCode).toBe(404);
   for (const [payload, status] of [
     [{ revision: 999 }, 409],
-    [{ revision: 1, path: "../x" }, 400],
+    [{ revision: 3, path: "../x" }, 400],
   ] as const) {
     expect(
       (
@@ -106,7 +106,7 @@ it("rate limits copies without reporting a server failure or creating a fourth p
         await app.inject({
           method: "POST",
           url: "/api/examples/weekend-trip/copies",
-          payload: { revision: 1 },
+          payload: { revision: 3 },
         })
       ).statusCode,
     ).toBe(201);
@@ -115,7 +115,7 @@ it("rate limits copies without reporting a server failure or creating a fourth p
       await app.inject({
         method: "POST",
         url: "/api/examples/weekend-trip/copies",
-        payload: { revision: 1 },
+        payload: { revision: 3 },
       })
     ).statusCode,
   ).toBe(429);
@@ -149,7 +149,7 @@ it("rejects native file actions and cross-origin copying for catalog originals",
         method: "POST",
         url: "/api/examples/weekend-trip/copies",
         headers: { origin: "https://evil.example" },
-        payload: { revision: 1 },
+        payload: { revision: 3 },
       })
     ).statusCode,
   ).toBe(403);
@@ -160,7 +160,7 @@ it("rejects oversized copy input before any publication", async () => {
   const result = await app.inject({
     method: "POST",
     url: "/api/examples/weekend-trip/copies",
-    payload: { revision: 1, data: "x".repeat(2048) },
+    payload: { revision: 3, data: "x".repeat(2048) },
   });
   expect(result.statusCode).toBe(413);
   expect((await app.inject("/api/chats")).json()).toEqual([]);
