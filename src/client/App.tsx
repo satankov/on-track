@@ -1603,6 +1603,7 @@ function MessageLabelPicker({
   const [error, setError] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const popoverId = useId();
   const appliedLabels = note.labels ?? [];
   const permanent = new Set<Label>(PERMANENT_LABELS);
@@ -1620,6 +1621,49 @@ function MessageLabelPicker({
     };
     document.addEventListener("mousedown", dismiss);
     return () => document.removeEventListener("mousedown", dismiss);
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current;
+    const popover = popoverRef.current;
+    const history = rootRef.current?.closest(".history");
+    if (!trigger || !popover || !history) return;
+    let horizontalShift = 0;
+    const position = () => {
+      const button = trigger.getBoundingClientRect();
+      const bounds = history.getBoundingClientRect();
+      const above = Math.max(0, button.top - Math.max(0, bounds.top) - 7);
+      const below = Math.max(
+        0,
+        Math.min(window.innerHeight, bounds.bottom) - button.bottom - 7,
+      );
+      const up = popover.scrollHeight > below && above > below;
+      popover.dataset.side = up ? "up" : "down";
+      popover.style.maxHeight = `${up ? above : below}px`;
+      const menu = popover.getBoundingClientRect();
+      const naturalLeft = menu.left - horizontalShift;
+      const leftEdge = Math.max(0, bounds.left) + 8;
+      const rightEdge = Math.min(window.innerWidth, bounds.right) - 8;
+      horizontalShift =
+        Math.max(leftEdge, Math.min(naturalLeft, rightEdge - menu.width)) -
+        naturalLeft;
+      popover.style.transform = `translateX(${horizontalShift}px)`;
+    };
+    position();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(position);
+    observer?.observe(history);
+    observer?.observe(popover);
+    history.addEventListener("scroll", position);
+    window.addEventListener("resize", position);
+    return () => {
+      observer?.disconnect();
+      history.removeEventListener("scroll", position);
+      window.removeEventListener("resize", position);
+    };
   }, [open]);
 
   async function changeLabel(label: Label, applied: boolean) {
@@ -1668,7 +1712,7 @@ function MessageLabelPicker({
         <LabelIcon />
       </button>
       {open && (
-        <div className="message-label-popover" id={popoverId}>
+        <div className="message-label-popover" id={popoverId} ref={popoverRef}>
           <fieldset>
             <legend>Message labels</legend>
             {availableLabels.map((label) => {
