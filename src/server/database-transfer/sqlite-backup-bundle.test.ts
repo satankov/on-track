@@ -617,6 +617,9 @@ describe("SQLite backup bundle", () => {
         lookalike.close();
       }
     },
+    // Includes schema setup, a real online backup, and durable disk writes.
+    // Preserve the existing larger Windows allowance for native ACL checks.
+    process.platform === "win32" ? 30_000 : 15_000,
   );
 
   it("rejects unsupported manifests, foreign-key damage, and inconsistent managed reads", async () => {
@@ -1602,7 +1605,8 @@ function createMetadataOnlySchemaV2Database(
   const storagePathUnique = options.uniqueStoragePath === false ? "" : "UNIQUE";
   const database = new Database(path);
   database.pragma("foreign_keys = ON");
-  database.exec(`
+  database.transaction(() => {
+    database.exec(`
     CREATE TABLE __drizzle_migrations (
       id SERIAL PRIMARY KEY,
       hash TEXT NOT NULL,
@@ -1648,6 +1652,7 @@ function createMetadataOnlySchemaV2Database(
     INSERT INTO notes (id, chat_id, body, created_at)
       VALUES ('note-a', 'chat-a', 'Plan', 1);
   `);
+  })();
   return database;
 }
 
@@ -1658,7 +1663,8 @@ function createMetadataOnlySchemaV7Database(
   const omitChecks =
     options.includeChecks === false || options.fakeMetadataChecks === true;
   const database = createMetadataOnlySchemaV2Database(path, options);
-  database.exec(`
+  database.transaction(() => {
+    database.exec(`
     CREATE TABLE chat_enabled_labels (
       chat_id TEXT NOT NULL,
       label TEXT NOT NULL,
@@ -1683,24 +1689,25 @@ function createMetadataOnlySchemaV7Database(
     INSERT INTO __drizzle_migrations (id, hash, created_at)
       VALUES (2, 'schema-v3', 1788356400000);
   `);
-  const trusted = new Database(":memory:");
-  try {
-    applyBundledMigrations(trusted);
-    const migrations = trusted
-      .prepare(
-        "SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at, hash",
-      )
-      .all() as Array<{ hash: string; created_at: number }>;
-    database.exec("DELETE FROM __drizzle_migrations");
-    const insert = database.prepare(
-      "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
-    );
-    for (const migration of migrations) {
-      insert.run(migration.hash, migration.created_at);
+    const trusted = new Database(":memory:");
+    try {
+      applyBundledMigrations(trusted);
+      const migrations = trusted
+        .prepare(
+          "SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at, hash",
+        )
+        .all() as Array<{ hash: string; created_at: number }>;
+      database.exec("DELETE FROM __drizzle_migrations");
+      const insert = database.prepare(
+        "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
+      );
+      for (const migration of migrations) {
+        insert.run(migration.hash, migration.created_at);
+      }
+    } finally {
+      trusted.close();
     }
-  } finally {
-    trusted.close();
-  }
+  })();
   return database;
 }
 
