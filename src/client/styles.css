@@ -1376,6 +1376,14 @@ button.rail-section-label {
   box-shadow: 0 12px 34px
     color-mix(in srgb, var(--shadow-overlay) 22%, transparent);
 }
+.message-label-popover {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.message-label-popover[data-side="up"] {
+  top: auto;
+  bottom: calc(100% + 7px);
+}
 .message-label-popover fieldset {
   display: grid;
   gap: 3px;
@@ -2616,12 +2624,16 @@ kbd {
     justify-content: flex-start;
   }
   .message-label-picker {
-    position: static;
+    position: relative;
   }
   .message-label-popover {
     right: 0;
     left: auto;
     width: min(218px, calc(100vw - 32px));
+  }
+  .message-row--participant .message-label-popover {
+    left: 0;
+    right: auto;
   }
 }
 

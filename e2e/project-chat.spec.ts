@@ -2463,3 +2463,61 @@ test("keeps expanded edit controls reachable at 200 percent reflow", async ({
     path: testInfo.outputPath("composer-expanded-200-percent-reflow.png"),
   });
 });
+
+test("keeps bottom message labels above the trigger without scrolling history", async ({
+  page,
+  localApp,
+  request,
+}, testInfo) => {
+  const project = await createProject(request, localApp.url, {
+    title: "Popover placement",
+    accent: "coral",
+  });
+  for (let i = 0; i < 16; i++)
+    await addNote(request, localApp.url, project.id, `Message ${i}`);
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: "Open Popover placement" }).click();
+  const history = page.locator(".history");
+  await history.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  const trigger = page.getByRole("button", { name: "Change labels" }).last();
+  const before = await history.evaluate((el) => el.scrollTop);
+  await trigger.click();
+  const popover = page.locator(".message-label-popover");
+  await expect(popover).toBeVisible();
+  const menuBox = (await popover.boundingBox())!;
+  const triggerBox = (await trigger.boundingBox())!;
+  const historyBox = (await history.boundingBox())!;
+  expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(triggerBox.y);
+  expect(menuBox.y).toBeGreaterThanOrEqual(historyBox.y);
+  expect(await history.evaluate((el) => el.scrollTop)).toBeCloseTo(before, 0);
+  await popover.getByRole("checkbox", { name: "Pin", exact: true }).click();
+  await expect(
+    popover.getByRole("checkbox", { name: "Pin", exact: true }),
+  ).toBeChecked();
+  await page.screenshot({ path: testInfo.outputPath("bottom-labels.png") });
+  await trigger.press("Escape");
+  await expect(popover).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await history.evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  const topTrigger = page
+    .getByRole("button", { name: "Change labels" })
+    .first();
+  await topTrigger.click();
+  const topMenu = (await popover.boundingBox())!;
+  const topButton = (await topTrigger.boundingBox())!;
+  expect(topMenu.y).toBeGreaterThanOrEqual(topButton.y + topButton.height);
+  await page.setViewportSize({ width: 320, height: 740 });
+  await expect
+    .poll(async () => (await popover.boundingBox())!.x)
+    .toBeGreaterThanOrEqual(0);
+  await expect
+    .poll(async () => {
+      const box = (await popover.boundingBox())!;
+      return box.x + box.width;
+    })
+    .toBeLessThanOrEqual(320);
+});
