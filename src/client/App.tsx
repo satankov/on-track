@@ -12,6 +12,9 @@ import type {
 } from "../domain/examples.js";
 import { ExamplesSection, GeneralSettingsWorkspace } from "./Examples.js";
 import {
+  readCollapsedSections,
+  persistCollapsedSections,
+  type RailSection,
   readShowExamples,
   persistShowExamples,
   SHOW_EXAMPLES_KEY,
@@ -105,7 +108,6 @@ const ICON_ONLY_MESSAGE_LABELS = new Set<Label>(["pin", "attention"]);
 const MESSAGE_COLLAPSED_HEIGHT_PX = 192;
 
 type HistoryFilter = "all" | "attachments" | "links" | Label;
-type RailSection = "Pinned" | "Projects" | "Archive" | "Examples";
 
 interface WorkspaceServerState {
   chats: Chat[];
@@ -3107,7 +3109,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   );
   const [collapsedSections, setCollapsedSections] = useState<
     Record<RailSection, boolean>
-  >({ Pinned: false, Projects: false, Archive: false, Examples: false });
+  >(readCollapsedSections);
+  useEffect(() => {
+    persistCollapsedSections(collapsedSections);
+  }, [collapsedSections]);
   const selectionRequest = useRef(0);
   const pendingSelection = useRef<"example" | "project" | undefined>(undefined);
   const copiedFocus = useRef<string | undefined>(undefined);

@@ -3173,6 +3173,20 @@ kbd {
   inset: 12% -5% 10% 76%;
   pointer-events: none;
 }
+.home-project-word {
+  position: relative;
+  display: inline-block;
+  isolation: isolate;
+}
+.home-hero .home-project-word .empty-thread {
+  inset: auto;
+  top: 50%;
+  left: 50%;
+  width: 36px;
+  height: clamp(220px, 4.5em, 340px);
+  transform: translate(-18px, -50%);
+  z-index: -1;
+}
 .home-utilities {
   width: 100%;
   max-width: 760px;
