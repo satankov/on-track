@@ -11,6 +11,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import { getExample, listExamples } from "../server/examples/catalog.js";
 import { App } from "./App.js";
 import type { ApiClient } from "./api.js";
 
@@ -26,6 +27,9 @@ function deferred<T>() {
 
 function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
+    listExamples: vi.fn().mockResolvedValue([]),
+    getExample: vi.fn(),
+    copyExample: vi.fn(),
     listChats: vi.fn().mockResolvedValue([]),
     getChat: vi.fn(),
     createChat: vi.fn().mockResolvedValue({
@@ -69,6 +73,219 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
 }
 
 describe("personal project chat workspace", () => {
+  it("uses the regular inactive composer and highlights it for every blocked action", async () => {
+    localStorage.clear();
+    const user = userEvent.setup();
+    render(
+      <App
+        api={createApi({
+          listExamples: vi.fn().mockResolvedValue(listExamples()),
+          getExample: vi.fn().mockResolvedValue(getExample("weekend-trip")),
+        })}
+      />,
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Open example Weekend trip" }),
+    );
+    const header = document.querySelector(".chat-header") as HTMLElement;
+    expect(
+      within(header).getByRole("button", { name: "Create editable copy" }),
+    ).toBeVisible();
+    expect(
+      within(header).queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
+    const composer = document.querySelector(".composer") as HTMLElement;
+    expect(within(composer).getByText(/Read-only example/)).toBeVisible();
+    expect(
+      screen.queryByText("Create a copy to edit", { exact: true }),
+    ).not.toBeInTheDocument();
+    expect(composer.querySelector(".composer-content")).not.toBeNull();
+    expect(
+      within(composer).getByRole("textbox", { name: "Add a note" }),
+    ).toBeDisabled();
+    for (const button of within(composer).getAllByRole("button"))
+      expect(button).toBeDisabled();
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(
+        screen.getAllByRole("button", { name: "Edit message" })[0],
+      );
+      expect(composer).toHaveAttribute("data-readonly-highlight", "true");
+      act(() => vi.advanceTimersByTime(500));
+      expect(composer).toHaveAttribute("data-readonly-highlight", "true");
+      fireEvent.click(composer);
+      act(() => vi.advanceTimersByTime(500));
+      expect(composer).toHaveAttribute("data-readonly-highlight", "true");
+      act(() => vi.advanceTimersByTime(300));
+      expect(composer).not.toHaveAttribute("data-readonly-highlight", "true");
+      fireEvent.click(
+        screen.getAllByRole("button", { name: "Delete message" })[0],
+      );
+      expect(composer).toHaveAttribute("data-readonly-highlight", "true");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("explores read-only examples and creates an independent editable project", async () => {
+    localStorage.clear();
+    const user = userEvent.setup();
+    const example = getExample("weekend-trip")!;
+    const project = {
+      ...example,
+      id: "copied-trip",
+      title: "Weekend trip (copy)",
+      createdAt: 1,
+      updatedAt: 2,
+      pinnedAt: null,
+      archivedAt: null,
+      latestMessagePreview: null,
+      nextMessageAt: null,
+      latestAttentionAt: null,
+      nextAttentionAt: null,
+    };
+    const api = createApi({
+      listExamples: vi.fn().mockResolvedValue(listExamples()),
+      getExample: vi.fn().mockResolvedValue(example),
+      copyExample: vi.fn().mockResolvedValue({ id: project.id, project }),
+      listChats: vi.fn().mockResolvedValue([]),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open example Weekend trip" }),
+    );
+    expect(screen.getByText(/Read-only example/)).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Add a note" })).toBeDisabled();
+    for (const button of screen.getAllByRole("button", {
+      name: /^(Edit message|Delete message|Change labels|Open packing-list.txt|Show packing-list.txt in Folder)$/,
+    })) {
+      expect(button).toHaveAttribute("aria-disabled", "true");
+      await user.click(button);
+    }
+    fireEvent(window, new Event("focus"));
+    expect(api.getChat).not.toHaveBeenCalled();
+    expect(api.updateNote).not.toHaveBeenCalled();
+    expect(api.deleteNote).not.toHaveBeenCalled();
+    expect(api.setNoteLabel).not.toHaveBeenCalled();
+    expect(api.openAttachment).not.toHaveBeenCalled();
+    expect(api.revealAttachment).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Files 1" }));
+    expect(screen.queryByText("A weekend away")).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Create editable copy" }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: project.title }),
+    ).toBeVisible();
+    expect(api.copyExample).toHaveBeenCalledExactlyOnceWith("weekend-trip", 1);
+    expect(screen.queryByText(/Read-only example/)).not.toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "Edit message" })[0],
+    ).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("does not reopen a delayed example after navigating to Settings", async () => {
+    localStorage.clear();
+    const user = userEvent.setup();
+    const pending = deferred<NonNullable<ReturnType<typeof getExample>>>();
+    const api = createApi({
+      listExamples: vi.fn().mockResolvedValue(listExamples()),
+      getExample: vi.fn().mockReturnValue(pending.promise),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open example Weekend trip" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Settings. Local only." }),
+    );
+    await act(async () => pending.resolve(getExample("weekend-trip")!));
+    expect(screen.getByRole("heading", { name: "General" })).toBeVisible();
+  });
+
+  it("preserves an ordinary project filter when another tab hides Examples", async () => {
+    localStorage.clear();
+    const user = userEvent.setup();
+    const project = {
+      ...getExample("weekend-trip")!,
+      id: "user-trip",
+      title: "My trip",
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    render(
+      <App
+        api={createApi({
+          listChats: vi.fn().mockResolvedValue([project]),
+          getChat: vi.fn().mockResolvedValue(project),
+        })}
+      />,
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Open My trip" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Files 1" }));
+    localStorage.setItem("on-track-show-examples", "false");
+    act(() =>
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: "on-track-show-examples",
+          newValue: "false",
+        }),
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Files 1" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    localStorage.clear();
+  });
+
+  it("reports a committed copy even when its detail cannot be opened", async () => {
+    localStorage.clear();
+    const user = userEvent.setup();
+    const api = createApi({
+      listExamples: vi.fn().mockResolvedValue(listExamples()),
+      getExample: vi.fn().mockResolvedValue(getExample("weekend-trip")),
+      copyExample: vi.fn().mockResolvedValue({ id: "created" }),
+      getChat: vi.fn().mockRejectedValue(new Error("refresh failed")),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open example Weekend trip" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Create editable copy" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Your editable copy was created",
+    );
+    expect(api.copyExample).toHaveBeenCalledTimes(1);
+    expect(api.getChat).toHaveBeenCalledWith("created");
+  });
+
+  it("shows General settings and lets the user hide the Examples group", async () => {
+    localStorage.clear();
+    const user = userEvent.setup();
+    render(<App api={createApi()} />);
+    expect(
+      await screen.findByRole("button", { name: "Examples" }),
+    ).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "Settings. Local only." }),
+    );
+    expect(screen.getByRole("heading", { name: "General" })).toBeVisible();
+    const toggle = screen.getByRole("checkbox", { name: "Show examples" });
+    expect(toggle).toBeChecked();
+    await user.click(toggle);
+    await user.click(screen.getByRole("button", { name: "Back to projects" }));
+    expect(
+      screen.queryByRole("button", { name: "Examples" }),
+    ).not.toBeInTheDocument();
+    expect(localStorage.getItem("on-track-show-examples")).toBe("false");
+    localStorage.clear();
+  });
+
   it.each([false, true])(
     "attaches dropped files in the shared composer (editing: %s)",
     async (editing) => {
@@ -173,6 +390,7 @@ describe("personal project chat workspace", () => {
     });
     render(<App api={api} />);
     await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.click(screen.getByRole("button", { name: /Backups/ }));
     await user.upload(
       screen.getByLabelText("Choose On Track backup"),
       new File(["one"], "one.on-track-backup"),
@@ -209,6 +427,7 @@ describe("personal project chat workspace", () => {
       });
       render(<App api={api} />);
       await user.click(screen.getByRole("button", { name: /Settings/ }));
+      await user.click(screen.getByRole("button", { name: /Backups/ }));
       await user.upload(
         screen.getByLabelText("Choose On Track backup"),
         new File(["data"], "data.on-track-backup"),
@@ -261,6 +480,7 @@ describe("personal project chat workspace", () => {
         "Keep my draft",
       );
       await user.click(screen.getByRole("button", { name: /Settings/ }));
+      await user.click(screen.getByRole("button", { name: /Backups/ }));
       await user.upload(
         screen.getByLabelText("Choose On Track backup"),
         new File(["data"], "data.on-track-backup"),
@@ -322,6 +542,7 @@ describe("personal project chat workspace", () => {
     });
     render(<App api={api} />);
     await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.click(screen.getByRole("button", { name: /Backups/ }));
     await user.upload(
       screen.getByLabelText("Choose On Track backup"),
       new File(["data"], "data.on-track-backup"),
@@ -2674,6 +2895,7 @@ describe("personal project chat workspace", () => {
     render(<App api={api} />);
 
     await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.click(screen.getByRole("button", { name: /Backups/ }));
     expect(
       screen.getByRole("navigation", { name: "Settings sections" }),
     ).toBeVisible();
@@ -2706,6 +2928,7 @@ describe("personal project chat workspace", () => {
 
     try {
       await user.click(screen.getByRole("button", { name: /Settings/ }));
+      await user.click(screen.getByRole("button", { name: /Backups/ }));
       expect(
         screen.getByRole("heading", { name: "Backup settings" }),
       ).toBeVisible();
@@ -2777,6 +3000,7 @@ describe("personal project chat workspace", () => {
       await screen.findByRole("button", { name: "Open Delivery" }),
     );
     await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.click(screen.getByRole("button", { name: /Backups/ }));
     expect(
       screen.getByRole("heading", { name: "Backup settings" }),
     ).toBeVisible();
@@ -2795,6 +3019,7 @@ describe("personal project chat workspace", () => {
     render(<App api={api} />);
 
     await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.click(screen.getByRole("button", { name: /Backups/ }));
     await user.click(screen.getByRole("button", { name: "Export all" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Export failed");
 
@@ -2823,6 +3048,7 @@ describe("personal project chat workspace", () => {
     render(<App api={api} />);
 
     await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.click(screen.getByRole("button", { name: /Backups/ }));
     await user.upload(
       screen.getByLabelText("Choose On Track backup"),
       new File(["SQLite format 3"], "backup.on-track-backup", {
@@ -2862,6 +3088,7 @@ describe("personal project chat workspace", () => {
     render(<App api={api} />);
 
     await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.click(screen.getByRole("button", { name: /Backups/ }));
     await user.upload(
       screen.getByLabelText("Choose On Track backup"),
       new File(["SQLite format 3"], "backup.on-track-backup", {

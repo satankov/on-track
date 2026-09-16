@@ -6,6 +6,13 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- An Examples sidebar group with a simple read-only trip-planning notebook and
+  independent editable copies, including its packing-list attachment. App updates
+  maintain the original without changing user copies or adding examples to backups.
+- Settings → General → Show examples, enabled by default and saved in this browser.
+
 ## [0.0.8] - 2026-09-16
 
 ### Fixed

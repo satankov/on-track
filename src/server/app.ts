@@ -1,3 +1,4 @@
+import { registerExampleRoutes } from "./examples/routes.js";
 import { ArchivedProjectPinError } from "./db/repository.js";
 import type Database from "better-sqlite3";
 import multipart from "@fastify/multipart";
@@ -325,6 +326,16 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   });
 
   app.get("/api/health", async () => ({ status: "ok" }));
+  void app.register(async (examples) =>
+    registerExampleRoutes(examples, {
+      database: () => database,
+      detail: (id) => service.getChat(id),
+      store: attachmentStore,
+      gate: maintenanceGate,
+      clock: options.clock ?? Date.now,
+    }),
+  );
+
   app.get("/api/chats", async () =>
     maintenanceGate.runRead(() => service.listChats()),
   );

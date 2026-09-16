@@ -72,6 +72,7 @@ export function useHistoryPosition(
   projectId: string,
   filter: string,
   positions: Map<string, ReadingPosition>,
+  startAtBeginning = false,
 ): (nextFilter: string) => void {
   const active = useRef<{
     filter: string;
@@ -97,10 +98,13 @@ export function useHistoryPosition(
     // Child layout effects first settle collapsed Markdown heights. Restore once
     // per actual filter transition, without reacting to edits or clock ticks.
     const frame = requestAnimationFrame(() => {
-      restoreReadingPosition(
-        history,
-        filter === "all" ? positions.get(projectId) : undefined,
-      );
+      if (startAtBeginning && filter === "all" && !positions.has(projectId))
+        history.scrollTop = 0;
+      else
+        restoreReadingPosition(
+          history,
+          filter === "all" ? positions.get(projectId) : undefined,
+        );
       initialized = true;
       save();
     });
@@ -118,7 +122,7 @@ export function useHistoryPosition(
       cancelAnimationFrame(frame);
       history.removeEventListener("scroll", save);
     };
-  }, [historyRef, projectId, positions, filter]);
+  }, [historyRef, projectId, positions, filter, startAtBeginning]);
 
   return (nextFilter) => {
     if (!active.current || active.current.filter === nextFilter) return;

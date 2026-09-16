@@ -22,6 +22,7 @@ test("selects exported projects, merges independent copies, and replaces with se
     ).toBe(true);
   await page.goto(localApp.url);
   await page.getByRole("button", { name: /Settings/ }).click();
+  await page.getByRole("button", { name: /Backups/ }).click();
   const exports = page.getByRole("group", { name: "Projects to export" });
   await exports.getByRole("button", { name: "Clear", exact: true }).click();
   await exports.getByRole("checkbox", { name: new RegExp(names[0]) }).check();
