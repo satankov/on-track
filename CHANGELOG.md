@@ -6,18 +6,33 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.0.9] - 2026-09-16
+
 ### Added
 
 - An Examples sidebar group with a simple read-only trip-planning notebook and
-  independent editable copies, including its packing-list attachment. App updates
+  independent editable copies, including its trip-planning attachment. App updates
   maintain the original without changing user copies or adding examples to backups.
 - Settings → General → Show examples, enabled by default and saved in this browser.
 
+- Home offers explicit GitHub release checks and installation-aware update
+  instructions, with backup/source links and an inert bug-report placeholder.
+  Normal project work remains offline; there are no automatic updates.
+
 ### Changed
 
-- The next release introduces the threadstr identity and primary `thr` command.
+- This release introduces the threadstr identity and primary `thr` command.
   `ontrack` remains a supported compatibility alias; existing data, settings,
   backups, installation paths, and update assets keep their compatibility identifiers.
+
+- Sidebar section collapse choices persist in this browser across reloads.
+- Home uses shorter copy and a simpler resource list. External message links open in a
+  separate tab with opener and referrer isolation.
+
+### Fixed
+
+- Message-label menus choose available space above or below their trigger and
+  stay within the history viewport at narrow widths.
 
 ## [0.0.8] - 2026-09-16
 
