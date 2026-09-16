@@ -519,3 +519,16 @@ passed (886 unit tests / 8 skips, 22 migration tests, 56 browser tests / 6 skips
 managed lifecycle/recovery; existing moderate audit advisory unchanged).
 `node scripts/managed-upgrade-compat.mjs --baseline v0.0.8 --cache /tmp/threadstr-baseline-cache`
 passed the pinned Node 24.14.0 Unicode check and all three upgrade scenarios.
+
+Run `35145336866` confirms the pinned-runtime Unicode check and baseline
+installation pass on Windows. Its next failure is candidate ZIP entry validation.
+The fixture's Windows PowerShell `CreateFromDirectory` writer can produce legacy
+backslash names, unlike the publisher's Git ZIP writer. The fixture now uses
+`git archive` on a disposable candidate tree on every OS, without a commit, and
+validates the complete generated archive before starting upgrade scenarios.
+A nested-path regression verifies exact bytes, including CRLF and an ignored
+fixture file. Native Windows confirmation of the archive correction is pending.
+Local verification passed: typecheck, lint, formatting, 17 focused archive/
+launcher/transport tests, and all three published-v0.0.8 upgrade scenarios,
+including the new complete candidate-archive check. This fixture-only change
+does not alter or relax production extraction checks.
