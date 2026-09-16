@@ -2196,6 +2196,14 @@ test("keeps full-width add and edit text above the composer toolbar", async ({
   await addNote(request, localApp.url, project.id, "An editable message");
   await page.goto(localApp.url);
   await page.getByRole("button", { name: `Open ${project.title}` }).click();
+  await expect(
+    page.getByRole("heading", { name: project.title }),
+  ).toBeVisible();
+  if (testInfo.project.name === "mobile-webkit") {
+    await expect(
+      page.getByRole("button", { name: "Back to projects" }),
+    ).toBeFocused();
+  }
   const widths =
     testInfo.project.name === "desktop-chromium"
       ? [1440, 1024, 800]
@@ -2233,7 +2241,9 @@ test("keeps full-width add and edit text above the composer toolbar", async ({
           buttonRights: buttons.map((box) => box.right),
         };
       });
-    await textarea.fill("One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight");
+    const eightLines = "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight";
+    await textarea.fill(eightLines);
+    await expect(textarea).toHaveValue(eightLines);
     await expect(textarea).toHaveCSS("overflow-y", "hidden");
     await expect
       .poll(() =>
@@ -2262,7 +2272,8 @@ test("keeps full-width add and edit text above the composer toolbar", async ({
     await page
       .getByRole("button", { name: "Edit message", exact: true })
       .click();
-    await textarea.fill("One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight");
+    await textarea.fill(eightLines);
+    await expect(textarea).toHaveValue(eightLines);
     const edit = await readLayout();
     expect(edit.width).toBeCloseTo(add.width, 0);
     expect(edit.barTop).toBeGreaterThanOrEqual(edit.fieldBottom - 1);

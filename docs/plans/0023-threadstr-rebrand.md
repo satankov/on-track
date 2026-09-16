@@ -532,3 +532,11 @@ Local verification passed: typecheck, lint, formatting, 17 focused archive/
 launcher/transport tests, and all three published-v0.0.8 upgrade scenarios,
 including the new complete candidate-archive check. This fixture-only change
 does not alter or relax production extraction checks.
+
+Managed workflow `35147087509` subsequently passed all platforms, including
+Windows and all baseline upgrade scenarios. PR CodeQL and Node 24 full
+verification also passed. The remaining Node 22.16 Linux failure in
+`35147087426` measured an empty mobile composer before navigation completed.
+The full-width composer test now waits for the selected project and mobile
+navigation focus, then verifies draft contents before measuring layout;
+existing height and toolbar assertions remain unchanged.
