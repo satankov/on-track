@@ -474,3 +474,29 @@ The final three-route baseline harness passed afterward; separate validation of
 the concurrent example changes remains with that work. Historical preservation
 claims here describe the rebrand's own changes; the original changelog, asset
 and migration checks still pass against the current tree.
+
+## PR #35 CI follow-up — 2026-09-16
+
+The Windows managed-update job reached successful-candidate activation, then
+failed its PowerShell command-search inspection. The earlier deliberate migration
+exception was expected recovery-fixture behavior. Inspection did not retain the
+underlying exit/timeout code, so the native failure's exact cause is not proven.
+The candidate now establishes matching Windows PowerShell module paths before
+startup and avoids module autoload while establishing the in-script path. Bounded
+exit/error diagnostics and a native reduced-environment regression cover this
+boundary; native Windows CI must confirm the result.
+
+The upgrade harness now selects fixed literal Windows launcher commands and
+passes installation paths through cwd, with ZIP paths passed separately through
+environment values. The actual ontrack/thr launchers remain under test. The Home
+fixture now matches the parsed HTTPS API origin instead of a URL substring.
+These changes address PR #35's reported CodeQL flows without suppressing rules.
+CodeQL clearance requires a fresh scan of the corrected candidate.
+
+Local verification on macOS/Node 22.18.0: aggregate verification passed with
+883 tests / 8 skips, 22 migration tests, 56 browser tests / 6 skips, 91.58% line
+and 84.50% branch coverage; managed recovery and the v0.0.8 baseline harness passed.
+An initial WebKit label test timed out waiting for Add note; it passed alone and
+in the full rerun without a UI change. The existing moderate Fastify advisory
+remains. New URL/module-environment and fixed-command regressions demonstrated
+RED then GREEN; native Windows regression execution and CodeQL remain pending.

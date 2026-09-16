@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { windowsFixtureCommand } from "./managed-upgrade-commands.mjs";
 import { Buffer } from "node:buffer";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -164,15 +165,10 @@ function launcher(root, name) {
 async function command(root, name, argv, extra = {}) {
   const executable = launcher(root, name);
   if (process.platform === "win32") {
-    // cmd is the platform launcher interpreter; arguments are fixed fixture
-    // strings and disposable paths, quoted independently for spaces/Unicode.
-    const line = [executable, ...argv]
-      .map((value) => '"' + value.replaceAll('"', '""') + '"')
-      .join(" ");
     return run(
       environment.ComSpec || "cmd.exe",
-      ["/d", "/s", "/c", '"' + line + '"'],
-      { ...extra, windowsVerbatimArguments: true },
+      ["/d", "/s", "/c", windowsFixtureCommand(name, argv)],
+      { ...extra, cwd: join(root, "bin"), windowsVerbatimArguments: true },
     );
   }
   return run(executable, argv, extra);
@@ -352,13 +348,22 @@ try {
   );
   const zip = join(base, `on-track-v${candidateVersion}.zip`);
   if (process.platform === "win32") {
-    const quote = (value) => "'" + value.replaceAll("'", "''") + "'";
-    await run("powershell.exe", [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      `Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::CreateFromDirectory(${quote(candidate)},${quote(zip)})`,
-    ]);
+    await run(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::CreateFromDirectory($env:THREADSTR_FIXTURE_SOURCE,$env:THREADSTR_FIXTURE_ZIP)",
+      ],
+      {
+        env: {
+          ...environment,
+          THREADSTR_FIXTURE_SOURCE: candidate,
+          THREADSTR_FIXTURE_ZIP: zip,
+        },
+      },
+    );
   } else
     await run("zip", ["-q", "-r", zip, ...readdirSync(candidate)], {
       cwd: candidate,
