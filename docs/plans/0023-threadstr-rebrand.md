@@ -500,3 +500,22 @@ An initial WebKit label test timed out waiting for Add note; it passed alone and
 in the full rerun without a UI change. The existing moderate Fastify advisory
 remains. New URL/module-environment and fixed-command regressions demonstrated
 RED then GREEN; native Windows regression execution and CodeQL remain pending.
+
+Subsequent PR runs cleared CodeQL and the candidate Windows managed-update
+smoke. Run `35134568111` still fails while installing the unchanged v0.0.8
+baseline: the retained runtime directory is empty. Its pinned Node 24.14.0
+native directory-copy implementation uses narrow Windows paths, consistent with
+copying to a misdecoded Unicode destination before private-directory setup
+creates the empty intended path. Candidate retention now selects Node's
+JS/libuv copy traversal with an all-inclusive filter. The baseline harness
+runs a mandatory candidate source/runtime byte-retention check at a Unicode
+destination under that same pinned Node. Only the immutable baseline's Windows
+installation root uses ASCII (still containing spaces); data paths retain
+Unicode. This does not establish Unicode installation support for v0.0.8.
+Native Windows confirmation of this correction remains pending.
+
+Local correction verification on macOS: `RELEASE_TAG=v0.0.9 npm run verify`
+passed (886 unit tests / 8 skips, 22 migration tests, 56 browser tests / 6 skips,
+managed lifecycle/recovery; existing moderate audit advisory unchanged).
+`node scripts/managed-upgrade-compat.mjs --baseline v0.0.8 --cache /tmp/threadstr-baseline-cache`
+passed the pinned Node 24.14.0 Unicode check and all three upgrade scenarios.
