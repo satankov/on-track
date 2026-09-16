@@ -23,9 +23,9 @@ export function HomeWorkspace({
       copy: "Capture decisions, loose ends, and the thought you will need three weeks from now. Your project content stays on this computer.",
     },
     choose: {
-      eyebrow: "Projects ready",
+      eyebrow: null,
       heading: "Choose a project to continue.",
-      copy: "Select a project from the list to reopen its thread, or start a new one when another moving piece appears.",
+      copy: "Select a project from the list or start new thread.",
     },
     error: {
       eyebrow: "Projects unavailable",
@@ -43,14 +43,33 @@ export function HomeWorkspace({
       className={`workspace workspace-empty ${children ? "workspace-home" : ""}`}
     >
       <div className="home-hero">
-        <div className="empty-thread" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
+        {state !== "choose" && (
+          <div className="empty-thread" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+        )}
         <div className="empty-copy" {...statusProps}>
-          <p className="eyebrow">{content.eyebrow}</p>
-          <h1>{content.heading}</h1>
+          {content.eyebrow && <p className="eyebrow">{content.eyebrow}</p>}
+          <h1>
+            {state === "choose" ? (
+              <>
+                Choose a{" "}
+                <span className="home-project-word">
+                  <span className="empty-thread" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                  project
+                </span>{" "}
+                to continue.
+              </>
+            ) : (
+              content.heading
+            )}
+          </h1>
           <p>{content.copy}</p>
           {state === "empty" && (
             <button

@@ -2521,3 +2521,55 @@ test("keeps bottom message labels above the trigger without scrolling history", 
     })
     .toBeLessThanOrEqual(320);
 });
+
+test("keeps Home concise and remembers collapsed groups on reload", async ({
+  page,
+  localApp,
+  request,
+}, testInfo) => {
+  await createProject(request, localApp.url, {
+    title: "Home polish",
+    accent: "coral",
+  });
+  await page.goto(localApp.url);
+  if (testInfo.project.name === "desktop-chromium") {
+    await expect(
+      page.getByRole("heading", { name: "Choose a project to continue." }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Select a project from the list or start new thread."),
+    ).toBeVisible();
+    const word = page.locator(".home-project-word");
+    const wordBox = (await word.boundingBox())!;
+    const decoration = (await word.locator(".empty-thread").boundingBox())!;
+    expect(decoration.x + 18).toBeGreaterThan(wordBox.x);
+    expect(decoration.x + 18).toBeLessThan(wordBox.x + wordBox.width);
+  } else {
+    // Mobile keeps the hero hidden and puts utilities beneath the project list.
+    await page
+      .getByRole("heading", { name: "App updates" })
+      .scrollIntoViewIfNeeded();
+    await expect(
+      page.getByRole("heading", { name: "App updates" }),
+    ).toBeVisible();
+  }
+  for (const text of [
+    "Projects ready",
+    "Get the latest improvements to threadstr.",
+    "In-app reporting is on the way.",
+  ])
+    await expect(page.getByText(text, { exact: true })).toHaveCount(0);
+  for (const name of ["User guide ↗", "Installation guide ↗"])
+    await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("home-polish.png"),
+    fullPage: true,
+  });
+  for (const name of ["Pinned", "Projects", "Archive", "Examples"])
+    await page.getByRole("button", { name, exact: true }).click();
+  await page.reload();
+  for (const name of ["Pinned", "Projects", "Archive", "Examples"])
+    await expect(
+      page.getByRole("button", { name, exact: true }),
+    ).toHaveAttribute("aria-expanded", "false");
+});

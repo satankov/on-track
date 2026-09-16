@@ -35,7 +35,6 @@ export function HomeUtilities({
       <div className="home-utility-grid">
         <section aria-labelledby="home-updates-title">
           <h2 id="home-updates-title">App updates</h2>
-          <p>Get the latest improvements to threadstr.</p>
           <div className="home-release-row">
             <span>
               Installed{" "}
@@ -161,26 +160,15 @@ export function HomeUtilities({
           <h2 id="home-help-title">Need a hand?</h2>
           <p>Find help in the guides below.</p>
           <p className="home-report-placeholder">Report a bug — coming soon</p>
-          <p className="home-small">In-app reporting is on the way.</p>
         </section>
       </div>
       <nav className="home-links" aria-label="Resources">
-        <a href={`${repository}#readme`} target="_blank" rel="noreferrer">
-          User guide ↗
-        </a>
         <a
           href={`${repository}/blob/main/docs/install/README.md#data-and-backups`}
           target="_blank"
           rel="noreferrer"
         >
           Backup &amp; restore ↗
-        </a>
-        <a
-          href={`${repository}/blob/main/docs/install/README.md`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Installation guide ↗
         </a>
         <a href={repository} target="_blank" rel="noreferrer">
           GitHub ↗

@@ -9,7 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getExample, listExamples } from "../server/examples/catalog.js";
 import { App } from "./App.js";
@@ -77,6 +77,26 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
 }
 
 describe("personal project chat workspace", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("remembers all sidebar disclosures after remount", async () => {
+    const user = userEvent.setup();
+    const api = createApi({
+      listExamples: vi.fn().mockResolvedValue(listExamples()),
+    });
+    const first = render(<App api={api} />);
+    for (const name of ["Pinned", "Projects", "Archive", "Examples"]) {
+      await user.click(await screen.findByRole("button", { name }));
+    }
+    first.unmount();
+    render(<App api={api} />);
+    for (const name of ["Pinned", "Projects", "Archive", "Examples"]) {
+      expect(await screen.findByRole("button", { name })).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+    }
+  });
   it("keeps Home primary and reserves a quiet future reporting block", async () => {
     render(<App api={createApi()} />);
     expect(
