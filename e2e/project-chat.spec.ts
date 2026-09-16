@@ -886,6 +886,14 @@ test("formats Markdown selections in a compact, responsive composer strip", asyn
   await page.getByRole("button", { name: `Open ${project.title}` }).click();
 
   const composer = page.getByLabel("Add a note");
+  await expect(
+    page.getByRole("heading", { name: project.title }),
+  ).toBeVisible();
+  if (testInfo.project.name === "mobile-webkit") {
+    await expect(
+      page.getByRole("button", { name: "Back to projects" }),
+    ).toBeFocused();
+  }
   await composer.fill("Remember this");
   await composer.evaluate((element) => element.setSelectionRange(9, 13));
 
@@ -1216,6 +1224,26 @@ test("manages markdown messages and database backups from the UI", async ({
   localApp,
 }, testInfo) => {
   const suffix = `${viewportName(testInfo.project.name)}-${Date.now()}`;
+  // Workers reuse a database across tests. Keep a second, same-named file in
+  // this backup so the restore assertion must select its own project's bytes.
+  const unrelatedProject = await createProject(request, localApp.url, {
+    title: `Other backup source ${suffix}`,
+    accent: "moss",
+  });
+  const unrelatedNote = await request.post(
+    `${localApp.url}/api/chats/${unrelatedProject.id}/notes`,
+    {
+      multipart: {
+        body: "Unrelated attachment",
+        files: {
+          name: "bundled-roadmap.txt",
+          mimeType: "text/plain",
+          buffer: Buffer.from("unrelated sidecar bytes"),
+        },
+      },
+    },
+  );
+  expect(unrelatedNote.ok()).toBe(true);
   const exportedProject = await createProject(request, localApp.url, {
     title: `Backup source ${suffix}`,
     accent: "ocean",
@@ -1330,10 +1358,17 @@ test("manages markdown messages and database backups from the UI", async ({
         .pluck()
         .all(),
     ).not.toContain("content");
-    const storagePath = activeDatabase
-      .prepare("SELECT storage_path FROM note_attachments LIMIT 1")
+    const paths = activeDatabase
+      .prepare(
+        `SELECT attachment.storage_path
+        FROM note_attachments attachment
+        JOIN notes note ON note.id = attachment.note_id
+        WHERE note.chat_id = ? AND attachment.filename = ?`,
+      )
       .pluck()
-      .get() as string;
+      .all(exportedProject.id, "bundled-roadmap.txt") as string[];
+    expect(paths).toHaveLength(1);
+    const [storagePath] = paths;
     expect(storagePath).toMatch(/^attachments\/v1\/restore-/);
     expect(
       readFileSync(join(localApp.dataDirectory, storagePath), "utf8"),
@@ -1523,6 +1558,12 @@ test("configures, applies, filters, and retains project message labels", async (
   await page.getByRole("button", { name: "New project" }).click();
   await page.getByLabel("Project name").fill(projectTitle);
   await page.getByRole("button", { name: "Create project" }).click();
+  await expect(page.getByRole("heading", { name: projectTitle })).toBeVisible();
+  if (testInfo.project.name === "mobile-webkit") {
+    await expect(
+      page.getByRole("button", { name: "Back to projects" }),
+    ).toBeFocused();
+  }
   await page.getByLabel("Add a note").fill("Escalate the rollout risk");
   await page.getByRole("button", { name: /Add note/ }).click();
 
