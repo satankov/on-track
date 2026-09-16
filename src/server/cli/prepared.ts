@@ -85,6 +85,9 @@ export function retainPrepared(
       errorOnExist: true,
       force: false,
       verbatimSymlinks: true,
+      // Node 24.14's native Windows directory-copy path misdecodes Unicode.
+      // A filter selects its JS/libuv traversal without excluding any files.
+      filter: () => true,
     });
     privateDirectory(stage);
     renameSync(stage, target);

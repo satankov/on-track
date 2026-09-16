@@ -272,6 +272,11 @@ try {
     runtimeAsset,
   );
   node = join(runtime, process.platform === "win32" ? "node.exe" : "bin/node");
+  step("verify candidate Unicode retention with the pinned baseline Node");
+  const retention = await run(node, [
+    join(repository, "scripts/managed-retain-smoke.mjs"),
+  ]);
+  console.log(retention.stdout.trim());
   const npm = join(
     runtime,
     process.platform === "win32"
@@ -422,7 +427,13 @@ try {
 
   let builtCandidate;
   for (const state of ["running", "stopped", "installer"]) {
-    const root = join(base, `${state} Runtime with spaces é`),
+    // The immutable v0.0.8 copier mishandles Unicode paths on Windows with
+    // Node 24.14. Keep its installation path ASCII; the mandatory candidate
+    // retention check above covers Unicode using that same pinned runtime.
+    const root = join(
+        base,
+        `${state} Runtime with spaces${process.platform === "win32" ? "" : " é"}`,
+      ),
       data = join(base, `${state} Data with spaces é`);
     const savedPort = await port(),
       url = `http://127.0.0.1:${savedPort}`;

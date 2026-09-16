@@ -79,6 +79,20 @@ it("copies legitimate npm hardlinks into independent retained regular files", ()
     ).nlink,
   ).toBe(1);
 });
+it("retains source and runtime bytes under a Unicode installation path", () => {
+  const f = fixture();
+  const root = join(f.root, "Runtime with spaces é");
+  retainPrepared(root, f.prepared);
+  expect(
+    readFileSync(join(root, "releases", "v0.0.9", "package.json")),
+  ).toEqual(readFileSync(join(f.prepared.sourceDirectory, "package.json")));
+  expect(
+    readFileSync(
+      join(root, "runtimes", f.prepared.selection.runtimeId, "node.exe"),
+      "utf8",
+    ),
+  ).toBe("runtime");
+});
 it("refuses a different build under an existing release version without replacing it", () => {
   const f = fixture();
   retainPrepared(f.root, f.prepared);
