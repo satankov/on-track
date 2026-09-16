@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Threadstr v1 — logo kit</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #f3f5f7;
+        color: #17191c;
+        font:
+          16px/1.5 system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 1360px;
+        margin: auto;
+        padding: 40px 28px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 28px;
+        letter-spacing: -0.035em;
+      }
+      h2 {
+        font-size: 15px;
+        margin: 0 0 28px;
+        font-weight: 600;
+      }
+      p {
+        max-width: 760px;
+      }
+      a {
+        color: #0755a3;
+        text-underline-offset: 3px;
+      }
+      .intro {
+        color: #59616c;
+        margin: 8px 0 28px;
+      }
+      .pair {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+      .surface {
+        background: #fff;
+        padding: 28px;
+        min-width: 0;
+      }
+      .dark {
+        background: #111417;
+        color: #fff;
+      }
+      .dark a {
+        color: #9fc7ff;
+      }
+      .hero {
+        width: 100%;
+        height: auto;
+        display: block;
+        margin: 48px 0 56px;
+      }
+      .sizes {
+        display: grid;
+        gap: 28px;
+        margin: 0 0 40px;
+      }
+      .sizes img {
+        max-width: 100%;
+        height: auto;
+        display: block;
+      }
+      .sizes span {
+        display: block;
+        font-size: 12px;
+        opacity: 0.75;
+        margin-top: 6px;
+      }
+      .avatars {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 24px;
+        min-height: 128px;
+      }
+      .avatars img {
+        border-radius: 50%;
+        display: block;
+        flex: none;
+      }
+      .note {
+        font-size: 13px;
+        opacity: 0.8;
+      }
+      .links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 24px;
+        margin-top: 28px;
+        font-size: 14px;
+      }
+      footer {
+        margin-top: 28px;
+        font-size: 14px;
+      }
+      @media (max-width: 720px) {
+        main {
+          padding: 24px 16px;
+        }
+        .pair {
+          grid-template-columns: 1fr;
+        }
+        .surface {
+          padding: 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Threadstr · v1 logo kit</h1>
+      <p class="intro">
+        Selected c/O ribbon design. Full wordmark for the app; “thr” for compact
+        and circular uses. Both themes share the same geometry.
+      </p>
+      <div class="pair">
+        <section class="surface" aria-labelledby="light-title">
+          <h2 id="light-title">Light surfaces</h2>
+          <img
+            class="hero"
+            src="v1/wordmark/threadstr-wordmark-on-light.svg"
+            alt="threadstr ribbon wordmark"
+          />
+          <div class="sizes">
+            <div>
+              <img
+                width="256"
+                src="v1/wordmark/threadstr-wordmark-on-light.svg"
+                alt="threadstr at 256 pixels wide"
+              /><span>256 px</span>
+            </div>
+            <div>
+              <img
+                width="192"
+                src="v1/wordmark/threadstr-wordmark-on-light.svg"
+                alt="threadstr at 192 pixels wide"
+              /><span>192 px · recommended minimum full wordmark</span>
+            </div>
+            <div>
+              <img
+                width="160"
+                src="v1/wordmark/threadstr-wordmark-on-light.svg"
+                alt="threadstr at 160 pixels wide"
+              /><span>160 px · comparison below recommended size</span>
+            </div>
+          </div>
+          <h2>Social avatar · circular crop</h2>
+          <div class="avatars">
+            <img
+              width="128"
+              height="128"
+              src="v1/social/threadstr-thr-light-512.png"
+              alt="Threadstr thr avatar at 128 pixels"
+            />
+            <img
+              width="64"
+              height="64"
+              src="v1/social/threadstr-thr-light-512.png"
+              alt="Threadstr thr avatar at 64 pixels"
+            />
+            <img
+              width="48"
+              height="48"
+              src="v1/social/threadstr-thr-light-512.png"
+              alt="Threadstr thr avatar at 48 pixels"
+            />
+            <img
+              width="32"
+              height="32"
+              src="v1/social/threadstr-thr-light-512.png"
+              alt="Threadstr thr avatar at 32 pixels"
+            />
+          </div>
+          <p class="note">
+            128 / 64 / 48 / 32 px. Fine separators naturally soften at tiny
+            sizes.
+          </p>
+          <div class="links">
+            <a href="v1/wordmark/threadstr-wordmark-on-light.svg"
+              >Wordmark SVG</a
+            ><a href="v1/wordmark/threadstr-wordmark-on-light.png"
+              >Wordmark PNG</a
+            ><a href="v1/social/threadstr-thr-light-1024.png"
+              >Social upload PNG</a
+            >
+          </div>
+        </section>
+        <section class="surface dark" aria-labelledby="dark-title">
+          <h2 id="dark-title">Dark surfaces</h2>
+          <img
+            class="hero"
+            src="v1/wordmark/threadstr-wordmark-on-dark.svg"
+            alt="White threadstr ribbon wordmark"
+          />
+          <div class="sizes">
+            <div>
+              <img
+                width="256"
+                src="v1/wordmark/threadstr-wordmark-on-dark.svg"
+                alt="White threadstr at 256 pixels wide"
+              /><span>256 px</span>
+            </div>
+            <div>
+              <img
+                width="192"
+                src="v1/wordmark/threadstr-wordmark-on-dark.svg"
+                alt="White threadstr at 192 pixels wide"
+              /><span>192 px · recommended minimum full wordmark</span>
+            </div>
+            <div>
+              <img
+                width="160"
+                src="v1/wordmark/threadstr-wordmark-on-dark.svg"
+                alt="White threadstr at 160 pixels wide"
+              /><span>160 px · comparison below recommended size</span>
+            </div>
+          </div>
+          <h2>Social avatar · circular crop</h2>
+          <div class="avatars">
+            <img
+              width="128"
+              height="128"
+              src="v1/social/threadstr-thr-dark-512.png"
+              alt="Dark Threadstr thr avatar at 128 pixels"
+            />
+            <img
+              width="64"
+              height="64"
+              src="v1/social/threadstr-thr-dark-512.png"
+              alt="Dark Threadstr thr avatar at 64 pixels"
+            />
+            <img
+              width="48"
+              height="48"
+              src="v1/social/threadstr-thr-dark-512.png"
+              alt="Dark Threadstr thr avatar at 48 pixels"
+            />
+            <img
+              width="32"
+              height="32"
+              src="v1/social/threadstr-thr-dark-512.png"
+              alt="Dark Threadstr thr avatar at 32 pixels"
+            />
+          </div>
+          <p class="note">
+            128 / 64 / 48 / 32 px. Fine separators naturally soften at tiny
+            sizes.
+          </p>
+          <div class="links">
+            <a href="v1/wordmark/threadstr-wordmark-on-dark.svg">Wordmark SVG</a
+            ><a href="v1/wordmark/threadstr-wordmark-on-dark.png"
+              >Wordmark PNG</a
+            ><a href="v1/social/threadstr-thr-dark-1024.png"
+              >Social upload PNG</a
+            >
+          </div>
+        </section>
+      </div>
+      <footer>
+        <a href="v1/README.md">Usage and export details</a> ·
+        <a href="explorations/index.html">View all 18 explorations</a>
+      </footer>
+    </main>
+  </body>
+</html>

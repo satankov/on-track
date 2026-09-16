@@ -1,0 +1,173 @@
+{
+  "version": "1",
+  "toolchain": {
+    "python": "3.12.14",
+    "pillow": "12.3.0",
+    "numpy": "2.3.5"
+  },
+  "selected_concept": "c / O \u2014 dense ribbons",
+  "source": "../explorations/O-threadstr-ribbon-dense.png",
+  "source_sha256": "036e2bc1717402e0adb1bbdf45ec4554c3419ccd171787d0693a28b35bae5ee3",
+  "geometry": "Native source weight and fine ribbon separators preserved",
+  "vector_method": "Closed polygonal outlines traced at alpha 128, tolerance 0.35 source pixels",
+  "files": [
+    {
+      "path": "social/threadstr-thr-circle-dark-512.png",
+      "sha256": "623d00bf3d7366af1ca98aec18a4751aea9618b4b5ef15de7c5a55bdfc720459",
+      "width": 512,
+      "height": 512,
+      "mode": "RGBA"
+    },
+    {
+      "path": "social/threadstr-thr-circle-dark.svg",
+      "sha256": "c400662abcbb2c7739ec108ac49840b53e211a00a7fe5be179e59611339a24f8"
+    },
+    {
+      "path": "social/threadstr-thr-circle-light-512.png",
+      "sha256": "c50f98c96303d0ba04971d1b7310934a5339cba724cd03149853dfd22d556c15",
+      "width": 512,
+      "height": 512,
+      "mode": "RGBA"
+    },
+    {
+      "path": "social/threadstr-thr-circle-light.svg",
+      "sha256": "bc738a640a5a9d401d3e3ebdd1506dc94fc1c5280ba83374ae15128757321ea6"
+    },
+    {
+      "path": "social/threadstr-thr-dark-1024.png",
+      "sha256": "9cbdfea7aba0b6fcf09326a9c855f79c8a47a4cdefc9d71b3a9267abb5ef1f43",
+      "width": 1024,
+      "height": 1024,
+      "mode": "RGB"
+    },
+    {
+      "path": "social/threadstr-thr-dark-512.png",
+      "sha256": "d8c13ff633a2facd1c8d0de01e424fe163f8f19ac0e1393d66c91c0e4e82368b",
+      "width": 512,
+      "height": 512,
+      "mode": "RGB"
+    },
+    {
+      "path": "social/threadstr-thr-light-1024.png",
+      "sha256": "000b9314b6afcd0869541158fe3b54dc56cc7b18a30f511a91fc65370929fedc",
+      "width": 1024,
+      "height": 1024,
+      "mode": "RGB"
+    },
+    {
+      "path": "social/threadstr-thr-light-512.png",
+      "sha256": "94e60a1a40e67381dddadf10329311d75d440c03d8642f8ab97a8434949598e7",
+      "width": 512,
+      "height": 512,
+      "mode": "RGB"
+    },
+    {
+      "path": "social/threadstr-thr-on-dark.png",
+      "sha256": "511ab62a6d8d4d12d6ea8b15befc879c77fc3bf519e42a81a04ba852e30b8321",
+      "width": 530,
+      "height": 324,
+      "mode": "RGBA"
+    },
+    {
+      "path": "social/threadstr-thr-on-dark.svg",
+      "sha256": "26ef615f1d93d2eadae4128146eab54d187433d31290a90751f925daa8455f7d"
+    },
+    {
+      "path": "social/threadstr-thr-on-light.png",
+      "sha256": "2ed2cdc8690fe72ab05d8029f34e0ac7e01fcef031b30ccdb3b765660a842a0d",
+      "width": 530,
+      "height": 324,
+      "mode": "RGBA"
+    },
+    {
+      "path": "social/threadstr-thr-on-light.svg",
+      "sha256": "0c67fdb4b57b11f104ccb00e433d11238af6989b33642702572da6ed5d45e8e1"
+    },
+    {
+      "path": "social/threadstr-thr-square-dark.svg",
+      "sha256": "8514b948babba2b2638149ad5c504e52280cbb3c0ac3cc8ff6f1eb7a4242ccac"
+    },
+    {
+      "path": "social/threadstr-thr-square-light.svg",
+      "sha256": "2e522a7895dd24d812b43c21802249f264a202e0ea4465781a054723d53c1c8f"
+    },
+    {
+      "path": "source/thr-alpha.png",
+      "sha256": "7865893e2118b7215f5fa9ba900d567833c78605194d5048e286a892dd6fb332",
+      "width": 530,
+      "height": 324,
+      "mode": "L"
+    },
+    {
+      "path": "source/wordmark-alpha.png",
+      "sha256": "934a912af7bb21a895159f3407a464c1852da05f097d8d4e3979d6e3dcc07cc2",
+      "width": 1452,
+      "height": 324,
+      "mode": "L"
+    },
+    {
+      "path": "wordmark/threadstr-wordmark-on-dark-1024.png",
+      "sha256": "1c2b9b5c7206d011a52bd94026ffd21e8be66ebcc930ccd5e0a3cabf523542a5",
+      "width": 1024,
+      "height": 228,
+      "mode": "RGBA"
+    },
+    {
+      "path": "wordmark/threadstr-wordmark-on-dark-256.png",
+      "sha256": "f30b1c02a85e2b6c6bca9f1a7d2f308bebd8ff4bbdf2cce1938efdf9445a10b4",
+      "width": 256,
+      "height": 57,
+      "mode": "RGBA"
+    },
+    {
+      "path": "wordmark/threadstr-wordmark-on-dark-512.png",
+      "sha256": "85ab9a59d676348494882b303f80d4a01e3d345879c4f071082d7b4be703f2c7",
+      "width": 512,
+      "height": 114,
+      "mode": "RGBA"
+    },
+    {
+      "path": "wordmark/threadstr-wordmark-on-dark.png",
+      "sha256": "fb657784673880167c9e04b2bacec1092f9b19b4041f5c73079c49ad07eb01b3",
+      "width": 1452,
+      "height": 324,
+      "mode": "RGBA"
+    },
+    {
+      "path": "wordmark/threadstr-wordmark-on-dark.svg",
+      "sha256": "496c80049797e5e51bec4ee1130a1df6af9d0110770aa109bc49a2f8a894a3a3"
+    },
+    {
+      "path": "wordmark/threadstr-wordmark-on-light-1024.png",
+      "sha256": "fb1a2a60c0ce26d2e9826f5575703e8f51d0b61de8b597b876f7eec17964f116",
+      "width": 1024,
+      "height": 228,
+      "mode": "RGBA"
+    },
+    {
+      "path": "wordmark/threadstr-wordmark-on-light-256.png",
+      "sha256": "5c885f10c0ebaf847d44a4928db6f45b415db82db690f843b4666fc5cd359b7f",
+      "width": 256,
+      "height": 57,
+      "mode": "RGBA"
+    },
+    {
+      "path": "wordmark/threadstr-wordmark-on-light-512.png",
+      "sha256": "efe75abbfca4766b1cc6eaaa049c91a7556974d06a8514b8786e73dd35ad38c8",
+      "width": 512,
+      "height": 114,
+      "mode": "RGBA"
+    },
+    {
+      "path": "wordmark/threadstr-wordmark-on-light.png",
+      "sha256": "6c254d63c578316df16bcbe7556f2076418dbbb6220231d86afc299e8750d993",
+      "width": 1452,
+      "height": 324,
+      "mode": "RGBA"
+    },
+    {
+      "path": "wordmark/threadstr-wordmark-on-light.svg",
+      "sha256": "96a08eeff746633d8cdb60b0d78431a665c30967347094eaebf4f9e748c5d425"
+    }
+  ]
+}
