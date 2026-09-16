@@ -31,7 +31,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { BackupSettingsWorkspace } from "./BackupSettingsWorkspace.js";
@@ -1709,10 +1709,26 @@ function MessageLabelPicker({
   );
 }
 
+const messageMarkdownComponents: Components = {
+  a: ({ node, ...props }) => {
+    // The Markdown AST node is not a DOM attribute.
+    void node;
+    return props.href?.startsWith("#") ? (
+      <a {...props} />
+    ) : (
+      <a {...props} target="_blank" rel="noopener noreferrer" />
+    );
+  },
+};
+
 function MarkdownMessage({ body }: { body: string }) {
   if (!body.trim()) return null;
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      skipHtml
+      components={messageMarkdownComponents}
+    >
       {body}
     </ReactMarkdown>
   );
