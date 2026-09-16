@@ -21,19 +21,20 @@ services, analytics, or remote runtime assets.
 
 ### macOS and Linux
 
-> **Experimental in v0.0.7:** end-user installation and OS validation are
-> deferred to the next release. This command requires a published v0.0.7 or
-> later with installer files. [Manual setup](#manual-setup) remains available.
+> **Experimental in v0.0.7:** platform validation is ongoing.
+> [Manual setup](#manual-setup) remains available.
 
 Open Terminal and run:
 
 ```sh
-curl -fsSL https://github.com/satankov/on-track/releases/latest/download/install.sh -o ontrack-install.sh && bash ontrack-install.sh
+curl -fsSL https://github.com/satankov/on-track/releases/latest/download/install.sh -o ontrack-install.sh && bash ontrack-install.sh --no-open
 ```
 
 Setup downloads Node and the application dependencies, builds On Track, and
-opens it in your browser with the server running in the background. Git and a
-preinstalled Node are not required. You can close Terminal after setup finishes.
+starts the server in the background. Open the address printed by setup in your
+browser. `--no-open` avoids a v0.0.7 installer bug in macOS's bundled Bash and
+skips automatic browser opening. Git and a preinstalled Node are not required.
+You can close Terminal after setup finishes.
 
 Open a new terminal to use:
 
@@ -44,6 +45,9 @@ ontrack update            # Install the latest stable version and start it
 ```
 
 After restarting your computer, run `ontrack run` again.
+
+The published v0.0.7 updater currently fails with HTTP 415 before activation.
+Its fix is not yet published; see [update limitations](docs/install/README.md#commands-and-updates).
 
 Full guides, including specific versions and custom settings:
 [macOS](docs/install/macos.md) · [Linux](docs/install/linux.md) ·

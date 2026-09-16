@@ -46,6 +46,9 @@ jobs:
         run: node -e "require('node:assert/strict').equal(process.arch, process.env.EXPECTED_ARCH)"
       - name: Install locked test dependencies
         run: npm ci
+      - name: Test POSIX bootstrap with the system Bash
+        if: runner.os != 'Windows'
+        run: npm test -- scripts/install-shell.test.ts
       - name: Test ownership, authenticated control, and durable recovery
         run: npm test -- src/server/runtime src/server/cli
       - name: Exercise prepared installation and background commands

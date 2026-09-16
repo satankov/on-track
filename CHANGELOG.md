@@ -6,6 +6,21 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-09-16
+
+### Fixed
+
+- Managed installation with no optional arguments now works with macOS Bash 3.2.
+- Managed updates request GitHub release metadata with the correct media type,
+  fixing HTTP 415 failures.
+- Added installer argument regression tests and system-Bash CI coverage.
+
+### Documentation
+
+- Documented the published v0.0.7 installation workaround and updater limitation.
+- Recorded real macOS download/lifecycle tests and remaining platform and
+  published-upgrade validation. Managed installation remains experimental.
+
 ## [0.0.7] - 2026-09-15
 
 ### Added

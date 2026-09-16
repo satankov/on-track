@@ -2,20 +2,23 @@
 
 ## Quick setup — one command
 
-> **Experimental in v0.0.7:** end-user installation and OS validation are
-> deferred to the next release. The command requires published installer files
-> from v0.0.7 or later. [Manual setup](#manual-setup) remains available.
+> **Experimental in v0.0.7:** platform validation is ongoing.
+> [Manual setup](#manual-setup) remains available.
 
 Open Terminal and run:
 
 ```sh
-curl -fsSL https://github.com/satankov/on-track/releases/latest/download/install.sh -o ontrack-install.sh && bash ontrack-install.sh
+curl -fsSL https://github.com/satankov/on-track/releases/latest/download/install.sh -o ontrack-install.sh && bash ontrack-install.sh --no-open
 ```
 
 Setup downloads a private Node runtime, installs the dependencies, builds On
-Track, and opens your browser. The server runs in the background, so you can
-close Terminal. Git, a system Node installation, and administrator access are
-not required.
+Track, and starts the server in the background. Open the address printed by
+setup in your browser; you can then close Terminal. `--no-open` skips automatic
+browser opening and avoids the published v0.0.7 installer's
+`forward[@]: unbound variable` error in macOS's bundled Bash. If you already
+downloaded that installer and saw this error, retry with
+`bash ontrack-install.sh --no-open`. Git, a system Node installation, and
+administrator access are not required.
 
 Target: Apple Silicon and Intel Macs. Platform verification is still pending.
 Internet access and `bash`, `curl`, `tar`, `unzip`, `zipinfo`, `mktemp`, and
@@ -39,7 +42,7 @@ Use that release's installer URL instead of `latest`. For example, **if
 v0.0.9 has been published with installer files**:
 
 ```sh
-curl -fsSL https://github.com/satankov/on-track/releases/download/v0.0.9/install.sh -o ontrack-install.sh && bash ontrack-install.sh
+curl -fsSL https://github.com/satankov/on-track/releases/download/v0.0.9/install.sh -o ontrack-install.sh && bash ontrack-install.sh --no-open
 ```
 
 ### Download first, then run
@@ -53,7 +56,7 @@ curl -fsSL https://github.com/satankov/on-track/releases/latest/download/install
 Open `ontrack-install.sh` in a text editor, then run:
 
 ```sh
-bash ontrack-install.sh
+bash ontrack-install.sh --no-open
 ```
 
 For a custom data folder or port, use this **instead** of the default run command:

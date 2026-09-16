@@ -6,9 +6,10 @@ Accepted for implementation on 2026-09-11 through
 [plan 0021](../plans/0021-managed-install-and-cli.md). On 2026-09-15 the user
 selected v0.0.7 as the first managed-compatible release (floor `0.0.7`) and
 accepted experimental delivery before real end-user installation/OS validation.
-Those checks are deferred to the next release; automated verification, runtime
-integrity checks, and immutable publication remain required. Publication is
-pending. This extends ADR-0003 while retaining ADR-0007's manual runtime policy.
+Those checks were deferred to the next release; automated verification, runtime
+integrity checks, and immutable publication remain required. v0.0.7 is now
+published and real installation validation is in progress (see plan 0021).
+This extends ADR-0003 while retaining ADR-0007's manual runtime policy.
 
 ## Context
 
