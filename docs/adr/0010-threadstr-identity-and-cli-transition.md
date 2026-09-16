@@ -4,7 +4,7 @@
 
 Accepted 2026-09-16 through approval of [plan 0023](../plans/0023-threadstr-rebrand.md),
 Phases 1–5. Applies starting with the next release after published v0.0.8; its
-version is deliberately unselected. Supersedes current naming guidance in
+version was unselected at approval and is now selected as v0.0.9. Supersedes current naming guidance in
 ADR-0001/0003/0008/0009, preserving their historical decisions and examples.
 
 ## Context

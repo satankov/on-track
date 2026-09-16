@@ -449,7 +449,7 @@ The historical names and examples above are preserved. The approved
 [threadstr transition](../adr/0010-threadstr-identity-and-cli-transition.md)
 supersedes current product/command naming with `threadstr` / `thr`, retaining
 `ontrack` as a compatibility alias and the documented storage/update identifiers.
-The latest published release is v0.0.8; the next version remains unselected.
+The latest published release is v0.0.8; v0.0.9 is now the selected candidate.
 Use [current installation guidance](../install/README.md) for new work.
 
 ## Amsterdam story refinement — 2026-09-16

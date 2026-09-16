@@ -2,7 +2,7 @@
 
 The next release changes the product name from On Track to **threadstr** and
 makes **thr** the primary CLI command. v0.0.8 remains the latest published
-release until then. No next version is selected. The repository and existing
+release until then. The selected candidate is v0.0.9. The repository and existing
 published releases retain their real names and URLs.
 
 ## Commands and installation

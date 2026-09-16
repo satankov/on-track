@@ -12,8 +12,7 @@ manual installation evidence requirement below for v0.0.7 only. Automated CI,
 prepared lifecycle/recovery fixtures, release contracts, and runtime hash checks
 remain mandatory. Installer instructions and release notes disclose the limit.
 The first managed-compatible version and `MANAGED_MINIMUM_VERSION` are `0.0.7`.
-Follow the [v0.0.7 publication commands](releases/v0.0.7.md); deferred acceptance
-criteria live in [plan 0021](plans/0021-managed-install-and-cli.md#required-tracker-follow-up).
+Deferred acceptance criteria live in [plan 0021](plans/0021-managed-install-and-cli.md#required-tracker-follow-up).
 
 ## One-time GitHub repository setup
 
@@ -180,7 +179,7 @@ usable after the corresponding assets are published.
 
 ## threadstr transition release gate
 
-The next release introduces threadstr and `thr`; its version remains unselected.
+The selected v0.0.9 candidate introduces threadstr and `thr`.
 Preserve the `on-track-vX.Y.Z.zip` asset pattern, repository URLs, bootstrap tokens,
 manifest protocol, and managed compatibility floor `0.0.7`. Published v0.0.8
 clients require these identities. See [compatibility](compatibility.md) and
