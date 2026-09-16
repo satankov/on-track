@@ -321,3 +321,26 @@ Implemented the approved phase and explicit reporting-placeholder amendment.
 - Existing moderate Fastify advisory remains; the configured high-severity audit
   gate passes. Native platform installation limits remain as previously recorded.
 - Community/social destinations remain unspecified and those links are omitted.
+
+## Current candidate amendment — v0.0.9
+
+The release candidate includes subsequent Home and navigation polish: concise
+Home copy, Backup & restore and GitHub resource links, browser-local persistence
+of all four sidebar disclosures, isolated new-tab external message links, and label-menu
+positioning within the history viewport. The new disclosure preference is
+independent of the release-result cache, which remains in memory only.
+These changes were uncommitted at the 2026-09-16 closeout; the completion evidence
+above describes the earlier implementation, not verification of these edits.
+The user selected v0.0.9 after this plan was implemented.
+
+Candidate verification on 2026-09-16: `RELEASE_TAG=v0.0.9 npm run verify` passed
+on macOS/Node 22.18.0: 867 tests passed / 7 skipped, 22 migration tests passed,
+56 browser tests passed / 6 skipped; line coverage 91.42%, branch coverage 84.24%.
+Review found and fixed new-tab footnote navigation with RED/GREEN coverage;
+fragment links stay in the project and external links retain opener/referrer
+isolation. Final review found no remaining actionable findings.
+`node scripts/managed-upgrade-compat.mjs --baseline v0.0.8` passed running/stopped
+updates, collision refusal, alias/data/backup preservation and installer reruns
+through controlled transport. Native platform and live publication evidence remain
+separate gates, tracked in issues #32–#34; the moderate Fastify advisory remains
+in PR #26. These results do not authorize publication.

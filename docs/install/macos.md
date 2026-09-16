@@ -5,7 +5,7 @@
 > whose installer provides `ontrack`. Until the next release is published, the
 > `latest` downloads below install v0.0.8; use its
 > [installation guide](https://github.com/satankov/on-track/tree/v0.0.8/docs/install)
-> and `ontrack` commands. No next version has been selected.
+> and `ontrack` commands. v0.0.9 is the selected candidate and is not yet published.
 
 ## Quick setup — one command
 

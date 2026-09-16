@@ -4,7 +4,7 @@
 
 The published baseline is v0.0.8 (On Track), which fixes the initial managed
 installer/updater defects. Current source prepares threadstr and the primary
-`thr` CLI for the next release; the next version is not selected. Database and
+`thr` CLI for the selected v0.0.9 candidate. Database and
 backup schema remain 7. The managed compatibility floor remains `0.0.7`.
 
 Core boundaries are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md),
@@ -125,9 +125,11 @@ validated OS support remains contingent on the deferred platform evidence.
   flow; window-level file-drop guards prevent accidental browser navigation while
   a chat is active. A Markdown analysis helper reuses unified/remark-parse and GFM
   to derive inert sidebar text and automatic Links filtering, using the renderer's
-  URL policy without fetching destinations. Reading anchors and sidebar disclosure
-  state live in the app session, outside project data and backups. Returning to a
-  chat restores its message anchor and viewport offset; a first visit positions
+  URL policy without fetching destinations. Reading anchors live in the app
+  session. Sidebar disclosure state persists in browser-local storage alongside
+  Appearance and Show examples, outside project data and backups. External message links
+  open in a new tab with opener/referrer isolation. Returning to a chat restores
+  its message anchor and viewport offset; a first visit positions
   near the current/future boundary. Returning to All restores its isolated anchor;
   each different Files, Links, or label filter opens at its own current/first-future
   boundary. Ordinary refreshes preserve manual scrolling. Future messages stay in

@@ -705,11 +705,13 @@ not been executed as part of preparation.
 
 ## Required tracker follow-up
 
-### Draft: Validate experimental installer and upgrades before the next release
+### Tracked: Validate experimental installer and upgrades before the next release
 
 Owner: repository maintainer. Target: the release following v0.0.7.
 The user explicitly deferred these checks; they remain unfinished, not waived
-permanently. This draft needs a GitHub issue record before memory closeout is ready.
+permanently. Tracked by [issue #34](https://github.com/satankov/on-track/issues/34), targeting v0.0.9.
+Use v0.0.8 for direct updater validation; v0.0.7 requires the corrected-installer
+workaround for its published HTTP 415 defect.
 
 Acceptance criteria:
 
@@ -857,8 +859,8 @@ existing skip, 39 browser tests and five existing skips, 91.40% line and 84.25%
 branch coverage, build/types/lint/format, migrations, release contract, audit
 and prepared lifecycle/update-recovery smokes. The audit retains an existing
 moderate Fastify advisory. Independent review found no actionable issue.
-The scheduling change remains uncommitted; Windows and Linux Node 22 CI with
-this change have not run, so merge readiness is still pending those results.
+The scheduling change was subsequently committed in `60e0ddc` (v0.0.8).
+The evidence above remains local; each new candidate still requires native CI.
 
 ## Identity supersession — next release
 
@@ -866,5 +868,5 @@ The historical names and examples above are preserved. The approved
 [threadstr transition](../adr/0010-threadstr-identity-and-cli-transition.md)
 supersedes current product/command naming with `threadstr` / `thr`, retaining
 `ontrack` as a compatibility alias and the documented storage/update identifiers.
-The latest published release is v0.0.8; the next version remains unselected.
+The latest published release is v0.0.8; v0.0.9 is now the selected candidate.
 Use [current installation guidance](../install/README.md) for new work.

@@ -196,11 +196,10 @@ styles and design guidance throughout implementation.
 
 ## Required tracker follow-ups
 
-Read-only GitHub inspection on 2026-09-09 found pull requests but no standalone
-issues. The completed feature implementation is verified. Memory closeout is
-NOT READY until the two validation issues below are created or explicitly
-dismissed by the user. These drafts are the sole current authority for those
-unrecorded tasks; no remote mutation is authorized by this closeout.
+The required validation follow-ups were recorded on 2026-09-16 with user
+authorization: [native OS actions #32](https://github.com/satankov/on-track/issues/32)
+and [filesystem drag/drop #33](https://github.com/satankov/on-track/issues/33).
+Those issues now own status and acceptance; the criteria below remain context.
 
 ### Already tracked: Fastify advisories
 
@@ -210,7 +209,7 @@ to 5.12.4 and superseding closed PR #18. PR #26 is the authoritative follow-up;
 it is not merged. The installed dependency remains 5.8.5; a future integration
 must verify the then-current release candidate. Do not create a duplicate issue.
 
-### Draft: Verify native Open and Show in Folder on Windows and Linux
+### Tracked: Verify native Open and Show in Folder on Windows and Linux
 
 Existing browser tests use a fake native adapter. Real dispatch has been
 manually reported only on one macOS host; Windows/Linux remain unverified.
@@ -224,7 +223,7 @@ Acceptance criteria:
 - Record OS/runtime, desktop/file association, tested revision, and outcomes;
   track any failures or explicitly retain the platform limitation.
 
-### Draft: Verify filesystem-origin drag and drop for new and edited messages
+### Tracked: Verify filesystem-origin drag and drop for new and edited messages
 
 Plan 0020 has component and Chromium DataTransfer coverage, including persisted
 add/edit attachments. Real Finder-origin dragging and cancellation have not

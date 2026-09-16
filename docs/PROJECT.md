@@ -22,8 +22,8 @@ remains experimental; clean OS/platform and published-upgrade evidence is incomp
 
 ## Current objective
 
-Prepare the next release with the **threadstr** identity, primary **thr** CLI,
-and built-in Examples. No next version is selected. The published v0.0.8 still
+Prepare **v0.0.9** with the **threadstr** identity, primary **thr** CLI,
+built-in Examples, Home release checks, and navigation polish. The published v0.0.8 still
 uses On Track and `ontrack`; current source introduces the new identity while
 preserving the old command as a compatibility alias, existing data and update
 contracts. See [plan 0023](plans/0023-threadstr-rebrand.md),
@@ -156,8 +156,9 @@ remains a regression-protected alpha, not a dedicated design target.
 
 - Create and switch between personal project chats, return Home through the
   threadstr brand, and retain reading positions during the current browser session.
-- Independently collapse the Pinned, Projects, and Archive sidebar sections during a session.
-  All three headers remain visible when empty.
+- Independently collapse the Pinned, Projects, Archive, and Examples sidebar sections;
+  browser-local preferences retain their state across reloads.
+  Pinned, Projects, and Archive headers remain visible when empty.
 - Pin and unpin projects in a stable sidebar section without changing their
   message-activity timestamps.
 - Archive projects from Edit project, then restore through settings or the
@@ -256,13 +257,13 @@ The public repository and release are:
 
 GitHub is the backlog and ownership tracker. The Fastify advisory is tracked by
 open [PR #26](https://github.com/satankov/on-track/pull/26); it supersedes closed
-PR #18. Native-action smoke
-tests and filesystem drag/drop validation still need issue records; their
-[two drafts](plans/0020-composer-drop-and-filter-scroll.md#required-tracker-follow-ups)
-are awaiting authorization. The [installer validation draft](plans/0021-managed-install-and-cli.md#required-tracker-follow-up)
-is also awaiting an issue record for the next release.
+PR #18. Native-action smoke tests are tracked in
+[issue #32](https://github.com/satankov/on-track/issues/32), filesystem drag/drop
+validation in [issue #33](https://github.com/satankov/on-track/issues/33), and
+managed installation/upgrade validation in
+[issue #34](https://github.com/satankov/on-track/issues/34).
 [v0.0.8](https://github.com/satankov/on-track/releases/tag/v0.0.8) is the latest published release;
-the [publication commands](releases/v0.0.7.md) remain a historical runbook.
+v0.0.9 is the selected candidate; see the [release procedure](RELEASING.md).
 Broader product priorities above remain strategy until scoped. Durable decisions
 live in `docs/adr/`; significant work lives in `docs/plans/`.
 
