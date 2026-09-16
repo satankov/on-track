@@ -144,6 +144,11 @@ dedicated design target.
 
 ## Current capabilities
 
+- Built-in Examples contains one simple read-only Weekend trip notebook. Users
+  explore its filters and create independent editable projects; originals update
+  with the app and stay out of backups. General settings can hide Examples using
+  a browser-local preference. See [plan 0022](plans/0022-built-in-examples.md).
+
 - Create and switch between personal project chats, return Home through the
   On Track brand, and retain reading positions during the current browser session.
 - Independently collapse the Pinned, Projects, and Archive sidebar sections during a session.

@@ -1,4 +1,9 @@
 import type {
+  ExampleSummary,
+  ExampleDetail,
+  CopyExampleResult,
+} from "../domain/examples.js";
+import type {
   Chat,
   ChatDetail,
   Note,
@@ -28,6 +33,9 @@ import type {
 } from "../domain/validation.js";
 
 export interface ApiClient {
+  listExamples(): Promise<ExampleSummary[]>;
+  getExample(slug: string): Promise<ExampleDetail>;
+  copyExample(slug: string, revision: number): Promise<CopyExampleResult>;
   listChats(): Promise<Chat[]>;
   getChat(id: string): Promise<ChatDetail>;
   createChat(input: CreateChatInput): Promise<Chat>;
@@ -88,6 +96,40 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const apiClient: ApiClient = {
+  listExamples: () => request<ExampleSummary[]>("/api/examples"),
+  getExample: (slug) =>
+    request<ExampleDetail>(`/api/examples/${encodeURIComponent(slug)}`),
+  copyExample: async (slug, revision) => {
+    let response: Response;
+    const unknown = () =>
+      new Error(
+        "The copy result could not be confirmed. Refresh and check Projects before trying again.",
+      );
+    try {
+      response = await fetch(
+        `/api/examples/${encodeURIComponent(slug)}/copies`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ revision }),
+        },
+      );
+    } catch {
+      throw unknown();
+    }
+    if (response.status >= 500) throw unknown();
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      throw new Error(body?.message ?? "The example could not be copied.");
+    }
+    try {
+      return (await response.json()) as CopyExampleResult;
+    } catch {
+      throw unknown();
+    }
+  },
   listChats: () => request<Chat[]>("/api/chats"),
   getChat: (id) => request<ChatDetail>(`/api/chats/${encodeURIComponent(id)}`),
   createChat: (input) =>

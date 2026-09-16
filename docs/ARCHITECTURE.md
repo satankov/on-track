@@ -287,6 +287,27 @@ Client previews are serialized. Bundle limits remain 2 GiB, 10,000 attachments,
 limits, so partial export remains useful. No schema or backup-format version
 change is introduced by selection or merge.
 
+## Built-in examples
+
+The server-owned Examples catalog contains one small trip story and embedded
+plain-text attachment content. Separate example list/detail/copy routes keep
+originals outside SQLite and ordinary chat/backup lists. Reading performs no user
+content writes. Stable slugs and content revisions travel with installed code;
+copy requests check the displayed revision before writing. Copies allocate fresh
+IDs and managed files, then use the existing transactional record insertion
+boundary. A committed copy returns its ID even when detail refresh fails. Lost
+responses never cause automatic copy retries. Current database/service providers
+survive backup replacement. No schema or backup-format change is required.
+
+Client example selection remains separate from active user-project state. The
+shared timeline has an explicit read-only capability context; edit, label, native
+file actions, and composition require an editable copy. The header copy action
+replaces Edit. The same composer markup is disabled through a fieldset, with its
+read-only notice inside and an 800 ms glow on each blocked interaction. General's Show examples
+preference defaults on and is browser-local, like Appearance. Hiding affects
+example selection only. Originals are replaced with app updates; copies remain
+ordinary user data. See [ADR-0009](adr/0009-application-owned-examples.md).
+
 ## Trust and security boundaries
 
 - API requests require a loopback Host; cross-origin browser requests are

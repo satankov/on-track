@@ -1142,6 +1142,7 @@ test("switches and persists appearance themes from visual previews", async ({
   await page.goto(localApp.url);
   await page.getByRole("button", { name: `Open ${project.title}` }).click();
   await page.getByRole("button", { name: /Settings/ }).click();
+  await page.getByRole("button", { name: /Backups/ }).click();
   await expect(
     page.getByRole("heading", { name: "Backup settings" }),
   ).toBeVisible();
@@ -1175,6 +1176,7 @@ test("switches and persists appearance themes from visual previews", async ({
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 
   await page.getByRole("button", { name: /Settings/ }).click();
+  await page.getByRole("button", { name: /Backups/ }).click();
   await page.getByRole("button", { name: /Appearance/ }).click();
   await expect(page.getByRole("radio", { name: /Dark/ })).toBeChecked();
 
@@ -1274,6 +1276,7 @@ test("manages markdown messages and database backups from the UI", async ({
     await page.getByRole("button", { name: "Back to projects" }).click();
   }
   await page.getByRole("button", { name: /Settings/ }).click();
+  await page.getByRole("button", { name: /Backups/ }).click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export all" }).click();
   const download = await downloadPromise;
@@ -1294,6 +1297,7 @@ test("manages markdown messages and database backups from the UI", async ({
   ).toBeVisible();
 
   await page.getByRole("button", { name: /Settings/ }).click();
+  await page.getByRole("button", { name: /Backups/ }).click();
   await page
     .getByLabel("Choose On Track backup")
     .setInputFiles(backupPath ?? "");
@@ -2190,6 +2194,13 @@ test("keeps full-width add and edit text above the composer toolbar", async ({
       });
     await textarea.fill("One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight");
     await expect(textarea).toHaveCSS("overflow-y", "hidden");
+    await expect
+      .poll(() =>
+        textarea.evaluate(
+          (element) => element.scrollHeight <= element.clientHeight,
+        ),
+      )
+      .toBe(true);
     const add = await readLayout();
     expect(add.barTop).toBeGreaterThanOrEqual(add.fieldBottom - 1);
     expect(add.fieldLeft).toBeCloseTo(add.barLeft, 0);

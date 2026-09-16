@@ -1,5 +1,18 @@
+import { ExampleReadOnlyContext, EXAMPLE_NOTICE } from "./example-read-only.js";
+import type {
+  ExampleDetail,
+  ExampleSummary,
+  TimelineContent,
+} from "../domain/examples.js";
+import { ExamplesSection, GeneralSettingsWorkspace } from "./Examples.js";
+import {
+  readShowExamples,
+  persistShowExamples,
+  SHOW_EXAMPLES_KEY,
+} from "./preferences.js";
 import {
   Fragment,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -86,7 +99,7 @@ const ICON_ONLY_MESSAGE_LABELS = new Set<Label>(["pin", "attention"]);
 const MESSAGE_COLLAPSED_HEIGHT_PX = 192;
 
 type HistoryFilter = "all" | "attachments" | "links" | Label;
-type RailSection = "Pinned" | "Projects" | "Archive";
+type RailSection = "Pinned" | "Projects" | "Archive" | "Examples";
 
 interface WorkspaceServerState {
   chats: Chat[];
@@ -745,6 +758,7 @@ function ProjectEditWorkspace({
 
 function ProjectRail({
   onHome,
+  examplesSection,
   collapsedSections,
   onToggleSection,
   chats,
@@ -760,6 +774,7 @@ function ProjectRail({
   projectMutationIds,
 }: {
   onHome: () => void;
+  examplesSection?: ReactNode;
   collapsedSections: Record<RailSection, boolean>;
   onToggleSection: (section: RailSection) => void;
   chats: Chat[];
@@ -1000,6 +1015,7 @@ function ProjectRail({
         {renderSection("Pinned", pinned)}
         {renderSection("Projects", projects)}
         {renderSection("Archive", archived)}
+        {examplesSection}
       </nav>
 
       <footer className="local-footnote">
@@ -1081,7 +1097,7 @@ function EmptyWorkspace({
   );
 }
 
-type SettingsSection = "appearance" | "backups";
+type SettingsSection = "general" | "appearance" | "backups";
 
 function SettingsRail({
   activeSection,
@@ -1112,6 +1128,21 @@ function SettingsRail({
         </button>
       </header>
       <nav aria-label="Settings sections" className="settings-section-list">
+        <button
+          className={`settings-section-item ${activeSection === "general" ? "settings-section-item--active" : ""}`}
+          type="button"
+          disabled={disabled}
+          aria-current={activeSection === "general" ? "page" : undefined}
+          onClick={() => onSelect("general")}
+        >
+          <span className="settings-section-icon" aria-hidden="true">
+            <SettingsIcon />
+          </span>
+          <span>
+            <strong>General</strong>
+            <small>Workspace preferences</small>
+          </span>
+        </button>
         <button
           className={`settings-section-item ${
             activeSection === "appearance"
@@ -1543,20 +1574,26 @@ function MessageActionButton({
   label,
   children,
   danger = false,
+  allowReadOnly = false,
   onClick,
 }: {
   label: string;
   children: ReactNode;
   danger?: boolean;
+  allowReadOnly?: boolean;
   onClick: () => void;
 }) {
+  const explainReadOnly = useContext(ExampleReadOnlyContext);
+  const blocked = Boolean(explainReadOnly) && !allowReadOnly;
   return (
     <button
       type="button"
+      aria-disabled={blocked || undefined}
+      aria-describedby={blocked ? "example-notice" : undefined}
       className={`message-action ${danger ? "message-action--danger" : ""}`}
       aria-label={label}
       title={label}
-      onClick={onClick}
+      onClick={blocked ? explainReadOnly : onClick}
     >
       {children}
     </button>
@@ -1598,6 +1635,7 @@ function MessageLabelPicker({
   enabledLabels: ConfigurableLabel[];
   onToggle: (note: Note, label: Label, applied: boolean) => Promise<void>;
 }) {
+  const explainReadOnly = useContext(ExampleReadOnlyContext);
   const [open, setOpen] = useState(false);
   const [busyLabel, setBusyLabel] = useState<Label>();
   const [error, setError] = useState("");
@@ -1651,10 +1689,16 @@ function MessageLabelPicker({
         type="button"
         className="message-action"
         aria-label="Change labels"
+        aria-disabled={Boolean(explainReadOnly) || undefined}
+        aria-describedby={explainReadOnly ? "example-notice" : undefined}
         title="Change labels"
         aria-expanded={open}
         aria-controls={popoverId}
         onClick={() => {
+          if (explainReadOnly) {
+            explainReadOnly();
+            return;
+          }
           setOpen((current) => !current);
           setError("");
         }}
@@ -1822,11 +1866,16 @@ function AttachmentList({
     action: "open" | "reveal",
   ) => Promise<void>;
 }) {
+  const explainReadOnly = useContext(ExampleReadOnlyContext);
   const [busyAction, setBusyAction] = useState<string>();
   const [actionError, setActionError] = useState<string>();
   if (!note.attachments?.length) return null;
 
   async function runAction(attachmentId: string, action: "open" | "reveal") {
+    if (explainReadOnly) {
+      explainReadOnly();
+      return;
+    }
     const key = `${attachmentId}:${action}`;
     if (busyAction) return;
     setBusyAction(key);
@@ -1853,8 +1902,9 @@ function AttachmentList({
           attachment.actions?.reveal ??
           (status === "available" ? "available" : "unavailable");
         const reasonId = `attachment-${attachment.id}-status`;
-        const reason =
-          openCapability === "blocked"
+        const reason = explainReadOnly
+          ? "Create a copy to open or modify this file."
+          : openCapability === "blocked"
             ? "Opening is blocked for this file type."
             : openCapability === "unsupported"
               ? "Native file actions are not supported on this system."
@@ -1873,7 +1923,11 @@ function AttachmentList({
               <strong>{attachment.filename}</strong>
               <small
                 id={reasonId}
-                className={reason ? "attachment-status--warning" : undefined}
+                className={
+                  reason && !explainReadOnly
+                    ? "attachment-status--warning"
+                    : undefined
+                }
                 title={
                   reason
                     ? undefined
@@ -1882,7 +1936,7 @@ function AttachmentList({
               >
                 {reason ? (
                   <>
-                    <span aria-hidden="true">⚠ </span>
+                    {!explainReadOnly && <span aria-hidden="true">⚠ </span>}
                     {reason}
                   </>
                 ) : (
@@ -1898,7 +1952,11 @@ function AttachmentList({
                 aria-busy={openBusy}
                 title="Open"
                 aria-describedby={reason ? reasonId : undefined}
-                disabled={openCapability !== "available" || Boolean(busyAction)}
+                aria-disabled={Boolean(explainReadOnly) || undefined}
+                disabled={
+                  !explainReadOnly &&
+                  (openCapability !== "available" || Boolean(busyAction))
+                }
                 onClick={() => void runAction(attachment.id, "open")}
               >
                 {openBusy ? (
@@ -1918,8 +1976,11 @@ function AttachmentList({
                 aria-label={`Show ${attachment.filename} in Folder`}
                 aria-busy={revealBusy}
                 title="Show in Folder"
+                aria-disabled={Boolean(explainReadOnly) || undefined}
+                aria-describedby={explainReadOnly ? reasonId : undefined}
                 disabled={
-                  revealCapability !== "available" || Boolean(busyAction)
+                  !explainReadOnly &&
+                  (revealCapability !== "available" || Boolean(busyAction))
                 }
                 onClick={() => void runAction(attachment.id, "reveal")}
               >
@@ -2069,6 +2130,7 @@ function MessageGroups({
                             onToggle={onSetNoteLabel}
                           />
                           <MessageActionButton
+                            allowReadOnly
                             label={copied ? "Message copied" : "Copy message"}
                             onClick={() => onCopyNote(note)}
                           >
@@ -2102,6 +2164,9 @@ function MessageGroups({
 }
 
 function ChatWorkspace({
+  exampleCopyAction,
+  exampleError,
+  exampleGlow = false,
   readingPositions,
   detail,
   draft,
@@ -2137,7 +2202,10 @@ function ChatWorkspace({
   navigationDisabled,
 }: {
   readingPositions: Map<string, ReadingPosition>;
-  detail: ChatDetail;
+  detail: TimelineContent;
+  exampleCopyAction?: ReactNode;
+  exampleError?: ReactNode;
+  exampleGlow?: boolean;
   draft: string;
   draftSender: string;
   draftTimestamp: string;
@@ -2174,16 +2242,22 @@ function ChatWorkspace({
   copiedNoteId?: string;
   navigationDisabled: boolean;
 }) {
+  const explainReadOnly = useContext(ExampleReadOnlyContext);
   const historyRef = useRef<HTMLElement>(null);
   const beforeFilterChange = useHistoryPosition(
     historyRef,
     detail.id,
     historyFilter,
     readingPositions,
+    Boolean(explainReadOnly),
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
-  const fileDrop = useComposerFileDrop(composerRef, saving, onFilesSelected);
+  const fileDrop = useComposerFileDrop(
+    composerRef,
+    saving || Boolean(explainReadOnly),
+    onFilesSelected,
+  );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const markdownToolsId = useId();
   const senderToolsId = useId();
@@ -2411,7 +2485,10 @@ function ChatWorkspace({
   }
 
   return (
-    <main className="workspace workspace-chat" data-accent={detail.accent}>
+    <main
+      className={`workspace workspace-chat ${explainReadOnly ? "workspace-example" : ""}`}
+      data-accent={detail.accent}
+    >
       <header className="chat-header">
         <div className="chat-header-inner">
           <button
@@ -2425,17 +2502,21 @@ function ChatWorkspace({
             <ArrowLeftIcon />
           </button>
           <div className="chat-heading">
-            <p className="eyebrow">Project thread</p>
+            <p className="eyebrow">
+              {explainReadOnly ? "Example project" : "Project thread"}
+            </p>
             <h1>{detail.title}</h1>
           </div>
-          <button
-            className="button button-quiet edit-project-button"
-            type="button"
-            onClick={onCustomize}
-          >
-            <EditIcon />
-            <span>Edit</span>
-          </button>
+          {exampleCopyAction ?? (
+            <button
+              className="button button-quiet edit-project-button"
+              type="button"
+              onClick={onCustomize}
+            >
+              <EditIcon />
+              <span>Edit</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -2563,6 +2644,7 @@ function ChatWorkspace({
       </section>
 
       <footer className="composer-wrap">
+        {exampleError}
         {visibleComposerError && (
           <p role="alert" className="composer-error">
             Your note is still here. {visibleComposerError}
@@ -2571,295 +2653,338 @@ function ChatWorkspace({
         <div
           ref={composerRef}
           className={`composer ${editingNote ? "composer--editing" : ""} ${fileDrop.active ? "composer--file-drag" : ""} ${fileDrop.over ? "composer--file-over" : ""}`}
-          onKeyDown={handleComposerKeyDown}
+          data-readonly-highlight={exampleGlow ? "true" : undefined}
+          data-readonly={explainReadOnly ? "true" : undefined}
+          role={explainReadOnly ? "group" : undefined}
+          tabIndex={explainReadOnly ? 0 : undefined}
+          aria-label={
+            explainReadOnly ? "Read-only message composer" : undefined
+          }
+          aria-describedby={explainReadOnly ? "example-notice" : undefined}
+          onClickCapture={explainReadOnly ? () => explainReadOnly() : undefined}
+          onDrop={
+            explainReadOnly
+              ? (event) => {
+                  event.preventDefault();
+                  explainReadOnly();
+                }
+              : undefined
+          }
+          onDragOver={
+            explainReadOnly ? (event) => event.preventDefault() : undefined
+          }
+          onKeyDown={(event) => {
+            if (explainReadOnly) {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                explainReadOnly();
+              }
+              return;
+            }
+            handleComposerKeyDown(event);
+          }}
         >
-          {fileDrop.active && (
-            <div className="composer-drop-target" role="status">
-              <PaperclipIcon />
-              <span>
-                {editingNote
-                  ? "Drop files here to attach to this message"
-                  : "Drop files here to attach"}
-              </span>
-            </div>
+          {explainReadOnly && (
+            <p className="example-composer-notice" id="example-notice">
+              {EXAMPLE_NOTICE}
+            </p>
           )}
-          <div className="composer-content">
-            {(editingAttachments.length > 0 || pendingFiles.length > 0) && (
-              <div className="pending-attachments" aria-label="Pending files">
-                {editingAttachments.map((attachment) => (
-                  <span className="pending-attachment" key={attachment.id}>
-                    <span>
-                      <strong>{attachment.filename}</strong>
-                      <small>{formatFileSize(attachment.byteSize)}</small>
-                    </span>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${attachment.filename}`}
-                      onClick={() => onRemoveEditingAttachment(attachment.id)}
-                    >
-                      <XIcon />
-                    </button>
-                  </span>
-                ))}
-                {pendingFiles.map((file, index) => (
-                  <span
-                    className="pending-attachment"
-                    key={`${file.name}-${index}`}
-                  >
-                    <span>
-                      <strong>{file.name}</strong>
-                      <small>{formatFileSize(file.size)}</small>
-                    </span>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${file.name}`}
-                      onClick={() => onRemovePendingFile(index)}
-                    >
-                      <XIcon />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-            {senderOpen && (
-              <div
-                id={senderToolsId}
-                className="composer-sender-row"
-                role="group"
-                aria-label="Message sender"
-              >
-                <label
-                  className="field-label"
-                  htmlFor={`${senderToolsId}-name`}
-                >
-                  Sender
-                </label>
-                <button
-                  className="composer-sender-you"
-                  type="button"
-                  aria-pressed={!draftSender.trim()}
-                  onClick={() => onDraftSenderChange("")}
-                >
-                  You
-                </button>
-                <span className="composer-sender-or" aria-hidden="true">
-                  or
-                </span>
-                <input
-                  id={`${senderToolsId}-name`}
-                  className="text-input composer-sender-input"
-                  type="text"
-                  aria-label="Sender name"
-                  value={draftSender}
-                  maxLength={80}
-                  placeholder="Type a sender name…"
-                  onChange={(event) => onDraftSenderChange(event.target.value)}
-                />
-                <span className="composer-sender-hint" aria-hidden="true">
-                  Participant messages appear on the left
+          <fieldset
+            className="composer-controls"
+            disabled={Boolean(explainReadOnly)}
+          >
+            {fileDrop.active && (
+              <div className="composer-drop-target" role="status">
+                <PaperclipIcon />
+                <span>
+                  {editingNote
+                    ? "Drop files here to attach to this message"
+                    : "Drop files here to attach"}
                 </span>
               </div>
             )}
-            {timestampOpen && (
-              <div className="composer-timestamp-row">
-                <label className="field-label" htmlFor="composer-timestamp">
-                  Timestamp
-                </label>
-                <input
-                  id="composer-timestamp"
-                  className="text-input composer-timestamp-input"
-                  type="datetime-local"
-                  aria-label="Message timestamp"
-                  value={draftTimestamp}
-                  onChange={(event) =>
-                    onDraftTimestampChange(event.target.value)
-                  }
-                />
-              </div>
-            )}
-            {markdownOpen && (
-              <div
-                id={markdownToolsId}
-                className="markdown-tools-strip"
-                role="group"
-                aria-label="Markdown assistance"
-              >
-                <span className="markdown-tools-label">Format</span>
-                <div className="markdown-tools-scroll">
-                  {MARKDOWN_TOOLS.map((tool) => (
-                    <button
-                      className="markdown-tool-button"
-                      type="button"
-                      key={tool.action}
-                      aria-label={
-                        tool.shortcutLabel
-                          ? `${tool.label} (${tool.shortcutLabel})`
-                          : tool.label
-                      }
-                      aria-keyshortcuts={tool.ariaKeyShortcuts}
-                      title={`${tool.label} · ${tool.syntax}${tool.shortcutLabel ? ` · ${tool.shortcutLabel}` : ""}`}
-                      onPointerDown={rememberMarkdownSelection}
-                      onFocus={() => setActiveMarkdownAction(tool.action)}
-                      onMouseEnter={() => setActiveMarkdownAction(tool.action)}
-                      onClick={() => applyMarkdownFormatting(tool.action)}
+            <div className="composer-content">
+              {(editingAttachments.length > 0 || pendingFiles.length > 0) && (
+                <div className="pending-attachments" aria-label="Pending files">
+                  {editingAttachments.map((attachment) => (
+                    <span className="pending-attachment" key={attachment.id}>
+                      <span>
+                        <strong>{attachment.filename}</strong>
+                        <small>{formatFileSize(attachment.byteSize)}</small>
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${attachment.filename}`}
+                        onClick={() => onRemoveEditingAttachment(attachment.id)}
+                      >
+                        <XIcon />
+                      </button>
+                    </span>
+                  ))}
+                  {pendingFiles.map((file, index) => (
+                    <span
+                      className="pending-attachment"
+                      key={`${file.name}-${index}`}
                     >
-                      <MarkdownToolGlyph action={tool.action} />
-                    </button>
+                      <span>
+                        <strong>{file.name}</strong>
+                        <small>{formatFileSize(file.size)}</small>
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${file.name}`}
+                        onClick={() => onRemovePendingFile(index)}
+                      >
+                        <XIcon />
+                      </button>
+                    </span>
                   ))}
                 </div>
-                <span className="markdown-tool-hint" aria-hidden="true">
-                  <strong>{activeMarkdownTool.label}</strong>
-                  <code>{activeMarkdownTool.syntax}</code>
-                  {activeMarkdownTool.shortcutLabel && (
-                    <span>{activeMarkdownTool.shortcutLabel}</span>
-                  )}
-                </span>
-                <span className="markdown-tools-escape" aria-hidden="true">
-                  Esc
-                </span>
-              </div>
-            )}
-            <div className="composer-input-row">
-              <textarea
-                ref={textareaRef}
-                data-composer-textarea
-                aria-label={editingNote ? "Edit message" : "Add a note"}
-                placeholder={
-                  editingNote
-                    ? "Edit this message…"
-                    : "Add a note to this project…"
-                }
-                value={draft}
-                maxLength={10_000}
-                onChange={(event) => {
-                  fileDrop.clearError();
-                  setMarkdownError("");
-                  onDraftChange(event.target.value);
-                }}
-                onSelect={rememberMarkdownSelection}
-                onBlur={rememberMarkdownSelection}
-                onKeyDown={handleKeyDown}
-              />
-            </div>
-          </div>
-          <div className="composer-bar">
-            <div className="composer-tools">
-              <button
-                className={`composer-icon-button ${draftSender.trim() ? "composer-icon-button--active" : ""}`}
-                type="button"
-                onClick={() => onSenderOpenChange(!senderOpen)}
-                aria-label={`${senderOpen ? "Hide" : "Show"} sender options. Current sender: ${currentSender}`}
-                aria-expanded={senderOpen}
-                aria-controls={senderToolsId}
-                title={`Sender: ${currentSender}`}
-              >
-                <SenderIcon />
-              </button>
-              <button
-                className="composer-icon-button composer-markdown-button"
-                type="button"
-                onClick={() => {
-                  setMarkdownOpen((open) => !open);
-                  setMarkdownError("");
-                }}
-                onPointerDown={rememberMarkdownSelection}
-                aria-label={
-                  markdownOpen
-                    ? "Hide Markdown assistance"
-                    : "Show Markdown assistance"
-                }
-                aria-expanded={markdownOpen}
-                aria-controls={markdownToolsId}
-                title={
-                  markdownOpen
-                    ? "Hide Markdown assistance"
-                    : "Show Markdown assistance"
-                }
-              >
-                <span className="markdown-mark" aria-hidden="true">
-                  M↓
-                </span>
-              </button>
-              <input
-                ref={fileInputRef}
-                className="visually-hidden-file"
-                type="file"
-                multiple
-                aria-label="Attach files"
-                onChange={(event) => {
-                  fileDrop.clearError();
-                  onFilesSelected(Array.from(event.target.files ?? []));
-                  event.target.value = "";
-                }}
-              />
-              <button
-                className="composer-icon-button"
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                aria-label="Open file picker"
-                title="Attach files"
-              >
-                <PaperclipIcon />
-              </button>
-              <button
-                className="composer-icon-button"
-                type="button"
-                onClick={onToggleTimestamp}
-                aria-label={
-                  timestampOpen ? "Hide timestamp" : "Choose timestamp"
-                }
-                aria-expanded={timestampOpen}
-                title={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
-              >
-                <ClockIcon />
-              </button>
-            </div>
-            <div className="composer-actions">
-              <span className="composer-shortcut">
-                <kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd>
-              </span>
-              {editingNote && (
-                <button
-                  className="composer-cancel-button"
-                  type="button"
-                  onClick={cancelEditingNote}
-                >
-                  Cancel
-                </button>
               )}
-              <button
-                className="send-button"
-                type="button"
-                onClick={submitDraft}
-                aria-label={
-                  saving
-                    ? editingNote
-                      ? "Saving message"
-                      : "Adding note"
-                    : editingNote
-                      ? "Save"
-                      : "Add note"
-                }
-                disabled={
-                  saving ||
-                  (!draft.trim() &&
-                    pendingFiles.length === 0 &&
-                    editingAttachments.length === 0)
-                }
-              >
-                <span>
-                  {saving
-                    ? editingNote
-                      ? "Saving…"
-                      : "Adding…"
-                    : editingNote
-                      ? "Save"
-                      : "Add"}
-                </span>
-                <SendIcon />
-              </button>
+              {senderOpen && (
+                <div
+                  id={senderToolsId}
+                  className="composer-sender-row"
+                  role="group"
+                  aria-label="Message sender"
+                >
+                  <label
+                    className="field-label"
+                    htmlFor={`${senderToolsId}-name`}
+                  >
+                    Sender
+                  </label>
+                  <button
+                    className="composer-sender-you"
+                    type="button"
+                    aria-pressed={!draftSender.trim()}
+                    onClick={() => onDraftSenderChange("")}
+                  >
+                    You
+                  </button>
+                  <span className="composer-sender-or" aria-hidden="true">
+                    or
+                  </span>
+                  <input
+                    id={`${senderToolsId}-name`}
+                    className="text-input composer-sender-input"
+                    type="text"
+                    aria-label="Sender name"
+                    value={draftSender}
+                    maxLength={80}
+                    placeholder="Type a sender name…"
+                    onChange={(event) =>
+                      onDraftSenderChange(event.target.value)
+                    }
+                  />
+                  <span className="composer-sender-hint" aria-hidden="true">
+                    Participant messages appear on the left
+                  </span>
+                </div>
+              )}
+              {timestampOpen && (
+                <div className="composer-timestamp-row">
+                  <label className="field-label" htmlFor="composer-timestamp">
+                    Timestamp
+                  </label>
+                  <input
+                    id="composer-timestamp"
+                    className="text-input composer-timestamp-input"
+                    type="datetime-local"
+                    aria-label="Message timestamp"
+                    value={draftTimestamp}
+                    onChange={(event) =>
+                      onDraftTimestampChange(event.target.value)
+                    }
+                  />
+                </div>
+              )}
+              {markdownOpen && (
+                <div
+                  id={markdownToolsId}
+                  className="markdown-tools-strip"
+                  role="group"
+                  aria-label="Markdown assistance"
+                >
+                  <span className="markdown-tools-label">Format</span>
+                  <div className="markdown-tools-scroll">
+                    {MARKDOWN_TOOLS.map((tool) => (
+                      <button
+                        className="markdown-tool-button"
+                        type="button"
+                        key={tool.action}
+                        aria-label={
+                          tool.shortcutLabel
+                            ? `${tool.label} (${tool.shortcutLabel})`
+                            : tool.label
+                        }
+                        aria-keyshortcuts={tool.ariaKeyShortcuts}
+                        title={`${tool.label} · ${tool.syntax}${tool.shortcutLabel ? ` · ${tool.shortcutLabel}` : ""}`}
+                        onPointerDown={rememberMarkdownSelection}
+                        onFocus={() => setActiveMarkdownAction(tool.action)}
+                        onMouseEnter={() =>
+                          setActiveMarkdownAction(tool.action)
+                        }
+                        onClick={() => applyMarkdownFormatting(tool.action)}
+                      >
+                        <MarkdownToolGlyph action={tool.action} />
+                      </button>
+                    ))}
+                  </div>
+                  <span className="markdown-tool-hint" aria-hidden="true">
+                    <strong>{activeMarkdownTool.label}</strong>
+                    <code>{activeMarkdownTool.syntax}</code>
+                    {activeMarkdownTool.shortcutLabel && (
+                      <span>{activeMarkdownTool.shortcutLabel}</span>
+                    )}
+                  </span>
+                  <span className="markdown-tools-escape" aria-hidden="true">
+                    Esc
+                  </span>
+                </div>
+              )}
+              <div className="composer-input-row">
+                <textarea
+                  ref={textareaRef}
+                  data-composer-textarea
+                  aria-label={editingNote ? "Edit message" : "Add a note"}
+                  placeholder={
+                    editingNote
+                      ? "Edit this message…"
+                      : "Add a note to this project…"
+                  }
+                  value={draft}
+                  maxLength={10_000}
+                  onChange={(event) => {
+                    fileDrop.clearError();
+                    setMarkdownError("");
+                    onDraftChange(event.target.value);
+                  }}
+                  onSelect={rememberMarkdownSelection}
+                  onBlur={rememberMarkdownSelection}
+                  onKeyDown={handleKeyDown}
+                />
+              </div>
             </div>
-          </div>
+            <div className="composer-bar">
+              <div className="composer-tools">
+                <button
+                  className={`composer-icon-button ${draftSender.trim() ? "composer-icon-button--active" : ""}`}
+                  type="button"
+                  onClick={() => onSenderOpenChange(!senderOpen)}
+                  aria-label={`${senderOpen ? "Hide" : "Show"} sender options. Current sender: ${currentSender}`}
+                  aria-expanded={senderOpen}
+                  aria-controls={senderToolsId}
+                  title={`Sender: ${currentSender}`}
+                >
+                  <SenderIcon />
+                </button>
+                <button
+                  className="composer-icon-button composer-markdown-button"
+                  type="button"
+                  onClick={() => {
+                    setMarkdownOpen((open) => !open);
+                    setMarkdownError("");
+                  }}
+                  onPointerDown={rememberMarkdownSelection}
+                  aria-label={
+                    markdownOpen
+                      ? "Hide Markdown assistance"
+                      : "Show Markdown assistance"
+                  }
+                  aria-expanded={markdownOpen}
+                  aria-controls={markdownToolsId}
+                  title={
+                    markdownOpen
+                      ? "Hide Markdown assistance"
+                      : "Show Markdown assistance"
+                  }
+                >
+                  <span className="markdown-mark" aria-hidden="true">
+                    M↓
+                  </span>
+                </button>
+                <input
+                  ref={fileInputRef}
+                  className="visually-hidden-file"
+                  type="file"
+                  multiple
+                  aria-label="Attach files"
+                  onChange={(event) => {
+                    fileDrop.clearError();
+                    onFilesSelected(Array.from(event.target.files ?? []));
+                    event.target.value = "";
+                  }}
+                />
+                <button
+                  className="composer-icon-button"
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  aria-label="Open file picker"
+                  title="Attach files"
+                >
+                  <PaperclipIcon />
+                </button>
+                <button
+                  className="composer-icon-button"
+                  type="button"
+                  onClick={onToggleTimestamp}
+                  aria-label={
+                    timestampOpen ? "Hide timestamp" : "Choose timestamp"
+                  }
+                  aria-expanded={timestampOpen}
+                  title={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
+                >
+                  <ClockIcon />
+                </button>
+              </div>
+              <div className="composer-actions">
+                <span className="composer-shortcut">
+                  <kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd>
+                </span>
+                {editingNote && (
+                  <button
+                    className="composer-cancel-button"
+                    type="button"
+                    onClick={cancelEditingNote}
+                  >
+                    Cancel
+                  </button>
+                )}
+                <button
+                  className="send-button"
+                  type="button"
+                  onClick={submitDraft}
+                  aria-label={
+                    saving
+                      ? editingNote
+                        ? "Saving message"
+                        : "Adding note"
+                      : editingNote
+                        ? "Save"
+                        : "Add note"
+                  }
+                  disabled={
+                    saving ||
+                    (!draft.trim() &&
+                      pendingFiles.length === 0 &&
+                      editingAttachments.length === 0)
+                  }
+                >
+                  <span>
+                    {saving
+                      ? editingNote
+                        ? "Saving…"
+                        : "Adding…"
+                      : editingNote
+                        ? "Save"
+                        : "Add"}
+                  </span>
+                  <SendIcon />
+                </button>
+              </div>
+            </div>
+          </fieldset>
         </div>
       </footer>
     </main>
@@ -2871,6 +2996,29 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     chats: [],
   });
   const { chats, active } = workspace;
+  const [example, setExample] = useState<ExampleDetail>();
+  const [examples, setExamples] = useState<ExampleSummary[]>([]);
+  const [examplesError, setExamplesError] = useState("");
+  const [examplesReload, setExamplesReload] = useState(0);
+  const [showExamples, setShowExamples] = useState(readShowExamples);
+  const [preferenceWarning, setPreferenceWarning] = useState("");
+  const [copyingExample, setCopyingExample] = useState(false);
+  const copyInProgress = useRef(false);
+  const [exampleNotice, setExampleNotice] = useState("");
+  const [exampleGlow, setExampleGlow] = useState(false);
+  const exampleGlowTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  useEffect(() => () => clearTimeout(exampleGlowTimer.current), []);
+  function explainExampleReadOnly() {
+    clearTimeout(exampleGlowTimer.current);
+    setExampleGlow(true);
+    setExampleNotice(
+      "Read-only example. Create an editable copy first to use this action.",
+    );
+    exampleGlowTimer.current = setTimeout(() => setExampleGlow(false), 800);
+  }
+
   const [loadState, setLoadState] = useState<"loading" | "loaded" | "error">(
     "loading",
   );
@@ -2879,7 +3027,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     "projects",
   );
   const [settingsSection, setSettingsSection] =
-    useState<SettingsSection>("backups");
+    useState<SettingsSection>("general");
   const [theme, setTheme] = useState<Theme>(() => readStoredTheme());
   const [editingNote, setEditingNote] = useState<Note>();
   const [editingAttachmentIds, setEditingAttachmentIds] = useState<string[]>(
@@ -2926,8 +3074,19 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   );
   const [collapsedSections, setCollapsedSections] = useState<
     Record<RailSection, boolean>
-  >({ Pinned: false, Projects: false, Archive: false });
+  >({ Pinned: false, Projects: false, Archive: false, Examples: false });
   const selectionRequest = useRef(0);
+  const pendingSelection = useRef<"example" | "project" | undefined>(undefined);
+  const copiedFocus = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (active?.id !== copiedFocus.current || !copiedFocus.current) return;
+    copiedFocus.current = undefined;
+    const heading = document.querySelector<HTMLElement>(".workspace-chat h1");
+    if (heading) {
+      heading.tabIndex = -1;
+      heading.focus();
+    }
+  }, [active?.id]);
   const activeMutationGeneration = useRef(0);
   const summaryRequest = useRef(0);
   const activeId = useRef<string | undefined>(undefined);
@@ -2980,6 +3139,142 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     return () => window.removeEventListener("focus", refreshActiveProject);
   }, [api]);
 
+  useEffect(() => {
+    let current = true;
+    api
+      .listExamples()
+      .then((result) => {
+        if (current) {
+          setExamples(result);
+          setExamplesError("");
+        }
+      })
+      .catch(() => {
+        if (current) setExamplesError("Examples could not be loaded.");
+      });
+    return () => {
+      current = false;
+    };
+  }, [api, examplesReload]);
+
+  function updateExamplesVisibility(show: boolean, persist = true) {
+    setShowExamples(show);
+    if (persist)
+      setPreferenceWarning(
+        persistShowExamples(show)
+          ? ""
+          : "This preference could not be saved. It applies until this page is closed.",
+      );
+    if (!show && (example || pendingSelection.current === "example")) {
+      selectionRequest.current++;
+      pendingSelection.current = undefined;
+      setExample(undefined);
+      setHistoryFilter("all");
+    }
+  }
+  useEffect(() => {
+    const changed = (event: StorageEvent) => {
+      if (event.key === SHOW_EXAMPLES_KEY || event.key === null) {
+        const show = readShowExamples();
+        setShowExamples(show);
+        if (!show && (example || pendingSelection.current === "example")) {
+          selectionRequest.current++;
+          pendingSelection.current = undefined;
+          setExample(undefined);
+          setHistoryFilter("all");
+          setExampleNotice("Examples are hidden.");
+        }
+      }
+    };
+    window.addEventListener("storage", changed);
+    return () => window.removeEventListener("storage", changed);
+  }, [example]);
+
+  async function selectExample(slug: string) {
+    if (savingNote || copyInProgress.current) return;
+    pendingSelection.current = "example";
+    const request = ++selectionRequest.current;
+    setError("");
+    try {
+      const detail = await api.getExample(slug);
+      if (request !== selectionRequest.current) return;
+      activeId.current = undefined;
+      setWorkspace((current) => ({ ...current, active: undefined }));
+      clearTimeout(exampleGlowTimer.current);
+      setExampleGlow(false);
+      setExample(detail);
+      setMode("projects");
+      setHistoryFilter("all");
+      setExampleNotice("");
+      setDraft("");
+      setPendingFiles([]);
+      setEditingNote(undefined);
+      setEditingAttachmentIds([]);
+      setDraftTimestamp("");
+      setComposerTimestampOpen(false);
+      resetSenderComposer();
+      focusMobileBackButton();
+    } catch (caught) {
+      if (request === selectionRequest.current)
+        setError(errorMessage(caught, "The example could not be opened."));
+    } finally {
+      if (request === selectionRequest.current)
+        pendingSelection.current = undefined;
+    }
+  }
+
+  async function createExampleCopy() {
+    if (!example || copyInProgress.current || importInProgress.current) return;
+    copyInProgress.current = true;
+    setCopyingExample(true);
+    setError("");
+    activeMutationGeneration.current++;
+    summaryRequest.current++;
+    const selection = selectionRequest.current;
+    try {
+      const result = await api.copyExample(example.slug, example.revision);
+      let detail = result.project;
+      if (!detail) {
+        try {
+          detail = await api.getChat(result.id);
+        } catch {
+          setError(
+            "Your editable copy was created, but could not be opened. Refresh Projects to find it; do not create it again.",
+          );
+          return;
+        }
+      }
+      const copiedProject = detail;
+      setWorkspace((current) => ({
+        chats: sortChats([
+          ...current.chats.filter((chat) => chat.id !== copiedProject.id),
+          chatFromDetail(copiedProject),
+        ]),
+        active:
+          selection === selectionRequest.current
+            ? copiedProject
+            : current.active,
+      }));
+      if (selection === selectionRequest.current) {
+        setExample(undefined);
+        activeId.current = detail.id;
+        copiedFocus.current = detail.id;
+        setLoadState("loaded");
+        setHistoryFilter("all");
+        setCollapsedSections((current) => ({ ...current, Projects: false }));
+      }
+      setExampleNotice("Editable copy created.");
+    } catch (caught) {
+      setError(errorMessage(caught, "The example could not be copied."));
+      // A lost response may follow a committed copy. Refresh never retries the POST.
+    } finally {
+      copyInProgress.current = false;
+      setCopyingExample(false);
+      activeMutationGeneration.current++;
+      summaryRequest.current++;
+      refreshProjectSummaries();
+    }
+  }
   function refreshProjectSummaries() {
     if (importInProgress.current) return;
     const request = ++summaryRequest.current;
@@ -3049,13 +3344,15 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   }
 
   async function selectChat(id: string) {
-    if (savingNote) return;
+    if (savingNote || copyInProgress.current) return;
+    pendingSelection.current = "project";
     const request = ++selectionRequest.current;
     setMode("projects");
     setError("");
     try {
       const detail = await api.getChat(id);
       if (request !== selectionRequest.current) return;
+      setExample(undefined);
       setWorkspace((current) => {
         const summary = current.chats.find((chat) => chat.id === id);
         return {
@@ -3085,11 +3382,15 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     } catch (caught) {
       if (request !== selectionRequest.current) return;
       setError(errorMessage(caught, "The project could not be opened."));
+    } finally {
+      if (request === selectionRequest.current)
+        pendingSelection.current = undefined;
     }
   }
 
   async function createChat(input: { title: string; accent: Accent }) {
     const chat = await api.createChat(input);
+    setExample(undefined);
     selectionRequest.current += 1;
     setWorkspace((current) => ({
       chats: [chat, ...current.chats],
@@ -3590,6 +3891,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       invalidate();
       if (options.mode === "replace") {
         activeId.current = undefined;
+        setExample(undefined);
         setWorkspace({ chats: [] });
         setReadingPositions(new Map());
         setDraftTimestamp("");
@@ -3629,7 +3931,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   }
 
   function backToProjects() {
-    if (savingNote) return;
+    if (savingNote || copyInProgress.current) return;
+    const exampleSlug = example?.slug;
+    setExample(undefined);
     const projectId = active?.id;
     setMode("projects");
     setError("");
@@ -3643,6 +3947,19 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setHistoryFilter("all");
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
+    if (exampleSlug) {
+      requestAnimationFrame(() => {
+        const row = [
+          ...document.querySelectorAll<HTMLButtonElement>(
+            "[data-example-slug]",
+          ),
+        ].find((button) => button.dataset.exampleSlug === exampleSlug);
+        const target = row?.closest("[hidden]")
+          ? document.querySelector<HTMLButtonElement>('[aria-label="Examples"]')
+          : row;
+        target?.focus();
+      });
+    }
     if (projectId && isMobileViewport()) {
       requestAnimationFrame(() => {
         const project = [
@@ -3655,6 +3972,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
 
   return (
     <div className="app-shell">
+      {exampleNotice && (
+        <p className="visually-hidden" role="status">
+          {exampleNotice}
+        </p>
+      )}
       {mode === "settings" ? (
         <SettingsRail
           activeSection={settingsSection}
@@ -3665,6 +3987,25 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       ) : (
         <ProjectRail
           onHome={backToProjects}
+          examplesSection={
+            showExamples ? (
+              <ExamplesSection
+                examples={examples}
+                collapsed={collapsedSections.Examples}
+                onToggle={() =>
+                  setCollapsedSections((current) => ({
+                    ...current,
+                    Examples: !current.Examples,
+                  }))
+                }
+                onSelect={selectExample}
+                activeSlug={example?.slug}
+                disabled={savingNote || copyingExample}
+                error={examplesError}
+                onRetry={() => setExamplesReload((value) => value + 1)}
+              />
+            ) : undefined
+          }
           collapsedSections={collapsedSections}
           onToggleSection={(section) =>
             setCollapsedSections((current) => ({
@@ -3673,25 +4014,41 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
             }))
           }
           chats={chats}
-          activeId={active?.id}
+          activeId={active?.id ?? example?.id}
           onSelect={selectChat}
           onTogglePinned={toggleChatPinned}
           onRestore={restoreChat}
           onTemporalBoundary={refreshProjectSummaries}
-          onCreate={() => setDialog("create")}
-          onSettings={() => setMode("settings")}
-          navigationDisabled={savingNote}
+          onCreate={() => {
+            selectionRequest.current++;
+            pendingSelection.current = undefined;
+            setDialog("create");
+          }}
+          onSettings={() => {
+            if (!copyInProgress.current) {
+              selectionRequest.current++;
+              pendingSelection.current = undefined;
+              setMode("settings");
+            }
+          }}
+          navigationDisabled={savingNote || copyingExample}
           pinErrors={pinErrors}
           projectMutationIds={projectMutationIds}
         />
       )}
-      {!active && error && (
+      {!active && !example && error && (
         <p className="global-error" role="alert">
           {error}
         </p>
       )}
       {mode === "settings" ? (
-        settingsSection === "appearance" ? (
+        settingsSection === "general" ? (
+          <GeneralSettingsWorkspace
+            showExamples={showExamples}
+            onChange={updateExamplesVisibility}
+            warning={preferenceWarning}
+          />
+        ) : settingsSection === "appearance" ? (
           <AppearanceSettingsWorkspace theme={theme} onThemeChange={setTheme} />
         ) : (
           <BackupSettingsWorkspace
@@ -3707,6 +4064,70 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
             onImport={importDatabase}
           />
         )
+      ) : example ? (
+        <ExampleReadOnlyContext.Provider value={explainExampleReadOnly}>
+          <ChatWorkspace
+            key={`${example.id}:${example.revision}`}
+            detail={{ ...example, id: `${example.id}:${example.revision}` }}
+            readingPositions={readingPositions}
+            exampleGlow={exampleGlow}
+            exampleCopyAction={
+              <button
+                className="button button-primary example-copy-button"
+                disabled={copyingExample}
+                onClick={() => void createExampleCopy()}
+              >
+                {copyingExample ? "Creating copy…" : "Create editable copy"}
+              </button>
+            }
+            exampleError={
+              error ? (
+                <p role="alert" className="composer-error">
+                  {error}{" "}
+                  <button
+                    className="button button-quiet"
+                    onClick={() => {
+                      refreshProjectSummaries();
+                      void selectExample(example.slug);
+                    }}
+                  >
+                    Refresh example and projects
+                  </button>
+                </p>
+              ) : undefined
+            }
+            draft=""
+            draftSender=""
+            draftTimestamp=""
+            error=""
+            editingAttachmentIds={[]}
+            pendingFiles={[]}
+            historyFilter={historyFilter}
+            saving={false}
+            senderOpen={false}
+            timestampOpen={false}
+            onBack={backToProjects}
+            onCustomize={() => {}}
+            onCopyNote={copyNote}
+            onAttachmentAction={async () => {}}
+            onEditNote={() => {}}
+            onCancelEditNote={() => {}}
+            onDeleteNote={() => {}}
+            onDraftChange={() => {}}
+            onDraftSenderChange={() => {}}
+            onDraftTimestampChange={() => {}}
+            onFilesSelected={() => {}}
+            onHistoryFilterChange={setHistoryFilter}
+            onRemoveEditingAttachment={() => {}}
+            onRemovePendingFile={() => {}}
+            onSetNoteLabel={async () => {}}
+            onSubmit={() => {}}
+            onSenderOpenChange={() => {}}
+            onToggleTimestamp={() => {}}
+            copiedNoteId={copiedNoteId}
+            navigationDisabled={copyingExample}
+          />
+        </ExampleReadOnlyContext.Provider>
       ) : mode === "projectEdit" && active ? (
         <ProjectEditWorkspace
           key={active.id}
@@ -3767,7 +4188,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       ) : (
         <EmptyWorkspace
           state={placeholderState}
-          onCreate={() => setDialog("create")}
+          onCreate={() => {
+            selectionRequest.current++;
+            pendingSelection.current = undefined;
+            setDialog("create");
+          }}
         />
       )}
       {dialog === "create" && (

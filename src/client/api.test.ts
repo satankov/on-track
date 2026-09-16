@@ -5,6 +5,42 @@ import { apiClient } from "./api.js";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("browser API client", () => {
+  it("reads example resources and reports ambiguous copies without retrying", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("[]"))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ slug: "weekend-trip" })),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: "copied" }), { status: 201 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: "Reopen example" }), {
+          status: 409,
+        }),
+      )
+      .mockRejectedValueOnce(new Error("connection lost"))
+      .mockResolvedValueOnce(new Response("bad response", { status: 201 }))
+      .mockResolvedValueOnce(new Response("failure", { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await apiClient.listExamples()).toEqual([]);
+    expect(await apiClient.getExample("weekend-trip")).toEqual({
+      slug: "weekend-trip",
+    });
+    expect(await apiClient.copyExample("weekend-trip", 1)).toEqual({
+      id: "copied",
+    });
+    await expect(apiClient.copyExample("weekend-trip", 1)).rejects.toThrow(
+      "Reopen example",
+    );
+    for (let i = 0; i < 3; i++)
+      await expect(apiClient.copyExample("weekend-trip", 1)).rejects.toThrow(
+        "could not be confirmed",
+      );
+    expect(fetchMock).toHaveBeenCalledTimes(7);
+  });
+
   it("sends selection options, validates preview flow, and distinguishes unknown import outcomes", async () => {
     const fetchMock = vi
       .fn()

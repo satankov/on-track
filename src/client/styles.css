@@ -3013,3 +3013,97 @@ kbd {
   overflow-wrap: anywhere;
   white-space: normal;
 }
+
+.workspace-example [aria-disabled="true"] {
+  opacity: 0.6;
+  cursor: default;
+}
+.composer-controls {
+  display: contents;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  min-width: 0;
+}
+.composer[data-readonly="true"] :is(button, input, textarea) {
+  pointer-events: none;
+}
+.example-composer-notice {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.composer[data-readonly-highlight="true"] {
+  border-color: var(--accent);
+  box-shadow:
+    inset 0 0 0 1px var(--accent),
+    0 0 14px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.composer[data-readonly-highlight="true"] .example-composer-notice {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 12%, var(--field));
+}
+.example-copy-button {
+  flex-shrink: 0;
+  max-width: 50%;
+  white-space: normal;
+  line-height: 1.2;
+}
+@media (forced-colors: active) {
+  .composer[data-readonly-highlight="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
+.examples-preference {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.examples-preference input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--ink);
+}
+.examples-load-error {
+  padding: 8px 12px;
+  font-size: 12px;
+}
+/* Adapt to the actual chat width, including desktop browser/CSS zoom. */
+.workspace-example {
+  container-type: inline-size;
+  container-name: example-workspace;
+}
+@container example-workspace (max-width: 600px) {
+  .chat-header {
+    padding-inline: 12px;
+  }
+  .history {
+    --history-inline-padding: 12px;
+  }
+  .message-stack {
+    max-width: 100%;
+  }
+  .composer-wrap {
+    padding-inline: 12px;
+  }
+  .attachment-card {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+  .attachment-actions {
+    grid-column: 1 / -1;
+  }
+  .attachment-copy small {
+    white-space: normal;
+  }
+}
+.general-settings-panel > .examples-preference,
+.general-settings-panel > p {
+  margin-inline: 24px;
+}
