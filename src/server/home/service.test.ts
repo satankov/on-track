@@ -71,7 +71,7 @@ function fixture(version = "0.0.9", minimum = "0.0.8") {
 }
 function transport(fixtures = [fixture()]) {
   return vi.fn<typeof fetch>(async (url) => {
-    if (String(url).includes("api.github.com"))
+    if (new URL(String(url)).origin === "https://api.github.com")
       return Response.json(fixtures.map((f) => f.release));
     const match = fixtures.find(
       (f) => String(url) === f.release.assets[0].browser_download_url,
@@ -80,6 +80,14 @@ function transport(fixtures = [fixture()]) {
     return new Response(match.bytes);
   });
 }
+it.each([
+  "https://api.github.com.attacker.example/repos/satankov/on-track/releases",
+  "https://attacker.example/api.github.com",
+  "https://api.github.com@attacker.example/",
+  "http://api.github.com/repos/satankov/on-track/releases",
+])("rejects unexpected fixture URL %s", async (url) => {
+  await expect(transport()(url)).rejects.toThrow("Unexpected request");
+});
 it("checks only on request, coalesces and caches results with no software downloads", async () => {
   let now = 1000;
   const fetcher = transport();
