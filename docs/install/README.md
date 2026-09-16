@@ -17,13 +17,17 @@ Node/npm instructions.
 Both methods run the same local browser application and keep projects separate
 from application code. Neither starts automatically after a reboot.
 
-**Experimental installer:** v0.0.7 introduces installer assets with end-user
-installation/OS validation deferred to the next release. Commands require those
-assets to be published. Releases showing only **Source code (zip)**,
+**Experimental installer:** v0.0.7 has published installer assets;
+installation/OS validation is ongoing. Releases showing only **Source code (zip)**,
 **Source code (tar.gz)**, and an attestation are source-only; use manual setup
 with their ZIP archive. Older releases do not gain installer files automatically.
 
 ## Commands and updates
+
+**v0.0.7 limitation:** its published `ontrack update` command fails with HTTP 415
+while checking GitHub release metadata, before activation. Retrying does not
+repair this client bug. The local source fix is not yet published. Continue using
+the installed version; a fixed release and its upgrade path still need validation.
 
 After quick setup, open a new terminal:
 
@@ -103,15 +107,16 @@ See [data and backup details](../../README.md#where-your-data-lives).
 
 ## If something goes wrong
 
-| Problem                            | What to do                                                                                                                                                                             |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Download returns `404`             | The selected release has no installer file. Use its source ZIP and manual setup, or choose a release with installer files.                                                             |
-| `ontrack` is not found             | Open a new terminal, or use the full command path printed by setup. If you skipped PATH changes, add the printed `bin` folder yourself.                                                |
-| Browser did not open               | Open the address shown by `ontrack status`. The default is [127.0.0.1:4173](http://127.0.0.1:4173).                                                                                    |
-| Port or data already in use        | Stop the existing server with its own stop command or Ctrl+C. A different port does not allow two servers to share one data folder.                                                    |
-| Install/update failed              | Read the error and printed log location. Keep the database and recovery files; rerun the command to attempt recovery. If recovery refuses to continue, retain the files for diagnosis. |
-| Node/npm not found in manual setup | Reopen the terminal after installing a supported Node version. On Windows, use `npm.cmd` if `npm.ps1` is blocked.                                                                      |
-| Missing tool or native build error | Install the reported prerequisite for your OS. Setup does not install system packages or compilers; check your Node version and platform.                                              |
-| Proxy/certificate error            | Use your organisation's approved network settings. Quick setup does not import your custom `.npmrc`; manual setup is available for custom npm configuration.                           |
+| Problem                                 | What to do                                                                                                                                                                             |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Download returns `404`                  | The selected release has no installer file. Use its source ZIP and manual setup, or choose a release with installer files.                                                             |
+| `forward[@]: unbound variable` on macOS | The published v0.0.7 installer needs an optional flag with macOS's Bash. Retry `bash ontrack-install.sh --no-open`, then open the printed address.                                     |
+| `ontrack` is not found                  | Open a new terminal, or use the full command path printed by setup. If you skipped PATH changes, add the printed `bin` folder yourself.                                                |
+| Browser did not open                    | Open the address shown by `ontrack status`. The default is [127.0.0.1:4173](http://127.0.0.1:4173).                                                                                    |
+| Port or data already in use             | Stop the existing server with its own stop command or Ctrl+C. A different port does not allow two servers to share one data folder.                                                    |
+| Install/update failed                   | Read the error and printed log location. Keep the database and recovery files; rerun the command to attempt recovery. If recovery refuses to continue, retain the files for diagnosis. |
+| Node/npm not found in manual setup      | Reopen the terminal after installing a supported Node version. On Windows, use `npm.cmd` if `npm.ps1` is blocked.                                                                      |
+| Missing tool or native build error      | Install the reported prerequisite for your OS. Setup does not install system packages or compilers; check your Node version and platform.                                              |
+| Proxy/certificate error                 | Use your organisation's approved network settings. Quick setup does not import your custom `.npmrc`; manual setup is available for custom npm configuration.                           |
 
 Remove sensitive paths or other private details before sharing logs.

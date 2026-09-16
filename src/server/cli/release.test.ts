@@ -98,3 +98,37 @@ it("bounds streamed content even when the server omits its length", async () => 
     fetchTrusted(manifestFixture().source.url, 3, fetcher),
   ).rejects.toThrow(/size limit/);
 });
+it.each([
+  "https://api.github.com/repos/satankov/on-track/releases/tags/v0.0.7",
+  "https://api.github.com/repos/satankov/on-track/releases?per_page=100&page=1",
+])("requests GitHub release metadata as JSON: %s", async (url) => {
+  const fetcher: typeof fetch = async (_input, init) =>
+    new Headers(init?.headers).get("Accept") === "application/vnd.github+json"
+      ? new Response("{}")
+      : new Response(null, { status: 415 });
+  expect(Buffer.from(await fetchTrusted(url, 100, fetcher)).toString()).toBe(
+    "{}",
+  );
+});
+it("requests binary assets across allowed download redirects", async () => {
+  let requests = 0;
+  const fetcher: typeof fetch = async (_input, init) => {
+    expect(new Headers(init?.headers).get("Accept")).toBe(
+      "application/octet-stream",
+    );
+    return ++requests === 1
+      ? new Response(null, {
+          status: 302,
+          headers: {
+            location: "https://release-assets.githubusercontent.com/asset",
+          },
+        })
+      : new Response("asset bytes");
+  };
+  expect(
+    Buffer.from(
+      await fetchTrusted(manifestFixture().source.url, 100, fetcher),
+    ).toString(),
+  ).toBe("asset bytes");
+  expect(requests).toBe(2);
+});

@@ -15,24 +15,22 @@ recovery parts of that promise.
 
 ## Current phase
 
-Version 0.0.6 is the current published plaintext alpha source release under
-Apache License 2.0. The `release/v0.0.7` checkout adds verified local work for
-Archive, selective backups/import, composer file drops, filter-position
-restoration, and a full-width add/edit composer. Package metadata is prepared as
-0.0.7; the next release has not been published. The approved
+Version 0.0.7 is the current published plaintext alpha release under
+Apache License 2.0, including Archive, selective backups/import, composer file
+drops, filter-position restoration, and a full-width add/edit composer. The approved
 [managed installation and CLI](plans/0021-managed-install-and-cli.md) adds a
 second installation path while retaining manual Node/npm setup. v0.0.7 is the
-first managed-compatible release (floor `0.0.7`). Installer assets await
-publication. The user accepted experimental delivery with real
-end-user installation/OS validation deferred to the next release; automated
-release checks remain required.
+first managed-compatible release (floor `0.0.7`), with installer assets published.
+Real installation validation is now in progress. It exposed a macOS Bash
+empty-array failure and an HTTP 415 updater failure; fixes remain local.
+The macOS guide documents the verified `--no-open` installation workaround.
+Clean OS/platform and upgrade validation remain incomplete.
 
 ## Current objective
 
-Consolidate the completed feature slices for the next alpha release, address
-the dependency and manual-validation follow-ups or record accepted limits, and
-publish the experimental managed installer under the v0.0.7 exception. Complete
-its deferred real installation/OS validation for the next release.
+Correct the published installer/updater defects and complete the experimental
+managed installation's real installation/OS validation for the next release.
+Address dependency and manual-validation follow-ups or record accepted limits.
 Verify the supported manual Node matrix at the selected candidate. Retain plaintext
 and portability warnings. Mobile remains a regression-protected alpha, not a
 dedicated design target.
@@ -126,7 +124,7 @@ dedicated design target.
   plain text extracted from Markdown, and Links filters messages using the same
   parsed Markdown/GFM URL policy as rendering.
 
-## v0.0.7 candidate outcome
+## v0.0.7 outcome
 
 - [Archive](plans/0018-project-archive.md) adds a third sidebar section and
   versioned archive state in database/backup schema 7.
@@ -141,8 +139,8 @@ dedicated design target.
   active delivery slice: private Node, Git-free source installation, background
   lifecycle commands, and version-specific updates with database recovery.
   [Separate OS guides](install/README.md) retain full manual instructions.
-  Installer publication is pending, and clean installation/platform validation
-  is explicitly deferred to the next release.
+  Installer assets are published; installation defects and remaining platform
+  evidence are recorded in that plan and the OS guides.
 
 ## Current capabilities
 
@@ -253,7 +251,8 @@ tests and filesystem drag/drop validation still need issue records; their
 [two drafts](plans/0020-composer-drop-and-filter-scroll.md#required-tracker-follow-ups)
 are awaiting authorization. The [installer validation draft](plans/0021-managed-install-and-cli.md#required-tracker-follow-up)
 is also awaiting an issue record for the next release.
-[v0.0.7 publication commands](releases/v0.0.7.md) describe the remaining release steps.
+[v0.0.7](https://github.com/satankov/on-track/releases/tag/v0.0.7) is published;
+the [publication commands](releases/v0.0.7.md) remain a historical runbook.
 Broader product priorities above remain strategy until scoped. Durable decisions
 live in `docs/adr/`; significant work lives in `docs/plans/`.
 

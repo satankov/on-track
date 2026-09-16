@@ -2,13 +2,14 @@
 
 Status: all four phases implemented. On 2026-09-15 the user selected experimental
 v0.0.7 publication and deferred real end-user installation/OS validation to the
-next release. Automated release gates remain required; publication is pending.
+next release. v0.0.7 is now published; real installation validation has resumed.
+Automated release gates remain required. See the current investigation below.
 Approval also requires separate macOS, Windows, and Linux installation guides,
 each covering managed quick setup and the preserved manual setup.
 Prepared 2026-09-10 against
 `release/v0.0.7` at `676f056`, originally with package version 0.0.6. Release
 preparation now sets 0.0.7 and the first managed compatibility floor to 0.0.7.
-The current request prepares publication commands for the user to execute.
+The current request investigates published installation and update failures.
 
 ## Goal
 
@@ -758,3 +759,103 @@ contract, high-severity audit gate, and prepared lifecycle/recovery fixtures.
 The audit still reports one existing moderate advisory. Independent review found
 no unresolved issue. Fresh Windows and Linux WebKit CI results remain required;
 local verification is not evidence that the remote failures have passed.
+
+## Published installer investigation — 2026-09-15
+
+The public [v0.0.7 release](https://github.com/satankov/on-track/releases/tag/v0.0.7)
+and its six assets are available. [Release CI](https://github.com/satankov/on-track/actions/runs/34989837301)
+passed full Node 22.16/24 verification and managed fixtures on Windows x64,
+Linux x64, macOS arm64 and x64. These are prepared-installation CI results,
+not clean-OS bootstrap evidence.
+
+Two failures reproduced against the published release:
+
+- macOS `/bin/bash` 3.2.57 rejects an empty `forward` array under `set -u`,
+  before invoking the downloaded Node bootstrap. The exact documented default
+  command fails with `forward[@]: unbound variable`. Local conditional array
+  expansion fixes zero-option and `--root`-only invocation without changing
+  strict mode or argument boundaries. Three full-shell fixture tests cover
+  those cases and populated arguments containing spaces/Unicode. The managed
+  CI matrix now runs them with `/bin/bash` explicitly.
+- The published updater requests GitHub metadata with binary `Accept`, which
+  returns HTTP 415. The local downloader requests `application/vnd.github+json`
+  on `api.github.com` and retains binary media types for assets. This follows
+  [GitHub's release API](https://docs.github.com/en/rest/releases/releases#list-releases).
+  Both exact/latest metadata regression tests failed before the fix; the binary
+  redirect test and corrected metadata tests pass. Live read-only probes returned
+  415 with the old header and 200 with JSON. Trust, size, checksum and redirect
+  checks remain intact.
+
+Native online evidence: macOS 15.7.9 arm64, Bash 3.2.57, downloaded private Node
+24.14.0. Tests used a disposable home/runtime/data directory with spaces/Unicode,
+an isolated port and an allowlisted tool PATH without Node, npm, Git, Python,
+make or clang. Publisher asset digests were checked before execution.
+This is the existing developer OS with masked tooling, not a clean machine.
+
+- Unmodified published bootstrap reproduced the default failure and released
+  its bootstrap claim. Retrying `bash ontrack-install.sh --no-open` downloaded
+  and verified real Node/bootstrap/source assets, installed locked dependencies,
+  built and started successfully. It printed the browser address. This is the
+  documented temporary workaround; it does not fix the published updater.
+- Published `run`, repeated `run`, `stop`, repeated `stop`, `status`, `logs`
+  and restart passed. The server survived installer-process exit.
+- With only the locally corrected compiled downloader copied into the disposable
+  release, real exact/current and latest update selection passed. Updating the
+  stopped app started it. Missing and unsupported old releases failed before
+  activation. These results are for a locally patched client, not published v0.0.7.
+- Repeating the locally fixed shell installer against real v0.0.7 downloads
+  preserved the fixture project/note and attachment identities/bytes. The shell
+  profile contained one PATH block; a new zsh found `ontrack`. Its system profile
+  emitted a missing-`locale` warning due to the deliberately restricted PATH.
+  Background startup also survived an interactive Bash pseudo-terminal exiting.
+  All disposable managed servers were stopped after testing.
+
+TDD commands: `npm test -- scripts/install-shell.test.ts` first reproduced the
+two empty-array failures, then passed all three tests. `npm test --
+src/server/cli/release.test.ts` reproduced both HTTP 415 cases, then passed.
+The combined shell/release/distribution suite passed 36 tests.
+Final `npm run verify` passed: 789 tests and one existing skip, 39 browser tests
+and five existing skips, coverage above all 80% gates, build/types/lint/format,
+migrations, release contract, audit and prepared lifecycle/update-recovery
+fixtures. The production audit still reports one existing moderate Fastify
+advisory. An initial sandboxed run could not bind test HTTP/IPC sockets; the
+successful full run used the required local-server permissions.
+Independent correctness/security review found no unresolved code issue;
+the published-updater documentation limitation was added after review.
+
+Remaining evidence: clean-user/OS runs and GUI-terminal closure on the supported
+matrix, browser opening/reboot behavior, and a real published v0.0.7-to-newer
+upgrade with its repaired entry path. Successful migration, failed-candidate
+rollback, interruption recovery and attachment preservation remain verified by
+local prepared fixtures, not by two real published managed releases. Fixes are
+uncommitted and unpublished; no real installation/data or remote resources were
+changed by this investigation.
+
+## v0.0.8 CI scheduling investigation — 2026-09-16
+
+[PR #31 CI](https://github.com/satankov/on-track/actions/runs/35068280069)
+at `8c236c7` failed in native Windows Node 24 and Linux Node 22 coverage tests.
+The Windows failure was a 15-second permission-helper subprocess timeout during
+fixture setup, before update recovery. The same test passed in 5.9 seconds in
+the [Windows managed job](https://github.com/satankov/on-track/actions/runs/35068280070/job/104703507097).
+Linux hit the unchanged five-second test limit in three separate storage suites;
+a subsequent import test received `maintenance_busy`. Timed-out async work can
+continue against that test file's mutable app variable, so the later 503 is
+consistent with a follow-on failure, not independent proof of a restore defect.
+
+The local mitigation makes Vitest test files sequential when `CI` is set.
+This reduces overlapping durable SQLite/filesystem and native PowerShell work
+on shared runners. Local parallelism and explicit within-test concurrency remain.
+No retries, timeout increases, permission caching, skipped assertions or runtime
+changes were added. The unchanged local coverage baseline passed 789 tests with
+one existing skip. Native CI must still confirm whether reduced contention
+resolves the reported failures; the logs alone do not establish their root cause.
+Reproduce the scheduling locally with `CI=true npm run verify`.
+
+`CI=true npm run verify` passed on macOS/Node 22.18.0: 789 tests and one
+existing skip, 39 browser tests and five existing skips, 91.40% line and 84.25%
+branch coverage, build/types/lint/format, migrations, release contract, audit
+and prepared lifecycle/update-recovery smokes. The audit retains an existing
+moderate Fastify advisory. Independent review found no actionable issue.
+The scheduling change remains uncommitted; Windows and Linux Node 22 CI with
+this change have not run, so merge readiness is still pending those results.

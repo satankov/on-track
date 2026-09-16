@@ -50,6 +50,8 @@ curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-er
 actual=$("${hash_command[@]}" "$bootstrap"); actual=${actual%% *}
 [[ $actual == "$bootstrap_sha" ]] || { echo 'Bootstrap checksum verification failed.' >&2; exit 1; }
 unset NODE_OPTIONS NODE_PATH
-ONTRACK_BOOTSTRAP_MANIFEST_SHA256="$manifest_sha" ONTRACK_BOOTSTRAP_RELEASE="$release" "$node_dir/bin/node" "$bootstrap" "$root" "$node_dir" "${forward[@]}"
+# Bash 3.2 treats an empty array as unset under nounset. Expand only when set,
+# retaining one argument per array element and no argument for an empty array.
+ONTRACK_BOOTSTRAP_MANIFEST_SHA256="$manifest_sha" ONTRACK_BOOTSTRAP_RELEASE="$release" "$node_dir/bin/node" "$bootstrap" "$root" "$node_dir" ${forward[@]+"${forward[@]}"}
 rm -rf -- "$stage"
 echo 'On Track is ready. Open a new terminal to use ontrack.'

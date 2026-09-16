@@ -7,6 +7,9 @@ export default defineConfig({
     environment: "node",
     exclude: ["e2e/**", "node_modules/**", "dist/**"],
     globals: true,
+    // Shared CI runners must not overlap fsync-heavy SQLite/restore suites with
+    // native PowerShell ACL subprocesses. Explicit in-test concurrency remains.
+    fileParallelism: !process.env.CI,
     // Native Windows ACL verification invokes PowerShell at filesystem boundaries.
     testTimeout: process.platform === "win32" ? 30_000 : 5_000,
     hookTimeout: process.platform === "win32" ? 30_000 : 10_000,

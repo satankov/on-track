@@ -153,7 +153,10 @@ export async function fetchTrusted(
       redirect: "manual",
       signal,
       headers: {
-        Accept: "application/octet-stream",
+        Accept:
+          current.hostname === "api.github.com"
+            ? "application/vnd.github+json"
+            : "application/octet-stream",
         "User-Agent": "OnTrack-Installer",
       },
     });

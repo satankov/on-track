@@ -2,8 +2,8 @@
 
 ## Status
 
-The v0.0.6 plaintext alpha is the published baseline. The `release/v0.0.7`
-checkout adds Archive, selective backup/import, and client-only composer and
+The v0.0.7 plaintext alpha is the published baseline. It adds
+Archive, selective backup/import, and client-only composer and
 filter fixes. Archive advances the database and backup schema from 6 to 7;
 selective transfers and composer/filter changes preserve that schema. Existing
 local server/service/repository boundaries remain in place. Package metadata
@@ -19,9 +19,11 @@ platform-scoped Node 22.16/24 support in
 installation/CLI slice is recorded in
 [ADR-0008](adr/0008-managed-install-and-cli.md) and
 [plan 0021](plans/0021-managed-install-and-cli.md); it preserves manual source
-installation. v0.0.7 selects managed compatibility floor `0.0.7`; assets await
-publication. Real installation/platform validation is deferred to the next
-release under the explicit experimental-delivery exception in ADR-0008.
+installation. v0.0.7 selects managed compatibility floor `0.0.7`; assets are
+published. Real installation/platform validation is in progress under the
+experimental-delivery exception in ADR-0008. Local fixes address macOS Bash 3.2
+empty-array forwarding and GitHub metadata content negotiation; they are not
+yet available in published installers/clients. See plan 0021 for evidence limits.
 
 ## System context
 
@@ -362,6 +364,12 @@ be hardened before production-readiness claims.
 - `npm run release:check`: version, license, required-file, tag, and tracked-data
   contract.
 - `npm run verify`: authoritative aggregate local/release gate.
+
+Vitest runs test files sequentially when `CI` is set to reduce competing SQLite,
+durable filesystem, and native permission-check work on shared runners. Local
+runs retain file parallelism; explicit concurrency inside tests and existing
+test/subprocess deadlines are unchanged. Reproduce CI scheduling locally with
+`CI=true npm run verify`.
 
 GitHub Actions repeats full Linux verification on Node 22.16 and 24, exercises
 native SQLite dependency installation/tests for both runtimes on Linux and
