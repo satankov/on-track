@@ -996,7 +996,21 @@ function ProjectRail({
               onHome();
             }}
           >
-            On Track
+            <img
+              className="brand-wordmark brand-wordmark--light"
+              src="/branding/threadstr-wordmark-on-light.svg"
+              alt=""
+              width="192"
+              height="43"
+            />
+            <img
+              className="brand-wordmark brand-wordmark--dark"
+              src="/branding/threadstr-wordmark-on-dark.svg"
+              alt=""
+              width="192"
+              height="43"
+            />
+            <span className="brand-fallback">threadstr</span>
           </a>
           <p className="brand-subtitle">Private project threads</p>
         </div>
@@ -3853,7 +3867,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `on-track-${new Date().toISOString().slice(0, 10)}.on-track-backup`;
+    link.download = `threadstr-${new Date().toISOString().slice(0, 10)}.on-track-backup`;
     link.click();
     URL.revokeObjectURL(url);
   }

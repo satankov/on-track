@@ -40,7 +40,7 @@ describe("SQLite backup bundle", () => {
   let sourceDatabase: Database.Database;
 
   beforeEach(() => {
-    directory = mkdtempSync(join(tmpdir(), "on-track-bundle-"));
+    directory = mkdtempSync(join(tmpdir(), "threadstr-bundle-"));
     sourcePath = join(directory, "source.sqlite");
     sourceDatabase = openDatabase(sourcePath);
     sourceDatabase.exec(`

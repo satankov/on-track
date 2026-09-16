@@ -859,3 +859,12 @@ and prepared lifecycle/update-recovery smokes. The audit retains an existing
 moderate Fastify advisory. Independent review found no actionable issue.
 The scheduling change remains uncommitted; Windows and Linux Node 22 CI with
 this change have not run, so merge readiness is still pending those results.
+
+## Identity supersession — next release
+
+The historical names and examples above are preserved. The approved
+[threadstr transition](../adr/0010-threadstr-identity-and-cli-transition.md)
+supersedes current product/command naming with `threadstr` / `thr`, retaining
+`ontrack` as a compatibility alias and the documented storage/update identifiers.
+The latest published release is v0.0.8; the next version remains unselected.
+Use [current installation guidance](../install/README.md) for new work.

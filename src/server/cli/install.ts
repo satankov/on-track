@@ -19,6 +19,7 @@ import {
   getPublishedManifest,
 } from "./distribution.js";
 import { installCommand, openLocalBrowser } from "./platform.js";
+import { preflightCommands, prepareCommands } from "./launchers.js";
 import { buildPreparedSource } from "./build.js";
 import { retainPrepared } from "./prepared.js";
 import { managedStatus, softwareEnvironment, startManaged } from "./process.js";
@@ -140,6 +141,7 @@ export async function installManaged(
       releaseId: description.releaseId,
       runtimeId,
     };
+    preflightCommands(root, managedPaths(root, selection).node);
     if (existsSync(join(root, "install.json"))) {
       const state = readInstallState(root);
       if (
@@ -208,6 +210,9 @@ export async function installManaged(
       assertSeparateRoots(root, canonicalData);
       const owner = acquireInstanceOwner(canonicalData);
       owner.release();
+      // Adoption activates before profile installation. Its candidate needs
+      // the same stable dispatcher as an existing managed installation.
+      prepareCommands(root, managedPaths(root, selection).node);
       // The selection is recoverable preparation; install.json is the final
       // initialization record. A crash before it leaves bootstrap retryable.
       selectActiveRelease(root, previous ?? selection);
@@ -228,7 +233,7 @@ export async function installManaged(
       runtimeExecutable: managedPaths(root, selection).node,
     });
     console.log(
-      `On Track is installed. You can close this terminal.\nCommand: ${command}\nOpen a new terminal to use ontrack from PATH.`,
+      `threadstr is installed. You can close this terminal.\nCommand: ${command}\nOpen a new terminal to use thr from PATH.`,
     );
     const status = await managedStatus(root);
     if (status) {

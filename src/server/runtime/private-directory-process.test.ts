@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 function protect() {
-  const root = mkdtempSync(join(tmpdir(), "ontrack-permission-process-"));
+  const root = mkdtempSync(join(tmpdir(), "threadstr-permission-process-"));
   roots.push(root);
   // Exercise the Windows subprocess boundary on every host without running PowerShell.
   const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
@@ -45,7 +45,7 @@ function result(status: number | null, code?: string) {
 it("reports a bounded permission-check timeout without retrying or exposing subprocess output", () => {
   vi.mocked(spawnSync).mockReturnValue(result(null, "ETIMEDOUT"));
   expect(protect).toThrow(
-    "Private On Track directory permission check timed out.",
+    "Private threadstr directory permission check timed out.",
   );
   expect(spawnSync).toHaveBeenCalledTimes(1);
   expect(vi.mocked(spawnSync).mock.calls[0][2]).toMatchObject({
@@ -59,7 +59,7 @@ it.each([result(1), result(null, "EACCES")])(
   (failure) => {
     vi.mocked(spawnSync).mockReturnValue(failure);
     expect(protect).toThrow(
-      new Error("Could not establish private On Track directory permissions."),
+      new Error("Could not establish private threadstr directory permissions."),
     );
     expect(spawnSync).toHaveBeenCalledTimes(1);
   },

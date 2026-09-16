@@ -54,7 +54,7 @@ export async function managedStatus(
   if (!instance) return undefined;
   if (instance.installRoot !== root)
     throw new Error(
-      "This data directory belongs to another On Track installation. Stop that instance first.",
+      "This data directory belongs to another threadstr installation. Stop that instance first.",
     );
   try {
     return await requestControl(instance, "status", 2_000);
@@ -79,7 +79,7 @@ export async function waitForDataRelease(
       if (!/already in use/.test(String(error))) throw error;
       if (Date.now() >= end)
         throw new Error(
-          "On Track is still busy. No process was forcibly stopped.",
+          "threadstr is still busy. No process was forcibly stopped.",
           { cause: error },
         );
       await delay(100);
@@ -97,7 +97,7 @@ export async function stopManaged(root: string): Promise<void> {
     instance.installRoot !== root ||
     instance.nonce !== status.nonce
   )
-    throw new Error("On Track instance changed. Run status before retrying.");
+    throw new Error("threadstr instance changed. Run status before retrying.");
   await requestControl(instance, "stop");
   await waitForDataRelease(state.dataDirectory);
 }
@@ -171,10 +171,9 @@ export async function startManaged(
   const deadline = Date.now() + (options.timeoutMs ?? 30_000);
   while (Date.now() < deadline) {
     if (failure || exited)
-      throw new Error(
-        "On Track could not start. Run ontrack logs for details.",
-        { cause: failure },
-      );
+      throw new Error("threadstr could not start. Run thr logs for details.", {
+        cause: failure,
+      });
     const instance = readInstance(state.dataDirectory);
     if (instance?.nonce === launch.nonce) {
       try {
@@ -194,6 +193,6 @@ export async function startManaged(
     await delay(100);
   }
   throw new Error(
-    "Startup is taking longer than expected. Use ontrack status or logs; the process was not killed.",
+    "Startup is taking longer than expected. Use thr status or logs; the process was not killed.",
   );
 }

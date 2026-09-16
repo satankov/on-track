@@ -1,6 +1,6 @@
-# Releasing On Track
+# Releasing threadstr
 
-On Track uses reviewed version changes and automated tag-gated publication. The
+threadstr uses reviewed version changes and automated tag-gated publication. The
 authoritative version exists in `package.json`; `package-lock.json`, the changelog,
 and release tag must agree.
 
@@ -64,7 +64,7 @@ remain separate desktop evidence.
 
 1. Start a release branch from current `main` and choose an unused stable
    `X.Y.Z`. In the commands below, set `release_version` to that chosen value.
-   Never reuse published v0.0.6 or invent a managed compatibility floor.
+   Never reuse a published version or invent a managed compatibility floor.
 2. Move completed changelog entries from **Unreleased** to a dated version.
 3. Update both manifest versions without creating a tag:
 
@@ -123,7 +123,7 @@ signature. The initial channel trusts the fixed HTTPS publisher, reviewed
 checked-in hashes, and GitHub's immutable asset records. Hashes fetched from that
 same channel are not independent signatures. Independent signing/key management
 requires a separate reviewed implementation; do not describe these assets as
-cryptographically publisher-signed by On Track.
+cryptographically publisher-signed by threadstr.
 
 Before advertising a managed platform, record the exact OS version, architecture,
 private Node patch, native SQLite installation result, first install without
@@ -138,7 +138,7 @@ From an up-to-date, clean `main` checkout, verify the commit and then create and
 push an annotated matching tag:
 
 ```sh
-git tag -a "v$release_version" -m "On Track v$release_version"
+git tag -a "v$release_version" -m "threadstr v$release_version"
 git push origin "v$release_version"
 ```
 
@@ -152,8 +152,8 @@ verification gate prevents publication. An interrupted upload/publication can
 leave a draft; inspect it before retrying rather than overwriting assets blindly.
 Never move or reuse a published version tag; fix the issue in a new version.
 
-README and platform guides show release download URLs and an experimental
-notice for v0.0.7. Verify publication includes `install.sh` and `install.ps1`;
+README and platform guides disclose experimental installation and the next-release
+branding boundary. After publication, update the current-release notice. Verify publication includes `install.sh` and `install.ps1`;
 commands cannot work before those assets exist. Download the complete installer
 successfully before executing it. Remove experimental wording only after the
 deferred installation/platform validation passes in the next release.
@@ -163,7 +163,7 @@ deferred installation/platform validation passes in the next release.
 GitHub Releases are immutable historical artifacts. If a release is defective,
 mark it as affected in the changelog/security advisory and publish a corrected
 new version. Do not overwrite its tag. Users choose when to run
-`ontrack update` or install the corrected source release manually; normal use
+`thr update` or install the corrected source release manually; normal use
 does not poll for updates.
 
 Managed upgrades refuse older releases. Before activation commits, the journal
@@ -177,3 +177,17 @@ Release packaging also generates `INSTALL.md` with version-specific macOS/Linux
 and PowerShell one-command setup plus links to the full manual/managed guides.
 The release workflow prepends it to generated notes. These commands are only
 usable after the corresponding assets are published.
+
+## threadstr transition release gate
+
+The next release introduces threadstr and `thr`; its version remains unselected.
+Preserve the `on-track-vX.Y.Z.zip` asset pattern, repository URLs, bootstrap tokens,
+manifest protocol, and managed compatibility floor `0.0.7`. Published v0.0.8
+clients require these identities. See [compatibility](compatibility.md) and
+[ADR-0010](adr/0010-threadstr-identity-and-cli-transition.md).
+
+Before release, run `node scripts/managed-upgrade-compat.mjs --baseline v0.0.8`
+after the build, plus the managed platform workflow. The harness uses unchanged
+published source and a controlled candidate transport, not a live published upgrade.
+Complete native OS and published-upgrade checks before claiming those guarantees.
+Do not modify published assets, tags, or historical changelog entries.

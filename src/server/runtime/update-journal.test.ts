@@ -18,7 +18,9 @@ import {
 
 const roots: string[] = [];
 function fixture() {
-  const dataDirectory = mkdtempSync(join(tmpdir(), "ontrack-update-journal-"));
+  const dataDirectory = mkdtempSync(
+    join(tmpdir(), "threadstr-update-journal-"),
+  );
   roots.push(dataDirectory);
   const previous = {
     releaseId: "v0.0.8",

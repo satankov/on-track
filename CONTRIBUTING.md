@@ -1,4 +1,4 @@
-# Contributing to On Track
+# Contributing to threadstr
 
 Thank you for helping improve a private-by-design personal project tracker.
 
@@ -7,7 +7,7 @@ Thank you for helping improve a private-by-design personal project tracker.
 - Search existing issues before opening a duplicate.
 - Use an issue for a material feature or architecture change so scope and data-
   safety consequences can be discussed first.
-- Never include a real On Track database, export, attachment, secret, NDA text,
+- Never include a real threadstr database, export, attachment, secret, NDA text,
   or other personal data in an issue, test, screenshot, or pull request.
 - Read [the architecture](docs/ARCHITECTURE.md) and relevant ADRs before changing
   persistence, trust boundaries, packaging, or sync assumptions.

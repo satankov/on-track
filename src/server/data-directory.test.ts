@@ -6,7 +6,7 @@ import { resolveDataDirectory } from "./data-directory.js";
 
 describe("application data directory", () => {
   it("honors absolute and relative explicit overrides", () => {
-    const absolutePath = resolve("on-track-data");
+    const absolutePath = resolve("threadstr-data");
 
     expect(resolveDataDirectory({ ON_TRACK_DATA_DIR: absolutePath })).toBe(
       absolutePath,

@@ -17,7 +17,7 @@ afterEach(() => {
     rmSync(root, { recursive: true, force: true });
 });
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), "ontrack-build-"));
+  const root = mkdtempSync(join(tmpdir(), "threadstr-build-"));
   roots.push(root);
   const runtime = join(root, "node space");
   const source = join(root, "source");

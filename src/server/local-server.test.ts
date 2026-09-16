@@ -11,7 +11,7 @@ afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
 });
 function setup() {
-  const dir = mkdtempSync(join(tmpdir(), "on-track-startup-"));
+  const dir = mkdtempSync(join(tmpdir(), "threadstr-startup-"));
   directories.push(dir);
   vi.stubEnv("ON_TRACK_DATA_DIR", dir);
   return dir;

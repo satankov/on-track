@@ -239,7 +239,7 @@ export function BackupSettingsWorkspace({
       >
         <div className="settings-panel-copy">
           <h2 id="backup-export-heading">Export projects</h2>
-          <p>Create one restorable On Track backup.</p>
+          <p>Create one restorable threadstr backup.</p>
         </div>
         <ProjectChecklist
           label="Projects to export"
@@ -276,7 +276,7 @@ export function BackupSettingsWorkspace({
           <p>Choose a backup to inspect its projects before importing.</p>
         </div>
         <label className="field-label" htmlFor="database-import">
-          Choose On Track backup
+          Choose threadstr backup
         </label>
         <input
           id="database-import"

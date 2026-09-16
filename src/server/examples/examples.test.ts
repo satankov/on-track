@@ -9,7 +9,7 @@ import type { FastifyInstance } from "fastify";
 let directory: string;
 let app: FastifyInstance;
 beforeEach(() => {
-  directory = mkdtempSync(join(tmpdir(), "on-track-examples-"));
+  directory = mkdtempSync(join(tmpdir(), "threadstr-examples-"));
   const databasePath = join(directory, "on-track.sqlite");
   app = buildApp({ database: openDatabase(databasePath), databasePath });
 });

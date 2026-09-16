@@ -25,7 +25,7 @@ describe("streamed database-transfer upload staging", () => {
   let dataDirectory: string;
 
   beforeEach(() => {
-    dataDirectory = mkdtempSync(join(tmpdir(), "on-track-upload-"));
+    dataDirectory = mkdtempSync(join(tmpdir(), "threadstr-upload-"));
   });
 
   afterEach(() => {
@@ -192,7 +192,7 @@ describe("streamed database-transfer upload staging", () => {
   it.runIf(process.platform !== "win32")(
     "rejects a symlinked staging directory",
     async () => {
-      const outside = mkdtempSync(join(tmpdir(), "on-track-upload-outside-"));
+      const outside = mkdtempSync(join(tmpdir(), "threadstr-upload-outside-"));
       symlinkSync(outside, join(dataDirectory, ".transfer-staging"));
 
       try {

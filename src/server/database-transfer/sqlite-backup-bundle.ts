@@ -370,7 +370,7 @@ export function validateSqliteBackupBundle(
     });
     if (applicationId !== SQL_ON_TRACK_BACKUP_APPLICATION_ID) {
       throw validationError(
-        "This is not a supported versioned On Track backup bundle.",
+        "This is not a supported versioned threadstr backup bundle.",
       );
     }
     validateIntegrity(database);

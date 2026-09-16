@@ -91,7 +91,7 @@ export const test = base.extend<Record<string, never>, WorkerFixtures>({
     async ({ browserName }, use, workerInfo) => {
       void browserName;
       const port = 4_310 + workerInfo.workerIndex;
-      const dataDirectory = mkdtempSync(join(tmpdir(), "on-track-e2e-"));
+      const dataDirectory = mkdtempSync(join(tmpdir(), "threadstr-e2e-"));
       let server = await startServer(port, dataDirectory);
       const app: LocalApp = {
         url: `http://127.0.0.1:${port}`,

@@ -44,7 +44,7 @@ export function assertUpdateStartupAllowed(
   }
   if (!identity?.transactionId)
     throw new UpdateJournalError(
-      "An update is pending. Run ontrack to recover before starting the application.",
+      "An update is pending. Run thr to recover before starting the application.",
     );
   if (
     identity.transactionId !== journal.transactionId ||

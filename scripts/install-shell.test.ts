@@ -25,7 +25,7 @@ test
   .each(["defaults", "root-only", "options"])(
   "installer forwards %s arguments with the system Bash",
   (mode) => {
-    const directory = mkdtempSync(join(tmpdir(), "ontrack-shell-"));
+    const directory = mkdtempSync(join(tmpdir(), "threadstr-shell-"));
     directories.push(directory);
     const home = join(directory, "fresh home é");
     const bin = join(directory, "bin");

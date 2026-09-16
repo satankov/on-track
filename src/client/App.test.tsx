@@ -73,6 +73,16 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
 }
 
 describe("personal project chat workspace", () => {
+  it("presents the approved threadstr wordmark without changing Home navigation", async () => {
+    render(<App api={createApi()} />);
+    const home = screen.getByRole("link", { name: "Home" });
+    expect(home).toHaveAttribute("href", "/");
+    expect(home.querySelector("img")).toHaveAttribute(
+      "src",
+      "/branding/threadstr-wordmark-on-light.svg",
+    );
+    expect(home).toHaveTextContent("threadstr");
+  });
   it("uses the regular inactive composer and highlights it for every blocked action", async () => {
     localStorage.clear();
     const user = userEvent.setup();
@@ -402,11 +412,11 @@ describe("personal project chat workspace", () => {
     await user.click(screen.getByRole("button", { name: /Settings/ }));
     await user.click(screen.getByRole("button", { name: /Backups/ }));
     await user.upload(
-      screen.getByLabelText("Choose On Track backup"),
+      screen.getByLabelText("Choose threadstr backup"),
       new File(["one"], "one.on-track-backup"),
     );
     await user.upload(
-      screen.getByLabelText("Choose On Track backup"),
+      screen.getByLabelText("Choose threadstr backup"),
       new File(["two"], "two.on-track-backup"),
     );
     expect(api.previewDatabase).toHaveBeenCalledTimes(1);
@@ -439,7 +449,7 @@ describe("personal project chat workspace", () => {
       await user.click(screen.getByRole("button", { name: /Settings/ }));
       await user.click(screen.getByRole("button", { name: /Backups/ }));
       await user.upload(
-        screen.getByLabelText("Choose On Track backup"),
+        screen.getByLabelText("Choose threadstr backup"),
         new File(["data"], "data.on-track-backup"),
       );
       await user.click(
@@ -492,7 +502,7 @@ describe("personal project chat workspace", () => {
       await user.click(screen.getByRole("button", { name: /Settings/ }));
       await user.click(screen.getByRole("button", { name: /Backups/ }));
       await user.upload(
-        screen.getByLabelText("Choose On Track backup"),
+        screen.getByLabelText("Choose threadstr backup"),
         new File(["data"], "data.on-track-backup"),
       );
       if (mode === "replace")
@@ -554,7 +564,7 @@ describe("personal project chat workspace", () => {
     await user.click(screen.getByRole("button", { name: /Settings/ }));
     await user.click(screen.getByRole("button", { name: /Backups/ }));
     await user.upload(
-      screen.getByLabelText("Choose On Track backup"),
+      screen.getByLabelText("Choose threadstr backup"),
       new File(["data"], "data.on-track-backup"),
     );
     expect(
@@ -2425,7 +2435,7 @@ describe("personal project chat workspace", () => {
     await user.keyboard("{Meta>}{Enter}{/Meta}");
     expect(await screen.findByText("Decision")).toBeVisible();
     expect(screen.getByText("Decision").tagName).toBe("STRONG");
-    expect(document.querySelector("img")).toBeNull();
+    expect(document.querySelector(".history img")).toBeNull();
     expect(composer).toHaveValue("");
     expect(sender).toHaveValue("Maya Chen");
   });
@@ -2898,10 +2908,16 @@ describe("personal project chat workspace", () => {
         }),
       ),
     });
-    const createObjectURL = vi.fn(() => "blob:on-track-export");
+    const createObjectURL = vi.fn(() => "blob:threadstr-export");
     const revokeObjectURL = vi.fn();
     vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      expect(this.download).toMatch(
+        /^threadstr-\d{4}-\d{2}-\d{2}\.on-track-backup$/,
+      );
+    });
     render(<App api={api} />);
 
     await user.click(screen.getByRole("button", { name: /Settings/ }));
@@ -2913,7 +2929,7 @@ describe("personal project chat workspace", () => {
       screen.getByRole("heading", { name: "Backup settings" }),
     ).toBeVisible();
     expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
-    expect(screen.getByLabelText("Choose On Track backup")).toHaveAttribute(
+    expect(screen.getByLabelText("Choose threadstr backup")).toHaveAttribute(
       "accept",
       ".on-track-backup,application/vnd.on-track.backup+sqlite",
     );
@@ -3034,7 +3050,7 @@ describe("personal project chat workspace", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Export failed");
 
     await user.upload(
-      screen.getByLabelText("Choose On Track backup"),
+      screen.getByLabelText("Choose threadstr backup"),
       new File(["bad"], "bad.on-track-backup", {
         type: "application/vnd.on-track.backup+sqlite",
       }),
@@ -3060,7 +3076,7 @@ describe("personal project chat workspace", () => {
     await user.click(screen.getByRole("button", { name: /Settings/ }));
     await user.click(screen.getByRole("button", { name: /Backups/ }));
     await user.upload(
-      screen.getByLabelText("Choose On Track backup"),
+      screen.getByLabelText("Choose threadstr backup"),
       new File(["SQLite format 3"], "backup.on-track-backup", {
         type: "application/vnd.on-track.backup+sqlite",
       }),
@@ -3100,7 +3116,7 @@ describe("personal project chat workspace", () => {
     await user.click(screen.getByRole("button", { name: /Settings/ }));
     await user.click(screen.getByRole("button", { name: /Backups/ }));
     await user.upload(
-      screen.getByLabelText("Choose On Track backup"),
+      screen.getByLabelText("Choose threadstr backup"),
       new File(["SQLite format 3"], "backup.on-track-backup", {
         type: "application/vnd.on-track.backup+sqlite",
       }),

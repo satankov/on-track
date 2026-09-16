@@ -11,6 +11,7 @@ import {
 import { MaintenanceGate } from "../database-transfer/maintenance-gate.js";
 import { startControlServer, type ControlStatus } from "./control-server.js";
 import { UpdateJournalStore } from "./update-journal.js";
+import { provisionPrimaryCommand } from "../cli/launchers.js";
 
 const launchSchema = z.strictObject({
   installRoot: z.string().refine(isAbsolute),
@@ -44,7 +45,7 @@ export function readInstance(
   try {
     const stat = lstatSync(path);
     if (process.platform !== "win32" && (stat.mode & 0o077) !== 0)
-      throw new Error("On Track instance metadata must be private.");
+      throw new Error("threadstr instance metadata must be private.");
     return instanceSchema.parse(readJsonFile(path));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
@@ -152,8 +153,17 @@ export async function startManagedControl(options: {
               journal.candidate.buildId !== launch.buildId
             )
               throw new Error("Candidate selection mismatch.");
-            if (journal.state !== "committed")
+            if (journal.state !== "committed") {
+              // Old protocol-1 updaters invoke this new candidate handler.
+              // Provision before commit, without rewriting their dispatcher.
+              try {
+                provisionPrimaryCommand(launch.installRoot);
+              } catch (error) {
+                console.error(String(error));
+                throw error;
+              }
               store.commit(launch.updateTransactionId);
+            }
             gate.resume();
           } else if (request === "resume") {
             const journal = store.read();

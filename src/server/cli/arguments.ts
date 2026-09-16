@@ -20,7 +20,7 @@ export function parseArguments(args: string[]): CliArguments {
       "--describe-runtime",
     ].includes(command)
   )
-    throw new Error("Unknown command. Run ontrack --help.");
+    throw new Error("Unknown command. Run thr --help.");
   const options: Record<string, string | boolean> = {};
   let version: string | undefined;
   const values = new Set([
@@ -66,7 +66,7 @@ export function parseArguments(args: string[]): CliArguments {
       /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(argument)
     )
       version = argument;
-    else throw new Error("Expected a published version such as v0.0.9.");
+    else throw new Error("Expected a published version in vX.Y.Z form.");
   }
   return { command, ...(version ? { version } : {}), options };
 }

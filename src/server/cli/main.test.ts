@@ -78,7 +78,7 @@ beforeEach(() => {
   vi.stubEnv("ON_TRACK_DATA_DIR", undefined);
   vi.stubEnv("ON_TRACK_PORT", undefined);
   vi.stubEnv("ON_TRACK_INSTALL_ROOT", undefined);
-  root = realpathSync(mkdtempSync(join(tmpdir(), "ontrack-main-")));
+  root = realpathSync(mkdtempSync(join(tmpdir(), "threadstr-main-")));
   data = join(root, "data");
   mkdirSync(data);
   writeInstallState(root, { protocol: 1, dataDirectory: data, port: 4173 });
@@ -115,7 +115,7 @@ function printed() {
 it("shows offline help and manual alternative without touching installation state", async () => {
   await main(["--help", "--root", join(root, "absent")]);
   expect(printed()).toContain("npm run quickstart");
-  expect(printed()).toContain("ontrack update");
+  expect(printed()).toContain("thr update");
   expect(managedStatus).not.toHaveBeenCalled();
   expect(acquireInstanceOwner).not.toHaveBeenCalled();
 });
@@ -151,7 +151,7 @@ it("explains a missing installation and refuses conflicting saved settings", asy
 it("reports the saved installed version when stopped and authenticated state when running", async () => {
   vi.stubEnv("ON_TRACK_INSTALL_ROOT", root);
   await main(["--version"]);
-  expect(printed()).toContain("On Track 0.0.9 (managed): stopped");
+  expect(printed()).toContain("threadstr 0.0.9 (managed): stopped");
   vi.mocked(managedStatus).mockResolvedValue({
     ...ready,
     state: "maintenance",

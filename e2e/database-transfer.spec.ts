@@ -32,7 +32,7 @@ test("selects exported projects, merges independent copies, and replaces with se
   const download = await downloadPromise;
   const path = await download.path();
   expect(path).toBeTruthy();
-  await page.getByLabel("Choose On Track backup").setInputFiles(path!);
+  await page.getByLabel("Choose threadstr backup").setInputFiles(path!);
   const imports = page.getByRole("group", { name: "Projects to import" });
   await expect(imports.getByRole("checkbox")).toHaveCount(2);
   await expect(
@@ -54,8 +54,8 @@ test("selects exported projects, merges independent copies, and replaces with se
     projects.filter((project) => project.title.startsWith(names[0])),
   ).toHaveLength(2);
   expect(projects.some((project) => project.title === names[2])).toBe(true);
-  await page.getByLabel("Choose On Track backup").setInputFiles([]);
-  await page.getByLabel("Choose On Track backup").setInputFiles(path!);
+  await page.getByLabel("Choose threadstr backup").setInputFiles([]);
+  await page.getByLabel("Choose threadstr backup").setInputFiles(path!);
   await imports.getByRole("checkbox", { name: new RegExp(names[0]) }).uncheck();
   await page.getByRole("radio", { name: "Replace whole DB" }).check();
   await page.emulateMedia({ reducedMotion: "reduce" });

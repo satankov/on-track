@@ -19,7 +19,7 @@ import * as projectImport from "./project-import.js";
 let directory: string;
 let app: FastifyInstance;
 beforeEach(() => {
-  directory = mkdtempSync(join(tmpdir(), "on-track-selective-"));
+  directory = mkdtempSync(join(tmpdir(), "threadstr-selective-"));
   const path = join(directory, "on-track.sqlite");
   app = buildApp({
     database: openDatabase(path),

@@ -13,7 +13,7 @@ import {
 
 const roots: string[] = [];
 function fixture() {
-  const directory = mkdtempSync(join(tmpdir(), "ontrack-update-recovery-"));
+  const directory = mkdtempSync(join(tmpdir(), "threadstr-update-recovery-"));
   roots.push(directory);
   const store = new UpdateJournalStore(directory);
   const previous = {
@@ -155,7 +155,7 @@ it("resumes the untouched old database before candidate_started and rejects a di
   };
   expect(recoverUpdate(options)).toMatchObject({ outcome: "unchanged" });
   expect(store.read()?.state).toBe("intent");
-  const other = mkdtempSync(join(tmpdir(), "ontrack-other-install-"));
+  const other = mkdtempSync(join(tmpdir(), "threadstr-other-install-"));
   roots.push(other);
   expect(() => recoverUpdate({ ...options, installRoot: other })).toThrow(
     /installation identity/,

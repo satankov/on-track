@@ -115,7 +115,7 @@ export async function requestControl(
       reject(error);
     };
     socket.setTimeout(timeoutMs, () =>
-      fail(new Error("On Track control request timed out.")),
+      fail(new Error("threadstr control request timed out.")),
     );
     socket.on("error", fail);
     socket.on("connect", () =>
@@ -149,7 +149,7 @@ export async function requestControl(
     });
     socket.on("end", () => {
       if (received.indexOf(10) < 0)
-        fail(new Error("On Track control connection closed."));
+        fail(new Error("threadstr control connection closed."));
     });
   });
 }

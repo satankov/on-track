@@ -31,7 +31,7 @@ it("rejects malformed or secret-bearing unrecognized launch options", () => {
   expect(() => parseManagedLaunch("x".repeat(8193))).toThrow(/configuration/);
 });
 it("treats missing instance metadata as stopped without touching the database", () => {
-  const directory = mkdtempSync(join(tmpdir(), "on-track-instance-"));
+  const directory = mkdtempSync(join(tmpdir(), "threadstr-instance-"));
   directories.push(directory);
   expect(readInstance(directory)).toBeUndefined();
 });
@@ -41,7 +41,7 @@ it("rejects project bodies before parsing while frozen but keeps health availabl
   const { openDatabase } = await import("../db/database.js");
   const { MaintenanceGate } =
     await import("../database-transfer/maintenance-gate.js");
-  const directory = mkdtempSync(join(tmpdir(), "on-track-frozen-"));
+  const directory = mkdtempSync(join(tmpdir(), "threadstr-frozen-"));
   directories.push(directory);
   const gate = new MaintenanceGate();
   await gate.freezeAndDrain();

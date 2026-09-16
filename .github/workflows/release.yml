@@ -80,13 +80,13 @@ jobs:
             echo 'Set MANAGED_MINIMUM_VERSION to the reviewed first protocol-aware release before publishing.' >&2
             exit 1
           fi
-          npm run release:managed -- --output "$RUNNER_TEMP/ontrack-managed-assets" --minimum-version "$MANAGED_MINIMUM_VERSION"
+          npm run release:managed -- --output "$RUNNER_TEMP/threadstr-managed-assets" --minimum-version "$MANAGED_MINIMUM_VERSION"
       - name: Upload all assets to draft before immutable publication
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP"/ontrack-managed-assets/* \
+          gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP"/threadstr-managed-assets/* \
             --repo "$GITHUB_REPOSITORY" --verify-tag --draft --generate-notes \
-            --notes-file "$RUNNER_TEMP/ontrack-managed-assets/INSTALL.md" \
-            --title "On Track $GITHUB_REF_NAME"
+            --notes-file "$RUNNER_TEMP/threadstr-managed-assets/INSTALL.md" \
+            --title "threadstr $GITHUB_REF_NAME"
           gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false

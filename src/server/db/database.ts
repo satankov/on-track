@@ -32,7 +32,7 @@ export function openDatabase(filename: string): Database.Database {
       .all() as string[];
     if (attachmentColumns.includes("content")) {
       throw new Error(
-        "This database uses the obsolete development attachment schema. Reset local data in the On Track data directory before continuing; unreleased BLOB attachments are not migrated.",
+        "This database uses the obsolete development attachment schema. Reset local data in the threadstr data directory before continuing; unreleased BLOB attachments are not migrated.",
       );
     }
     sqlite.pragma("journal_mode = WAL");
@@ -52,7 +52,7 @@ export function openDatabase(filename: string): Database.Database {
         latestAppliedMigration > LATEST_BUNDLED_MIGRATION_AT
       ) {
         throw new Error(
-          "This database contains a newer migration. Upgrade On Track before opening it.",
+          "This database contains a newer migration. Upgrade threadstr before opening it.",
         );
       }
     }
@@ -63,15 +63,15 @@ export function openDatabase(filename: string): Database.Database {
       .pluck()
       .get() as number | undefined;
     if (schemaVersion === undefined) {
-      throw new Error("On Track database schema metadata is missing");
+      throw new Error("threadstr database schema metadata is missing");
     }
     if (schemaVersion > CURRENT_SCHEMA_VERSION) {
       throw new Error(
-        "This database was created by a newer version of On Track. Upgrade the application before opening it.",
+        "This database was created by a newer version of threadstr. Upgrade the application before opening it.",
       );
     }
     if (schemaVersion < CURRENT_SCHEMA_VERSION) {
-      throw new Error("On Track database migrations did not complete");
+      throw new Error("threadstr database migrations did not complete");
     }
     for (const sidecar of [`${filename}-wal`, `${filename}-shm`]) {
       if (existsSync(sidecar)) chmodSync(sidecar, 0o600);

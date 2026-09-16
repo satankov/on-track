@@ -45,7 +45,7 @@ describe("local project-chat API", () => {
   let nativeFileActions: NativeFileActions;
 
   beforeEach(() => {
-    directory = mkdtempSync(join(tmpdir(), "on-track-api-"));
+    directory = mkdtempSync(join(tmpdir(), "threadstr-api-"));
     sequence = 0;
     exportDirectoryCleanup = vi.fn((path: string) =>
       rmSync(path, { recursive: true, force: true }),
@@ -1105,10 +1105,10 @@ describe("local project-chat API", () => {
       "application/vnd.on-track.backup+sqlite",
     );
     expect(exported.headers["content-disposition"]).toMatch(
-      /\.on-track-backup"$/,
+      /^attachment; filename="threadstr-\d{4}-\d{2}-\d{2}\.on-track-backup"$/,
     );
 
-    const importedDirectory = mkdtempSync(join(tmpdir(), "on-track-import-"));
+    const importedDirectory = mkdtempSync(join(tmpdir(), "threadstr-import-"));
     const importedPath = join(importedDirectory, "on-track.sqlite");
     const importedDb = openDatabase(importedPath);
     const importedApp = buildApp({
@@ -1369,7 +1369,7 @@ describe("local project-chat API", () => {
 
   it("reports database transfer as unavailable without a managed database path", async () => {
     const unmanagedDirectory = mkdtempSync(
-      join(tmpdir(), "on-track-unmanaged-"),
+      join(tmpdir(), "threadstr-unmanaged-"),
     );
     const unmanagedApp = buildApp({
       database: openDatabase(join(unmanagedDirectory, "on-track.sqlite")),
@@ -1415,7 +1415,7 @@ describe("local project-chat API", () => {
     expect(imported.json()).toEqual({
       code: "invalid_backup",
       message:
-        "The selected file is not a valid supported On Track backup bundle.",
+        "The selected file is not a valid supported threadstr backup bundle.",
     });
   });
 
@@ -1428,7 +1428,7 @@ describe("local project-chat API", () => {
           release = resolve;
         }),
     );
-    const blockedDirectory = mkdtempSync(join(tmpdir(), "on-track-gated-"));
+    const blockedDirectory = mkdtempSync(join(tmpdir(), "threadstr-gated-"));
     const blockedPath = join(blockedDirectory, "on-track.sqlite");
     const blockedApp = buildApp({
       database: openDatabase(blockedPath),
@@ -1469,7 +1469,7 @@ describe("local project-chat API", () => {
     }
   });
 
-  it("rejects a valid SQLite file that is not an On Track database", async () => {
+  it("rejects a valid SQLite file that is not a threadstr database", async () => {
     const otherPath = join(directory, "other.sqlite");
     const otherDatabase = openDatabase(otherPath);
     otherDatabase.exec("DROP TABLE notes; DROP TABLE chats;");

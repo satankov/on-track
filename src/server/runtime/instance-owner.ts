@@ -68,7 +68,7 @@ export function acquireInstanceOwner(
     database?.close();
     if ((error as { code?: string }).code === "SQLITE_BUSY")
       throw new Error(
-        "On Track data directory is already in use by another instance.",
+        "threadstr data directory is already in use by another instance.",
         { cause: error },
       );
     throw error;

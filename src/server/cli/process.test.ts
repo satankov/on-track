@@ -97,7 +97,7 @@ beforeEach(() => {
   vi.mocked(delay).mockImplementation(async () => {
     clock += 100;
   });
-  root = realpathSync(mkdtempSync(join(tmpdir(), "ontrack-process-")));
+  root = realpathSync(mkdtempSync(join(tmpdir(), "threadstr-process-")));
   data = join(root, "data");
   mkdirSync(data);
   writeInstallState(root, { protocol: 1, dataDirectory: data, port: 4173 });
@@ -145,7 +145,7 @@ it("treats missing or refused metadata as stopped, but refuses a different insta
     installRoot: "elsewhere",
   });
   await expect(managedStatus(root)).rejects.toThrow(
-    /another On Track installation/,
+    /another threadstr installation/,
   );
   expect(requestControl).not.toHaveBeenCalled();
   vi.mocked(readInstance).mockReturnValue(instance());
@@ -258,7 +258,7 @@ it.each(["error", "exit"] as const)(
       if (event === "error") child.emit("error", new Error("spawn failed"));
       else child.emit("exit", 1);
     });
-    await expect(startManaged(root)).rejects.toThrow(/ontrack logs/);
+    await expect(startManaged(root)).rejects.toThrow(/thr logs/);
     expect(child.kill).not.toHaveBeenCalled();
   },
 );

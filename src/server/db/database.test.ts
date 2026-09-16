@@ -14,7 +14,7 @@ describe("SQLite project-chat persistence", () => {
   let repository: SqliteChatRepository;
 
   beforeEach(() => {
-    directory = mkdtempSync(join(tmpdir(), "on-track-db-"));
+    directory = mkdtempSync(join(tmpdir(), "threadstr-db-"));
     database = openDatabase(join(directory, "on-track.sqlite"));
     repository = new SqliteChatRepository(database);
   });
@@ -887,7 +887,7 @@ describe("SQLite project-chat persistence", () => {
     database.close();
 
     expect(() => openDatabase(join(directory, "on-track.sqlite"))).toThrow(
-      /newer version of On Track/,
+      /newer version of threadstr/,
     );
     database = new Database(join(directory, "on-track.sqlite"));
   });

@@ -1,24 +1,30 @@
-# Install On Track on macOS
+# Install threadstr on macOS
+
+> **Next-release guidance:** this branch prepares threadstr and `thr`. The latest
+> published release is still [On Track v0.0.8](https://github.com/satankov/on-track/releases/tag/v0.0.8),
+> whose installer provides `ontrack`. Until the next release is published, the
+> `latest` downloads below install v0.0.8; use its
+> [installation guide](https://github.com/satankov/on-track/tree/v0.0.8/docs/install)
+> and `ontrack` commands. No next version has been selected.
 
 ## Quick setup — one command
 
-> **Experimental in v0.0.7:** platform validation is ongoing.
+> **Experimental managed installation:** platform validation is ongoing.
 > [Manual setup](#manual-setup) remains available.
 
 Open Terminal and run:
 
 ```sh
-curl -fsSL https://github.com/satankov/on-track/releases/latest/download/install.sh -o ontrack-install.sh && bash ontrack-install.sh --no-open
+curl -fsSL https://github.com/satankov/on-track/releases/latest/download/install.sh -o thr-install.sh && bash thr-install.sh --no-open
 ```
 
-Setup downloads a private Node runtime, installs the dependencies, builds On
-Track, and starts the server in the background. Open the address printed by
+Setup downloads a private Node runtime, installs the dependencies, builds
+threadstr, and starts the server in the background. Open the address printed by
 setup in your browser; you can then close Terminal. `--no-open` skips automatic
-browser opening and avoids the published v0.0.7 installer's
-`forward[@]: unbound variable` error in macOS's bundled Bash. If you already
-downloaded that installer and saw this error, retry with
-`bash ontrack-install.sh --no-open`. Git, a system Node installation, and
-administrator access are not required.
+browser opening. v0.0.8 fixes the published v0.0.7 installer's
+`forward[@]: unbound variable` error in macOS's bundled Bash. For an already
+saved v0.0.7 installer, `--no-open` remains the workaround. Git, a system Node
+installation, and administrator access are not required.
 
 Target: Apple Silicon and Intel Macs. Platform verification is still pending.
 Internet access and `bash`, `curl`, `tar`, `unzip`, `zipinfo`, `mktemp`, and
@@ -27,22 +33,23 @@ Internet access and `bash`, `curl`, `tar`, `unzip`, `zipinfo`, `mktemp`, and
 Open a **new terminal** after setup, then use:
 
 ```sh
-ontrack stop
-ontrack run
-ontrack status
-ontrack update
+thr stop
+thr run
+thr status
+thr update
 ```
 
-Run `ontrack run` after a reboot. See [commands and updates](README.md#commands-and-updates)
+Run `thr run` after a reboot. See [commands and updates](README.md#commands-and-updates)
 for logs and updating to a specific version.
 
 ### Install a specific version
 
-Use that release's installer URL instead of `latest`. For example, **if
-v0.0.9 has been published with installer files**:
+Use the exact tag of an already published release with installer assets. Replace
+`vX.Y.Z` below with that tag; the placeholder is not a selected next version:
 
 ```sh
-curl -fsSL https://github.com/satankov/on-track/releases/download/v0.0.9/install.sh -o ontrack-install.sh && bash ontrack-install.sh --no-open
+release_tag=vX.Y.Z
+curl -fsSL "https://github.com/satankov/on-track/releases/download/$release_tag/install.sh" -o thr-install.sh && bash thr-install.sh --no-open
 ```
 
 ### Download first, then run
@@ -50,25 +57,27 @@ curl -fsSL https://github.com/satankov/on-track/releases/download/v0.0.9/install
 To inspect the script or choose installation options, download it separately:
 
 ```sh
-curl -fsSL https://github.com/satankov/on-track/releases/latest/download/install.sh -o ontrack-install.sh
+curl -fsSL https://github.com/satankov/on-track/releases/latest/download/install.sh -o thr-install.sh
 ```
 
-Open `ontrack-install.sh` in a text editor, then run:
+Open `thr-install.sh` in a text editor, then run:
 
 ```sh
-bash ontrack-install.sh --no-open
+bash thr-install.sh --no-open
 ```
 
-For a custom data folder or port, use this **instead** of the default run command:
+For a new custom data folder or port, use this **instead** of the default run
+command. Existing users must substitute their recorded data path; do not switch
+to the sample path during an upgrade:
 
 ```sh
-bash ontrack-install.sh --data-dir "$HOME/On Track Data" --port 4180 --no-open
+bash thr-install.sh --data-dir "$HOME/threadstr Data" --port 4180 --no-open
 ```
 
 Setup remembers these choices. `--no-open` skips opening the browser;
 `--root /absolute/path` changes the application runtime folder; `--no-profile`
-skips adding `ontrack` to your shell profile. Runtime and data folders must be
-separate. Use `bash ontrack-install.sh --help` for all options.
+skips adding `thr` to your shell profile. Runtime and data folders must be
+separate. Use `bash thr-install.sh --help` for all options.
 
 ## Manual setup
 
@@ -82,7 +91,7 @@ node --version
 npm --version
 ```
 
-### 2. Download On Track
+### 2. Download threadstr
 
 Choose a version in [Releases](https://github.com/satankov/on-track/releases),
 download **Source code (zip)**, and extract it. Open a terminal in the extracted
@@ -95,14 +104,14 @@ out a published release tag instead.
 npm run quickstart
 ```
 
-Open [On Track](http://127.0.0.1:4173). Keep this terminal open while using the
+Open [threadstr](http://127.0.0.1:4173). Keep this terminal open while using the
 app. Press **Ctrl+C** to stop. For later starts, run `npm start` from the same
 folder.
 
-For a custom data folder or port:
+For a custom data folder or port (reuse your existing data path when upgrading):
 
 ```sh
-ON_TRACK_DATA_DIR="$HOME/On Track Data" ON_TRACK_PORT=4180 npm run quickstart
+ON_TRACK_DATA_DIR="$HOME/threadstr Data" ON_TRACK_PORT=4180 npm run quickstart
 ```
 
 Supply the same variables with `npm start` on later launches.
@@ -116,3 +125,6 @@ See [manual updates](README.md#manual-updates) before installing a newer version
 To move an existing manual installation to the background command workflow,
 follow [switching from manual setup](README.md#existing-projects-and-manual-installations).
 For startup, download, or update problems, see [troubleshooting](README.md#if-something-goes-wrong).
+
+The retained legacy data and runtime names are deliberate; see
+[compatibility guidance](../compatibility.md).

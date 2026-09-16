@@ -239,7 +239,7 @@ async function main() {
     env,
     stdio: "pipe",
   });
-  console.log("Building On Track…");
+  console.log("Building threadstr…");
   command(process.execPath, [npm, "run", "build"], {
     cwd: source,
     env,

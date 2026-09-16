@@ -222,7 +222,7 @@ export async function updateFromRelease(
   const staging = privateDirectory(join(root, "staging"));
   const workspace = mkdtempSync(join(staging, "prepare-"));
   try {
-    options.progress?.(`Downloading On Track ${manifest.version}…`);
+    options.progress?.(`Downloading threadstr ${manifest.version}…`);
     const archive = join(workspace, manifest.source.name);
     await downloadVerifiedAsset(manifest.source, archive);
     const source = join(workspace, "source");

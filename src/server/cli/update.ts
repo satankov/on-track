@@ -167,7 +167,7 @@ async function recoverOldImport(
       else
         reject(
           new Error(
-            "The previous version could not finish database recovery. Run ontrack logs before updating.",
+            "The previous version could not finish database recovery. Run thr logs before updating.",
           ),
         );
     });

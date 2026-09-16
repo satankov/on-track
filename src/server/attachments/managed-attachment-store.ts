@@ -132,7 +132,7 @@ export class ManagedAttachmentStore {
     options: ManagedAttachmentStoreOptions = {},
   ) {
     if (!isAbsolute(dataDirectory)) {
-      throw new TypeError("The On Track data directory must be absolute.");
+      throw new TypeError("The threadstr data directory must be absolute.");
     }
 
     this.namespaceFactory = options.namespaceFactory ?? randomUUID;

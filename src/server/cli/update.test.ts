@@ -59,7 +59,9 @@ vi.mock("../runtime/control-server.js", () => ({
 const roots: string[] = [];
 const owners: Array<ReturnType<typeof acquireInstanceOwner>> = [];
 function fixture() {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "ontrack-cli-update-")));
+  const base = realpathSync(
+    mkdtempSync(join(tmpdir(), "threadstr-cli-update-")),
+  );
   roots.push(base);
   const root = join(base, "runtime");
   const dataDirectory = join(base, "data");

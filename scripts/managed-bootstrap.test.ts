@@ -76,7 +76,7 @@ test("downloader refuses hostile redirect and oversized response", async () => {
   ).toBe("1234");
 });
 test("source extraction validates real ZIP bytes before writing and rejects extra entries", () => {
-  const root = mkdtempSync(join(tmpdir(), "ontrack-zip-"));
+  const root = mkdtempSync(join(tmpdir(), "threadstr-zip-"));
   dirs.push(root);
   writeFileSync(join(root, "package.json"), "{}");
   writeFileSync(join(root, "package-lock.json"), "{}");

@@ -1,8 +1,8 @@
-# On Track project
+# threadstr project
 
 ## Vision
 
-On Track is an open-source, private-by-default personal project tracker for
+threadstr is an open-source, private-by-default personal project tracker for
 managers, project managers, and individuals. It replaces scattered notes,
 decisions, meeting records, and progress spreadsheets with a familiar private
 chat-like stream: the user writes to their own project, not to a team.
@@ -15,25 +15,24 @@ recovery parts of that promise.
 
 ## Current phase
 
-Version 0.0.7 is the current published plaintext alpha release under
-Apache License 2.0, including Archive, selective backups/import, composer file
-drops, filter-position restoration, and a full-width add/edit composer. The approved
-[managed installation and CLI](plans/0021-managed-install-and-cli.md) adds a
-second installation path while retaining manual Node/npm setup. v0.0.7 is the
-first managed-compatible release (floor `0.0.7`), with installer assets published.
-Real installation validation is now in progress. It exposed a macOS Bash
-empty-array failure and an HTTP 415 updater failure; fixes remain local.
-The macOS guide documents the verified `--no-open` installation workaround.
-Clean OS/platform and upgrade validation remain incomplete.
+Version 0.0.8 is the latest published plaintext alpha release under Apache
+License 2.0. It fixes the macOS Bash installer and HTTP 415 updater defects in
+v0.0.7, the first managed-compatible release (floor `0.0.7`). Managed installation
+remains experimental; clean OS/platform and published-upgrade evidence is incomplete.
 
 ## Current objective
 
-Correct the published installer/updater defects and complete the experimental
-managed installation's real installation/OS validation for the next release.
-Address dependency and manual-validation follow-ups or record accepted limits.
-Verify the supported manual Node matrix at the selected candidate. Retain plaintext
-and portability warnings. Mobile remains a regression-protected alpha, not a
-dedicated design target.
+Prepare the next release with the **threadstr** identity, primary **thr** CLI,
+and built-in Examples. No next version is selected. The published v0.0.8 still
+uses On Track and `ontrack`; current source introduces the new identity while
+preserving the old command as a compatibility alias, existing data and update
+contracts. See [plan 0023](plans/0023-threadstr-rebrand.md),
+[ADR-0010](adr/0010-threadstr-identity-and-cli-transition.md), and
+[compatibility guidance](compatibility.md).
+
+Complete installation/platform and upgrade validation, retain the manual Node
+matrix and plaintext warnings, and record remaining evidence limits. Mobile
+remains a regression-protected alpha, not a dedicated design target.
 
 ## v0.0.1 outcome
 
@@ -150,7 +149,7 @@ dedicated design target.
   a browser-local preference. See [plan 0022](plans/0022-built-in-examples.md).
 
 - Create and switch between personal project chats, return Home through the
-  On Track brand, and retain reading positions during the current browser session.
+  threadstr brand, and retain reading positions during the current browser session.
 - Independently collapse the Pinned, Projects, and Archive sidebar sections during a session.
   All three headers remain visible when empty.
 - Pin and unpin projects in a stable sidebar section without changing their
@@ -256,14 +255,14 @@ tests and filesystem drag/drop validation still need issue records; their
 [two drafts](plans/0020-composer-drop-and-filter-scroll.md#required-tracker-follow-ups)
 are awaiting authorization. The [installer validation draft](plans/0021-managed-install-and-cli.md#required-tracker-follow-up)
 is also awaiting an issue record for the next release.
-[v0.0.7](https://github.com/satankov/on-track/releases/tag/v0.0.7) is published;
+[v0.0.8](https://github.com/satankov/on-track/releases/tag/v0.0.8) is the latest published release;
 the [publication commands](releases/v0.0.7.md) remain a historical runbook.
 Broader product priorities above remain strategy until scoped. Durable decisions
 live in `docs/adr/`; significant work lives in `docs/plans/`.
 
 ## Current risks
 
-- A copied On Track database is readable because at-rest encryption is absent.
+- A copied threadstr database is readable because at-rest encryption is absent.
 - Plaintext backup bundles contain readable database metadata and attached file
   bytes. Replace mode removes all current projects and files; Merge mode adds
   selected independent projects. Neither mode merges message histories. A lost

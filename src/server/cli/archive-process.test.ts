@@ -27,7 +27,7 @@ it.each([
 ])(
   "reports only allowlisted extraction diagnostics: %j",
   async (output, expected) => {
-    const root = mkdtempSync(join(tmpdir(), "ontrack-archive-error-"));
+    const root = mkdtempSync(join(tmpdir(), "threadstr-archive-error-"));
     roots.push(root);
     boundary.spawn.mockImplementation(() => {
       const child = Object.assign(new EventEmitter(), {
