@@ -830,3 +830,32 @@ rollback, interruption recovery and attachment preservation remain verified by
 local prepared fixtures, not by two real published managed releases. Fixes are
 uncommitted and unpublished; no real installation/data or remote resources were
 changed by this investigation.
+
+## v0.0.8 CI scheduling investigation — 2026-09-16
+
+[PR #31 CI](https://github.com/satankov/on-track/actions/runs/35068280069)
+at `8c236c7` failed in native Windows Node 24 and Linux Node 22 coverage tests.
+The Windows failure was a 15-second permission-helper subprocess timeout during
+fixture setup, before update recovery. The same test passed in 5.9 seconds in
+the [Windows managed job](https://github.com/satankov/on-track/actions/runs/35068280070/job/104703507097).
+Linux hit the unchanged five-second test limit in three separate storage suites;
+a subsequent import test received `maintenance_busy`. Timed-out async work can
+continue against that test file's mutable app variable, so the later 503 is
+consistent with a follow-on failure, not independent proof of a restore defect.
+
+The local mitigation makes Vitest test files sequential when `CI` is set.
+This reduces overlapping durable SQLite/filesystem and native PowerShell work
+on shared runners. Local parallelism and explicit within-test concurrency remain.
+No retries, timeout increases, permission caching, skipped assertions or runtime
+changes were added. The unchanged local coverage baseline passed 789 tests with
+one existing skip. Native CI must still confirm whether reduced contention
+resolves the reported failures; the logs alone do not establish their root cause.
+Reproduce the scheduling locally with `CI=true npm run verify`.
+
+`CI=true npm run verify` passed on macOS/Node 22.18.0: 789 tests and one
+existing skip, 39 browser tests and five existing skips, 91.40% line and 84.25%
+branch coverage, build/types/lint/format, migrations, release contract, audit
+and prepared lifecycle/update-recovery smokes. The audit retains an existing
+moderate Fastify advisory. Independent review found no actionable issue.
+The scheduling change remains uncommitted; Windows and Linux Node 22 CI with
+this change have not run, so merge readiness is still pending those results.

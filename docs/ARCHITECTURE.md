@@ -365,6 +365,12 @@ be hardened before production-readiness claims.
   contract.
 - `npm run verify`: authoritative aggregate local/release gate.
 
+Vitest runs test files sequentially when `CI` is set to reduce competing SQLite,
+durable filesystem, and native permission-check work on shared runners. Local
+runs retain file parallelism; explicit concurrency inside tests and existing
+test/subprocess deadlines are unchanged. Reproduce CI scheduling locally with
+`CI=true npm run verify`.
+
 GitHub Actions repeats full Linux verification on Node 22.16 and 24, exercises
 native SQLite dependency installation/tests for both runtimes on Linux and
 macOS and for Node 24 on Windows, performs dependency review and CodeQL analysis,
