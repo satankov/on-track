@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createFixtureArchive } from "./managed-upgrade-archive.mjs";
 import { windowsFixtureCommand } from "./managed-upgrade-commands.mjs";
 import { Buffer } from "node:buffer";
 import { execFile } from "node:child_process";
@@ -353,27 +354,7 @@ try {
     })),
   );
   const zip = join(base, `on-track-v${candidateVersion}.zip`);
-  if (process.platform === "win32") {
-    await run(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::CreateFromDirectory($env:THREADSTR_FIXTURE_SOURCE,$env:THREADSTR_FIXTURE_ZIP)",
-      ],
-      {
-        env: {
-          ...environment,
-          THREADSTR_FIXTURE_SOURCE: candidate,
-          THREADSTR_FIXTURE_ZIP: zip,
-        },
-      },
-    );
-  } else
-    await run("zip", ["-q", "-r", zip, ...readdirSync(candidate)], {
-      cwd: candidate,
-    });
+  createFixtureArchive(candidate, zip);
   const zipBytes = readFileSync(zip);
   const candidateManifest = createManagedManifest({
     description: describeRuntime(candidate),
@@ -383,6 +364,14 @@ try {
     sourceFiles,
     runtimes: oldManifest.runtimes,
   });
+  step("verify generated candidate archive before exercising the updater");
+  const archiveCheck = join(base, "candidate-archive-check");
+  mkdirSync(archiveCheck);
+  await extractVerifiedSource(
+    zip,
+    join(archiveCheck, "source"),
+    candidateManifest,
+  );
   const candidateManifestPath = join(base, "candidate-manifest.json");
   writeFileSync(candidateManifestPath, JSON.stringify(candidateManifest));
 
