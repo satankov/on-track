@@ -211,6 +211,7 @@ async function install(root, source, manifest, data, savedPort) {
   await run(
     node,
     [
+      join(repository, "scripts/managed-upgrade-cli.mjs"),
       cliPath(source),
       "install",
       "--root",
@@ -618,6 +619,44 @@ try {
     "PASS. Controlled publisher transport only; native shell profiles, browser preferences, online bootstrap and live published-to-published upgrade remain separate gates.",
   );
 } catch (error) {
+  // Inventory only disposable fixture runtimes; never dump operational records
+  // (which contain control credentials) or real user data into CI logs.
+  for (const root of roots) {
+    const directory = join(root, "runtimes");
+    try {
+      const inventory = readdirSync(directory)
+        .slice(0, 16)
+        .map((name) => {
+          const target = join(directory, name);
+          const executable = join(
+            target,
+            process.platform === "win32" ? "node.exe" : "bin/node",
+          );
+          try {
+            const stat = lstatSync(executable);
+            return {
+              name,
+              executable: {
+                size: stat.size,
+                regular: stat.isFile(),
+                links: stat.nlink,
+              },
+            };
+          } catch (failure) {
+            return {
+              name,
+              error: failure.code,
+              entries: lstatSync(target).isDirectory()
+                ? readdirSync(target).slice(0, 16)
+                : [],
+            };
+          }
+        });
+      console.error("Fixture runtime inventory:", JSON.stringify(inventory));
+    } catch (failure) {
+      console.error("Fixture runtime inventory unavailable:", failure.code);
+    }
+  }
   for (const root of roots)
     for (const name of ["preparation.log", "server.log"]) {
       const log = join(root, "logs", name);
