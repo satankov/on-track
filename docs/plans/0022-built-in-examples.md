@@ -442,3 +442,37 @@ nine-line capped height. `npm run security:check` passes its high-severity gate
 with the existing moderate Fastify advisory. The managed lifecycle smoke passes.
 `npm run test:managed-update` also passes successful activation, failed-candidate
 recovery, attachments, and postcommit restart checks.
+
+## Amsterdam story refinement — 2026-09-16
+
+The user approved replacing the simple Weekend trip content with one natural
+**🇳🇱 Trip to Amsterdam** notebook, without tutorial messages or reader exercises.
+The existing slug is preserved and content revision advances to 3; existing user
+copies remain independent. The story uses Pin, Attention, Todo, and Risk only,
+with Todo and Risk enabled as optional labels. Three embedded text files cover
+multiple attachments and an attachment-only attributed message. File prose
+describes opening the same managed attachment in the usual editor and saving in
+place. Native actions still require an editable project, as the read-only UI states.
+
+Fixed authored dates place departure on 16 December 2026 (three months after
+authoring), a predeparture check two days earlier, and a return-trip idea on
+16 September 2029 (three years after authoring). Review these dates in subsequent
+releases; reads never slide timestamps, and copies retain their original dates.
+Feature coverage and deliberate omissions are recorded beside the catalog.
+No schema, dependencies, or original/copy ownership changes are introduced.
+
+Refinement verification: `npm run build`, `npm run typecheck`, `npm run lint`,
+`npm run format:check`, and `npm run release:check` pass. Updated example/API/UI
+checks first failed on the old title/revision, then passed (101 tests).
+`npm run test:coverage` passes 830 tests (7 skips), with 90.03% statements and
+84.11% branches. The multi-file fixture exposed an unordered single-row lookup
+in a rollback test; it now selects the packing file explicitly and verifies
+cleanup of all published files. `npx playwright test e2e/examples.spec.ts
+e2e/branding.spec.ts` passes 11 tests (1 skip), including real long-message
+expansion, future divider, Links/Files filters, independent file editing,
+backup/restore, and desktop/mobile screenshots. Screenshots were inspected.
+Browser and socket-based tests required execution outside the filesystem sandbox.
+`npm run security:check` passes its high-severity gate with the existing moderate
+Fastify advisory. Scoped reviewer and diff checks found no actionable defects.
+The full release aggregate and managed installation smoke were not rerun for
+this content-only change; native file dispatch uses the existing fake adapter.

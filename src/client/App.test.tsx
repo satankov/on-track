@@ -85,7 +85,9 @@ describe("personal project chat workspace", () => {
       />,
     );
     await user.click(
-      await screen.findByRole("button", { name: "Open example Weekend trip" }),
+      await screen.findByRole("button", {
+        name: "Open example 🇳🇱 Trip to Amsterdam",
+      }),
     );
     const header = document.querySelector(".chat-header") as HTMLElement;
     expect(
@@ -134,7 +136,7 @@ describe("personal project chat workspace", () => {
     const project = {
       ...example,
       id: "copied-trip",
-      title: "Weekend trip (copy)",
+      title: "🇳🇱 Trip to Amsterdam (copy)",
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
@@ -152,7 +154,9 @@ describe("personal project chat workspace", () => {
     });
     render(<App api={api} />);
     await user.click(
-      await screen.findByRole("button", { name: "Open example Weekend trip" }),
+      await screen.findByRole("button", {
+        name: "Open example 🇳🇱 Trip to Amsterdam",
+      }),
     );
     expect(screen.getByText(/Read-only example/)).toBeVisible();
     expect(screen.getByRole("textbox", { name: "Add a note" })).toBeDisabled();
@@ -169,15 +173,17 @@ describe("personal project chat workspace", () => {
     expect(api.setNoteLabel).not.toHaveBeenCalled();
     expect(api.openAttachment).not.toHaveBeenCalled();
     expect(api.revealAttachment).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Files 1" }));
-    expect(screen.queryByText("A weekend away")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Files 2" }));
+    expect(
+      screen.queryByText("Amsterdam, at our own pace"),
+    ).not.toBeInTheDocument();
     await user.click(
       screen.getByRole("button", { name: "Create editable copy" }),
     );
     expect(
       await screen.findByRole("heading", { name: project.title }),
     ).toBeVisible();
-    expect(api.copyExample).toHaveBeenCalledExactlyOnceWith("weekend-trip", 1);
+    expect(api.copyExample).toHaveBeenCalledExactlyOnceWith("weekend-trip", 3);
     expect(screen.queryByText(/Read-only example/)).not.toBeInTheDocument();
     expect(
       screen.getAllByRole("button", { name: "Edit message" })[0],
@@ -194,7 +200,9 @@ describe("personal project chat workspace", () => {
     });
     render(<App api={api} />);
     await user.click(
-      await screen.findByRole("button", { name: "Open example Weekend trip" }),
+      await screen.findByRole("button", {
+        name: "Open example 🇳🇱 Trip to Amsterdam",
+      }),
     );
     await user.click(
       screen.getByRole("button", { name: "Settings. Local only." }),
@@ -224,7 +232,7 @@ describe("personal project chat workspace", () => {
     await user.click(
       await screen.findByRole("button", { name: "Open My trip" }),
     );
-    await user.click(screen.getByRole("button", { name: "Files 1" }));
+    await user.click(screen.getByRole("button", { name: "Files 2" }));
     localStorage.setItem("on-track-show-examples", "false");
     act(() =>
       window.dispatchEvent(
@@ -234,7 +242,7 @@ describe("personal project chat workspace", () => {
         }),
       ),
     );
-    expect(screen.getByRole("button", { name: "Files 1" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Files 2" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -252,7 +260,9 @@ describe("personal project chat workspace", () => {
     });
     render(<App api={api} />);
     await user.click(
-      await screen.findByRole("button", { name: "Open example Weekend trip" }),
+      await screen.findByRole("button", {
+        name: "Open example 🇳🇱 Trip to Amsterdam",
+      }),
     );
     await user.click(
       screen.getByRole("button", { name: "Create editable copy" }),

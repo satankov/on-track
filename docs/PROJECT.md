@@ -144,7 +144,7 @@ dedicated design target.
 
 ## Current capabilities
 
-- Built-in Examples contains one simple read-only Weekend trip notebook. Users
+- Built-in Examples contains one read-only 🇳🇱 Trip to Amsterdam notebook. Users
   explore its filters and create independent editable projects; originals update
   with the app and stay out of backups. General settings can hide Examples using
   a browser-local preference. See [plan 0022](plans/0022-built-in-examples.md).
