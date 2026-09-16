@@ -143,6 +143,12 @@ remains a regression-protected alpha, not a dedicated design target.
 
 ## Current capabilities
 
+- Home preserves project-first navigation and adds explicit GitHub release checks,
+  compatible managed/manual update instructions, and curated guide/source links.
+  The reserved bug-report block is a noninteractive coming-soon placeholder.
+  No polling, automatic updates, diagnostic collection or reporting service is
+  introduced. See [plan 0024](plans/0024-home-updates-and-support.md).
+
 - Built-in Examples contains one read-only 🇳🇱 Trip to Amsterdam notebook. Users
   explore its filters and create independent editable projects; originals update
   with the app and stay out of backups. General settings can hide Examples using

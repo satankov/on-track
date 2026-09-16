@@ -75,6 +75,12 @@ describe("local project-chat API", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it("exposes safe Home information without contacting a release service", async () => {
+    const response = await app.inject({ method: "GET", url: "/api/home/info" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ version: null, installation: "manual" });
+  });
+
   it("archives projects independently of edits and rejects pinning until restored", async () => {
     const created = await app.inject({
       method: "POST",

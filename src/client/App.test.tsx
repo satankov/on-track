@@ -27,6 +27,10 @@ function deferred<T>() {
 
 function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
+    homeInfo: vi
+      .fn()
+      .mockResolvedValue({ version: "0.0.8", installation: "manual" }),
+    checkReleases: vi.fn(),
     listExamples: vi.fn().mockResolvedValue([]),
     getExample: vi.fn(),
     copyExample: vi.fn(),
@@ -73,6 +77,23 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
 }
 
 describe("personal project chat workspace", () => {
+  it("keeps Home primary and reserves a quiet future reporting block", async () => {
+    render(<App api={createApi()} />);
+    expect(
+      await screen.findByRole("button", { name: "Create your first project" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Check releases" }),
+    ).toBeVisible();
+    expect(screen.getByText("Report a bug — coming soon")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /report a bug/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /GitHub/ })).toHaveAttribute(
+      "href",
+      "https://github.com/satankov/on-track",
+    );
+  });
   it("presents the approved threadstr wordmark without changing Home navigation", async () => {
     render(<App api={createApi()} />);
     const home = screen.getByRole("link", { name: "Home" });

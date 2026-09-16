@@ -90,6 +90,18 @@ when the update finishes. Use `thr --help` for options.
 The `ontrack` alias remains supported. See [updates and existing installations](docs/install/README.md#transition-from-on-track)
 for custom paths, version-specific updates, and compatibility details.
 
+## Home updates and help
+
+Home includes **Check releases**, which contacts GitHub only when clicked. It
+shows recent stable releases and copyable instructions for the running managed
+or manual installation. Commands run in your terminal; Home does not install
+updates. Results are cached in memory for five minutes. Project content is never
+sent in a release check; GitHub receives ordinary connection metadata.
+
+The help area links to the guides and source repository. **Report a bug — coming
+soon** reserves space for future in-app reporting; it does not collect or send
+anything. Normal project use remains offline.
+
 ## Platforms and your data
 
 Runs on **macOS, Windows, and Linux**, with the interface in your existing web

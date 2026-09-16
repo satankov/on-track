@@ -1,3 +1,9 @@
+import {
+  HomeWorkspace,
+  type WorkspacePlaceholderState,
+} from "./HomeWorkspace.js";
+import { HomeUtilities } from "./HomeUtilities.js";
+import { useHomeUpdates } from "./useHomeUpdates.js";
 import { ExampleReadOnlyContext, EXAMPLE_NOTICE } from "./example-read-only.js";
 import type {
   ExampleDetail,
@@ -757,6 +763,7 @@ function ProjectEditWorkspace({
 }
 
 function ProjectRail({
+  homeUtilities,
   onHome,
   examplesSection,
   collapsedSections,
@@ -773,6 +780,7 @@ function ProjectRail({
   pinErrors,
   projectMutationIds,
 }: {
+  homeUtilities?: ReactNode;
   onHome: () => void;
   examplesSection?: ReactNode;
   collapsedSections: Record<RailSection, boolean>;
@@ -1030,6 +1038,7 @@ function ProjectRail({
         {renderSection("Projects", projects)}
         {renderSection("Archive", archived)}
         {examplesSection}
+        {homeUtilities}
       </nav>
 
       <footer className="local-footnote">
@@ -1047,67 +1056,6 @@ function ProjectRail({
         </button>
       </footer>
     </aside>
-  );
-}
-
-type WorkspacePlaceholderState = "loading" | "empty" | "choose" | "error";
-
-function EmptyWorkspace({
-  state,
-  onCreate,
-}: {
-  state: WorkspacePlaceholderState;
-  onCreate: () => void;
-}) {
-  const content = {
-    loading: {
-      eyebrow: "Projects",
-      heading: "Loading your projects.",
-      copy: "Your local workspace is opening.",
-    },
-    empty: {
-      eyebrow: "Your personal project log",
-      heading: "A quiet place for every moving project.",
-      copy: "Capture decisions, loose ends, and the thought you will need three weeks from now. Nothing leaves this computer.",
-    },
-    choose: {
-      eyebrow: "Projects ready",
-      heading: "Choose a project to continue.",
-      copy: "Select a project from the list to reopen its thread, or start a new one when another moving piece appears.",
-    },
-    error: {
-      eyebrow: "Projects unavailable",
-      heading: "Your project list could not be loaded.",
-      copy: "Check the local service and try again. Existing local data has not been changed.",
-    },
-  }[state];
-  const statusProps =
-    state === "loading"
-      ? ({ role: "status", "aria-live": "polite" } as const)
-      : undefined;
-
-  return (
-    <main className="workspace workspace-empty">
-      <div className="empty-thread" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </div>
-      <div className="empty-copy" {...statusProps}>
-        <p className="eyebrow">{content.eyebrow}</p>
-        <h1>{content.heading}</h1>
-        <p>{content.copy}</p>
-        {state === "empty" && (
-          <button
-            className="button button-primary"
-            type="button"
-            onClick={onCreate}
-          >
-            Create your first project
-          </button>
-        )}
-      </div>
-    </main>
   );
 }
 
@@ -3006,6 +2954,17 @@ function ChatWorkspace({
 }
 
 export function App({ api = apiClient }: { api?: ApiClient }) {
+  const homeUpdates = useHomeUpdates(api);
+  const [narrowHome, setNarrowHome] = useState(
+    () => window.matchMedia?.("(max-width: 760px)").matches ?? false,
+  );
+  useEffect(() => {
+    const media = window.matchMedia?.("(max-width: 760px)");
+    if (!media) return;
+    const change = () => setNarrowHome(media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
   const [workspace, setWorkspace] = useState<WorkspaceServerState>({
     chats: [],
   });
@@ -4000,6 +3959,15 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         />
       ) : (
         <ProjectRail
+          homeUtilities={
+            narrowHome &&
+            mode === "projects" &&
+            !active &&
+            !example &&
+            (placeholderState === "empty" || placeholderState === "choose") ? (
+              <HomeUtilities updates={homeUpdates} />
+            ) : undefined
+          }
           onHome={backToProjects}
           examplesSection={
             showExamples ? (
@@ -4200,14 +4168,19 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           navigationDisabled={savingNote}
         />
       ) : (
-        <EmptyWorkspace
+        <HomeWorkspace
           state={placeholderState}
           onCreate={() => {
             selectionRequest.current++;
             pendingSelection.current = undefined;
             setDialog("create");
           }}
-        />
+        >
+          {!narrowHome &&
+            (placeholderState === "empty" || placeholderState === "choose") && (
+              <HomeUtilities updates={homeUpdates} />
+            )}
+        </HomeWorkspace>
       )}
       {dialog === "create" && (
         <ProjectForm
