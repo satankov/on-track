@@ -501,8 +501,9 @@ in the full rerun without a UI change. The existing moderate Fastify advisory
 remains. New URL/module-environment and fixed-command regressions demonstrated
 RED then GREEN; native Windows regression execution and CodeQL remain pending.
 
-Subsequent PR runs cleared CodeQL and the candidate Windows managed-update
-smoke. Run `35134568111` still fails while installing the unchanged v0.0.8
+Subsequent PR CodeQL checks and the candidate Windows managed-update smoke
+passed. Passing checks did not establish alert closure: alert #5 remained open.
+Run `35134568111` still fails while installing the unchanged v0.0.8
 baseline: the retained runtime directory is empty. Its pinned Node 24.14.0
 native directory-copy implementation uses narrow Windows paths, consistent with
 copying to a misdecoded Unicode destination before private-directory setup
@@ -540,3 +541,32 @@ verification also passed. The remaining Node 22.16 Linux failure in
 The full-width composer test now waits for the selected project and mobile
 navigation focus, then verifies draft contents before measuring layout;
 existing height and toolbar assertions remain unchanged.
+
+## CodeQL alert #5 verification correction
+
+Analysis `1789463448` succeeded on merge commit
+`a41989653c48214961b703cfb1a8b845018d4008` but still contains
+`js/shell-command-injection-from-environment`; the PR instance of alert #5 is
+open. Its seven messages reference repository, temporary-directory and optional
+cache paths. The four serialized SARIF traces follow the installer script path
+(two traces), retention script path, and curl download destination into the
+shared process runner. These are executable arguments, but that call site also
+handled `cmd.exe /c`, conflating data arguments with shell text.
+
+The fixture now invokes its finite literal Windows command map at a separate
+shell call site. The general runner forces `shell: false` and ordinary Windows
+argument quoting after caller options. No suppression, dismissal, query exclusion
+or relaxation of archive/upgrade checks is introduced. Closure requires a fresh
+successful analysis of the current PR merge commit with no matching SARIF result,
+and alert #5's `refs/pull/35/merge` instance explicitly reporting `fixed`.
+Local-only changes cannot establish that remote state.
+
+Local CodeQL 2.27.0 with the matching `codeql/javascript-queries` 2.4.5 pack
+reproduced one finding before the change (76 paths with `--max-paths=100`),
+and zero findings after it for the exact rule across the repository. Static
+analysis with the complete JavaScript/TypeScript code-scanning suite also reports
+zero findings on the patched snapshot. Static
+checks, ten command tests and all three baseline upgrade scenarios passed;
+the new native Windows command test is skipped on the local macOS host.
+The read-only remote closure check still fails on analysis `1789463448`, as
+expected until these local changes are pushed and analyzed.

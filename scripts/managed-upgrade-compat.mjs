@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createFixtureArchive } from "./managed-upgrade-archive.mjs";
-import { windowsFixtureCommand } from "./managed-upgrade-commands.mjs";
+import { runWindowsFixtureCommand } from "./managed-upgrade-commands.mjs";
 import { Buffer } from "node:buffer";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -102,6 +102,8 @@ async function run(executable, argv, options = {}) {
       maxBuffer: 4 * 1024 * 1024,
       windowsHide: true,
       ...options,
+      shell: false,
+      windowsVerbatimArguments: false,
     });
   } catch (error) {
     throw new Error(
@@ -166,11 +168,10 @@ function launcher(root, name) {
 async function command(root, name, argv, extra = {}) {
   const executable = launcher(root, name);
   if (process.platform === "win32") {
-    return run(
-      environment.ComSpec || "cmd.exe",
-      ["/d", "/s", "/c", windowsFixtureCommand(name, argv)],
-      { ...extra, cwd: join(root, "bin"), windowsVerbatimArguments: true },
-    );
+    return runWindowsFixtureCommand(name, argv, {
+      cwd: join(root, "bin"),
+      env: extra.env ?? environment,
+    });
   }
   return run(executable, argv, extra);
 }
