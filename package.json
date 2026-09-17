@@ -36,7 +36,7 @@
     "release:managed": "node scripts/managed-release.mjs"
   },
   "dependencies": {
-    "@fastify/multipart": "9.3.0",
+    "@fastify/multipart": "10.1.1",
     "@fastify/rate-limit": "11.2.0",
     "@fastify/static": "10.1.3",
     "better-sqlite3": "12.10.0",
