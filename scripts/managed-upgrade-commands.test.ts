@@ -1,5 +1,11 @@
 import { expect, test } from "vitest";
-import { windowsFixtureCommand } from "./managed-upgrade-commands.mjs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  windowsFixtureCommand,
+  runWindowsFixtureCommand,
+} from "./managed-upgrade-commands.mjs";
 
 test.each(["ontrack", "thr"])(
   "runs the actual %s launcher with fixed fixture arguments",
@@ -37,3 +43,34 @@ test.each([
     "Unsupported fixture command",
   );
 });
+
+test("rejects shell metacharacters before launching a process", async () => {
+  await expect(
+    runWindowsFixtureCommand("ontrack", ["status & echo injected"], {
+      cwd: tmpdir(),
+      env: process.env,
+    }),
+  ).rejects.toThrow("Unsupported fixture command");
+});
+
+test.runIf(process.platform === "win32")(
+  "runs literal launcher arguments with metacharacters in cwd",
+  async () => {
+    const base = mkdtempSync(join(tmpdir(), "threadstr-command-"));
+    const cwd = join(base, "space & (literal) é");
+    try {
+      mkdirSync(cwd);
+      writeFileSync(
+        join(cwd, "ontrack.cmd"),
+        "@echo off\r\n@echo fixture:%*\r\n",
+      );
+      const result = await runWindowsFixtureCommand("ontrack", ["status"], {
+        cwd,
+        env: process.env,
+      });
+      expect(result.stdout.trim()).toBe("fixture:status");
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  },
+);
