@@ -370,6 +370,163 @@ describe("SQLite backup bundle", () => {
     expect(existsSync(failedPath)).toBe(false);
   });
 
+  it.each(
+    [
+      ["table", "CREATE TABLE sqliteXstash (body TEXT)"],
+      ["view", "CREATE VIEW sqliteXview AS SELECT body FROM notes"],
+      ["index", "CREATE INDEX sqliteXindex ON notes(body)"],
+      [
+        "trigger",
+        "CREATE TRIGGER sqliteXtrigger AFTER INSERT ON notes BEGIN UPDATE chats SET title = NEW.body; END",
+      ],
+    ].flatMap(([kind, sql]) => [
+      { kind, sql, reserved: false },
+      { kind, sql, reserved: true },
+    ]),
+  )(
+    "rejects hidden $kind (reserved=$reserved) before preview or preparation can mutate data",
+    async ({ sql, reserved }) => {
+      const bundlePath = join(directory, "hidden.on-track-backup");
+      await createSqliteBackupBundle({
+        sourceDatabase,
+        destinationPath: bundlePath,
+        attachmentStore: { read: vi.fn() },
+      });
+      mutateBundle(bundlePath, (database) => database.exec(sql));
+      if (reserved) {
+        // Equal-length byte patching models an external SQLite file; SQLite's
+        // CREATE statement normally prohibits reserved object names.
+        const bytes = readFileSync(bundlePath);
+        for (
+          let offset = bytes.indexOf("sqliteX");
+          offset >= 0;
+          offset = bytes.indexOf("sqliteX", offset + 7)
+        ) {
+          bytes[offset + 6] = "_".charCodeAt(0);
+        }
+        writeFileSync(bundlePath, bytes);
+      }
+      const original = readFileSync(bundlePath);
+      expect(() => validateSqliteBackupBundle(bundlePath)).toThrow(
+        SqliteBackupBundleValidationError,
+      );
+      const workspace = createRestoreWorkspace(directory, "hidden");
+      expect(() =>
+        prepareSqliteBackupBundle({
+          bundlePath,
+          workspace,
+          selection: ["chat-a"],
+        }),
+      ).toThrow(SqliteBackupBundleValidationError);
+      expect(existsSync(workspace.stagingDirectory)).toBe(false);
+      expect(readFileSync(bundlePath)).toEqual(original);
+      expect(
+        sourceDatabase.prepare("SELECT body FROM notes").pluck().all(),
+      ).toEqual(["Plan"]);
+      expect(
+        sourceDatabase.prepare("SELECT title FROM chats").pluck().get(),
+      ).toBe("Roadmap");
+    },
+  );
+
+  it.each([
+    ["owner", "tbl_name = 'chats'"],
+    ["name", "name = 'sqlite_autoindex__on_track_bundle_files_9'"],
+    ["SQL", "sql = ''"],
+  ])(
+    "rejects a forged internal index %s before accepting a bundle",
+    async (_field, assignment) => {
+      const bundlePath = join(directory, "forged-index.on-track-backup");
+      await createSqliteBackupBundle({
+        sourceDatabase,
+        destinationPath: bundlePath,
+        attachmentStore: { read: vi.fn() },
+      });
+      mutateBundle(bundlePath, (database) => {
+        database.unsafeMode(true);
+        database.pragma("writable_schema = ON");
+        database.exec(
+          `UPDATE sqlite_schema SET ${assignment} WHERE name = 'sqlite_autoindex__on_track_bundle_files_1'`,
+        );
+      });
+      expect(() => validateSqliteBackupBundle(bundlePath)).toThrow(
+        SqliteBackupBundleValidationError,
+      );
+    },
+  );
+
+  it("rejects a hidden trigger before a selected export can execute it", async () => {
+    sourceDatabase.exec(`
+      INSERT INTO chats (id,title,accent,created_at,updated_at) VALUES ('excluded','Private','ocean',1,1);
+      CREATE TRIGGER sqliteXabort BEFORE DELETE ON chats BEGIN SELECT RAISE(ABORT, 'UNTRUSTED_TRIGGER_EXECUTED'); END;
+    `);
+    const destinationPath = join(directory, "unsafe-export.on-track-backup");
+    await expect(
+      createSqliteBackupBundle({
+        sourceDatabase,
+        destinationPath,
+        selection: ["chat-a"],
+        attachmentStore: { read: vi.fn() },
+      }),
+    ).rejects.toThrow(/schema objects/i);
+    expect(existsSync(destinationPath)).toBe(false);
+    expect(
+      sourceDatabase.prepare("SELECT count(*) FROM chats").pluck().get(),
+    ).toBe(2);
+  });
+
+  it("rejects hidden schema objects in a prepared database before activation", async () => {
+    const bundlePath = join(
+      directory,
+      "valid-before-preparation.on-track-backup",
+    );
+    await createSqliteBackupBundle({
+      sourceDatabase,
+      destinationPath: bundlePath,
+      attachmentStore: { read: vi.fn() },
+    });
+    const closeDatabase = vi.fn();
+    const openRestoredDatabase = vi.fn();
+    const coordinator = new ManagedRestoreCoordinator({
+      dataDirectory: directory,
+      databasePath: sourcePath,
+      closeDatabase,
+      openDatabase: openRestoredDatabase,
+    });
+    const workspace = coordinator.createWorkspace();
+    const prepared = prepareSqliteBackupBundle({ bundlePath, workspace });
+    mutateBundle(prepared.candidateDatabasePath, (database) =>
+      database.exec(
+        "CREATE TRIGGER sqliteXtrigger AFTER INSERT ON notes BEGIN UPDATE chats SET title = NEW.body; END",
+      ),
+    );
+    expect(() =>
+      validatePreparedSqliteBackupDatabase(prepared.candidateDatabasePath),
+    ).toThrow(/schema objects/i);
+    const liveAttachment = join(
+      directory,
+      "attachments",
+      "v1",
+      "live",
+      "attachment-a",
+    );
+    mkdirSync(liveAttachment, { recursive: true });
+    const attachmentPath = join(liveAttachment, "private.txt");
+    writeFileSync(attachmentPath, "PRIVATE_ATTACHMENT_SENTINEL");
+    expect(() => coordinator.activate(workspace.restoreId)).toThrow(
+      /schema objects/i,
+    );
+    expect(closeDatabase).not.toHaveBeenCalled();
+    expect(openRestoredDatabase).not.toHaveBeenCalled();
+    expect(readFileSync(attachmentPath, "utf8")).toBe(
+      "PRIVATE_ATTACHMENT_SENTINEL",
+    );
+    expect(
+      sourceDatabase.prepare("SELECT body FROM notes").pluck().all(),
+    ).toEqual(["Plan"]);
+    expect(existsSync(workspace.installedNamespacePath)).toBe(false);
+  });
+
   it("rejects raw SQLite, schema additions, payload tampering, and declared limit violations", async () => {
     const rawPath = join(directory, "raw.sqlite");
     await sourceDatabase.backup(rawPath);
@@ -588,7 +745,7 @@ describe("SQLite backup bundle", () => {
     {
       name: "missing path uniqueness",
       schema: { uniqueStoragePath: false },
-      expected: /indexes.*note_attachments/i,
+      expected: /schema objects/i,
     },
   ])(
     "rejects a lookalike schema with $name",

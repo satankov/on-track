@@ -62,7 +62,6 @@ interface BuildAppOptions {
 }
 
 const LOOPBACK_HOST = /^(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/i;
-const LOOPBACK_ORIGIN = /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/i;
 const NATIVE_ACTION_RATE_LIMIT_WINDOW_MS = 60_000;
 const MULTIPART_BODY_LIMIT_BYTES = 128 * 1024 * 1024;
 
@@ -240,8 +239,6 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       .header("X-Content-Type-Options", "nosniff")
       .header("X-Frame-Options", "DENY");
 
-    if (!request.url.startsWith("/api/")) return;
-
     if (!request.headers.host || !LOOPBACK_HOST.test(request.headers.host)) {
       return reply.code(421).send({
         code: "invalid_host",
@@ -250,13 +247,23 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     }
 
     const origin = request.headers.origin;
-    if (origin && !LOOPBACK_ORIGIN.test(origin)) {
+    if (origin !== undefined && origin !== `http://${request.headers.host}`) {
       return reply.code(403).send({
         code: "invalid_origin",
         message: "Request origin is not allowed.",
       });
     }
-    if (request.url.split("?")[0] !== "/api/health") {
+    // Route identity is decoded by the router; the raw URL is not a boundary.
+    const route = request.routeOptions.url;
+    if (!route?.startsWith("/api/")) return;
+    const site = request.headers["sec-fetch-site"];
+    if (site !== undefined && site !== "same-origin" && site !== "none") {
+      return reply.code(403).send({
+        code: "invalid_origin",
+        message: "Request origin is not allowed.",
+      });
+    }
+    if (route !== "/api/health") {
       requestLeases.set(request, maintenanceGate.enterRequest());
     }
   });

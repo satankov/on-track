@@ -24,6 +24,21 @@ describe("SQLite project-chat persistence", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it("disables schema use of application functions on live connections", () => {
+    const calls: string[] = [];
+    database.function("application_function", () => {
+      calls.push("called");
+      return 1;
+    });
+    database.exec(
+      "CREATE VIEW unsafe_view AS SELECT application_function() AS value",
+    );
+    expect(() => database.prepare("SELECT * FROM unsafe_view").all()).toThrow(
+      /unsafe use/i,
+    );
+    expect(calls).toEqual([]);
+  });
+
   it("persists archive membership with exclusive groups and unchanged content", () => {
     for (const id of ["a", "b", "c", "d"])
       repository.createChat({ id, title: id, accent: "ocean", now: 10 });

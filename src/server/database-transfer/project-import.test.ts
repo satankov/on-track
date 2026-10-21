@@ -71,7 +71,11 @@ async function fixture() {
     url: `/api/chats/${a.id}/notes/${note.id}/labels/attention`,
   });
   const backup = (
-    await app.inject({ method: "GET", url: "/api/database/export" })
+    await app.inject({
+      method: "POST",
+      url: "/api/database/export",
+      payload: { selection: "all" },
+    })
   ).rawPayload;
   const response = await app.inject({
     method: "POST",
@@ -278,7 +282,13 @@ it("cleans a published file if a later file cannot be installed", async () => {
     url: `/api/chats/${a.id}/notes`,
     payload: form,
   });
-  const backup = (await app.inject("/api/database/export")).rawPayload;
+  const backup = (
+    await app.inject({
+      method: "POST",
+      url: "/api/database/export",
+      payload: { selection: "all" },
+    })
+  ).rawPayload;
   const preview = (
     await app.inject({
       method: "POST",
@@ -372,8 +382,17 @@ it("accepts file-before-options and keeps preview query strings read-only", asyn
   ).toBe(200);
 });
 
-it("shares export budgets across GET and POST and import budgets across PUT and POST", async () => {
+it("shares export budgets across all and selected projects and import budgets across PUT and POST", async () => {
   const { backup, preview } = await fixture();
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/api/database/export",
+        payload: { selection: [preview.projects[0].id] },
+      })
+    ).statusCode,
+  ).toBe(200);
   expect(
     (
       await app.inject({
@@ -383,7 +402,6 @@ it("shares export budgets across GET and POST and import budgets across PUT and 
       })
     ).statusCode,
   ).toBe(200);
-  expect((await app.inject("/api/database/export")).statusCode).toBe(200);
   expect(
     (
       await app.inject({
@@ -429,7 +447,13 @@ it("shares export budgets across GET and POST and import budgets across PUT and 
 });
 
 it("allows an originally empty backup to merge as a no-op or replace the database", async () => {
-  const backup = (await app.inject("/api/database/export")).rawPayload;
+  const backup = (
+    await app.inject({
+      method: "POST",
+      url: "/api/database/export",
+      payload: { selection: "all" },
+    })
+  ).rawPayload;
   const preview = (
     await app.inject({
       method: "POST",

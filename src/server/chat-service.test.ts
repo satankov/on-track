@@ -564,38 +564,54 @@ describe("managed attachment service lifecycle", () => {
     ).rejects.toThrow(/Project not found/i);
   });
 
-  it("blocks dangerous and executable attachments while allowing safe reveal", async () => {
-    ids.push("chat-a", "note-a", "attachment-a");
-    const open = vi.fn(async () => undefined);
-    const reveal = vi.fn(async () => undefined);
-    const chatService = service(store, { ...nativeActions, open, reveal });
-    chatService.createChat({ title: "Files", accent: "ocean" });
-    chatService.appendNote("chat-a", {
-      body: "Context",
-      attachments: [
-        {
-          filename: "installer.EXE",
-          mediaType: "text/plain",
-          byteSize: 4,
-          content: Buffer.from("road"),
-        },
-      ],
-    });
+  it.each([
+    "installer.EXE",
+    "profile.terminal",
+    "location.inetloc",
+    "help.chm",
+    "addin.xll",
+    "sandbox.wsb",
+    "macros.docm",
+    "notes.unknown",
+    "README",
+    "page.html",
+    "image.svg",
+    "archive.zip",
+  ])(
+    "blocks Open for %s despite text MIME metadata while allowing reveal",
+    async (filename) => {
+      ids.push("chat-a", "note-a", "attachment-a");
+      const open = vi.fn(async () => undefined);
+      const reveal = vi.fn(async () => undefined);
+      const chatService = service(store, { ...nativeActions, open, reveal });
+      chatService.createChat({ title: "Files", accent: "ocean" });
+      chatService.appendNote("chat-a", {
+        body: "Context",
+        attachments: [
+          {
+            filename,
+            mediaType: "text/plain",
+            byteSize: 4,
+            content: Buffer.from("road"),
+          },
+        ],
+      });
 
-    await expect(
-      chatService.openAttachment("chat-a", "note-a", "attachment-a"),
-    ).rejects.toThrow(AttachmentOpenBlockedError);
-    await chatService.revealAttachment("chat-a", "note-a", "attachment-a");
+      await expect(
+        chatService.openAttachment("chat-a", "note-a", "attachment-a"),
+      ).rejects.toThrow(AttachmentOpenBlockedError);
+      await chatService.revealAttachment("chat-a", "note-a", "attachment-a");
 
-    expect(open).not.toHaveBeenCalled();
-    expect(reveal).toHaveBeenCalledOnce();
-    expect(
-      chatService.getChat("chat-a").notes[0].attachments![0].actions,
-    ).toEqual({
-      open: "blocked",
-      reveal: "available",
-    });
-  });
+      expect(open).not.toHaveBeenCalled();
+      expect(reveal).toHaveBeenCalledOnce();
+      expect(
+        chatService.getChat("chat-a").notes[0].attachments![0].actions,
+      ).toEqual({
+        open: "blocked",
+        reveal: "available",
+      });
+    },
+  );
 
   it("keeps recovery reveal available for a missing file", async () => {
     ids.push("chat-a", "note-a", "attachment-a");

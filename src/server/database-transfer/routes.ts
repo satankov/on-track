@@ -105,10 +105,9 @@ export async function registerDatabaseTransferRoutes(
   }
   async function exportBackup(request: FastifyRequest, reply: FastifyReply) {
     if (!available(reply)) return;
-    const selection: ProjectSelection =
-      request.method === "GET"
-        ? "all"
-        : exportOptionsSchema.parse(request.body).selection;
+    const selection: ProjectSelection = exportOptionsSchema.parse(
+      request.body,
+    ).selection;
     const directory = mkdtempSync(
       join(options.dataDirectory!, ".on-track-export-"),
     );
@@ -141,7 +140,7 @@ export async function registerDatabaseTransferRoutes(
     }
   }
   app.route({
-    method: ["GET", "POST"],
+    method: "POST",
     url: "/api/database/export",
     bodyLimit: 1024 * 1024,
     config: config("export", 3),

@@ -68,8 +68,9 @@ must not alter system Node, Git, manual source checkouts, or their dependencies.
 - [Node binary verification](https://github.com/nodejs/node#verifying-binaries)
   and [official archives](https://nodejs.org/download/release/latest-v24.x/):
   download a private, exact tested Node 24 patch, with its included npm. CI
-  verifies official checksums/signatures before recording archive hashes in the
-  application release manifest. Do not resolve a moving Node version at install.
+  verifies official checksums fetched over HTTPS before recording archive hashes
+  in the application release manifest. Detached Node signature verification is
+  not implemented; independent signature infrastructure remains deferred. Do not resolve a moving Node version at install.
 - [npm ci](https://docs.npmjs.com/cli/v11/commands/npm-ci/): use locked installs
   in staging. Include development dependencies because Vite/TypeScript build the
   source application; do not run `npm ci` in the active release directory.

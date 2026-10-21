@@ -62,7 +62,10 @@ keeping any custom data path unchanged. On PowerShell, use `npm.cmd` in place of
   or earlier Attention status directly in the project sidebar.
 - Attach local files to notes, filter messages with files, open eligible files
   through the operating system's default association, and show them in their
-  managed folder. Executable and launcher-like files are blocked from Open.
+  managed folder. Open supports a limited set of common document, text, raster
+  image, audio, and video formats. Other files, including archives, launchers,
+  and legacy or macro-enabled Office formats, remain accessible through Show in
+  Folder. An allowed format does not guarantee safe file contents.
 - Filter messages containing Markdown/GFM links with the automatic Links filter
   after Files, without applying a label.
 - Export selected projects or all projects to one `.on-track-backup` bundle.

@@ -649,8 +649,9 @@ describe("local project-chat API", () => {
       attachments: [{ filename: "C:notes.txt" }],
     });
     const exported = await app.inject({
-      method: "GET",
+      method: "POST",
       url: "/api/database/export",
+      payload: { selection: "all" },
       headers: { host: "localhost:4173" },
     });
     expect(exported.statusCode).toBe(200);
@@ -1102,8 +1103,9 @@ describe("local project-chat API", () => {
     });
 
     const exported = await app.inject({
-      method: "GET",
+      method: "POST",
       url: "/api/database/export",
+      payload: { selection: "all" },
       headers: { host: "localhost:4173" },
     });
     expect(exported.statusCode).toBe(200);
@@ -1192,8 +1194,9 @@ describe("local project-chat API", () => {
       throw new Error("export cleanup failed");
     });
     const exported = await app.inject({
-      method: "GET",
+      method: "POST",
       url: "/api/database/export",
+      payload: { selection: "all" },
       headers: { host: "localhost:4173" },
     });
 
@@ -1234,8 +1237,9 @@ describe("local project-chat API", () => {
     for (let attempt = 0; attempt < 4; attempt += 1) {
       responses.push(
         await app.inject({
-          method: "GET",
+          method: "POST",
           url: "/api/database/export",
+          payload: { selection: "all" },
           headers: { host: "localhost:4173" },
         }),
       );
@@ -1306,8 +1310,9 @@ describe("local project-chat API", () => {
     expect(readFileSync(join(directory, "on-track.sqlite"))).toEqual(before);
 
     const exported = await app.inject({
-      method: "GET",
+      method: "POST",
       url: "/api/database/export",
+      payload: { selection: "all" },
       headers: { host: "localhost:4173" },
     });
     const legacyPath = join(directory, "legacy.on-track-backup");
@@ -1343,8 +1348,9 @@ describe("local project-chat API", () => {
       payload: { title: "Keep me", accent: "iris" },
     });
     const exported = await app.inject({
-      method: "GET",
+      method: "POST",
       url: "/api/database/export",
+      payload: { selection: "all" },
       headers: { host: "localhost:4173" },
     });
     const invalidPath = join(directory, "invalid-domain.on-track-backup");
@@ -1382,8 +1388,9 @@ describe("local project-chat API", () => {
     });
     try {
       const exported = await unmanagedApp.inject({
-        method: "GET",
+        method: "POST",
         url: "/api/database/export",
+        payload: { selection: "all" },
         headers: { host: "localhost:4173" },
       });
       const imported = await unmanagedApp.inject({

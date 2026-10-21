@@ -180,7 +180,8 @@ interface SchemaDescriptor {
   columns: Record<string, ColumnDescription[]>;
   foreignKeys: Record<string, ForeignKeyDescription[]>;
   indexes: Record<string, IndexDescription[]>;
-  definitions: Record<string, string>;
+  definitions: Record<string, string | null>;
+  owningTables: Record<string, string>;
   migrationTimestamps: number[];
 }
 
@@ -191,6 +192,7 @@ const SQLITE_MAGIC = Buffer.from("SQLite format 3\0", "binary");
 const BUNDLE_SCHEMA_OBJECTS = [
   "_on_track_bundle:table",
   "_on_track_bundle_files:table",
+  "sqlite_autoindex__on_track_bundle_files_1:index",
 ] as const;
 
 const BUNDLE_TABLE_COLUMNS: Readonly<Record<string, ColumnDescription[]>> = {
@@ -251,8 +253,11 @@ export async function createSqliteBackupBundle(
     await options.sourceDatabase.backup(options.destinationPath);
     chmodSync(options.destinationPath, 0o600);
     bundle = new Database(options.destinationPath);
+    bundle.pragma("trusted_schema = OFF");
     bundle.pragma("foreign_keys = ON");
     bundle.pragma("journal_mode = DELETE");
+    // Check the snapshot before a DELETE can invoke an imported trigger.
+    validateExactSchema(bundle, trustedActiveSchemaDescriptor());
     pruneProjects(bundle, options.selection ?? "all");
     bundle.exec("VACUUM");
     validateActiveDatabase(bundle, limits);
@@ -563,6 +568,7 @@ export function prepareSqliteBackupBundle(
       limits,
     );
     candidate = new Database(candidateDatabasePath);
+    candidate.pragma("trusted_schema = OFF");
     candidate.pragma("foreign_keys = ON");
     candidate.pragma("journal_mode = DELETE");
     pruneProjects(candidate, options.selection ?? "all");
@@ -1116,7 +1122,17 @@ function bundleSchemaDescriptor(schemaVersion: number): SchemaDescriptor {
     columns: { ...active.columns, ...BUNDLE_TABLE_COLUMNS },
     foreignKeys: { ...active.foreignKeys, ...BUNDLE_FOREIGN_KEYS },
     indexes: { ...active.indexes, ...BUNDLE_INDEXES },
-    definitions: { ...active.definitions, ...BUNDLE_TABLE_DEFINITIONS },
+    definitions: {
+      ...active.definitions,
+      ...BUNDLE_TABLE_DEFINITIONS,
+      sqlite_autoindex__on_track_bundle_files_1: null,
+    },
+    owningTables: {
+      ...active.owningTables,
+      _on_track_bundle: "_on_track_bundle",
+      _on_track_bundle_files: "_on_track_bundle_files",
+      sqlite_autoindex__on_track_bundle_files_1: "_on_track_bundle_files",
+    },
     migrationTimestamps: active.migrationTimestamps,
   };
 }
@@ -1149,7 +1165,6 @@ function schemaObjects(database: Database.Database): string[] {
     .prepare(
       `SELECT name || ':' || type
        FROM sqlite_schema
-       WHERE name NOT LIKE 'sqlite_%'
        ORDER BY name`,
     )
     .pluck()
@@ -1160,8 +1175,7 @@ function schemaObjectCount(database: Database.Database): number {
   return database
     .prepare(
       `SELECT count(*)
-       FROM sqlite_schema
-       WHERE name NOT LIKE 'sqlite_%'`,
+       FROM sqlite_schema`,
     )
     .pluck()
     .get() as number;
@@ -1181,17 +1195,14 @@ function describeSchema(
   const columns: Record<string, ColumnDescription[]> = {};
   const foreignKeys: Record<string, ForeignKeyDescription[]> = {};
   const indexes: Record<string, IndexDescription[]> = {};
+  const rows = database
+    .prepare("SELECT name, tbl_name, sql FROM sqlite_schema ORDER BY name")
+    .all() as Array<{ name: string; tbl_name: string; sql: string | null }>;
   const definitions = Object.fromEntries(
-    (
-      database
-        .prepare(
-          `SELECT name, sql
-           FROM sqlite_schema
-           WHERE name NOT LIKE 'sqlite_%'
-           ORDER BY name`,
-        )
-        .all() as Array<{ name: string; sql: string }>
-    ).map((row) => [row.name, row.sql]),
+    rows.map((row) => [row.name, row.sql]),
+  );
+  const owningTables = Object.fromEntries(
+    rows.map((row) => [row.name, row.tbl_name]),
   );
 
   for (const object of objects) {
@@ -1267,6 +1278,7 @@ function describeSchema(
     foreignKeys,
     indexes,
     definitions,
+    owningTables,
     migrationTimestamps,
   };
 }
@@ -1286,6 +1298,15 @@ function validateExactSchema(
     throw validationError("The migration metadata is not exactly allowed.");
   }
   const actual = describeSchema(database, objects);
+  if (
+    Object.entries(allowed.owningTables).some(
+      ([name, table]) => actual.owningTables[name] !== table,
+    )
+  ) {
+    throw validationError(
+      "The SQLite schema object ownership is not exactly allowed.",
+    );
+  }
   if (
     JSON.stringify(actual.migrationTimestamps) !==
     JSON.stringify(allowed.migrationTimestamps)
@@ -1315,7 +1336,7 @@ function validateExactSchema(
 
   for (const [object, expected] of Object.entries(allowed.definitions)) {
     if (
-      normalizeSchemaSql(actual.definitions[object] ?? "") !==
+      normalizeSchemaSql(actual.definitions[object]) !==
       normalizeSchemaSql(expected)
     ) {
       throw validationError(`The definition for ${object} is not allowed.`);
@@ -1577,7 +1598,8 @@ function index(
   return { name, unique, origin, columns };
 }
 
-function normalizeSchemaSql(sql: string): string {
+function normalizeSchemaSql(sql: string | null): string | null {
+  if (sql === null) return null;
   return sql
     .toLowerCase()
     .replace(/["`[\]\s;]/g, "")
