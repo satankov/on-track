@@ -6,11 +6,19 @@ updates:
       interval: weekly
     open-pull-requests-limit: 10
     groups:
+      react-family:
+        patterns: [react, react-dom, "@types/react", "@types/react-dom"]
+        update-types: [minor, patch]
       npm-development:
         dependency-type: development
+        exclude-patterns: ["@types/react", "@types/react-dom"]
         update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      codeql:
+        patterns: ["github/codeql-action*"]
+        update-types: [minor, patch]
