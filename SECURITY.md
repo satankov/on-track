@@ -25,7 +25,8 @@ within seven days and coordinate disclosure after a fix is available.
 
 threadstr keeps data on the local machine and binds only to loopback, but its
 SQLite database, managed attachments, and exported backups are **not encrypted**.
-Backup restore replaces current local projects and files rather than merging
-them. The application is not suitable for confidential, NDA-bound, or
+Backup import defaults to adding selected projects as independent copies.
+The explicit **Replace whole DB** mode removes current projects and files after
+confirmation. The application is not suitable for confidential, NDA-bound, or
 irreplaceable information. See
 [ADR-0002](docs/adr/0002-defer-at-rest-encryption.md).

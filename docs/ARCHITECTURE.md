@@ -2,10 +2,9 @@
 
 ## Status
 
-The published baseline is v0.0.8 (On Track), which fixes the initial managed
-installer/updater defects. Current source prepares threadstr and the primary
-`thr` CLI for the selected v0.0.9 candidate. Database and
-backup schema remain 7. The managed compatibility floor remains `0.0.7`.
+The published baseline is v0.0.9 (threadstr, primary `thr` CLI). Current source
+adds the security hardening recorded in [plan 0025](plans/0025-security-audit-response.md).
+Database and backup schema remain 7. The managed compatibility floor remains `0.0.7`.
 
 Core boundaries are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md),
 encryption limits in [ADR-0002](adr/0002-defer-at-rest-encryption.md), source
@@ -417,6 +416,8 @@ be hardened before production-readiness claims.
   contract.
 - `npm run verify`: authoritative aggregate local/release gate.
 
+Vitest discovery is scoped to application tests under `src/` and maintainer tests
+under `scripts/`, excluding unrelated local tooling and demo suites.
 Vitest runs test files sequentially when `CI` is set to reduce competing SQLite,
 durable filesystem, and native permission-check work on shared runners. Local
 runs retain file parallelism; explicit concurrency inside tests and existing

@@ -324,18 +324,35 @@ and verification record below supersedes that initial state.
   the operational cost; same-workflow Sigstore identity is not automatically an
   independent trust anchor.
 
-## Open decisions
+## Accepted decisions and remaining scope
 
-The proposed defaults are POST-only export, the listed Open allowlist, preserved
-journaled replacement, and focused compatible dependency fixes. They are concrete
-enough to implement upon approval. Optional Phase 5 can be approved or deferred
-without blocking the four core phases. No remote issues, branches, releases,
-commits, or publication are authorized by this plan.
+Phases 1–4 accepted POST-only export, the listed Open allowlist, preserved
+journaled replacement, and compatible dependency fixes. Optional Phase 5 remains
+deferred and is not a release blocker. Independent signing/keyring infrastructure
+and the other rejected or deferred audit proposals are accepted scope exclusions.
+
+Platform/native validation remains tracked in [issue #32](https://github.com/satankov/on-track/issues/32)
+and installation/upgrade validation in [issue #34](https://github.com/satankov/on-track/issues/34).
+Their v0.0.9 target labels predate the now-published release; unfinished acceptance
+criteria still apply. Run the configured CI OS/Node matrix on the security release
+candidate before release; local macOS verification does not replace that gate.
+
+Draft follow-up, pending tracker authorization: **Evaluate optional disabled-TLS
+and Markdown-image safeguards**. Acceptance criteria:
+
+- Decide whether to implement or explicitly decline each of Phase 5A and 5B based
+  on practical risk and maintenance cost; neither is currently approved.
+- If implementing 5A, reject explicit disabled TLS before managed network work,
+  preserve offline commands and legitimate CA/proxy behavior, and test entry paths.
+- If implementing 5B, render inert image alt text without changing stored Markdown
+  or normal links, with development and production no-request regression coverage.
+- Add no dependency or broad environment/CSP redesign; retain the rationale here.
 
 ## Approval and implementation record
 
 The user approved Phases 1–4 on 2026-10-21. Phase 5A/5B were not implemented.
-No commits, pushes, remote changes, or releases were made.
+Implementation is recorded in commit `a50cedd` (`fix security issues`).
+The closeout made no commits, pushes, remote changes, or releases.
 
 Implemented all four core outcomes with the existing HTTP hook, migration-derived
 schema descriptors, restore journal, native policy, and blocked-action UI. No

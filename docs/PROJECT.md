@@ -15,18 +15,19 @@ recovery parts of that promise.
 
 ## Current phase
 
-Version 0.0.8 is the latest published plaintext alpha release under Apache
-License 2.0. It fixes the macOS Bash installer and HTTP 415 updater defects in
-v0.0.7, the first managed-compatible release (floor `0.0.7`). Managed installation
-remains experimental; clean OS/platform and published-upgrade evidence is incomplete.
+Version 0.0.9 is the latest published plaintext alpha release under Apache
+License 2.0. It introduces threadstr and the primary `thr` CLI while preserving
+`ontrack` as a compatibility alias and existing data/update contracts. The managed
+compatibility floor remains `0.0.7`; installation remains experimental because
+clean OS/platform and published-upgrade evidence is incomplete.
 
 ## Current objective
 
-Prepare **v0.0.9** with the **threadstr** identity, primary **thr** CLI,
-built-in Examples, Home release checks, and navigation polish. The published v0.0.8 still
-uses On Track and `ontrack`; current source introduces the new identity while
-preserving the old command as a compatibility alias, existing data and update
-contracts. See [plan 0023](plans/0023-threadstr-rebrand.md),
+Prepare the next release with the completed security hardening in
+[plan 0025](plans/0025-security-audit-response.md). Phases 1–4 are implemented and
+locally verified; optional Phase 5 remains deferred. The next release version is
+not yet selected in package metadata. Identity and compatibility decisions remain
+in [plan 0023](plans/0023-threadstr-rebrand.md),
 [ADR-0010](adr/0010-threadstr-identity-and-cli-transition.md), and
 [compatibility guidance](compatibility.md).
 
