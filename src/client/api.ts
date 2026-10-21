@@ -208,16 +208,11 @@ export const apiClient: ApiClient = {
     );
   },
   exportDatabase: async (selection = "all") => {
-    const response = await fetch(
-      "/api/database/export",
-      selection === "all"
-        ? undefined
-        : {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ selection }),
-          },
-    );
+    const response = await fetch("/api/database/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selection }),
+    });
     if (!response.ok) throw new Error("The database could not be exported.");
     return response.blob();
   },

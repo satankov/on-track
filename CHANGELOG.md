@@ -6,6 +6,18 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+### Security
+
+- Enforce loopback Host and exact Origin checks independently of encoded URL
+  spelling, reject cross-origin API Fetch Metadata, and preserve development
+  proxy compatibility. Backup export now requires JSON POST for all selections;
+  GET export is no longer supported.
+- Reject unexpected SQLite schema objects, including reserved-name objects,
+  before imported candidates or export snapshots can execute their triggers.
+- Limit native attachment Open to explicit document/media formats. Other files
+  remain accessible through Show in Folder without changing stored data.
+- Apply compatible security updates to the server and development dependencies.
+
 ## [0.0.9] - 2026-09-16
 
 ### Added

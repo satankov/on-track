@@ -243,10 +243,12 @@ after external edits and preserve missing, unreadable, or unsafe rows as
 recoverable DTO states. DTOs also expose server-derived Open/Show capability
 states. Scoped POST routes resolve IDs to canonical managed targets and dispatch
 eligible files through fixed, shell-free macOS, Windows, or Linux commands.
-Known executable, installer, script, shortcut, application, and desktop-launcher
-types—and executable POSIX files—cannot be opened from threadstr; safe folder
-reveal remains independent. Browser focus refreshes attachment metadata after a
-user returns from an external application. Attachment bytes are not exposed by a
+Open requires both display and managed filename suffixes to be in a small
+document/media allowlist; executable POSIX files remain blocked. Unknown types,
+launchers, archives, and legacy/macro-enabled Office files retain Show in Folder
+only. Allowed suffixes do not guarantee safe contents or default applications.
+Folder reveal remains independent. Browser focus refreshes attachment metadata
+after a user returns from an external application. Attachment bytes are not exposed by a
 browser download route.
 
 All browser note creation and editing uses the same bounded multipart contract,
@@ -275,7 +277,11 @@ and all older projects receive null archive state.
 It then uses the maintenance gate and
 restore journal to replace live state. Exact active-schema expectations come
 from a trusted in-memory database built with checked-in migrations; imported SQL
-never defines its own validation baseline.
+never defines its own validation baseline. Complete schema inventories include
+implicit indexes and owning tables; no `sqlite_` name prefix is exempt. Exact
+validation precedes candidate mutation and export pruning. Writable live,
+candidate, and export connections set `trusted_schema=OFF` as defense in depth;
+exact schema validation is still required to reject ordinary SQL triggers.
 Selective export prunes the private snapshot before reading attachments and
 compacts it to remove excluded content from free pages. Selection never mutates
 the source. Import preview streams and fully validates a private upload, returning
@@ -298,8 +304,10 @@ cleanup is performed. Connection loss after commit remains an ambiguous result,
 so the client does not retry automatically. Successful commits with failed UI
 refreshes remain explicitly identified as completed imports.
 
-GET/all and POST/selected export share three attempts per minute per process;
-legacy PUT/replace and multipart POST imports share two. Preview has a separate
+Export uses JSON POST with an explicit all/selected choice and three attempts per
+minute per process; GET export is no longer supported, so navigation cannot
+generate a backup. The bundled client uses POST for both choices.
+Legacy PUT/replace and multipart POST imports share two. Preview has a separate
 two-attempt budget, and only one upload/validation import request runs at a time.
 Client previews are serialized. Bundle limits remain 2 GiB, 10,000 attachments,
 100 MiB per file, and 1 GiB total file bytes; explicit project lists are capped at
@@ -330,8 +338,11 @@ ordinary user data. See [ADR-0009](adr/0009-application-owned-examples.md).
 
 ## Trust and security boundaries
 
-- API requests require a loopback Host; cross-origin browser requests are
-  rejected by Origin checks and no permissive CORS is enabled.
+- All requests require a loopback Host and exact same-origin matching when
+  Origin is supplied. API routes also reject supplied Fetch Metadata from other
+  origins, including same-site requests. Guards and maintenance admission do not
+  depend on raw URL spelling; intended headerless local clients remain supported.
+  Vite preserves the browser-facing Host when proxying API requests.
 - Native-file POST routes additionally require exact same-origin Origin and
   Fetch Metadata headers, an empty JSON object, and a shared ten-action-per-minute
   process limit. Requests and responses carry IDs only, never local paths.

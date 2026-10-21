@@ -188,8 +188,8 @@ remains a regression-protected alpha, not a dedicated design target.
   time and see whether an applied Attention label belongs to today or an earlier
   message directly from the sidebar.
 - Open eligible managed files with the operating system's default association,
-  or show their safe managed folder; risky executable/launcher types are blocked
-  from Open.
+  or show their safe managed folder. Open uses an explicit document/media
+  allowlist; other types remain accessible through Show in Folder.
 - Copy, edit, timestamp-adjust, and delete notes.
 - Export all or selected projects to a versioned `.on-track-backup` bundle with
   their messages and attachments. Preview and select imported projects, then
@@ -255,9 +255,9 @@ The public repository and release are:
 - [v0.0.6 release](https://github.com/satankov/on-track/releases/tag/v0.0.6)
 - [Issues](https://github.com/satankov/on-track/issues)
 
-GitHub is the backlog and ownership tracker. The Fastify advisory is tracked by
-open [PR #26](https://github.com/satankov/on-track/pull/26); it supersedes closed
-PR #18. Native-action smoke tests are tracked in
+GitHub is the backlog and ownership tracker. The current security audit response
+and dependency remediation are recorded in [plan 0025](plans/0025-security-audit-response.md).
+Native-action smoke tests are tracked in
 [issue #32](https://github.com/satankov/on-track/issues/32), filesystem drag/drop
 validation in [issue #33](https://github.com/satankov/on-track/issues/33), and
 managed installation/upgrade validation in
@@ -285,9 +285,9 @@ live in `docs/adr/`; significant work lives in `docs/plans/`.
   database checkpoints remain plaintext, need free disk space, and are not
   independent backups of attachment files. Existing pre-protocol source releases
   must be stopped and upgraded manually before explicit adoption.
-- The configured production audit passes its high-severity gate but currently
-  reports a moderate Fastify advisory. The available fixed version is outside
-  the exact declared dependency and requires explicit upgrade verification.
+- Dependency advisories require ongoing review and compatible updates. A clean
+  audit is a point-in-time check, not a guarantee that every dependency is safe;
+  current remediation and verification evidence lives in plan 0025.
 - v0.0.4 deliberately does not restore v0.0.3/schema-2 backup bundles. Live
   v0.0.3 databases still migrate at startup, and this compatibility break is
   acceptable only under the current no-user alpha assumption.

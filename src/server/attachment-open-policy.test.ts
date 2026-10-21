@@ -14,6 +14,29 @@ describe("attachment open policy", () => {
     "automation.sh",
     "payload.jar",
     "settings.reg",
+    "profile.terminal",
+    "location.inetloc",
+    "help.chm",
+    "addin.xll",
+    "sandbox.wsb",
+    "macros.docm",
+    "macros.xlsm",
+    "macros.pptm",
+    "legacy.doc",
+    "legacy.xls",
+    "legacy.ppt",
+    "page.html",
+    "vector.svg",
+    "archive.zip",
+    "archive.tar.gz",
+    "notes.unknown",
+    "README",
+    ".txt",
+    "report.pdf.exe",
+    "report.pdf.",
+    "report.pdf ",
+    "report.pd\u0130f",
+    "report.\u202efdp",
   ])("blocks dangerous filename %s case-insensitively", (filename) => {
     expect(
       attachmentOpenPolicy({
@@ -35,6 +58,20 @@ describe("attachment open policy", () => {
       }),
     ).toBe("blocked");
   });
+
+  it.each(["profile.terminal", "file.unknown", "README"])(
+    "blocks unsupported managed filename %s behind an allowed display name",
+    (managedFilename) => {
+      expect(
+        attachmentOpenPolicy({
+          displayFilename: "notes.txt",
+          managedFilename,
+          mode: 0o600,
+          platform: "darwin",
+        }),
+      ).toBe("blocked");
+    },
+  );
 
   it.each([
     ".exe",
@@ -62,21 +99,24 @@ describe("attachment open policy", () => {
     ).toBe("blocked");
   });
 
-  it("blocks executable mode bits on POSIX but ignores MIME metadata", () => {
+  it.each([0o700, 0o610, 0o601])("blocks POSIX executable mode %s", (mode) => {
     expect(
       attachmentOpenPolicy({
         displayFilename: "notes.txt",
         managedFilename: "notes.txt",
-        mode: 0o700,
+        mode,
         platform: "linux",
       }),
     ).toBe("blocked");
+  });
+
+  it("does not interpret Windows mode bits as POSIX executable bits", () => {
     expect(
       attachmentOpenPolicy({
         displayFilename: "quarterly.pptx",
         managedFilename: "quarterly.pptx",
-        mode: 0o600,
-        platform: "darwin",
+        mode: 0o700,
+        platform: "win32",
       }),
     ).toBe("available");
   });
@@ -87,7 +127,28 @@ describe("attachment open policy", () => {
     "report.pdf",
     "photo.png",
     "notes.txt",
-  ])("allows ordinary document %s", (filename) => {
+    "notes.md",
+    "data.csv",
+    "table.xlsx",
+    "photo.jpg",
+    "photo.jpeg",
+    "photo.gif",
+    "photo.webp",
+    "photo.bmp",
+    "photo.tif",
+    "photo.tiff",
+    "photo.heic",
+    "audio.mp3",
+    "audio.wav",
+    "audio.m4a",
+    "audio.ogg",
+    "audio.flac",
+    "video.mp4",
+    "video.mov",
+    "video.webm",
+    "REPORT.PdF",
+    "notes.final.TXT",
+  ])("allows ordinary document or media file %s", (filename) => {
     expect(
       attachmentOpenPolicy({
         displayFilename: filename,

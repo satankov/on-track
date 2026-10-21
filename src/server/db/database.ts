@@ -26,6 +26,10 @@ export function openDatabase(filename: string): Database.Database {
   sqlite.pragma("busy_timeout = 5000");
 
   try {
+    sqlite.pragma("trusted_schema = OFF");
+    if (sqlite.pragma("trusted_schema", { simple: true }) !== 0) {
+      throw new Error("SQLite trusted-schema protection is unavailable");
+    }
     const attachmentColumns = sqlite
       .prepare("SELECT name FROM pragma_table_info('note_attachments')")
       .pluck()

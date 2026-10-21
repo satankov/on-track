@@ -103,7 +103,9 @@ test("archive settings and sidebar restoration preserve projects across restart 
       .getByText("Keep the launch decisions.", { exact: true }),
   ).toBeVisible();
 
-  const backup = await request.get(`${localApp.url}/api/database/export`);
+  const backup = await request.post(`${localApp.url}/api/database/export`, {
+    data: { selection: "all" },
+  });
   expect(backup.ok()).toBe(true);
   const bytes = await backup.body();
   await request.delete(`${localApp.url}/api/chats/${chat.id}/archive`);
