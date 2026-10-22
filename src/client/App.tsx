@@ -336,8 +336,13 @@ function isMobileViewport(): boolean {
 
 function focusMobileBackButton(): void {
   if (!isMobileViewport()) return;
+  const previousFocus = document.activeElement;
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
+      // Navigation must not steal focus from a control reached while rendering.
+      const currentFocus = document.activeElement;
+      if (currentFocus !== previousFocus && currentFocus !== document.body)
+        return;
       document.querySelector<HTMLButtonElement>("[data-back-button]")?.focus();
     });
   });

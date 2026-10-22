@@ -79,6 +79,89 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
 describe("personal project chat workspace", () => {
   beforeEach(() => localStorage.clear());
 
+  it.each([false, true])(
+    "mobile navigation preserves a newer attachment focus (moved: %s)",
+    async (moved) => {
+      vi.stubGlobal("matchMedia", () => ({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+      const frames: FrameRequestCallback[] = [];
+      const frame = vi
+        .spyOn(window, "requestAnimationFrame")
+        .mockImplementation((callback) => {
+          frames.push(callback);
+          return frames.length;
+        });
+      try {
+        const chat = {
+          id: "focus",
+          title: "Attachment focus",
+          accent: "ocean",
+          createdAt: 1,
+          updatedAt: 1,
+        };
+        const api = createApi({
+          listChats: vi.fn().mockResolvedValue([chat]),
+          getChat: vi.fn().mockResolvedValue({
+            ...chat,
+            notes: [
+              {
+                id: "note",
+                chatId: chat.id,
+                body: "File",
+                createdAt: 1,
+                labels: [],
+                attachments: [
+                  {
+                    id: "file",
+                    noteId: "note",
+                    filename: "profile.terminal",
+                    mediaType: "text/plain",
+                    byteSize: 1,
+                    createdAt: 1,
+                    modifiedAt: 1,
+                    status: "available",
+                    actions: { open: "blocked", reveal: "available" },
+                  },
+                ],
+              },
+            ],
+          }),
+          revealAttachment: vi.fn().mockResolvedValue(undefined),
+        });
+        render(<App api={api} />);
+        const project = await screen.findByRole("button", {
+          name: "Open Attachment focus",
+        });
+        project.focus();
+        fireEvent.click(project);
+        const reveal = await screen.findByRole("button", {
+          name: "Show profile.terminal in Folder",
+        });
+        if (moved) reveal.focus();
+        // Drain both navigation frames only after a user can reach the file.
+        for (let i = 0; i < 3; i++) {
+          await act(async () => {
+            for (const callback of frames.splice(0)) callback(0);
+          });
+        }
+        expect(
+          moved
+            ? reveal
+            : screen.getByRole("button", { name: "Back to projects" }),
+        ).toHaveFocus();
+        expect(
+          screen.getByRole("button", { name: "Open profile.terminal" }),
+        ).toBeDisabled();
+      } finally {
+        frame.mockRestore();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
   it("announces successful edits and sends hidden by search while refreshing membership", async () => {
     const user = userEvent.setup();
     const chat = {

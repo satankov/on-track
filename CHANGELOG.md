@@ -24,6 +24,11 @@ below `1.0.0`, releases may contain breaking changes.
   Unrecognized files and external exports remain; Windows cleanup reports its
   eventual result separately after the launcher exits.
 
+### Fixed
+
+- Delayed mobile project navigation no longer steals focus from a message or
+  attachment control reached before navigation finishes.
+
 ### Security
 
 - Enforce loopback Host and exact Origin checks independently of encoded URL
