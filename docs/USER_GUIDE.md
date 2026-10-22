@@ -195,3 +195,23 @@ visibility stay in that browser; they are not included in project backups.
 - [Node 22/24 runtime decision](adr/0007-node-22-and-24-runtime-support.md)
 - [Managed CLI delivery decision](adr/0008-managed-install-and-cli.md)
 - [Security policy](../SECURITY.md)
+
+## Navigate long histories and send notes
+
+The arrow controls at the history edge jump to the beginning or end of the
+current filtered history. Each appears only when there is more content in that
+direction. The end includes future-dated messages. Existing reading positions
+are retained when switching projects or returning to All.
+
+Click Add or press Cmd/Ctrl+Enter to send. Enter still adds a newline. The composer
+gives one brief glow in the project color when a valid send or edit save starts.
+New notes appear with a small entrance animation after saving. Errors keep the draft. System
+reduced-motion settings replace this with a brief static border and no movement.
+
+## Uninstall threadstr (next release)
+
+`thr uninstall` removes the managed application and its private dependencies,
+keeping projects. `thr uninstall --delete-data` also deletes projects and managed
+attachments after showing the paths and asking for confirmation. Export a backup
+first if needed. See the [complete uninstall instructions](install/README.md#uninstall-next-release)
+for retained files, manual installations, interrupted cleanup, and Windows receipts.

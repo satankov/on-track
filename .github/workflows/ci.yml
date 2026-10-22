@@ -65,3 +65,5 @@ jobs:
         run: npm run build && npm run typecheck
       - name: Run unit, component, and database tests
         run: npm test
+      - name: Verify managed uninstall with disposable fixtures
+        run: node scripts/managed-smoke.mjs --uninstall

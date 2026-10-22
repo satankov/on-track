@@ -73,6 +73,8 @@ import {
 import { analyzeMarkdown } from "./markdown-analysis.js";
 import { senderColor } from "./sender-color.js";
 import { useComposerFileDrop } from "./composer-file-drop.js";
+import { HistoryNavigation } from "./HistoryNavigation.js";
+import { useSendFeedback, type SendFeedback } from "./send-feedback.js";
 
 const ACCENT_NAMES: Record<Accent, string> = {
   coral: "Coral",
@@ -2188,6 +2190,7 @@ function MessageGroups({
 }
 
 function ChatWorkspace({
+  sendFeedback,
   exampleCopyAction,
   exampleError,
   exampleGlow = false,
@@ -2225,6 +2228,7 @@ function ChatWorkspace({
   copiedNoteId,
   navigationDisabled,
 }: {
+  sendFeedback?: SendFeedback;
   readingPositions: Map<string, ReadingPosition>;
   detail: TimelineContent;
   exampleCopyAction?: ReactNode;
@@ -2277,6 +2281,7 @@ function ChatWorkspace({
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
+  useSendFeedback(composerRef, historyRef, sendFeedback);
   const fileDrop = useComposerFileDrop(
     composerRef,
     saving || Boolean(explainReadOnly),
@@ -2497,7 +2502,12 @@ function ChatWorkspace({
       return;
     }
 
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+    if (
+      event.key === "Enter" &&
+      !event.nativeEvent.isComposing &&
+      !event.repeat &&
+      (event.metaKey || event.ctrlKey)
+    ) {
       event.preventDefault();
       submitDraft();
     }
@@ -2615,6 +2625,7 @@ function ChatWorkspace({
       <section
         ref={historyRef}
         className="history"
+        tabIndex={-1}
         aria-label={`${detail.title} messages`}
       >
         {detail.notes.length === 0 ? (
@@ -2667,6 +2678,10 @@ function ChatWorkspace({
         )}
       </section>
 
+      <HistoryNavigation
+        historyRef={historyRef}
+        contentKey={`${detail.id}:${historyFilter}`}
+      />
       <footer className="composer-wrap">
         {exampleError}
         {visibleComposerError && (
@@ -3078,6 +3093,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [composerTimestampOpen, setComposerTimestampOpen] = useState(false);
   const [error, setError] = useState("");
   const [savingNote, setSavingNote] = useState(false);
+  const [sendFeedback, setSendFeedback] = useState<SendFeedback>();
+  const sendAttempt = useRef(0);
   const [importing, setImporting] = useState(false);
   const importInProgress = useRef(false);
   const databaseEpoch = useRef(0);
@@ -3634,6 +3651,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       if (editing) {
         if (timestamp === undefined)
           throw new Error("Choose a valid timestamp.");
+        setSendFeedback({ projectId, attempt: ++sendAttempt.current });
         const sender = submittedSender || null;
         await updateNote(editing, {
           body: submittedDraft,
@@ -3645,12 +3663,16 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         setDraftSender(newMessageSender.current);
         setComposerSenderOpen(newMessageSenderOpen.current);
       } else {
+        const attempt = ++sendAttempt.current;
+        setSendFeedback({ projectId, attempt });
         const note = await api.appendNote(projectId, {
           body: submittedDraft,
           ...(submittedSender ? { sender: submittedSender } : {}),
           ...(timestamp === undefined ? {} : { createdAt: timestamp }),
           ...(submittedFiles.length === 0 ? {} : { files: submittedFiles }),
         });
+        if (activeId.current === projectId)
+          setSendFeedback({ projectId, attempt, noteId: note.id });
         activeMutationGeneration.current += 1;
         const submittedNotes = sortNotes([...active.notes, note]);
         const submittedUpdatedAt = chatActivityFromNotes(
@@ -4190,6 +4212,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       ) : active ? (
         <ChatWorkspace
           key={active.id}
+          sendFeedback={
+            sendFeedback?.projectId === active.id ? sendFeedback : undefined
+          }
           readingPositions={readingPositions}
           detail={active}
           draft={draft}

@@ -126,3 +126,13 @@ For startup, download, or update problems, see [troubleshooting](README.md#if-so
 
 The retained legacy data and runtime names are deliberate; see
 [compatibility guidance](../compatibility.md).
+
+## Uninstall (next release)
+
+Run `thr uninstall` to remove the managed app and private Node/npm dependencies
+while keeping your projects. Run `thr uninstall --delete-data` to also delete
+projects and attachments after reviewing the printed paths and confirming.
+Export a backup first if you need to keep that data.
+
+See [uninstall and manual removal](README.md#uninstall-next-release) for retained
+files, recovery, noninteractive options, and manual source installations.

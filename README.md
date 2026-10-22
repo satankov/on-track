@@ -75,13 +75,14 @@ Managed installation is experimental. See the detailed guides for
 
 After managed setup, open a new terminal:
 
-| Command      | What it does                                    |
-| ------------ | ----------------------------------------------- |
-| `thr run`    | Start threadstr and open your browser           |
-| `thr stop`   | Stop the local server; your projects stay saved |
-| `thr status` | Show the server status and local address        |
-| `thr logs`   | Show recent diagnostics                         |
-| `thr update` | Install the latest stable release and restart   |
+| Command                        | What it does                                                   |
+| ------------------------------ | -------------------------------------------------------------- |
+| `thr run`                      | Start threadstr and open your browser                          |
+| `thr stop`                     | Stop the local server; your projects stay saved                |
+| `thr status`                   | Show the server status and local address                       |
+| `thr logs`                     | Show recent diagnostics                                        |
+| `thr uninstall` (next release) | Remove the managed app and private dependencies; keep projects |
+| `thr update`                   | Install the latest stable release and restart                  |
 
 Closing the browser does not stop the server. After a reboot, run `thr run`
 again. Before updating, save drafts and export a backup; refresh browser tabs
@@ -134,3 +135,11 @@ Encryption and device sync are future work.
 
 [Apache License 2.0](LICENSE) — free to use, modify, and distribute for personal
 or commercial purposes under its terms.
+
+### Uninstall (next release)
+
+Use `thr uninstall` to remove the managed app and private dependencies while
+keeping projects. To delete projects and attachments too, export any needed
+backup and run `thr uninstall --delete-data`. Both show the target paths and ask
+for confirmation. See [uninstall instructions](docs/install/README.md#uninstall-next-release)
+for retained files, manual installations, and Windows completion reporting.

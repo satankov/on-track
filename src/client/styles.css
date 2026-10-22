@@ -988,6 +988,40 @@ button.rail-section-label {
   padding: 20px var(--history-inline-padding) 36px;
   background: var(--history);
 }
+.history:has(+ .history-navigation button) {
+  padding-right: max(56px, var(--history-inline-padding));
+}
+.history-navigation {
+  grid-area: history;
+  z-index: 2;
+  align-self: end;
+  justify-self: end;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 6px 12px 0;
+}
+.history-navigation button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--control);
+  color: var(--ink);
+  box-shadow: 0 2px 8px
+    color-mix(in srgb, var(--shadow-overlay) 10%, transparent);
+  cursor: pointer;
+}
+.history-navigation button:hover {
+  background: var(--selection);
+}
+.history-navigation svg {
+  width: 20px;
+  height: 20px;
+}
 .thread-line {
   position: absolute;
   top: 0;
@@ -1918,7 +1952,8 @@ button.rail-section-label {
 .composer-wrap {
   grid-area: composer;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
+  z-index: 3;
   padding: 8px clamp(20px, 5vw, 72px) 10px;
   padding-left: calc(var(--history-filter-width) + clamp(20px, 5vw, 72px));
   background: var(--history);
@@ -1934,6 +1969,51 @@ button.rail-section-label {
   border: 1px solid var(--line-strong);
   border-radius: 12px;
   background: var(--field);
+}
+.composer[data-send-feedback] {
+  animation: composer-send-glow 720ms cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+@keyframes composer-send-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  18%,
+  40% {
+    box-shadow:
+      inset 0 0 0 1px var(--accent),
+      0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent),
+      0 0 20px 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  }
+}
+.message-row--arriving .message-bubble {
+  animation: message-arrive 220ms cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+@keyframes message-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer[data-send-feedback] {
+    animation: composer-send-static 180ms step-end;
+  }
+  .message-row--arriving .message-bubble {
+    animation: none;
+  }
+}
+@keyframes composer-send-static {
+  from {
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  to {
+    box-shadow: none;
+  }
 }
 .composer-content {
   min-height: 0;

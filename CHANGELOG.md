@@ -6,6 +6,18 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- Contextual beginning/end buttons navigate the current project history, with
+  keyboard focus and reduced-motion support.
+- Sending or saving an edited message gives the composer a brief project-accent
+  glow. New messages enter gently after saving. Enter remains a newline;
+  Cmd/Ctrl+Enter submits.
+- `thr uninstall` removes the managed app and private dependencies while keeping
+  projects. Explicit `--delete-data` also removes project data after confirmation.
+  Unrecognized files and external exports remain; Windows cleanup reports its
+  eventual result separately after the launcher exits.
+
 ### Security
 
 - Enforce loopback Host and exact Origin checks independently of encoded URL

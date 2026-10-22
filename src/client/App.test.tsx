@@ -2514,6 +2514,10 @@ describe("personal project chat workspace", () => {
       body: "**Decision** recorded\n<img src=x>",
       sender: "Maya Chen",
     });
+    expect(document.querySelector(".composer")).toHaveAttribute(
+      "data-send-feedback",
+    );
+    expect(document.querySelector(".message-row--arriving")).toBeNull();
 
     await user.keyboard("{Meta>}{Enter}{/Meta}");
     expect(await screen.findByText("Decision")).toBeVisible();
@@ -2521,7 +2525,68 @@ describe("personal project chat workspace", () => {
     expect(document.querySelector(".history img")).toBeNull();
     expect(composer).toHaveValue("");
     expect(sender).toHaveValue("Maya Chen");
+    expect(document.querySelector('[data-note-id="note-1"]')).toHaveClass(
+      "message-row--arriving",
+    );
   });
+
+  it.each(["Save", "Control", "Meta"])(
+    "glows when an edited message is submitted with %s without replaying its entrance",
+    async (trigger) => {
+      const user = userEvent.setup();
+      const chat = {
+        id: "chat-1",
+        title: "Delivery",
+        accent: "ocean" as const,
+        createdAt: 1,
+        updatedAt: 2,
+      };
+      const note = {
+        id: "note-1",
+        chatId: chat.id,
+        body: "Original message",
+        createdAt: 2_000,
+        labels: [],
+      };
+      const saved = deferred<typeof note>();
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+        updateNote: vi.fn().mockReturnValue(saved.promise),
+      });
+      render(<App api={api} />);
+      await user.click(
+        await screen.findByRole("button", { name: "Open Delivery" }),
+      );
+      await user.click(screen.getByRole("button", { name: "Edit message" }));
+      const editor = screen.getByRole("textbox", { name: "Edit message" });
+      await user.clear(editor);
+      await user.type(editor, "Revised message");
+      expect(document.querySelector(".composer")).not.toHaveAttribute(
+        "data-send-feedback",
+      );
+      if (trigger === "Save")
+        await user.click(screen.getByRole("button", { name: "Save" }));
+      else await user.keyboard(`{${trigger}>}{Enter}{/${trigger}}`);
+      expect(api.updateNote).toHaveBeenCalledOnce();
+      expect(document.querySelector(".composer")).toHaveAttribute(
+        "data-send-feedback",
+      );
+      expect(editor).toHaveValue("Revised message");
+      await act(async () =>
+        saved.resolve({ ...note, body: "Revised message" }),
+      );
+      expect(
+        await screen.findByText("Revised message", {
+          selector: ".message-bubble p",
+        }),
+      ).toBeVisible();
+      expect(document.querySelector(".composer")).toHaveAttribute(
+        "data-send-feedback",
+      );
+      expect(document.querySelector(".message-row--arriving")).toBeNull();
+    },
+  );
 
   it("resizes the composer for multiline drafts and edit-prefilled messages", async () => {
     const user = userEvent.setup();
