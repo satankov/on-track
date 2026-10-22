@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import {
+  closeSync,
+  openSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -16,7 +18,6 @@ export const WINDOWS_UNINSTALL_CLEANUP = String.raw`
 param([Parameter(Mandatory=$true)][string]$JobFile)
 $ErrorActionPreference='Stop'
 $env:PSModulePath=[IO.Path]::Combine($PSHOME,'Modules')
-$job=Get-Content -LiteralPath $JobFile -Raw -Encoding UTF8 | ConvertFrom-Json
 $receipt=[IO.Path]::Combine([IO.Path]::GetDirectoryName($JobFile),'result.txt')
 $ready=[IO.Path]::Combine([IO.Path]::GetDirectoryName($JobFile),'ready')
 function Directory-Safe([string]$path) {
@@ -32,6 +33,7 @@ function Remove-Tree([string]$path) {
   $dir.Delete()
 }
 try {
+  $job=Get-Content -LiteralPath $JobFile -Raw -Encoding UTF8 | ConvertFrom-Json
   Directory-Safe $job.plan.root
   $marker=[IO.Path]::Combine($job.plan.root,'.on-track-uninstall.json')
   $saved=Get-Content -LiteralPath $marker -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -130,49 +132,69 @@ export async function scheduleWindowsCleanup(
     { flag: "wx", mode: 0o600 },
   );
   const home = join(systemRoot, "System32/WindowsPowerShell/v1.0");
-  const child = spawn(
-    join(home, "powershell.exe"),
-    [
-      "-NoLogo",
-      "-NoProfile",
-      "-NonInteractive",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      script,
-      "-JobFile",
-      job,
-    ],
-    {
-      cwd: directory,
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-      shell: false,
-      env: {
-        ...process.env,
-        PSModulePath: join(home, "Modules"),
-        WinPSModulePath: join(home, "Modules"),
+  const stderrPath = join(directory, "stderr.txt");
+  const stderr = openSync(stderrPath, "wx", 0o600);
+  let child: ReturnType<typeof spawn>;
+  try {
+    child = spawn(
+      join(home, "powershell.exe"),
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        script,
+        "-JobFile",
+        job,
+      ],
+      {
+        cwd: directory,
+        detached: true,
+        stdio: ["ignore", "ignore", stderr],
+        windowsHide: true,
+        shell: false,
+        env: {
+          ...process.env,
+          PSModulePath: join(home, "Modules"),
+          WinPSModulePath: join(home, "Modules"),
+        },
       },
-    },
-  );
+    );
+  } finally {
+    closeSync(stderr);
+  }
   let failure: Error | undefined;
   let exited = false;
+  let exitCode: number | null = null;
   child.once("error", (error) => {
     failure = error;
   });
-  child.once("exit", () => {
+  child.once("exit", (code) => {
     exited = true;
+    exitCode = code;
   });
   child.unref();
   const receipt = join(directory, "result.txt"),
     deadline = Date.now() + 15000;
   while (!statIfPresent(join(directory, "ready"))) {
-    if (failure || exited || Date.now() > deadline)
+    if (failure || exited || Date.now() > deadline) {
+      const detail = [receipt, stderrPath]
+        .filter((path) => statIfPresent(path))
+        .map((path) => readFileSync(path, "utf8").trim())
+        .filter(Boolean)
+        .join("\n");
+      const reason = failure
+        ? failure.message
+        : exited
+          ? `helper exited with exit code ${exitCode ?? "unknown"}`
+          : "helper readiness timed out";
       throw new Error(
-        `Windows cleanup did not become ready. Inspect ${receipt}; retry ${script} with -JobFile ${job}.`,
+        `Windows cleanup did not become ready (${reason}). Inspect ${receipt} and ${stderrPath}; retry ${script} with -JobFile ${job}.${detail ? `\n${detail}` : ""}`,
         { cause: failure },
       );
+    }
     await delay(100);
   }
   if (statIfPresent(receipt)) throw new Error(readFileSync(receipt, "utf8"));

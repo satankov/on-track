@@ -36,7 +36,7 @@ it.skipIf(process.platform === "win32")(
       expect(options).toMatchObject({
         detached: true,
         shell: false,
-        stdio: "ignore",
+        stdio: ["ignore", "ignore", expect.any(Number)],
       });
       expect(args).toContain("-File");
       expect(args).not.toContain("-Command");
@@ -98,5 +98,51 @@ it.skipIf(process.platform === "win32")(
         "/node",
       ),
     ).rejects.toThrow(/did not become ready/);
+  },
+);
+it.skipIf(process.platform === "win32")(
+  "reports the helper receipt when validation fails before readiness",
+  async () => {
+    vi.stubEnv("SystemRoot", "/Windows");
+    vi.mocked(spawn).mockImplementation((_exe, _args, options) => {
+      const cwd = String(options!.cwd);
+      roots.push(cwd);
+      const child = Object.assign(new EventEmitter(), { unref: vi.fn() });
+      writeFileSync(
+        join(cwd, "result.txt"),
+        "Cleanup incomplete: Cleanup target changed",
+      );
+      queueMicrotask(() => child.emit("exit", 1));
+      return child as never;
+    });
+    await expect(
+      scheduleWindowsCleanup(
+        { root: "/runtime", data: "/data" } as UninstallPlan,
+        "token",
+        "/node",
+      ),
+    ).rejects.toThrow(/Cleanup target changed/);
+  },
+);
+it.skipIf(process.platform === "win32")(
+  "retains startup stderr and reports the exit code when no receipt exists",
+  async () => {
+    vi.stubEnv("SystemRoot", "/Windows");
+    vi.mocked(spawn).mockImplementation((_exe, _args, options) => {
+      roots.push(String(options!.cwd));
+      const stderr = (options!.stdio as unknown as [string, string, number])[2];
+      expect(typeof stderr).toBe("number");
+      writeFileSync(stderr, "ParserError: fixture startup failure");
+      const child = Object.assign(new EventEmitter(), { unref: vi.fn() });
+      queueMicrotask(() => child.emit("exit", 1));
+      return child as never;
+    });
+    await expect(
+      scheduleWindowsCleanup(
+        { root: "/runtime", data: "/data" } as UninstallPlan,
+        "token",
+        "/node",
+      ),
+    ).rejects.toThrow(/exit code 1[\s\S]*fixture startup failure/);
   },
 );
