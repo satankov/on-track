@@ -48,10 +48,10 @@ where you left off. Use it for work projects, a side project, or your next trip.
 
 ## Quick start
 
-> **Release transition:** downloads currently install
-> [On Track v0.0.8](https://github.com/satankov/on-track/releases/tag/v0.0.8).
-> Use `ontrack` in place of `thr` below until the first threadstr release is
-> published. The screenshots show features in the upcoming release.
+> **Release guidance:** downloads currently install
+> [threadstr v0.0.9](https://github.com/satankov/on-track/releases/tag/v0.0.9),
+> with `thr` and the `ontrack` compatibility alias. v0.1.0 is the selected
+> unpublished candidate; its uninstall command requires the new release.
 
 **macOS / Linux** — run in Terminal:
 

@@ -23,13 +23,13 @@ clean OS/platform and published-upgrade evidence is incomplete.
 
 ## Current objective
 
-Prepare the next release with the completed security hardening in
+Prepare v0.1.0 with the completed security hardening in
 [plan 0025](plans/0025-security-audit-response.md) and the history controls,
 send/edit-save feedback, and uninstall in [plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md),
 and current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
 Security phases 1–4 are implemented and
-locally verified; optional Phase 5 remains deferred. The next release version is
-not yet selected in package metadata. Identity and compatibility decisions remain
+locally verified; optional Phase 5 remains deferred. The selected candidate is
+v0.1.0; it is not yet published. Identity and compatibility decisions remain
 in [plan 0023](plans/0023-threadstr-rebrand.md),
 [ADR-0010](adr/0010-threadstr-identity-and-cli-transition.md), and
 [compatibility guidance](compatibility.md).
@@ -287,7 +287,7 @@ resolve that external evidence. Native uninstall validation is tracked in
 assistive-technology validation is tracked in
 [issue #63](https://github.com/satankov/on-track/issues/63).
 [v0.0.9](https://github.com/satankov/on-track/releases/tag/v0.0.9) is the latest published release;
-the next version is not selected; see the [release procedure](RELEASING.md).
+v0.1.0 is the selected unpublished candidate; see the [release procedure](RELEASING.md).
 Broader product priorities above remain strategy until scoped. Durable decisions
 live in `docs/adr/`; significant work lives in `docs/plans/`.
 

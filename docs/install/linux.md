@@ -1,11 +1,10 @@
 # Install threadstr on Linux
 
-> **Next-release guidance:** this branch prepares threadstr and `thr`. The latest
-> published release is still [On Track v0.0.8](https://github.com/satankov/on-track/releases/tag/v0.0.8),
-> whose installer provides `ontrack`. Until the next release is published, the
-> `latest` downloads below install v0.0.8; use its
-> [installation guide](https://github.com/satankov/on-track/tree/v0.0.8/docs/install)
-> and `ontrack` commands. v0.0.9 is the selected candidate and is not yet published.
+> **Release guidance:** the latest published release is
+> [threadstr v0.0.9](https://github.com/satankov/on-track/releases/tag/v0.0.9),
+> with `thr` and the `ontrack` compatibility alias. The selected v0.1.0 candidate
+> is not yet published. Until publication, `latest` downloads install v0.0.9;
+> the uninstall commands below require v0.1.0.
 
 ## Quick setup — one command
 

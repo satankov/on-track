@@ -2,7 +2,7 @@
 
 ## Status
 
-The published baseline is v0.0.9 (threadstr, primary `thr` CLI). Current source
+The published baseline is v0.0.9 (threadstr, primary `thr` CLI). The v0.1.0 candidate
 adds the security hardening recorded in [plan 0025](plans/0025-security-audit-response.md)
 and the history controls, composer feedback, and managed uninstall in
 [plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md), plus
