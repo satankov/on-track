@@ -29,7 +29,12 @@ it.skipIf(process.platform === "win32")(
       checkpoints: [],
       directories: [],
     };
-    vi.mocked(spawn).mockImplementation((_exe, args, options) => {
+    vi.mocked(spawn).mockImplementation((exe, args, options) => {
+      expect(exe).toBe("/Windows/System32/conhost.exe");
+      expect(args?.slice(0, 2)).toEqual([
+        "--headless",
+        "/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+      ]);
       const cwd = String(options!.cwd);
       roots.push(cwd);
       expect(cwd).not.toBe(plan.root);

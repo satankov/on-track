@@ -136,9 +136,14 @@ export async function scheduleWindowsCleanup(
   const stderr = openSync(stderrPath, "wx", 0o600);
   let child: ReturnType<typeof spawn>;
   try {
+    // Direct detached PowerShell can exit before running any script because it
+    // has no console. The system headless host supplies one without a window.
+    // https://github.com/nodejs/node/issues/51018
     child = spawn(
-      join(home, "powershell.exe"),
+      join(systemRoot, "System32/conhost.exe"),
       [
+        "--headless",
+        join(home, "powershell.exe"),
         "-NoLogo",
         "-NoProfile",
         "-NonInteractive",
