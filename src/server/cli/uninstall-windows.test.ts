@@ -30,20 +30,22 @@ it.skipIf(process.platform === "win32")(
       directories: [],
     };
     vi.mocked(spawn).mockImplementation((exe, args, options) => {
-      expect(exe).toBe("/Windows/System32/conhost.exe");
-      expect(args?.slice(0, 2)).toEqual([
-        "--headless",
+      expect(exe).toBe(
         "/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
-      ]);
+      );
       const cwd = String(options!.cwd);
       roots.push(cwd);
       expect(cwd).not.toBe(plan.root);
       expect(options).toMatchObject({
-        detached: true,
+        detached: false,
         shell: false,
         stdio: ["ignore", "ignore", expect.any(Number)],
       });
-      expect(args).toContain("-File");
+      expect(args).toContain("-EncodedCommand");
+      expect(options!.env).toMatchObject({
+        THREADSTR_UNINSTALL_SCRIPT: join(cwd, "cleanup.ps1"),
+        THREADSTR_UNINSTALL_JOB: join(cwd, "job.json"),
+      });
       expect(args).not.toContain("-Command");
       const job = JSON.parse(readFileSync(join(cwd, "job.json"), "utf8"));
       expect(job.plan).toEqual(plan);
@@ -149,5 +151,26 @@ it.skipIf(process.platform === "win32")(
         "/node",
       ),
     ).rejects.toThrow(/exit code 1[\s\S]*fixture startup failure/);
+  },
+);
+it.skipIf(process.platform === "win32")(
+  "waits for the cleanup child after its launcher exits successfully",
+  async () => {
+    vi.stubEnv("SystemRoot", "/Windows");
+    vi.mocked(spawn).mockImplementation((_exe, _args, options) => {
+      const cwd = String(options!.cwd);
+      roots.push(cwd);
+      const child = Object.assign(new EventEmitter(), { unref: vi.fn() });
+      queueMicrotask(() => child.emit("exit", 0));
+      setTimeout(() => writeFileSync(join(cwd, "ready"), "ready"), 150);
+      return child as never;
+    });
+    await expect(
+      scheduleWindowsCleanup(
+        { root: "/runtime", data: "/data" } as UninstallPlan,
+        "token",
+        "/node",
+      ),
+    ).resolves.toBe(join(roots[0], "result.txt"));
   },
 );

@@ -29,9 +29,11 @@ can remove a new owner's lock; unlinking before release is also unsafe because
 closing the old SQLite handle can remove a replacement journal by pathname.
 Stable small lock files contain no project content and permit safe reinstallation.
 
-Windows launches fixed PowerShell code through the system headless console host
-(`conhost.exe --headless`) in a private external working directory. Direct detached
-PowerShell can exit before executing the script without a console. Cleanup uses
+Windows uses a short-lived, non-detached PowerShell launcher to start fixed cleanup
+code in a private external working directory. Direct detached PowerShell can
+exit before executing the script without a console; a PowerShell-created child
+also avoids Node's parent-exit job cleanup. Fixed encoded launcher code passes
+script/job paths through environment values, never shell interpolation. Cleanup uses
 literal JSON arguments, recorded target identities, bounded waits for the CLI
 and dispatcher, and no process killing. Runtime cleanup starts after those
 processes exit. Current managed commands honor the uninstall marker before and after lock acquisition. A receipt

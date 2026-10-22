@@ -94,6 +94,16 @@ try {
 }
 `;
 
+// The bootstrap is not detached: detached PowerShell may exit without running.
+// Its child is created by Windows PowerShell, outside Node's kill-on-exit job.
+export const WINDOWS_UNINSTALL_START = String.raw`
+$ErrorActionPreference='Stop'
+$env:PSModulePath=[IO.Path]::Combine($PSHOME,'Modules')
+$command='& $env:THREADSTR_UNINSTALL_SCRIPT -JobFile $env:THREADSTR_UNINSTALL_JOB'
+$encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+Start-Process -FilePath ([IO.Path]::Combine($PSHOME,'powershell.exe')) -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) -WindowStyle Hidden -RedirectStandardError $env:THREADSTR_UNINSTALL_STDERR -ErrorAction Stop
+`;
+
 export async function scheduleWindowsCleanup(
   plan: UninstallPlan,
   token: string,
@@ -136,32 +146,28 @@ export async function scheduleWindowsCleanup(
   const stderr = openSync(stderrPath, "wx", 0o600);
   let child: ReturnType<typeof spawn>;
   try {
-    // Direct detached PowerShell can exit before running any script because it
-    // has no console. The system headless host supplies one without a window.
-    // https://github.com/nodejs/node/issues/51018
     child = spawn(
-      join(systemRoot, "System32/conhost.exe"),
+      join(home, "powershell.exe"),
       [
-        "--headless",
-        join(home, "powershell.exe"),
         "-NoLogo",
         "-NoProfile",
         "-NonInteractive",
         "-ExecutionPolicy",
         "Bypass",
-        "-File",
-        script,
-        "-JobFile",
-        job,
+        "-EncodedCommand",
+        Buffer.from(WINDOWS_UNINSTALL_START, "utf16le").toString("base64"),
       ],
       {
         cwd: directory,
-        detached: true,
+        detached: false,
         stdio: ["ignore", "ignore", stderr],
         windowsHide: true,
         shell: false,
         env: {
           ...process.env,
+          THREADSTR_UNINSTALL_SCRIPT: script,
+          THREADSTR_UNINSTALL_JOB: job,
+          THREADSTR_UNINSTALL_STDERR: join(directory, "cleanup-stderr.txt"),
           PSModulePath: join(home, "Modules"),
           WinPSModulePath: join(home, "Modules"),
         },
@@ -184,16 +190,25 @@ export async function scheduleWindowsCleanup(
   const receipt = join(directory, "result.txt"),
     deadline = Date.now() + 15000;
   while (!statIfPresent(join(directory, "ready"))) {
-    if (failure || exited || Date.now() > deadline) {
-      const detail = [receipt, stderrPath]
+    if (
+      failure ||
+      (exited && exitCode !== 0) ||
+      statIfPresent(receipt) ||
+      Date.now() > deadline
+    ) {
+      const detail = [
+        receipt,
+        stderrPath,
+        join(directory, "cleanup-stderr.txt"),
+      ]
         .filter((path) => statIfPresent(path))
         .map((path) => readFileSync(path, "utf8").trim())
         .filter(Boolean)
         .join("\n");
       const reason = failure
         ? failure.message
-        : exited
-          ? `helper exited with exit code ${exitCode ?? "unknown"}`
+        : exited && exitCode !== 0
+          ? `helper launcher exited with exit code ${exitCode ?? "unknown"}`
           : "helper readiness timed out";
       throw new Error(
         `Windows cleanup did not become ready (${reason}). Inspect ${receipt} and ${stderrPath}; retry ${script} with -JobFile ${job}.${detail ? `\n${detail}` : ""}`,
