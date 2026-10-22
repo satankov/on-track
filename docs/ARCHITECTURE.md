@@ -5,7 +5,8 @@
 The published baseline is v0.0.9 (threadstr, primary `thr` CLI). Current source
 adds the security hardening recorded in [plan 0025](plans/0025-security-audit-response.md)
 and the history controls, composer feedback, and managed uninstall in
-[plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md).
+[plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md), plus
+current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
 Database and backup schema remain 7. The managed compatibility floor remains `0.0.7`.
 
 Core boundaries are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md),
@@ -381,8 +382,29 @@ forgotten credentials, recovery, and cleanup of plaintext artifacts. Backup
 integrity, import conflict handling, recovery UX, and restore failure modes must
 be hardened before production-readiness claims.
 
+## Project keyword search
+
+Project keyword search runs entirely in the loaded `ChatDetail` in the client.
+`project-search.ts` reuses cached Markdown analysis for readable text and Links,
+then applies normalized literal substring AND matching across body, displayed
+sender, and filenames. It intersects existing filters and keeps chronological
+ordering. Parsed-text caches belong to the mounted workspace; the App owns a
+session-only last-query map per project. Typing updates that map without rendering
+the timeline until the debounced query commits. Deletion/replacement clears the
+relevant memory. A rehype transform highlights rendered text nodes (including
+across inline formatting), preserving link attributes and skipping raw HTML;
+Unicode match offsets map back to original graphemes. No raw HTML is injected;
+no search query, index, or history enters an API, URL, persistent browser storage,
+SQLite, or backups. The memory-only history-position hook isolates search anchors
+from ordinary All/filter navigation. Search results reuse original message
+rendering and actions; the context action restores All and focuses the original
+message. Database/backup schema remains 7. This is linear search over a fully
+loaded, unvirtualized project, not an architecture for unbounded histories.
+
 ## Critical user journeys
 
+- Search the current project, combine with history filters, and open a highlighted
+  result in context without losing the query or composer draft.
 - Empty state -> create project -> customize title/accent -> add multiline note.
 - Create/switch multiple projects and preserve project-specific histories.
 - Pin/unpin projects, preserve pin order across restart/backup, and scan latest

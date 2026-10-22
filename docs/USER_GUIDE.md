@@ -198,6 +198,25 @@ visibility stay in that browser; they are not included in project backups.
 
 ## Navigate long histories and send notes
 
+Use the magnifier beside Edit to search the open project. Type words or fragments;
+every term must occur in the same message, in any order. Search includes readable
+Markdown text, participant names, and attachment filenames, including missing
+files. It excludes attachment contents, hidden link destinations, and unsaved
+drafts. Capitalization is ignored; accents remain significant. For example,
+`hotel budg` finds `Hotel budget`, and `cat` also finds `vacation`. Quotes and
+punctuation are literal, with no special operators or typo correction.
+
+Search combines with Files, Links, or the selected label filter and retains
+chronological order, including future messages. Full text is searched even when
+a long message is collapsed; use Show more to read it. Matching text is highlighted,
+and the number inside the search field counts messages in the current filter.
+The return-arrow beside a result opens that message among its neighbors. The
+cross inside the input clears the query and restores your position; the magnifier
+or Escape closes search. Each project's last query is remembered during this app
+session, including after opening a result in history or switching projects.
+Clearing the input forgets it; reloading the app resets all queries. Search stays
+local and does not create a persistent search history.
+
 The arrow controls at the history edge jump to the beginning or end of the
 current filtered history. Each appears only when there is more content in that
 direction. The end includes future-dated messages. Existing reading positions

@@ -38,6 +38,8 @@
   --attachment-ocean: #294956;
   --attachment-iris: #403853;
   --attachment-slate: #354348;
+  --search-match: #f5d780;
+  --search-match-ink: #17191c;
   --focus: #0b63ce;
   --button-primary: #20242a;
   --button-primary-hover: #080807;
@@ -206,9 +208,12 @@ label {
   -webkit-tap-highlight-color: transparent;
 }
 
-:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 3px;
+:focus-visible,
+input:focus,
+textarea:focus,
+select:focus {
+  outline: 1px solid var(--focus);
+  outline-offset: 1px;
 }
 
 .app-shell {
@@ -815,6 +820,7 @@ button.rail-section-label {
 }
 
 .workspace-chat {
+  container-type: inline-size;
   min-height: 0;
   display: grid;
   grid-template-columns: var(--history-filter-width) minmax(0, 1fr);
@@ -844,6 +850,128 @@ button.rail-section-label {
   align-items: center;
   gap: 14px;
   overflow: hidden;
+}
+.workspace-chat--search {
+  grid-template-rows: 64px auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "header header"
+    "filters search"
+    "filters history"
+    "composer composer";
+}
+.project-search {
+  grid-area: search;
+  min-width: 0;
+  padding: 4px clamp(20px, 5vw, 72px);
+  background: var(--history);
+}
+.project-search-field {
+  position: relative;
+  max-width: var(--chat-column-width);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  border-radius: 12px;
+  background: var(--paper);
+}
+.project-search-field:focus-within {
+  outline: 1px solid var(--focus);
+  outline-offset: 1px;
+}
+.project-search-field input {
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  outline: 0;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+}
+.project-search-field input::-webkit-search-cancel-button {
+  appearance: none;
+}
+.project-search-toggle,
+.project-search-clear,
+.message-history-button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.project-search-toggle:hover,
+.project-search-toggle[aria-expanded="true"],
+.project-search-clear:hover,
+.message-history-button:hover {
+  color: var(--ink);
+  background: var(--selection);
+}
+.project-search-count {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.project-search-clear {
+  border-radius: 12px;
+}
+.project-search-field input:placeholder-shown ~ .project-search-clear {
+  visibility: hidden;
+}
+.project-search-toggle svg,
+.project-search-clear svg,
+.message-history-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.message-context {
+  position: relative;
+  width: 100%;
+}
+.message-row--search.message-row--own {
+  padding-right: 52px;
+}
+.message-row--search.message-row--participant {
+  padding-left: 52px;
+}
+.message-history-button {
+  position: absolute;
+  top: 50%;
+  right: -52px;
+  transform: translateY(-50%);
+}
+.message-row--participant .message-history-button {
+  right: auto;
+  left: -52px;
+}
+.message-row--participant .message-history-button svg {
+  transform: scaleX(-1);
+}
+.search-highlight {
+  background: var(--search-match);
+  color: var(--search-match-ink);
+  border-radius: 2px;
+}
+@container (max-width: 600px) {
+  .project-search {
+    padding-inline: 12px;
+  }
 }
 .chat-heading {
   flex: 1 1 auto;
@@ -1308,6 +1436,10 @@ button.rail-section-label {
   border: 1px solid var(--line-strong);
   border-radius: 14px 14px 14px 5px;
 }
+.message-row:focus-visible .message-bubble {
+  outline: 1px solid var(--focus);
+  outline-offset: 1px;
+}
 .message-sender {
   margin: 0 0 5px;
   max-width: 100%;
@@ -1615,8 +1747,8 @@ button.rail-section-label {
   background: color-mix(in srgb, var(--attachment-ink) 10%, transparent);
 }
 .attachment-action:focus-visible {
-  outline: 2px solid var(--attachment-ink);
-  outline-offset: 2px;
+  outline: 1px solid var(--attachment-ink);
+  outline-offset: 1px;
 }
 .attachment-action svg {
   width: 15px;
@@ -1837,8 +1969,8 @@ button.rail-section-label {
   box-shadow: inset 0 0 0 2px var(--focus);
 }
 .theme-option:has(input:focus-visible) {
-  outline: 3px solid var(--focus);
-  outline-offset: 3px;
+  outline: 1px solid var(--focus);
+  outline-offset: 1px;
 }
 .theme-option input {
   position: absolute;
@@ -1980,10 +2112,7 @@ button.rail-section-label {
   }
   18%,
   40% {
-    box-shadow:
-      inset 0 0 0 1px var(--accent),
-      0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent),
-      0 0 20px 3px color-mix(in srgb, var(--accent) 25%, transparent);
+    box-shadow: 0 0 0 1px var(--accent);
   }
 }
 .message-row--arriving .message-bubble {
@@ -2150,7 +2279,7 @@ button.rail-section-label {
 }
 .composer:focus-within {
   border-color: var(--focus);
-  outline: 2px solid color-mix(in srgb, var(--focus) 24%, transparent);
+  outline: 0;
   outline-offset: 1px;
 }
 .composer-bar {
@@ -2376,7 +2505,7 @@ kbd {
   background: color-mix(in srgb, var(--accent) 9%, var(--paper));
 }
 .markdown-tool-button:focus-visible {
-  outline: 2px solid var(--focus);
+  outline: 1px solid var(--focus);
   outline-offset: -2px;
 }
 .markdown-tool-glyph {
@@ -2554,8 +2683,8 @@ kbd {
   opacity: 0;
 }
 .accent-option:has(input:focus-visible) {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
+  outline: 1px solid var(--focus);
+  outline-offset: 1px;
 }
 .accent-swatch {
   width: 13px;
@@ -2622,8 +2751,8 @@ kbd {
   accent-color: var(--accent);
 }
 .project-label-option:has(input:focus-visible) {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
+  outline: 1px solid var(--focus);
+  outline-offset: 1px;
 }
 .project-label-option > .label-glyph {
   margin-left: auto;
@@ -2656,8 +2785,8 @@ kbd {
   accent-color: var(--accent);
 }
 .project-message-display-option:has(input:focus-visible) {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
+  outline: 1px solid var(--focus);
+  outline-offset: 1px;
 }
 .project-lifecycle-actions {
   display: flex;
@@ -2745,6 +2874,13 @@ kbd {
       "filters"
       "history"
       "composer";
+  }
+  .workspace-chat--search {
+    grid-template-rows: 88px auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "header" "search" "filters" "history" "composer";
+  }
+  .project-search {
+    padding: 4px 12px;
   }
   .chat-header {
     min-height: 88px;
@@ -3161,9 +3297,7 @@ kbd {
 }
 .composer[data-readonly-highlight="true"] {
   border-color: var(--accent);
-  box-shadow:
-    inset 0 0 0 1px var(--accent),
-    0 0 14px color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 .composer[data-readonly-highlight="true"] .example-composer-notice {
   color: var(--ink);
@@ -3177,7 +3311,7 @@ kbd {
 }
 @media (forced-colors: active) {
   .composer[data-readonly-highlight="true"] {
-    outline: 2px solid Highlight;
+    outline: 1px solid Highlight;
     outline-offset: -2px;
   }
 }

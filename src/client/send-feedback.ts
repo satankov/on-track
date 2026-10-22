@@ -4,6 +4,7 @@ export interface SendFeedback {
   projectId: string;
   attempt: number;
   noteId?: string;
+  savedNoteId?: string;
 }
 
 /** Transient paint only: mounting/restoring a workspace never replays a send. */

@@ -1,3 +1,5 @@
+import { HighlightText } from "./HighlightText.js";
+import { rehypeSearchHighlight } from "./search-highlight.js";
 import {
   HomeWorkspace,
   type WorkspacePlaceholderState,
@@ -75,6 +77,16 @@ import { senderColor } from "./sender-color.js";
 import { useComposerFileDrop } from "./composer-file-drop.js";
 import { HistoryNavigation } from "./HistoryNavigation.js";
 import { useSendFeedback, type SendFeedback } from "./send-feedback.js";
+import {
+  ProjectSearch,
+  SearchIcon,
+  SearchSaveStatus,
+} from "./ProjectSearch.js";
+import {
+  createSearchDocumentBuilder,
+  matchesSearch,
+  parseSearchQuery,
+} from "./project-search.js";
 
 const ACCENT_NAMES: Record<Accent, string> = {
   coral: "Coral",
@@ -1769,11 +1781,18 @@ const messageMarkdownComponents: Components = {
   },
 };
 
-function MarkdownMessage({ body }: { body: string }) {
+function MarkdownMessage({
+  body,
+  searchTerms,
+}: {
+  body: string;
+  searchTerms: string[];
+}) {
   if (!body.trim()) return null;
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
+      rehypePlugins={[[rehypeSearchHighlight, { terms: searchTerms }]]}
       skipHtml
       components={messageMarkdownComponents}
     >
@@ -1811,9 +1830,11 @@ function ChevronDownIcon() {
 
 function CollapsibleMessageBody({
   body,
+  searchTerms,
   collapseLongMessages,
 }: {
   body: string;
+  searchTerms: string[];
   collapseLongMessages: boolean;
 }) {
   const contentId = useId();
@@ -1862,7 +1883,7 @@ function CollapsibleMessageBody({
         }
       >
         <div className="message-body note-body" id={contentId} ref={bodyRef}>
-          <MarkdownMessage body={body} />
+          <MarkdownMessage body={body} searchTerms={searchTerms} />
         </div>
       </div>
       {isLong && (
@@ -1883,9 +1904,11 @@ function CollapsibleMessageBody({
 
 function AttachmentList({
   note,
+  searchTerms,
   onAction,
 }: {
   note: Note;
+  searchTerms: string[];
   onAction: (
     note: Note,
     attachmentId: string,
@@ -1946,7 +1969,9 @@ function AttachmentList({
               {fileTypeLabel(attachment.filename, attachment.mediaType)}
             </span>
             <span className="attachment-copy">
-              <strong>{attachment.filename}</strong>
+              <strong>
+                <HighlightText text={attachment.filename} terms={searchTerms} />
+              </strong>
               <small
                 id={reasonId}
                 className={
@@ -2036,6 +2061,7 @@ function AttachmentList({
 
 function MessageGroups({
   notes,
+  searchTerms,
   futureStartId,
   enabledLabels,
   collapseLongMessages,
@@ -2045,8 +2071,10 @@ function MessageGroups({
   onDeleteNote,
   onEditNote,
   onSetNoteLabel,
+  onOpenInHistory,
 }: {
   notes: Note[];
+  searchTerms: string[];
   futureStartId?: string;
   enabledLabels: ConfigurableLabel[];
   collapseLongMessages: boolean;
@@ -2060,6 +2088,7 @@ function MessageGroups({
   onDeleteNote: (note: Note) => void;
   onEditNote: (note: Note) => void;
   onSetNoteLabel: (note: Note, label: Label, applied: boolean) => Promise<void>;
+  onOpenInHistory?: (note: Note) => void;
 }) {
   return (
     <div className="message-groups">
@@ -2114,38 +2143,65 @@ function MessageGroups({
                       key="message"
                       data-note-id={note.id}
                       data-created-at={note.createdAt}
-                      className={`message-row ${participant ? "message-row--participant" : "message-row--own"}`}
+                      tabIndex={-1}
+                      className={`message-row ${onOpenInHistory ? "message-row--search" : ""} ${participant ? "message-row--participant" : "message-row--own"}`}
                       style={{ gridRow: noteIndex + 1 }}
                     >
                       <div className="message-stack">
-                        <article className="message-bubble">
-                          {note.sender && (
-                            <p
-                              className="message-sender"
-                              data-sender-color={senderColor(note.sender)}
+                        <div className="message-context">
+                          <article className="message-bubble">
+                            {note.sender && (
+                              <p
+                                className="message-sender"
+                                data-sender-color={senderColor(note.sender)}
+                              >
+                                <HighlightText
+                                  text={note.sender}
+                                  terms={searchTerms}
+                                />
+                              </p>
+                            )}
+                            <AttachmentList
+                              searchTerms={searchTerms}
+                              note={note}
+                              onAction={onAttachmentAction}
+                            />
+                            <CollapsibleMessageBody
+                              searchTerms={searchTerms}
+                              key={String(collapseLongMessages)}
+                              body={note.body}
+                              collapseLongMessages={collapseLongMessages}
+                            />
+                            <footer className="message-footer">
+                              <MessageLabels labels={note.labels ?? []} />
+                              <time
+                                className="message-time"
+                                dateTime={new Date(
+                                  note.createdAt,
+                                ).toISOString()}
+                              >
+                                {formatMessageTime(note.createdAt)}
+                              </time>
+                            </footer>
+                          </article>
+                          {onOpenInHistory && (
+                            <button
+                              type="button"
+                              className="message-history-button"
+                              aria-label="Open message in history"
+                              title="Open in history"
+                              onClick={() => onOpenInHistory(note)}
                             >
-                              {note.sender}
-                            </p>
+                              <svg
+                                viewBox="0 0 24 24"
+                                aria-hidden="true"
+                                focusable="false"
+                              >
+                                <path d="m9 10-5 5 5 5M4 15h10a6 6 0 0 0 0-12h-2" />
+                              </svg>
+                            </button>
                           )}
-                          <AttachmentList
-                            note={note}
-                            onAction={onAttachmentAction}
-                          />
-                          <CollapsibleMessageBody
-                            key={String(collapseLongMessages)}
-                            body={note.body}
-                            collapseLongMessages={collapseLongMessages}
-                          />
-                          <footer className="message-footer">
-                            <MessageLabels labels={note.labels ?? []} />
-                            <time
-                              className="message-time"
-                              dateTime={new Date(note.createdAt).toISOString()}
-                            >
-                              {formatMessageTime(note.createdAt)}
-                            </time>
-                          </footer>
-                        </article>
+                        </div>
                         <div
                           className="message-actions"
                           aria-label="Message actions"
@@ -2195,6 +2251,7 @@ function ChatWorkspace({
   exampleError,
   exampleGlow = false,
   readingPositions,
+  searchQueries,
   detail,
   draft,
   draftSender,
@@ -2230,6 +2287,7 @@ function ChatWorkspace({
 }: {
   sendFeedback?: SendFeedback;
   readingPositions: Map<string, ReadingPosition>;
+  searchQueries: Map<string, string>;
   detail: TimelineContent;
   exampleCopyAction?: ReactNode;
   exampleError?: ReactNode;
@@ -2272,12 +2330,23 @@ function ChatWorkspace({
 }) {
   const explainReadOnly = useContext(ExampleReadOnlyContext);
   const historyRef = useRef<HTMLElement>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchText, setSearchText] = useState(
+    () => searchQueries.get(detail.id) ?? "",
+  );
+  const searchQuery = useMemo(
+    () => parseSearchQuery(searchOpen ? searchText : ""),
+    [searchOpen, searchText],
+  );
+  const searchToggleRef = useRef<HTMLButtonElement>(null);
+  const searchId = useId();
   const beforeFilterChange = useHistoryPosition(
     historyRef,
     detail.id,
     historyFilter,
     readingPositions,
     Boolean(explainReadOnly),
+    searchQuery.key,
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
@@ -2301,19 +2370,23 @@ function ChatWorkspace({
     useState<MarkdownAction>("bold");
   const [markdownError, setMarkdownError] = useState("");
   const previousUtilityRows = useRef([false, false, false]);
-  const linkedNoteIds = useMemo(
-    () =>
-      new Set(
-        detail.notes
-          .filter((note) => analyzeMarkdown(note.body).hasLinks)
-          .map((note) => note.id),
-      ),
-    [detail.notes],
+  const analyzeNotes = useMemo(() => createSearchDocumentBuilder(), []);
+  const searchDocuments = useMemo(
+    () => analyzeNotes(detail.notes),
+    [detail.notes, analyzeNotes],
+  );
+  const linkedNoteIds = new Set(
+    detail.notes
+      .filter((note) => searchDocuments.get(note.id)!.hasLinks)
+      .map((note) => note.id),
   );
   const attachmentCount = detail.notes.filter(hasAttachments).length;
   const enabledLabels = detail.enabledLabels ?? ["todo", "milestone"];
   const filterLabels = [...PERMANENT_LABELS, ...enabledLabels];
-  const visibleNotes = detail.notes.filter((note) => {
+  const searchMatches = detail.notes.filter((note) =>
+    matchesSearch(searchDocuments.get(note.id)!, searchQuery),
+  );
+  const visibleNotes = searchMatches.filter((note) => {
     if (historyFilter === "all") return true;
     if (historyFilter === "attachments") return hasAttachments(note);
     if (historyFilter === "links") return linkedNoteIds.has(note.id);
@@ -2518,9 +2591,42 @@ function ChatWorkspace({
     onHistoryFilterChange(filter);
   }
 
+  function commitSearch(value: string) {
+    beforeFilterChange(historyFilter, parseSearchQuery(value).key);
+    setSearchText(value);
+  }
+
+  function rememberSearch(value: string) {
+    if (value) searchQueries.set(detail.id, value);
+    else searchQueries.delete(detail.id);
+  }
+
+  function openSearch() {
+    const searchDraft = searchQueries.get(detail.id) ?? "";
+    beforeFilterChange(historyFilter, parseSearchQuery(searchDraft).key);
+    setSearchText(searchDraft);
+    setSearchOpen(true);
+  }
+
+  function closeSearch() {
+    beforeFilterChange(historyFilter, "");
+    setSearchOpen(false);
+    searchToggleRef.current?.focus();
+  }
+
+  function openInHistory(note: Note) {
+    beforeFilterChange("all", "", {
+      noteId: note.id,
+      createdAt: note.createdAt,
+      offset: 16,
+    });
+    setSearchOpen(false);
+    onHistoryFilterChange("all");
+  }
+
   return (
     <main
-      className={`workspace workspace-chat ${explainReadOnly ? "workspace-example" : ""}`}
+      className={`workspace workspace-chat ${explainReadOnly ? "workspace-example" : ""} ${searchOpen ? "workspace-chat--search" : ""}`}
       data-accent={detail.accent}
     >
       <header className="chat-header">
@@ -2541,6 +2647,18 @@ function ChatWorkspace({
             </p>
             <h1>{detail.title}</h1>
           </div>
+          <button
+            ref={searchToggleRef}
+            className="project-search-toggle"
+            type="button"
+            aria-label="Search messages"
+            title="Search messages"
+            aria-expanded={searchOpen}
+            aria-controls={searchOpen ? searchId : undefined}
+            onClick={() => (searchOpen ? closeSearch() : openSearch())}
+          >
+            <SearchIcon />
+          </button>
           {exampleCopyAction ?? (
             <button
               className="button button-quiet edit-project-button"
@@ -2553,6 +2671,27 @@ function ChatWorkspace({
           )}
         </div>
       </header>
+
+      {searchOpen && (
+        <ProjectSearch
+          id={searchId}
+          initialValue={searchText}
+          onValueChange={rememberSearch}
+          count={
+            searchQuery.key && !searchQuery.error
+              ? visibleNotes.length
+              : undefined
+          }
+          onCommit={commitSearch}
+          onClose={closeSearch}
+          status={
+            searchQuery.error ??
+            (searchQuery.key
+              ? `${visibleNotes.length} matching messages. ${historyFilter === "all" ? "All messages" : historyFilter === "attachments" ? "Files" : historyFilter === "links" ? "Links" : LABEL_NAMES[historyFilter]}.`
+              : "Search message text, people and filenames.")
+          }
+        />
+      )}
 
       <nav className="history-filter" aria-label="History filters">
         <div className="history-filter-inner">
@@ -2628,7 +2767,25 @@ function ChatWorkspace({
         tabIndex={-1}
         aria-label={`${detail.title} messages`}
       >
-        {detail.notes.length === 0 ? (
+        {searchQuery.error ? (
+          <div className="no-notes no-notes--filtered">
+            <p role="alert">{searchQuery.error}</p>
+          </div>
+        ) : searchQuery.key && visibleNotes.length === 0 ? (
+          <div className="no-notes no-notes--filtered">
+            <h2>No matching messages</h2>
+            <p>Try fewer words or clear the search.</p>
+            {historyFilter !== "all" && searchMatches.length > 0 && (
+              <button
+                type="button"
+                className="button button-quiet"
+                onClick={() => changeHistoryFilter("all")}
+              >
+                Search all messages
+              </button>
+            )}
+          </div>
+        ) : detail.notes.length === 0 ? (
           <>
             <div className="no-notes">
               <p className="eyebrow">The thread starts here</p>
@@ -2664,6 +2821,7 @@ function ChatWorkspace({
           </div>
         ) : (
           <MessageGroups
+            searchTerms={searchQuery.terms}
             notes={visibleNotes}
             futureStartId={futureStartId}
             enabledLabels={enabledLabels}
@@ -2674,15 +2832,23 @@ function ChatWorkspace({
             onDeleteNote={onDeleteNote}
             onEditNote={beginEditingNote}
             onSetNoteLabel={onSetNoteLabel}
+            onOpenInHistory={searchQuery.key ? openInHistory : undefined}
           />
         )}
       </section>
 
       <HistoryNavigation
         historyRef={historyRef}
-        contentKey={`${detail.id}:${historyFilter}`}
+        contentKey={`${detail.id}:${historyFilter}:${searchQuery.key}`}
       />
       <footer className="composer-wrap">
+        <SearchSaveStatus
+          savedNoteId={sendFeedback?.savedNoteId}
+          hidden={
+            Boolean(searchQuery.key) &&
+            !visibleNotes.some((note) => note.id === sendFeedback?.savedNoteId)
+          }
+        />
         {exampleError}
         {visibleComposerError && (
           <p role="alert" className="composer-error">
@@ -3121,6 +3287,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       : control;
     target?.focus();
   }, [projectMutationIds]);
+  const [searchQueries] = useState(() => new Map<string, string>());
   const [readingPositions, setReadingPositions] = useState(
     () => new Map<string, ReadingPosition>(),
   );
@@ -3606,6 +3773,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     const projectId = active.id;
     const selectionAtStart = selectionRequest.current;
     await api.deleteChat(projectId);
+    searchQueries.delete(projectId);
     setReadingPositions((current) => {
       const next = new Map(current);
       next.delete(projectId);
@@ -3651,7 +3819,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       if (editing) {
         if (timestamp === undefined)
           throw new Error("Choose a valid timestamp.");
-        setSendFeedback({ projectId, attempt: ++sendAttempt.current });
+        const attempt = ++sendAttempt.current;
+        setSendFeedback({ projectId, attempt });
         const sender = submittedSender || null;
         await updateNote(editing, {
           body: submittedDraft,
@@ -3660,6 +3829,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           keepAttachmentIds: editingAttachmentIds,
           files: submittedFiles,
         });
+        if (activeId.current === projectId)
+          setSendFeedback({ projectId, attempt, savedNoteId: editing.id });
         setDraftSender(newMessageSender.current);
         setComposerSenderOpen(newMessageSenderOpen.current);
       } else {
@@ -3672,7 +3843,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ...(submittedFiles.length === 0 ? {} : { files: submittedFiles }),
         });
         if (activeId.current === projectId)
-          setSendFeedback({ projectId, attempt, noteId: note.id });
+          setSendFeedback({
+            projectId,
+            attempt,
+            noteId: note.id,
+            savedNoteId: note.id,
+          });
         activeMutationGeneration.current += 1;
         const submittedNotes = sortNotes([...active.notes, note]);
         const submittedUpdatedAt = chatActivityFromNotes(
@@ -3954,6 +4130,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         setExample(undefined);
         setWorkspace({ chats: [] });
         setReadingPositions(new Map());
+        searchQueries.clear();
         setDraftTimestamp("");
         resetSenderComposer();
         setPendingFiles([]);
@@ -4139,6 +4316,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
             key={`${example.id}:${example.revision}`}
             detail={{ ...example, id: `${example.id}:${example.revision}` }}
             readingPositions={readingPositions}
+            searchQueries={searchQueries}
             exampleGlow={exampleGlow}
             exampleCopyAction={
               <button
@@ -4216,6 +4394,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
             sendFeedback?.projectId === active.id ? sendFeedback : undefined
           }
           readingPositions={readingPositions}
+          searchQueries={searchQueries}
           detail={active}
           draft={draft}
           draftSender={draftSender}

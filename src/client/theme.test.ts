@@ -522,7 +522,7 @@ describe("appearance theme contract", () => {
     );
 
     expect(focusRule?.groups?.body).toContain(
-      "outline: 2px solid var(--attachment-ink)",
+      "outline: 1px solid var(--attachment-ink)",
     );
     expect(forcedColors?.groups?.body).toMatch(
       /\.message-bubble,\s*\.attachment-list\s*\{[^}]*border: 1px solid CanvasText/s,

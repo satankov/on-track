@@ -25,7 +25,8 @@ clean OS/platform and published-upgrade evidence is incomplete.
 
 Prepare the next release with the completed security hardening in
 [plan 0025](plans/0025-security-audit-response.md) and the history controls,
-send/edit-save feedback, and uninstall in [plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md).
+send/edit-save feedback, and uninstall in [plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md),
+and current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
 Security phases 1–4 are implemented and
 locally verified; optional Phase 5 remains deferred. The next release version is
 not yet selected in package metadata. Identity and compatibility decisions remain
@@ -146,6 +147,14 @@ remains a regression-protected alpha, not a dedicated design target.
 
 ## Current capabilities
 
+- Current-project keyword search filters loaded message text, participant names,
+  and filenames locally. Its compact magnifier/input UI combines with history
+  filters, highlights matches, shows counts, restores reading positions, and opens
+  matching messages in context. Last queries are remembered per project for the
+  app session until cleared.
+  No search service, index, or schema change is required. See
+  [plan 0028](plans/0028-project-keyword-search.md).
+
 - Current source adds contextual beginning/end history controls, a short accent
   response when sending or saving an edited note, and managed uninstall with separate opt-in data
   deletion. See [plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md)
@@ -234,7 +243,7 @@ options without pretending those choices are solved.
 
 ## Non-goals for current plaintext alpha
 
-Collaboration, accounts, user-created label definitions, search, encryption,
+Collaboration, accounts, user-created label definitions, cross-project or semantic search, encryption,
 NDA-safe claims, native installers, mobile apps, peer-to-peer sync, public
 hosting, analytics, and telemetry.
 
