@@ -1,10 +1,7 @@
 # Install and run threadstr
 
-> **Release guidance:** the latest published release is
-> [threadstr v0.0.9](https://github.com/satankov/on-track/releases/tag/v0.0.9),
-> with `thr` and the `ontrack` compatibility alias. The selected v0.1.0 candidate
-> is not yet published. Until publication, `latest` downloads install v0.0.9;
-> the uninstall commands below require v0.1.0.
+> Managed installations include `thr` and the `ontrack` compatibility alias.
+> Uninstall requires v0.1.0 or later; update older installations first.
 
 Choose your guide: **[macOS](macos.md)** · **[Linux](linux.md)** · [Windows](windows.md).
 Each starts with a one-command installer, followed by download-first and manual
@@ -58,10 +55,12 @@ are not a replacement for a full backup.
 Use `thr run --no-open` to start without opening a browser, and
 `thr --help` for command options. Start again with `thr run` after a reboot.
 
-## Uninstall (next release)
+<a id="uninstall-next-release"></a>
 
-These commands are added by the next release; older installed CLIs may not yet
-recognize them. Run `thr --help` to check the installed command surface.
+## Uninstall
+
+These commands require v0.1.0 or later. Run `thr --help` to check whether your
+installed CLI supports them.
 
 Remove the managed application, its private Node/npm, installed dependencies,
 recorded old releases, known logs, and update checkpoints, while keeping projects:
