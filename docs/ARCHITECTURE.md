@@ -2,8 +2,11 @@
 
 ## Status
 
-The published baseline is v0.0.9 (threadstr, primary `thr` CLI). Current source
-adds the security hardening recorded in [plan 0025](plans/0025-security-audit-response.md).
+The published baseline is v0.0.9 (threadstr, primary `thr` CLI). The v0.1.0 candidate
+adds the security hardening recorded in [plan 0025](plans/0025-security-audit-response.md)
+and the history controls, composer feedback, and managed uninstall in
+[plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md), plus
+current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
 Database and backup schema remain 7. The managed compatibility floor remains `0.0.7`.
 
 Core boundaries are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md),
@@ -106,6 +109,14 @@ validated OS support remains contingent on the deferred platform evidence.
 
 ## Components and dependency direction
 
+Managed uninstall (`thr uninstall`, optionally `--delete-data`) previews exact
+targets, serializes against managed mutations, authenticates shutdown, and removes
+only recorded app artifacts and explicitly selected data. A validated private
+removal record supports retry; unknown files and staging remain. Windows defers
+runtime removal to an external PowerShell helper with a completion receipt.
+Uninstall retains ownership lock files on every platform. See [ADR-0012](adr/0012-managed-uninstall.md) and
+[uninstall guidance](install/README.md#uninstall-next-release). No schema changes.
+
 - `src/client`: React workspace, styles, and typed API client. It never imports
   server or database modules. A closed Light/Neutral/Dark theme preference is
   validated in the client and stored in browser-local storage; a same-origin
@@ -133,6 +144,12 @@ validated OS support remains contingent on the deferred platform evidence.
   each different Files, Links, or label filter opens at its own current/first-future
   boundary. Ordinary refreshes preserve manual scrolling. Future messages stay in
   normal scrolling, including short histories that can show several future rows.
+  Contextual history controls scroll to the actual beginning/end of the filtered
+  timeline without changing that initial placement policy. An accepted send or
+  edit-save attempt paints the project-accent composer glow; only a successfully
+  created visible note receives a one-shot entrance. The glow survives leaving
+  edit mode. Neither effect is replayed by history restoration.
+  Both navigation and feedback respect reduced motion.
   A pure sender helper maps a normalized sender name deterministically onto a closed set of theme-safe color
   roles; only the sender text, not a color value, crosses the API boundary.
 - `src/domain`: shared data contracts, closed built-in label vocabularies, and
@@ -365,8 +382,29 @@ forgotten credentials, recovery, and cleanup of plaintext artifacts. Backup
 integrity, import conflict handling, recovery UX, and restore failure modes must
 be hardened before production-readiness claims.
 
+## Project keyword search
+
+Project keyword search runs entirely in the loaded `ChatDetail` in the client.
+`project-search.ts` reuses cached Markdown analysis for readable text and Links,
+then applies normalized literal substring AND matching across body, displayed
+sender, and filenames. It intersects existing filters and keeps chronological
+ordering. Parsed-text caches belong to the mounted workspace; the App owns a
+session-only last-query map per project. Typing updates that map without rendering
+the timeline until the debounced query commits. Deletion/replacement clears the
+relevant memory. A rehype transform highlights rendered text nodes (including
+across inline formatting), preserving link attributes and skipping raw HTML;
+Unicode match offsets map back to original graphemes. No raw HTML is injected;
+no search query, index, or history enters an API, URL, persistent browser storage,
+SQLite, or backups. The memory-only history-position hook isolates search anchors
+from ordinary All/filter navigation. Search results reuse original message
+rendering and actions; the context action restores All and focuses the original
+message. Database/backup schema remains 7. This is linear search over a fully
+loaded, unvirtualized project, not an architecture for unbounded histories.
+
 ## Critical user journeys
 
+- Search the current project, combine with history filters, and open a highlighted
+  result in context without losing the query or composer draft.
 - Empty state -> create project -> customize title/accent -> add multiline note.
 - Create/switch multiple projects and preserve project-specific histories.
 - Pin/unpin projects, preserve pin order across restart/backup, and scan latest
@@ -415,6 +453,8 @@ be hardened before production-readiness claims.
 - `npm run release:check`: version, license, required-file, tag, and tracked-data
   contract.
 - `npm run verify`: authoritative aggregate local/release gate.
+- `npm run test:managed-uninstall`: disposable real-process retention/purge smoke;
+  Node 24 exercises the dispatcher, while Node 22 uses the source CLI directly.
 
 Vitest discovery is scoped to application tests under `src/` and maintainer tests
 under `scripts/`, excluding unrelated local tooling and demo suites.
@@ -426,7 +466,8 @@ test/subprocess deadlines are unchanged. Reproduce CI scheduling locally with
 
 GitHub Actions repeats full Linux verification on Node 22.16 and 24, exercises
 native SQLite dependency installation/tests for both runtimes on Linux and
-macOS and for Node 24 on Windows, performs dependency review and CodeQL analysis,
+macOS and for Node 24 on Windows, includes disposable managed-uninstall smoke in
+that native matrix, performs dependency review and CodeQL analysis,
 and publishes only a matching tag whose commit is already on `main`. Unit tests
 cover every native command shape; current manual dispatch
 evidence is limited to one user-reported macOS host, with Windows and Linux

@@ -1,11 +1,10 @@
 # Install and run threadstr
 
-> **Next-release guidance:** this branch prepares threadstr and `thr`. The latest
-> published release is still [On Track v0.0.8](https://github.com/satankov/on-track/releases/tag/v0.0.8),
-> whose installer provides `ontrack`. Until the next release is published, the
-> `latest` downloads below install v0.0.8; use its
-> [installation guide](https://github.com/satankov/on-track/tree/v0.0.8/docs/install)
-> and `ontrack` commands. v0.0.9 is the selected candidate and is not yet published.
+> **Release guidance:** the latest published release is
+> [threadstr v0.0.9](https://github.com/satankov/on-track/releases/tag/v0.0.9),
+> with `thr` and the `ontrack` compatibility alias. The selected v0.1.0 candidate
+> is not yet published. Until publication, `latest` downloads install v0.0.9;
+> the uninstall commands below require v0.1.0.
 
 Choose your guide: **[macOS](macos.md)** · **[Linux](linux.md)** · [Windows](windows.md).
 Each starts with a one-command installer, followed by download-first and manual
@@ -59,9 +58,80 @@ are not a replacement for a full backup.
 Use `thr run --no-open` to start without opening a browser, and
 `thr --help` for command options. Start again with `thr run` after a reboot.
 
+## Uninstall (next release)
+
+These commands are added by the next release; older installed CLIs may not yet
+recognize them. Run `thr --help` to check the installed command surface.
+
+Remove the managed application, its private Node/npm, installed dependencies,
+recorded old releases, known logs, and update checkpoints, while keeping projects:
+
+```sh
+thr uninstall
+```
+
+To also delete projects, messages, and managed attachments:
+
+```sh
+thr uninstall --delete-data
+```
+
+The command shows the exact runtime and data locations before asking for
+confirmation. Export a backup in Settings before deleting data. Cancellation
+does not stop the server or change files. Use `--yes` to confirm noninteractively;
+data deletion still requires the separate `--delete-data` option. `ontrack`
+supports the same commands. For a custom installation, append `--root` followed
+by its absolute runtime directory in quotes.
+
+Only recorded app artifacts are removed. Unrecognized files, unmarked interrupted
+installer staging folders, exported backups, original files outside managed
+attachments, manual source checkouts, and system Node/npm remain. Retained paths
+are reported; review them before deleting anything manually. Exact owned shell
+PATH entries are removed; modified or ambiguous profile blocks remain with
+cleanup guidance. Open a new terminal afterward. Browser appearance preferences
+can be removed through the browser's site-data controls.
+
+On Windows, the command first stops the app, then schedules remaining runtime
+cleanup after both CLI and dispatcher exit. **Pending is not complete.** Read the
+printed `result.txt` path to confirm completion or see the failure. A failed job
+retains `cleanup.ps1` and `job.json` beside that receipt; retry with PowerShell:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\exact\printed\cleanup.ps1" -JobFile "C:\exact\printed\job.json"
+```
+
+Use the actual printed paths. The helper removes its script/job on success;
+the receipt remains for inspection. On all operating systems, small ownership
+lock files remain in the runtime/data folders to avoid racing another local
+process; they contain no project content. Actual Windows and Linux
+uninstall smoke validation remains pending; macOS has local disposable-fixture
+evidence. This does not widen the installer's experimental platform guarantees.
+
+An interrupted macOS/Linux uninstall retains a validated removal record. Retry
+the same command/options. If the launcher has already been removed, use a built
+source checkout of this version (or a compatible newer one):
+
+```sh
+node dist/server/server/cli/main.js uninstall --root "/absolute/runtime/path"
+```
+
+Include `--delete-data` again if it was originally selected. Conflicting owners,
+pending update/restore journals, replaced targets, and unsafe paths are refused.
+Do not remove those guards just to force cleanup.
+
+### Remove a manual source installation
+
+Stop the foreground app with Ctrl+C. Delete the extracted source folder after
+checking for personal files or uncommitted work; this also removes its local
+`node_modules` and build output. To delete project data as well, separately remove
+the exact data directory listed in your OS guide (or the `ON_TRACK_DATA_DIR` you
+selected), after exporting any needed backup. Keep shared system Node/npm unless
+you independently intend to remove them. Saved installer scripts and downloaded
+archives outside the managed directory can be deleted separately.
+
 ## Transition from On Track
 
-After the renamed release is published, an existing v0.0.8 installation can run
+An existing v0.0.8 installation can run
 `ontrack update`. Alternatively, run the new installer against its same runtime
 root (pass `--root` / `-Root` if customized). The old updater may print its old
 product name once; subsequent commands use threadstr. Both launchers select the

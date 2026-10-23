@@ -195,3 +195,42 @@ visibility stay in that browser; they are not included in project backups.
 - [Node 22/24 runtime decision](adr/0007-node-22-and-24-runtime-support.md)
 - [Managed CLI delivery decision](adr/0008-managed-install-and-cli.md)
 - [Security policy](../SECURITY.md)
+
+## Navigate long histories and send notes
+
+Use the magnifier beside Edit to search the open project. Type words or fragments;
+every term must occur in the same message, in any order. Search includes readable
+Markdown text, participant names, and attachment filenames, including missing
+files. It excludes attachment contents, hidden link destinations, and unsaved
+drafts. Capitalization is ignored; accents remain significant. For example,
+`hotel budg` finds `Hotel budget`, and `cat` also finds `vacation`. Quotes and
+punctuation are literal, with no special operators or typo correction.
+
+Search combines with Files, Links, or the selected label filter and retains
+chronological order, including future messages. Full text is searched even when
+a long message is collapsed; use Show more to read it. Matching text is highlighted,
+and the number inside the search field counts messages in the current filter.
+The return-arrow beside a result opens that message among its neighbors. The
+cross inside the input clears the query and restores your position; the magnifier
+or Escape closes search. Each project's last query is remembered during this app
+session, including after opening a result in history or switching projects.
+Clearing the input forgets it; reloading the app resets all queries. Search stays
+local and does not create a persistent search history.
+
+The arrow controls at the history edge jump to the beginning or end of the
+current filtered history. Each appears only when there is more content in that
+direction. The end includes future-dated messages. Existing reading positions
+are retained when switching projects or returning to All.
+
+Click Add or press Cmd/Ctrl+Enter to send. Enter still adds a newline. The composer
+gives one brief glow in the project color when a valid send or edit save starts.
+New notes appear with a small entrance animation after saving. Errors keep the draft. System
+reduced-motion settings replace this with a brief static border and no movement.
+
+## Uninstall threadstr (next release)
+
+`thr uninstall` removes the managed application and its private dependencies,
+keeping projects. `thr uninstall --delete-data` also deletes projects and managed
+attachments after showing the paths and asking for confirmation. Export a backup
+first if needed. See the [complete uninstall instructions](install/README.md#uninstall-next-release)
+for retained files, manual installations, interrupted cleanup, and Windows receipts.

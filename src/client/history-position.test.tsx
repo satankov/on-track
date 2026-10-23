@@ -41,6 +41,81 @@ afterEach(() => {
 });
 
 describe("message reading positions", () => {
+  it("restores a filtered search entry anchor without overwriting All", () => {
+    vi.useFakeTimers();
+    const allAnchor = { noteId: "n2", createdAt: 3, offset: 0 };
+    const positions = new Map([["chat", allAnchor]]);
+    let before: (
+      filter: string,
+      search?: string,
+      target?: ReadingPosition,
+    ) => void;
+    function Workspace({ search = "", filter = "attachments" }) {
+      const ref = useRef<HTMLElement>(null);
+      before = useHistoryPosition(
+        ref,
+        "chat",
+        filter,
+        positions,
+        false,
+        search,
+      );
+      return <section ref={ref} data-testid="history" />;
+    }
+    const view = render(<Workspace />);
+    const history = view.getByTestId("history");
+    geometry(history);
+    act(() => vi.advanceTimersByTime(20));
+    history.scrollTop = 150;
+    before!("attachments", "hotel");
+    view.rerender(<Workspace search="hotel" />);
+    act(() => vi.advanceTimersByTime(20));
+    expect(history.scrollTop).toBe(0);
+    history.scrollTop = 390;
+    history.dispatchEvent(new Event("scroll"));
+    before!("attachments", "budget");
+    view.rerender(<Workspace search="budget" />);
+    act(() => vi.advanceTimersByTime(20));
+    expect(history.scrollTop).toBe(0);
+    before!("attachments", "");
+    view.rerender(<Workspace />);
+    act(() => vi.advanceTimersByTime(20));
+    expect(history.scrollTop).toBe(150);
+    expect(positions.get("chat")).toEqual(allAnchor);
+  });
+
+  it("opens and focuses a search result in All instead of restoring the old anchor", () => {
+    vi.useFakeTimers();
+    const positions = new Map<string, ReadingPosition>();
+    let before: (
+      filter: string,
+      search?: string,
+      target?: ReadingPosition,
+    ) => void;
+    function Workspace({ search = "hotel", filter = "attachments" }) {
+      const ref = useRef<HTMLElement>(null);
+      before = useHistoryPosition(
+        ref,
+        "chat",
+        filter,
+        positions,
+        false,
+        search,
+      );
+      return <section ref={ref} data-testid="history" />;
+    }
+    const view = render(<Workspace />);
+    const history = view.getByTestId("history");
+    geometry(history);
+    for (const row of history.children) (row as HTMLElement).tabIndex = -1;
+    act(() => vi.advanceTimersByTime(20));
+    before!("all", "", { noteId: "n2", createdAt: 3, offset: 0 });
+    view.rerender(<Workspace search="" filter="all" />);
+    act(() => vi.advanceTimersByTime(20));
+    expect(history.scrollTop).toBe(260);
+    expect(history.children[2]).toHaveFocus();
+    expect(positions.get("chat")?.noteId).toBe("n2");
+  });
   it("preserves an exact position when only a few pixels of the anchor remain visible", () => {
     const history = document.createElement("section");
     geometry(history);

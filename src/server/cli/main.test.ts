@@ -26,13 +26,16 @@ import { installManaged } from "./install.js";
 import { updateFromRelease } from "./distribution.js";
 import { selectActiveRelease, writeInstallState } from "./state.js";
 import { main } from "./main.js";
+import { uninstallManaged } from "./uninstall.js";
+vi.mock("./uninstall.js", () => ({ uninstallManaged: vi.fn() }));
 const journal = vi.hoisted(() => ({ pending: undefined as unknown }));
 vi.mock("node:readline/promises", () => ({ createInterface: vi.fn() }));
 vi.mock("../runtime/build-info.js", () => ({ describeRuntime: vi.fn() }));
 vi.mock("../runtime/instance-owner.js", () => ({
   acquireInstanceOwner: vi.fn(),
 }));
-vi.mock("../runtime/update-journal.js", () => ({
+vi.mock("../runtime/update-journal.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../runtime/update-journal.js")>()),
   UpdateJournalStore: class {
     read() {
       return journal.pending;
@@ -118,6 +121,24 @@ it("shows offline help and manual alternative without touching installation stat
   expect(printed()).toContain("thr update");
   expect(managedStatus).not.toHaveBeenCalled();
   expect(acquireInstanceOwner).not.toHaveBeenCalled();
+});
+it("dispatches uninstall before recovery and requires explicit noninteractive confirmation", async () => {
+  vi.mocked(uninstallManaged).mockImplementation(async (_root, options) => {
+    options.progress?.("targets");
+    expect(await options.confirm("targets")).toBe(true);
+  });
+  await main(["uninstall", "--root", root, "--yes", "--delete-data"]);
+  expect(uninstallManaged).toHaveBeenCalledWith(
+    root,
+    expect.objectContaining({ deleteData: true }),
+  );
+  expect(recoverManagedUpdate).not.toHaveBeenCalled();
+  vi.mocked(uninstallManaged).mockImplementation(async (_root, options) => {
+    await options.confirm("targets");
+  });
+  await expect(main(["uninstall", "--root", root])).rejects.toThrow(
+    /Noninteractive uninstall requires --yes/,
+  );
 });
 it("provides data-free build identity and delegates initial setup", async () => {
   vi.mocked(describeRuntime).mockReturnValue({

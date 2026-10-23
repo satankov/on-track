@@ -23,10 +23,13 @@ clean OS/platform and published-upgrade evidence is incomplete.
 
 ## Current objective
 
-Prepare the next release with the completed security hardening in
-[plan 0025](plans/0025-security-audit-response.md). Phases 1–4 are implemented and
-locally verified; optional Phase 5 remains deferred. The next release version is
-not yet selected in package metadata. Identity and compatibility decisions remain
+Prepare v0.1.0 with the completed security hardening in
+[plan 0025](plans/0025-security-audit-response.md) and the history controls,
+send/edit-save feedback, and uninstall in [plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md),
+and current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
+Security phases 1–4 are implemented and
+locally verified; optional Phase 5 remains deferred. The selected candidate is
+v0.1.0; it is not yet published. Identity and compatibility decisions remain
 in [plan 0023](plans/0023-threadstr-rebrand.md),
 [ADR-0010](adr/0010-threadstr-identity-and-cli-transition.md), and
 [compatibility guidance](compatibility.md).
@@ -144,6 +147,20 @@ remains a regression-protected alpha, not a dedicated design target.
 
 ## Current capabilities
 
+- Current-project keyword search filters loaded message text, participant names,
+  and filenames locally. Its compact magnifier/input UI combines with history
+  filters, highlights matches, shows counts, restores reading positions, and opens
+  matching messages in context. Last queries are remembered per project for the
+  app session until cleared.
+  No search service, index, or schema change is required. See
+  [plan 0028](plans/0028-project-keyword-search.md).
+
+- Current source adds contextual beginning/end history controls, a short accent
+  response when sending or saving an edited note, and managed uninstall with separate opt-in data
+  deletion. See [plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md)
+  and [uninstall guidance](install/README.md#uninstall-next-release). Keyboard
+  shortcuts, database schema, and backup format are unchanged.
+
 - Home preserves project-first navigation and adds explicit GitHub release checks,
   compatible managed/manual update instructions, and curated guide/source links.
   The reserved bug-report block is a noninteractive coming-soon placeholder.
@@ -226,7 +243,7 @@ options without pretending those choices are solved.
 
 ## Non-goals for current plaintext alpha
 
-Collaboration, accounts, user-created label definitions, search, encryption,
+Collaboration, accounts, user-created label definitions, cross-project or semantic search, encryption,
 NDA-safe claims, native installers, mobile apps, peer-to-peer sync, public
 hosting, analytics, and telemetry.
 
@@ -263,8 +280,14 @@ Native-action smoke tests are tracked in
 validation in [issue #33](https://github.com/satankov/on-track/issues/33), and
 managed installation/upgrade validation in
 [issue #34](https://github.com/satankov/on-track/issues/34).
-[v0.0.8](https://github.com/satankov/on-track/releases/tag/v0.0.8) is the latest published release;
-v0.0.9 is the selected candidate; see the [release procedure](RELEASING.md).
+[Issue #61](https://github.com/satankov/on-track/issues/61) tracks the unresolved
+Linux/mobile-WebKit attachment focus failure reported in CI; local passes do not
+resolve that external evidence. Native uninstall validation is tracked in
+[issue #62](https://github.com/satankov/on-track/issues/62); history/composer
+assistive-technology validation is tracked in
+[issue #63](https://github.com/satankov/on-track/issues/63).
+[v0.0.9](https://github.com/satankov/on-track/releases/tag/v0.0.9) is the latest published release;
+v0.1.0 is the selected unpublished candidate; see the [release procedure](RELEASING.md).
 Broader product priorities above remain strategy until scoped. Durable decisions
 live in `docs/adr/`; significant work lives in `docs/plans/`.
 
@@ -297,6 +320,10 @@ live in `docs/adr/`; significant work lives in `docs/plans/`.
   Linux desktop integration remains unverified.
 - Browser file-drop regressions pass, but actual Finder-origin dragging and
   cancellation remain manually unverified; this is separate from native Open.
+- Managed uninstall is locally verified on disposable macOS/Node 22 fixtures;
+  native Windows/Linux and Node 24 dispatcher cleanup still require evidence.
+  It preserves unknown files and small ownership locks; only explicit
+  `--delete-data` removes project content. See ADR-0012 and plan 0027.
 - Loopback HTTP narrows exposure but is still a trust boundary requiring Host,
   Origin, content-security, and input-validation controls.
 

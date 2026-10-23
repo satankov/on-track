@@ -79,6 +79,318 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
 describe("personal project chat workspace", () => {
   beforeEach(() => localStorage.clear());
 
+  it.each([false, true])(
+    "mobile navigation preserves a newer attachment focus (moved: %s)",
+    async (moved) => {
+      vi.stubGlobal("matchMedia", () => ({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+      const frames: FrameRequestCallback[] = [];
+      const frame = vi
+        .spyOn(window, "requestAnimationFrame")
+        .mockImplementation((callback) => {
+          frames.push(callback);
+          return frames.length;
+        });
+      try {
+        const chat = {
+          id: "focus",
+          title: "Attachment focus",
+          accent: "ocean",
+          createdAt: 1,
+          updatedAt: 1,
+        };
+        const api = createApi({
+          listChats: vi.fn().mockResolvedValue([chat]),
+          getChat: vi.fn().mockResolvedValue({
+            ...chat,
+            notes: [
+              {
+                id: "note",
+                chatId: chat.id,
+                body: "File",
+                createdAt: 1,
+                labels: [],
+                attachments: [
+                  {
+                    id: "file",
+                    noteId: "note",
+                    filename: "profile.terminal",
+                    mediaType: "text/plain",
+                    byteSize: 1,
+                    createdAt: 1,
+                    modifiedAt: 1,
+                    status: "available",
+                    actions: { open: "blocked", reveal: "available" },
+                  },
+                ],
+              },
+            ],
+          }),
+          revealAttachment: vi.fn().mockResolvedValue(undefined),
+        });
+        render(<App api={api} />);
+        const project = await screen.findByRole("button", {
+          name: "Open Attachment focus",
+        });
+        project.focus();
+        fireEvent.click(project);
+        const reveal = await screen.findByRole("button", {
+          name: "Show profile.terminal in Folder",
+        });
+        if (moved) reveal.focus();
+        // Drain both navigation frames only after a user can reach the file.
+        for (let i = 0; i < 3; i++) {
+          await act(async () => {
+            for (const callback of frames.splice(0)) callback(0);
+          });
+        }
+        expect(
+          moved
+            ? reveal
+            : screen.getByRole("button", { name: "Back to projects" }),
+        ).toHaveFocus();
+        expect(
+          screen.getByRole("button", { name: "Open profile.terminal" }),
+        ).toBeDisabled();
+      } finally {
+        frame.mockRestore();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it("announces successful edits and sends hidden by search while refreshing membership", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "search",
+      title: "Search saves",
+      accent: "ocean",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const original = {
+      id: "n1",
+      chatId: chat.id,
+      body: "Hotel budget",
+      createdAt: 1,
+      labels: [],
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [original] }),
+      updateNote: vi
+        .fn()
+        .mockResolvedValue({ ...original, body: "Museum tickets" }),
+      appendNote: vi
+        .fn()
+        .mockResolvedValue({ ...original, id: "n2", body: "Train tickets" }),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Search saves" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Search messages" }));
+    await user.type(screen.getByRole("searchbox"), "hotel");
+    await screen.findByRole("button", { name: "Open message in history" });
+    await user.click(screen.getByRole("button", { name: "Edit message" }));
+    await user.clear(screen.getByRole("textbox", { name: "Edit message" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Edit message" }),
+      "Museum tickets",
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("No matching messages")).toBeVisible();
+    expect(
+      screen.getByText("Saved. Hidden by the current search."),
+    ).toHaveAttribute("role", "status");
+    await user.type(screen.getByLabelText("Add a note"), "Train tickets");
+    await user.click(screen.getByRole("button", { name: "Add note" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Add a note")).toHaveValue(""),
+    );
+    expect(
+      screen.getByText("Saved. Hidden by the current search."),
+    ).toHaveAttribute("role", "status");
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(screen.getByText("Museum tickets")).toBeVisible();
+    expect(
+      within(
+        screen.getByRole("region", { name: "Search saves messages" }),
+      ).getByText("Train tickets"),
+    ).toBeVisible();
+  });
+
+  it("searches loaded messages with compact icon controls and opens a result in history", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "search",
+      title: "Search trip",
+      accent: "ocean",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const notes = [
+      {
+        id: "n1",
+        chatId: chat.id,
+        body: "**Hotel** budget agreed",
+        createdAt: 1,
+        labels: [],
+      },
+      {
+        id: "n2",
+        chatId: chat.id,
+        body: "Museum tickets",
+        createdAt: 2,
+        labels: [],
+      },
+      {
+        id: "n3",
+        chatId: chat.id,
+        body: "Our budget shortlist",
+        sender: "Maya",
+        createdAt: 3,
+        labels: [],
+        attachments: [
+          {
+            id: "f1",
+            noteId: "n3",
+            filename: "hotel.pdf",
+            status: "missing",
+            byteSize: 1,
+            mediaType: "application/pdf",
+            createdAt: 3,
+            modifiedAt: 3,
+          },
+        ],
+      },
+    ];
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes }),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Search trip" }),
+    );
+    await user.type(screen.getByLabelText("Add a note"), "Keep my draft");
+    const toggle = screen.getByRole("button", { name: "Search messages" });
+    expect(toggle.textContent).toBe("");
+    await user.click(toggle);
+    const input = screen.getByRole("searchbox", { name: "Search messages" });
+    expect(input).toHaveFocus();
+    expect(screen.queryByText("Search this project")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Clear" }),
+    ).not.toBeInTheDocument();
+    await user.type(input, "HOTEL budget");
+    await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(2));
+    expect(screen.getByLabelText("Matching messages")).toHaveTextContent("2");
+    expect(
+      document.querySelector(".message-body strong mark"),
+    ).toHaveTextContent("Hotel");
+    expect(screen.queryByText("Museum tickets")).not.toBeInTheDocument();
+    expect(screen.queryByText(/MATCH/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Files 1" }));
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    expect(document.querySelector(".attachment-list strong")).toHaveTextContent(
+      "hotel.pdf",
+    );
+    expect(document.querySelector(".attachment-list mark")).toHaveTextContent(
+      "hotel",
+    );
+    expect(screen.getByLabelText("Matching messages")).toHaveTextContent("1");
+    expect(
+      screen
+        .getByRole("button", { name: "Open message in history" })
+        .closest("article"),
+    ).toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: "Open message in history" }),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toHaveAttribute("data-note-id", "n3"),
+    );
+    expect(screen.getAllByRole("article")).toHaveLength(3);
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Add a note")).toHaveValue("Keep my draft");
+    expect(api.getChat).toHaveBeenCalledTimes(1);
+    await user.click(toggle);
+    expect(screen.getByRole("searchbox")).toHaveValue("HOTEL budget");
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    await user.keyboard("{Escape}");
+    await user.click(toggle);
+    expect(screen.getByRole("searchbox")).toHaveValue("");
+    expect(screen.getAllByRole("article")).toHaveLength(3);
+  });
+
+  it("recovers from empty filtered search and remembers queries on project navigation", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "search",
+      title: "Search trip",
+      accent: "ocean",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({
+        ...chat,
+        notes: [
+          {
+            id: "n1",
+            chatId: chat.id,
+            body: "Hotel budget",
+            createdAt: 1,
+            labels: [],
+          },
+        ],
+      }),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Search trip" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Files 0" }));
+    await user.click(screen.getByRole("button", { name: "Search messages" }));
+    await user.type(screen.getByRole("searchbox"), "hotel");
+    await user.click(
+      await screen.findByRole("button", { name: "Search all messages" }),
+    );
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(screen.getByRole("searchbox")).toHaveValue("");
+    expect(screen.getByRole("searchbox")).toHaveFocus();
+    await user.type(screen.getByRole("searchbox"), "absent");
+    expect(await screen.findByText("No matching messages")).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(
+      screen.getByRole("button", { name: "Search messages" }),
+    ).toHaveFocus();
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Search messages" }));
+    expect(screen.getByRole("searchbox")).toHaveValue("absent");
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(screen.getByRole("searchbox"), "hotel");
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("button", { name: "Back to project" }));
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Search messages" }));
+    expect(screen.getByRole("searchbox")).toHaveValue("hotel");
+    fireEvent.change(screen.getByRole("searchbox"), {
+      target: { value: "pending draft" },
+    });
+    fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Escape" });
+    await user.click(screen.getByRole("button", { name: "Search messages" }));
+    expect(screen.getByRole("searchbox")).toHaveValue("pending draft");
+    expect(screen.getByText("No matching messages")).toBeVisible();
+  });
+
   it("remembers all sidebar disclosures after remount", async () => {
     const user = userEvent.setup();
     const api = createApi({
@@ -2514,6 +2826,10 @@ describe("personal project chat workspace", () => {
       body: "**Decision** recorded\n<img src=x>",
       sender: "Maya Chen",
     });
+    expect(document.querySelector(".composer")).toHaveAttribute(
+      "data-send-feedback",
+    );
+    expect(document.querySelector(".message-row--arriving")).toBeNull();
 
     await user.keyboard("{Meta>}{Enter}{/Meta}");
     expect(await screen.findByText("Decision")).toBeVisible();
@@ -2521,7 +2837,68 @@ describe("personal project chat workspace", () => {
     expect(document.querySelector(".history img")).toBeNull();
     expect(composer).toHaveValue("");
     expect(sender).toHaveValue("Maya Chen");
+    expect(document.querySelector('[data-note-id="note-1"]')).toHaveClass(
+      "message-row--arriving",
+    );
   });
+
+  it.each(["Save", "Control", "Meta"])(
+    "glows when an edited message is submitted with %s without replaying its entrance",
+    async (trigger) => {
+      const user = userEvent.setup();
+      const chat = {
+        id: "chat-1",
+        title: "Delivery",
+        accent: "ocean" as const,
+        createdAt: 1,
+        updatedAt: 2,
+      };
+      const note = {
+        id: "note-1",
+        chatId: chat.id,
+        body: "Original message",
+        createdAt: 2_000,
+        labels: [],
+      };
+      const saved = deferred<typeof note>();
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+        updateNote: vi.fn().mockReturnValue(saved.promise),
+      });
+      render(<App api={api} />);
+      await user.click(
+        await screen.findByRole("button", { name: "Open Delivery" }),
+      );
+      await user.click(screen.getByRole("button", { name: "Edit message" }));
+      const editor = screen.getByRole("textbox", { name: "Edit message" });
+      await user.clear(editor);
+      await user.type(editor, "Revised message");
+      expect(document.querySelector(".composer")).not.toHaveAttribute(
+        "data-send-feedback",
+      );
+      if (trigger === "Save")
+        await user.click(screen.getByRole("button", { name: "Save" }));
+      else await user.keyboard(`{${trigger}>}{Enter}{/${trigger}}`);
+      expect(api.updateNote).toHaveBeenCalledOnce();
+      expect(document.querySelector(".composer")).toHaveAttribute(
+        "data-send-feedback",
+      );
+      expect(editor).toHaveValue("Revised message");
+      await act(async () =>
+        saved.resolve({ ...note, body: "Revised message" }),
+      );
+      expect(
+        await screen.findByText("Revised message", {
+          selector: ".message-bubble p",
+        }),
+      ).toBeVisible();
+      expect(document.querySelector(".composer")).toHaveAttribute(
+        "data-send-feedback",
+      );
+      expect(document.querySelector(".message-row--arriving")).toBeNull();
+    },
+  );
 
   it("resizes the composer for multiline drafts and edit-prefilled messages", async () => {
     const user = userEvent.setup();

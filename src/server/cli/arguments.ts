@@ -12,6 +12,7 @@ export function parseArguments(args: string[]): CliArguments {
       "status",
       "logs",
       "update",
+      "uninstall",
       "install",
       "maintenance-recover-import",
       "help",
@@ -42,6 +43,7 @@ export function parseArguments(args: string[]): CliArguments {
       : []),
     ...(command === "install" ? ["no-profile"] : []),
     ...(command === "update" ? ["yes"] : []),
+    ...(command === "uninstall" ? ["yes", "delete-data"] : []),
   ]);
   for (let i = 1; i < args.length; i++) {
     const argument = args[i];

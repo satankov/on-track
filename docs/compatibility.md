@@ -1,9 +1,9 @@
 # threadstr compatibility identifiers
 
-The next release changes the product name from On Track to **threadstr** and
-makes **thr** the primary CLI command. v0.0.8 remains the latest published
-release until then. The selected candidate is v0.0.9. The repository and existing
-published releases retain their real names and URLs.
+Version 0.0.9 introduced **threadstr** and **thr** as the primary CLI command.
+It remains the latest published release; v0.1.0 is the selected unpublished
+candidate. The repository and existing published releases retain their real
+names and URLs.
 
 ## Commands and installation
 
@@ -14,7 +14,7 @@ existing argument behavior. The alias remains supported throughout 0.x and until
 separately approved removal. Removal requires notice in at least two published
 releases and a migration review; there is no scheduled removal version.
 
-After publication, v0.0.8 users can run `ontrack update`, or rerun the new
+v0.0.8 users can run `ontrack update`, or rerun the new
 installer using the existing root. The old updater can print its old product
 name during this transition. New invocations use threadstr. v0.0.7's updater has
 a published HTTP 415 defect; use a corrected installer against the same root.

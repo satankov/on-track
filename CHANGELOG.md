@@ -6,6 +6,29 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-22
+
+### Added
+
+- Current-project keyword search matches message text, participant names, and
+  filenames, combines with history filters, highlights matches, and opens results
+  in context. Queries stay in memory for the app session; no search service or
+  database change is required.
+- Contextual beginning/end buttons navigate the current project history, with
+  keyboard focus and reduced-motion support.
+- Sending or saving an edited message gives the composer a brief project-accent
+  glow. New messages enter gently after saving. Enter remains a newline;
+  Cmd/Ctrl+Enter submits.
+- `thr uninstall` removes the managed app and private dependencies while keeping
+  projects. Explicit `--delete-data` also removes project data after confirmation.
+  Unrecognized files and external exports remain; Windows cleanup reports its
+  eventual result separately after the launcher exits.
+
+### Fixed
+
+- Delayed mobile project navigation no longer steals focus from a message or
+  attachment control reached before navigation finishes.
+
 ### Security
 
 - Enforce loopback Host and exact Origin checks independently of encoded URL
@@ -17,6 +40,18 @@ below `1.0.0`, releases may contain breaking changes.
 - Limit native attachment Open to explicit document/media formats. Other files
   remain accessible through Show in Folder without changing stored data.
 - Apply compatible security updates to the server and development dependencies.
+
+### Known limitations
+
+- This remains a plaintext alpha. Back up important projects; local databases,
+  attachments, and exported backups are not encrypted.
+- Managed installation remains experimental. Clean-machine installation,
+  published upgrades, and native Windows/Linux validation remain incomplete.
+- Native uninstall and assistive-technology validation remain tracked in issues
+  #62 and #63. The Linux/mobile-WebKit attachment focus failure in issue #61
+  remains unresolved by local macOS passes.
+- Database and backup schema remain 7; the managed compatibility floor remains
+  `0.0.7`. Existing data paths, backup formats, and the `ontrack` alias are retained.
 
 ## [0.0.9] - 2026-09-16
 
