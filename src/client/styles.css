@@ -1296,8 +1296,14 @@ button.rail-section-label {
   border-left: 3px solid color-mix(in srgb, var(--accent) 45%, var(--line));
   color: var(--muted);
 }
+.message-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
 .note-body table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 0.92rem;
 }
@@ -1410,6 +1416,7 @@ button.rail-section-label {
   width: fit-content;
   max-width: min(760px, 82%);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   justify-items: end;
 }
 .message-row--participant .message-stack {
@@ -1712,8 +1719,10 @@ button.rail-section-label {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.attachment-status--warning {
-  color: var(--attachment-warning) !important;
+.attachment-copy .attachment-status--warning {
+  color: var(--attachment-warning);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .attachment-actions {
   display: flex;
@@ -1921,7 +1930,7 @@ button.rail-section-label {
 }
 .theme-options {
   display: grid;
-  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: 14px;
 }
 .theme-option {
@@ -2259,7 +2268,9 @@ button.rail-section-label {
   stroke-linejoin: round;
   stroke-width: 2.4;
 }
-.visually-hidden-file {
+/* Empty live regions stay accessible before their first announcement. */
+.visually-hidden-file,
+.backup-feedback:empty {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -2607,13 +2618,14 @@ kbd {
   inset: 0;
   width: 100%;
   height: 100%;
+  max-width: none;
+  max-height: none;
   display: grid;
   place-items: center;
   margin: 0;
   padding: 20px;
   border: 0;
-  background: color-mix(in srgb, var(--overlay) 54%, transparent);
-  backdrop-filter: blur(3px);
+  background: transparent;
 }
 .dialog-backdrop::backdrop {
   background: color-mix(in srgb, var(--overlay) 54%, transparent);
@@ -3253,7 +3265,8 @@ kbd {
   }
 
   .message-bubble,
-  .attachment-list {
+  .attachment-list,
+  .message-label-popover {
     border: 1px solid CanvasText;
   }
 
@@ -3313,16 +3326,14 @@ kbd {
 .backup-panel .backup-help {
   margin: 0 4px;
 }
-.settings-workspace > .backup-help,
-.settings-workspace > .backup-feedback,
-.settings-workspace > #backup-error {
+.settings-workspace > .backup-help {
   max-width: var(--settings-content-width);
   margin: 18px var(--settings-gutter) 18px var(--settings-left-gutter);
 }
 .backup-help {
   color: var(--muted);
-  font-size: 0.875rem;
-  line-height: 1.6;
+  font-size: 0.75rem;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 .backup-checklist,
@@ -3333,9 +3344,13 @@ kbd {
   border: 0;
 }
 .backup-checklist legend,
-.backup-modes legend {
+.backup-modes legend,
+.backup-panel > .field-label {
+  font-size: 0.78rem;
   font-weight: 650;
-  margin-bottom: 10px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  padding-inline: 4px;
 }
 .backup-selection-actions,
 .backup-actions {
@@ -3377,7 +3392,8 @@ kbd {
   overflow-wrap: anywhere;
 }
 .backup-project-row strong {
-  font-size: 0.875rem;
+  font-size: 0.84rem;
+  font-weight: 500;
 }
 .backup-project-row small {
   margin-top: 4px;
@@ -3392,6 +3408,8 @@ kbd {
   accent-color: var(--ocean-action);
 }
 .backup-modes > label {
+  font-size: 0.84rem;
+  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -3406,6 +3424,10 @@ kbd {
 }
 .backup-feedback {
   overflow-wrap: anywhere;
+}
+.backup-feedback .form-error,
+.backup-feedback .form-status {
+  margin: 0;
 }
 .backup-renames {
   font-size: 0.875rem;
@@ -3602,7 +3624,8 @@ kbd {
   border-color: var(--line-strong);
 }
 .home-utilities .home-small {
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
   color: var(--muted);
   margin: 10px 0 0;
 }

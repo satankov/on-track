@@ -449,6 +449,45 @@
                 </article>
               </div>
             </div>
+            <div class="message-row message-row--participant">
+              <div class="message-stack">
+                <article class="message-bubble">
+                  <p class="message-sender" data-sender-color="iris">Maya</p>
+                  <div class="note-body">
+                    <div
+                      class="message-table-scroll"
+                      role="region"
+                      aria-label="Scrollable table"
+                      tabindex="0"
+                    >
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Day</th>
+                            <th>Morning</th>
+                            <th>Lunch</th>
+                            <th>Afternoon</th>
+                            <th>Booking</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td>Thursday</td>
+                            <td>A very long breakfast</td>
+                            <td>A quiet canal-side café</td>
+                            <td>Museum, then a bookshop</td>
+                            <td>Confirm the museum time</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div class="message-footer">
+                    <time class="message-time">09:44</time>
+                  </div>
+                </article>
+              </div>
+            </div>
             <div class="cb-composer-stage">
               <div class="composer-wrap cb-composer-wrap">
                 <form class="composer" id="cb-composer">
@@ -494,7 +533,8 @@
           <p class="cb-note">
             The composer overlaps the last specimen slightly to expose the 32px
             transparent-to-history fade. No black shadow strip. Show more fades
-            to its own bubble surface instead.
+            to its own bubble surface instead. Wide tables scroll inside their
+            bubble; focus the table region and use the arrow keys.
           </p>
         </section>
 
@@ -527,12 +567,38 @@
                 an idle field stays flat.
               </p>
             </article>
-            <article>
-              <h3>Error / status</h3>
-              <p class="form-error">
-                The project could not be saved. Try again.
-              </p>
-              <p class="form-status">Project restored to Projects.</p>
+            <article class="settings-workspace">
+              <h3>Backup error / progress</h3>
+              <div class="backup-panel">
+                <div class="backup-actions">
+                  <button
+                    class="button button-primary"
+                    type="button"
+                    aria-describedby="cb-export-error"
+                    data-demo-action="The real app retries with the same project selection."
+                  >
+                    Export all
+                  </button>
+                </div>
+                <div class="backup-feedback">
+                  <p class="form-error" id="cb-export-error">
+                    The database could not be exported. Try again.
+                  </p>
+                </div>
+                <div class="backup-actions">
+                  <button
+                    class="button button-primary"
+                    type="button"
+                    aria-busy="true"
+                    disabled
+                  >
+                    Importing projects…
+                  </button>
+                </div>
+                <div class="backup-feedback">
+                  <p class="form-status">Importing projects…</p>
+                </div>
+              </div>
               <p class="cb-note">
                 Place feedback beside its initiating action. Preserve edits
                 after a failed save. Critical color always has explicit text.
@@ -554,7 +620,8 @@
               </div>
               <p class="cb-note">
                 218px wide · 9px radius · no border. A restrained shadow is
-                reserved for this floating layer.
+                reserved for this floating layer. Forced colors restores a
+                system-colored boundary.
               </p>
             </article>
             <article>
@@ -563,7 +630,8 @@
                 Explain why a control is unavailable. Empty states give one
                 useful next action. Keep the archive preservation note and
                 delete confirmation. Backup plaintext/replacement warnings are
-                meaningful copy.
+                meaningful copy. The Create modal is centered in the full
+                viewport and uses one 54% overlay with 3px blur.
               </p>
               <button
                 class="button button-quiet"

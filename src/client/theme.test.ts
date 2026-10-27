@@ -523,7 +523,7 @@ describe("appearance theme contract", () => {
       "outline: 1px solid var(--attachment-ink)",
     );
     expect(forcedColors?.groups?.body).toMatch(
-      /\.message-bubble,\s*\.attachment-list\s*\{[^}]*border: 1px solid CanvasText/s,
+      /\.message-bubble,\s*\.attachment-list,\s*\.message-label-popover\s*\{[^}]*border: 1px solid CanvasText/s,
     );
   });
 

@@ -177,7 +177,9 @@ arrow, label popup, or settings group. Never nest a cosmetic card behind a group
 | Transparent → `--history`, 32px            | Composer's top fade; `pointer-events:none`; no black band        |
 | Transparent → `--message-surface`, 3.75rem | Collapsed message fade above Show more                           |
 
-Overlay backdrops use `--overlay` at 54% with 3px blur. Blur is an overlay
+Overlay backdrops use `--overlay` at 54% with 3px blur, applied once to the native
+`::backdrop`. The full-viewport dialog shell is transparent and resets native
+maximum dimensions so its content stays centered. Blur is an overlay
 exception, not a glass visual system for ordinary product surfaces.
 The future-message boundary is a separate full-width accent fade with a subtle
 top line. Preserve its chronological meaning; do not reuse it as decoration.
@@ -246,8 +248,16 @@ introductory sentence explaining that this is the settings screen.
   the fold while its initiating button is at the top.
 - Create project reuses the same field/swatch treatment in a real modal dialog.
   Keep its accessible title, Cancel/Create actions, Escape and focus restoration.
+  Let `showModal()` establish initial focus and remember the opener; do not move
+  focus into the form before opening the native modal.
 - Appearance uses native radio previews, a check, and Selected text. Selection
   does not require an extra bright card outline. Focus is still visible.
+  Previews wrap into as many 180px-minimum columns as the workspace can hold;
+  a constrained desktop window must keep all choices reachable.
+- Backups reuse field-label, settings-row, and help typography. Put export
+  feedback directly after export actions, file-check feedback beside the file
+  picker, and import feedback after import actions. Announce progress and errors,
+  show the active action's busy label, and preserve selections for retry.
 
 ### Buttons, fields, and state
 
@@ -268,6 +278,10 @@ and associated fields where applicable; success/status uses polite announcements
 - Own bubbles align right; participants align left with a sender label and
   neutral surface. Preserve readable Markdown, long-word wrapping, code/table
   scrolling, collapse/expand state, and complete copy/edit behavior.
+- Wrap Markdown tables in `.message-table-scroll`, a named keyboard-focusable
+  region with local horizontal scrolling. Tables retain their content width;
+  the bubble and its grid track stay within the message column. Collapsed content
+  must not leave clipped links or table regions in the Tab order.
 - Reuse the full-width composer input above its toolbar. Sender, Timestamp,
   Format share compact 46px helper rows and left alignment. Timestamp is a
   native datetime-local input, 34px tall, max 240px wide; no `margin-left:auto`.
@@ -277,10 +291,12 @@ and associated fields where applicable; success/status uses polite announcements
   backgrounds. Reuse `LabelGlyph`, existing SVG icon components and catalog.
 - Label popup: native checkbox choices, keyboard/Escape/focus behavior, automatic
   up/down placement within the viewport. Shadow separates the floating layer;
-  do not add a bright keyline.
+  do not add a bright keyline. In forced colors, restore a system-colored border.
 - Attachments share one inset surface, compact metadata, and named Open/Show in
   Folder actions. Missing/unavailable/error states remain readable. Never make
   a decorative card imply that a blocked native action is available.
+  Wrap explanations instead of ellipsizing them. The visible file-picker button
+  is the composer's attachment Tab stop; its hidden file input is not a second one.
 - Search stays within the current project with a quiet compact field, counts,
   clear action, no-results feedback, and the existing highlight color pair.
 - Hover-only message actions must also appear on focus and touch layouts. Keep

@@ -320,6 +320,8 @@ function useModalDialog(): RefObject<HTMLDialogElement | null> {
     const dialog = dialogRef.current;
     if (!dialog || typeof dialog.showModal !== "function") return;
     dialog.removeAttribute("open");
+    // Let the native dialog move initial focus and remember its opener. React
+    // autoFocus would move it before showModal can capture the return target.
     dialog.showModal();
     return () => dialog.close();
   }, []);
@@ -517,7 +519,6 @@ function ProjectForm({ chat, onCancel, onSubmit }: ProjectFormProps) {
             Project name
           </label>
           <input
-            autoFocus
             id="project-title"
             className="text-input"
             value={title}
@@ -1787,6 +1788,19 @@ function MessageLabelPicker({
 }
 
 const messageMarkdownComponents: Components = {
+  table: ({ node, ...props }) => {
+    void node;
+    return (
+      <div
+        className="message-table-scroll"
+        role="region"
+        aria-label="Scrollable table"
+        tabIndex={0}
+      >
+        <table {...props} />
+      </div>
+    );
+  },
   a: ({ node, ...props }) => {
     // The Markdown AST node is not a DOM attribute.
     void node;
@@ -1818,7 +1832,7 @@ function MarkdownMessage({
   );
 }
 
-function syncClippedMessageLinks(
+function syncClippedMessageFocus(
   bodyElement: HTMLDivElement,
   collapsed: boolean,
 ) {
@@ -1834,6 +1848,12 @@ function syncClippedMessageLinks(
       delete link.dataset.messageClippedLink;
       link.removeAttribute("tabindex");
     }
+  }
+  for (const table of bodyElement.querySelectorAll<HTMLDivElement>(
+    ".message-table-scroll",
+  )) {
+    table.tabIndex =
+      collapsed && table.getBoundingClientRect().bottom > clipBottom ? -1 : 0;
   }
 }
 
@@ -1865,8 +1885,8 @@ function CollapsibleMessageBody({
     if (!bodyElement) return;
     const nextIsLong = bodyElement.scrollHeight > MESSAGE_COLLAPSED_HEIGHT_PX;
     setIsLong((current) => (current === nextIsLong ? current : nextIsLong));
-    syncClippedMessageLinks(bodyElement, nextIsLong && !expanded);
-    return () => syncClippedMessageLinks(bodyElement, false);
+    syncClippedMessageFocus(bodyElement, nextIsLong && !expanded);
+    return () => syncClippedMessageFocus(bodyElement, false);
   }, [body, expanded]);
 
   useEffect(() => {
@@ -1875,7 +1895,7 @@ function CollapsibleMessageBody({
     const measure = () => {
       const nextIsLong = bodyElement.scrollHeight > MESSAGE_COLLAPSED_HEIGHT_PX;
       setIsLong((current) => (current === nextIsLong ? current : nextIsLong));
-      syncClippedMessageLinks(bodyElement, nextIsLong && !expanded);
+      syncClippedMessageFocus(bodyElement, nextIsLong && !expanded);
     };
     const observer =
       typeof ResizeObserver === "undefined"
@@ -3129,6 +3149,7 @@ function ChatWorkspace({
                 <input
                   ref={fileInputRef}
                   className="visually-hidden-file"
+                  tabIndex={-1}
                   type="file"
                   multiple
                   aria-label="Attach files"
