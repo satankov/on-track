@@ -1,7 +1,9 @@
 # Security audit response and implementation plan
 
 Status: Phases 1–4 approved, implemented, and locally verified on 2026-10-21.
-Optional Phase 5 remains deferred. The release OS/Node matrix remains outstanding.
+Optional Phase 5 remains deferred. The release OS/Node matrix was outstanding
+at that local verification checkpoint. Phases 1–4 shipped in v0.1.0 on 2026-10-23;
+this record does not independently establish release-matrix results.
 Reviewed 2026-10-21 against `ff7e5c4` (package version 0.0.9), the same commit
 named by the external 2026-09-25 audit. Existing unrelated changes to
 `.gitignore` and `.prettierignore` were left untouched.
@@ -334,8 +336,8 @@ and the other rejected or deferred audit proposals are accepted scope exclusions
 Platform/native validation remains tracked in [issue #32](https://github.com/satankov/on-track/issues/32)
 and installation/upgrade validation in [issue #34](https://github.com/satankov/on-track/issues/34).
 Their v0.0.9 target labels predate the now-published release; unfinished acceptance
-criteria still apply. Run the configured CI OS/Node matrix on the security release
-candidate before release; local macOS verification does not replace that gate.
+criteria still apply. Run the configured CI OS/Node matrix on each future release
+candidate; local macOS verification does not replace that gate.
 
 Draft follow-up, pending tracker authorization: **Evaluate optional disabled-TLS
 and Markdown-image safeguards**. Acceptance criteria:
@@ -411,3 +413,95 @@ actions use a fake adapter. Linux/Windows and exact Node 22.16/24 release-matrix
 runs were not performed here and remain required before release; local success
 does not substitute for those checks. Existing compromised databases are not
 automatically repaired, and allowed document contents are not sandboxed.
+
+## Current dependency follow-up (2026-10-27)
+
+The successful audit above is historical. A fresh `npm run security:check` on
+2026-10-27 fails with one high-severity finding in pinned Zod 4.5.4:
+[GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5), memory
+exhaustion while validating oversized constrained collections. The audit reports
+affected versions `<4.6.6` and suggests 4.6.7 outside the current exact pin.
+This was the pre-remediation result; the completed fix and reachability review
+are below. The flat UI/design documentation slice itself did not change dependencies.
+
+Tracked with user authorization in [issue #72](https://github.com/satankov/on-track/issues/72),
+created on 2026-10-27. The issue owns remediation status and acceptance criteria;
+the initial scope is recorded below.
+
+**Initial acceptance criteria:**
+
+- Assess which application schema paths can reach the oversized-collection
+  behavior and document impact or existing bounds.
+- Select a compatible patched Zod version after API, maintenance, license,
+  engine, and security checks; update the exact pin and lockfile together.
+  Do not use a broad forced audit upgrade.
+- Run schema/request/import validation tests and the repository verification
+  gate; add a focused regression only where the application behavior warrants it.
+- Confirm a fresh production audit has no high-severity findings and record
+  exact results and any remaining platform limitations before release.
+
+### Issue #72 remediation (2026-10-27)
+
+The local fix upgrades the exact Zod pin and lockfile from 4.5.4 to 4.6.7;
+no other resolved package changes. The maintained upstream package remains MIT,
+adds no runtime dependencies or install hooks, and declares no new Node engine
+restriction. The lockfile integrity matches npm's published metadata. The
+[upstream fix](https://github.com/colinhacks/zod/pull/6652) rejects oversized
+bounded collections before walking their elements; unbounded arrays are unchanged.
+The application continues using the same Zod v4 API and schemas.
+
+Reachability review:
+
+- Project label, retained-attachment, and service attachment arrays use `.max()`.
+  Project export/import selection caps at 10,000 IDs. With 4.5.4, malformed
+  oversized input still allocated one validation error per element before the
+  length error. Same-origin/Host guards and upload limits restrict access and
+  request size, but do not substitute for early collection rejection.
+- The server's general body cap is 128 MiB; export JSON has a 1 MiB cap.
+  Multipart attachments additionally have count and per-file limits. Import
+  selection uses the same bounded schema; backup file validation remains a
+  separate database/bundle boundary. Error handlers return generic messages.
+- Home's release list has a 100-entry cap and a 2 MiB response cap. Its nested
+  release-assets array is unbounded at the schema level and remains protected
+  by the fetched-byte cap, not by this patch. No claim of constant-space parsing
+  for unbounded arrays or arbitrarily large JSON is made.
+- Managed retention and uninstall metadata use bounded arrays; metadata reads
+  are capped at 256 KiB. Update journals are capped at 32 KiB. These local
+  storage boundaries remain unchanged.
+
+Regression evidence: `npm test -- src/domain/bounded-validation.test.ts` failed
+all three cases on 4.5.4: labels and retained IDs each allocated 257 issues, and
+backup selection allocated 10,003 nested issues. On 4.6.7 these become one size
+issue per bounded array (two branch issues for the selection union). The test
+uses modest fixtures, not an actual memory-exhaustion attack. The focused domain,
+request-security, chat-service, project-import, and Home suite passed 112 tests;
+the initial sandboxed import run could not bind localhost and was rerun successfully
+with the required execution permissions.
+
+The optional all-dependency audit also reports three moderate development-tool
+entries (`vitest`, `@vitest/coverage-v8`, `@vitest/mocker`) for
+[manual mock registration](https://github.com/advisories/GHSA-qxg6-89mg-rqv8) and
+[Windows redirect traversal](https://github.com/advisories/GHSA-xp26-3454-mjgp).
+They are outside issue #72 and the production audit: this repository runs Vitest
+in Node/jsdom and configures neither browser mode nor the affected mocker Vite
+plugins. Keep that exposure assessment with future test-tooling upgrades; this
+slice does not claim an all-dependency audit with zero findings.
+
+Final local verification on macOS arm64 / Node 22.18.0:
+
+- `npm run verify`: PASS (exit 0). Includes release contract, build, both
+  typechecks, lint, formatting, coverage, migration tests, browser E2E,
+  production audit, and managed lifecycle/update/uninstall smoke tests.
+- Coverage suite: 79 files, 1,037 passed / 9 skips; statements 90.91%, branches
+  85.07%, functions 93.41%, lines 92.03%. Migration suite: 23 passed.
+- Desktop Chromium/mobile WebKit: 66 passed / 6 intentional viewport skips.
+  The first aggregate attempt stopped with two browser-server startup failures
+  when a compiled module was temporarily absent. Its cause was not established;
+  the complete rerun passed without test or production-code changes.
+- `npm run security:check`: zero production vulnerabilities. `npm ls --depth=0`
+  and `git diff --check` pass. Independent read-only review found no actionable
+  defect. The existing >500kB client-chunk warning remains.
+
+Issue #72 is fixed in source, but has not yet been published or closed on GitHub. The completed design cycle and this follow-up are ready for a
+new chat. This is local verification, not a fresh Linux/Windows/Node 24 release
+matrix or a claim that the existing native/accessibility tracker items are closed.
