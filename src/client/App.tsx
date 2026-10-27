@@ -432,6 +432,44 @@ interface ProjectFormProps {
   onSubmit: (input: { title: string; accent: Accent }) => Promise<void>;
 }
 
+function ProjectAccentPicker({
+  accent,
+  onChange,
+  name,
+}: {
+  accent: Accent;
+  onChange: (accent: Accent) => void;
+  name: string;
+}) {
+  return (
+    <fieldset className="accent-fieldset">
+      <legend>Project accent</legend>
+      <div className="accent-options">
+        {ACCENTS.map((value) => (
+          <label
+            className="accent-option"
+            data-accent={value}
+            key={value}
+            title={ACCENT_NAMES[value]}
+          >
+            <input
+              type="radio"
+              name={name}
+              aria-label={ACCENT_NAMES[value]}
+              value={value}
+              checked={accent === value}
+              onChange={() => onChange(value)}
+            />
+            <span className="accent-swatch" aria-hidden="true">
+              <CheckIcon />
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function ProjectForm({ chat, onCancel, onSubmit }: ProjectFormProps) {
   const dialogRef = useModalDialog();
   const [title, setTitle] = useState(chat?.title ?? "");
@@ -471,14 +509,10 @@ function ProjectForm({ chat, onCancel, onSubmit }: ProjectFormProps) {
         aria-labelledby="project-dialog-title"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <p className="eyebrow">{editing ? "Project settings" : "New thread"}</p>
         <h2 id="project-dialog-title">
           {editing ? "Edit project" : "Create project"}
         </h2>
-        <p className="dialog-copy">
-          Give this stream a clear name and a color you can spot quickly.
-        </p>
-        <form onSubmit={handleSubmit}>
+        <form className="project-settings-fields" onSubmit={handleSubmit}>
           <label className="field-label" htmlFor="project-title">
             Project name
           </label>
@@ -492,28 +526,11 @@ function ProjectForm({ chat, onCancel, onSubmit }: ProjectFormProps) {
             required
           />
 
-          <fieldset className="accent-fieldset">
-            <legend>Project accent</legend>
-            <div className="accent-options">
-              {ACCENTS.map((value) => (
-                <label
-                  className="accent-option"
-                  data-accent={value}
-                  key={value}
-                >
-                  <input
-                    type="radio"
-                    name="accent"
-                    value={value}
-                    checked={accent === value}
-                    onChange={() => setAccent(value)}
-                  />
-                  <span className="accent-swatch" aria-hidden="true" />
-                  <span>{ACCENT_NAMES[value]}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          <ProjectAccentPicker
+            accent={accent}
+            onChange={setAccent}
+            name="accent"
+          />
 
           {error && (
             <p role="alert" className="form-error">
@@ -570,7 +587,10 @@ function ProjectEditWorkspace({
   const [collapseLongMessages, setCollapseLongMessages] = useState(
     chat.collapseLongMessages ?? true,
   );
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{
+    action: "save" | "archive" | "delete";
+    message: string;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [archiveStatus, setArchiveStatus] = useState("");
@@ -584,7 +604,7 @@ function ProjectEditWorkspace({
   }, [mutationPending]);
 
   async function handleArchive() {
-    setError("");
+    setError(null);
     setArchiveStatus("");
     pendingArchiveFocus.current = true;
     try {
@@ -595,16 +615,20 @@ function ProjectEditWorkspace({
           : "Project restored to Projects.",
       );
     } catch (caught) {
-      setError(
-        errorMessage(caught, "The project archive state could not be saved."),
-      );
+      setError({
+        action: "archive",
+        message: errorMessage(
+          caught,
+          "The project archive state could not be saved.",
+        ),
+      });
     }
   }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setSaving(true);
-    setError("");
+    setError(null);
     try {
       await onSubmit({
         title,
@@ -613,7 +637,10 @@ function ProjectEditWorkspace({
         collapseLongMessages,
       });
     } catch (caught) {
-      setError(errorMessage(caught, "The project could not be saved."));
+      setError({
+        action: "save",
+        message: errorMessage(caught, "The project could not be saved."),
+      });
       setSaving(false);
     }
   }
@@ -623,30 +650,51 @@ function ProjectEditWorkspace({
       return;
     }
     setDeleting(true);
-    setError("");
+    setError(null);
     try {
       await onDelete();
     } catch (caught) {
-      setError(errorMessage(caught, "The project could not be deleted."));
+      setError({
+        action: "delete",
+        message: errorMessage(caught, "The project could not be deleted."),
+      });
       setDeleting(false);
     }
   }
 
   return (
-    <main className="workspace settings-workspace project-edit-workspace">
-      <header className="settings-workspace-header">
-        <p className="eyebrow">Project</p>
-        <h1>Edit project</h1>
-      </header>
-      <section className="settings-panel" aria-labelledby="project-edit-title">
-        <div className="settings-panel-copy">
-          <h2 id="project-edit-title">{chat.title}</h2>
-          <p>
-            Change project settings, or archive it while keeping its messages
-            and files.
-          </p>
+    <main
+      className="workspace settings-workspace project-edit-workspace"
+      aria-label="Edit project"
+      data-accent={accent}
+    >
+      <form
+        className="project-edit-form project-settings-fields"
+        onSubmit={handleSubmit}
+      >
+        <div className="project-edit-actions">
+          <button
+            className="button button-quiet"
+            type="button"
+            onClick={onBack}
+            disabled={saving || deleting || mutationPending}
+          >
+            Back to project
+          </button>
+          <button
+            className="button button-primary"
+            type="submit"
+            disabled={saving || deleting || mutationPending}
+          >
+            {saving ? "Saving…" : "Save changes"}
+          </button>
         </div>
-        <form className="project-edit-form" onSubmit={handleSubmit}>
+        {error?.action === "save" && (
+          <p id="project-edit-error" role="alert" className="form-error">
+            {error.message}
+          </p>
+        )}
+        <div>
           <label className="field-label" htmlFor="project-edit-name">
             Project name
           </label>
@@ -659,126 +707,102 @@ function ProjectEditWorkspace({
             maxLength={80}
             required
           />
-          <fieldset className="accent-fieldset">
-            <legend>Project accent</legend>
-            <div className="accent-options">
-              {ACCENTS.map((value) => (
-                <label
-                  className="accent-option"
-                  data-accent={value}
-                  key={value}
-                >
-                  <input
-                    type="radio"
-                    name="project-edit-accent"
-                    value={value}
-                    checked={accent === value}
-                    onChange={() => setAccent(value)}
-                  />
-                  <span className="accent-swatch" aria-hidden="true" />
-                  <span>{ACCENT_NAMES[value]}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          <fieldset className="project-label-fieldset">
-            <legend>Project labels</legend>
-            <p className="field-help">
-              Choose which labels are useful in this project. Existing message
-              labels stay in place if you turn one off.
-            </p>
-            <div className="project-label-options">
-              {CONFIGURABLE_LABELS.map((label) => (
-                <label className="project-label-option" key={label}>
-                  <input
-                    type="checkbox"
-                    checked={enabledLabels.includes(label)}
-                    onChange={(event) =>
-                      setEnabledLabels((current) =>
-                        event.target.checked
-                          ? CONFIGURABLE_LABELS.filter(
-                              (candidate) =>
-                                current.includes(candidate) ||
-                                candidate === label,
-                            )
-                          : current.filter((candidate) => candidate !== label),
-                      )
-                    }
-                  />
-                  <span>{LABEL_NAMES[label]}</span>
-                  <LabelGlyph label={label} />
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          <fieldset className="project-message-display-fieldset">
-            <legend>Message display</legend>
-            <p className="field-help">
-              Choose how long messages first appear in this project. Every long
-              message can still be expanded or collapsed individually.
-            </p>
-            <label className="project-message-display-option">
-              <input
-                type="checkbox"
-                checked={collapseLongMessages}
-                onChange={(event) =>
-                  setCollapseLongMessages(event.target.checked)
-                }
-              />
-              <span>Collapse long messages by default</span>
-            </label>
-          </fieldset>
-          {error && (
-            <p id="project-edit-error" role="alert" className="form-error">
-              {error}
-            </p>
-          )}
-          <p role="status" className="visually-hidden">
-            {archiveStatus}
-          </p>
-          <div className="project-edit-actions">
-            <div className="project-lifecycle-actions">
-              <button
-                className="button button-danger"
-                type="button"
-                onClick={handleDelete}
-                disabled={saving || deleting || mutationPending}
-              >
-                {deleting ? "Deleting…" : "Delete project"}
-              </button>
-              <button
-                ref={archiveButton}
-                className="button button-quiet"
-                type="button"
-                onClick={handleArchive}
-                disabled={saving || deleting || mutationPending}
-                aria-busy={mutationPending || undefined}
-                aria-describedby={error ? "project-edit-error" : undefined}
-              >
-                {chat.archivedAt == null
-                  ? "Archive project"
-                  : "Restore project"}
-              </button>
-            </div>
-            <span />
-            <button
-              className="button button-quiet"
-              type="button"
-              onClick={onBack}
-              disabled={saving || deleting || mutationPending}
-            >
-              Back to project
-            </button>
-            <button
-              className="button button-primary"
-              type="submit"
-              disabled={saving || deleting || mutationPending}
-            >
-              {saving ? "Saving…" : "Save changes"}
-            </button>
+        </div>
+        <ProjectAccentPicker
+          accent={accent}
+          onChange={setAccent}
+          name="project-edit-accent"
+        />
+        <fieldset
+          className="project-label-fieldset"
+          aria-describedby="project-label-help"
+        >
+          <legend>Project labels</legend>
+          <div className="project-label-options">
+            {CONFIGURABLE_LABELS.map((label) => (
+              <label className="project-label-option" key={label}>
+                <LabelGlyph label={label} />
+                <span>{LABEL_NAMES[label]}</span>
+                <input
+                  type="checkbox"
+                  checked={enabledLabels.includes(label)}
+                  onChange={(event) =>
+                    setEnabledLabels((current) =>
+                      event.target.checked
+                        ? CONFIGURABLE_LABELS.filter(
+                            (candidate) =>
+                              current.includes(candidate) ||
+                              candidate === label,
+                          )
+                        : current.filter((candidate) => candidate !== label),
+                    )
+                  }
+                />
+              </label>
+            ))}
           </div>
-        </form>
-      </section>
+          <p id="project-label-help" className="field-help">
+            Turning a label off keeps it on existing messages.
+          </p>
+        </fieldset>
+        <fieldset
+          className="project-message-display-fieldset"
+          aria-describedby="project-message-display-help"
+        >
+          <legend>Message display</legend>
+          <label className="project-message-display-option">
+            <span>Collapse long messages by default</span>
+            <input
+              type="checkbox"
+              checked={collapseLongMessages}
+              onChange={(event) =>
+                setCollapseLongMessages(event.target.checked)
+              }
+            />
+          </label>
+          <p id="project-message-display-help" className="field-help">
+            You can still expand or collapse each message.
+          </p>
+        </fieldset>
+        {error && error.action !== "save" && (
+          <p id="project-edit-error" role="alert" className="form-error">
+            {error.message}
+          </p>
+        )}
+        <p role="status" className="visually-hidden">
+          {archiveStatus}
+        </p>
+        <div className="project-lifecycle-actions">
+          <button
+            ref={archiveButton}
+            className="button button-quiet"
+            type="button"
+            onClick={handleArchive}
+            disabled={saving || deleting || mutationPending}
+            aria-busy={mutationPending || undefined}
+            aria-describedby={
+              error?.action === "archive"
+                ? "project-edit-error"
+                : "project-archive-help"
+            }
+          >
+            <ArchiveRestoreIcon />
+            {chat.archivedAt == null ? "Archive project" : "Restore project"}
+          </button>
+          <p id="project-archive-help" className="field-help">
+            Archiving keeps all messages and files.
+          </p>
+          <button
+            className="button button-danger"
+            type="button"
+            onClick={handleDelete}
+            disabled={saving || deleting || mutationPending}
+          >
+            <TrashIcon />
+            {deleting ? "Deleting…" : "Delete project"}
+          </button>
+        </div>
+      </form>
     </main>
   );
 }
@@ -1098,7 +1122,6 @@ function SettingsRail({
       <header className="rail-header settings-rail-header">
         <div>
           <p className="brand-mark">Settings</p>
-          <p className="brand-subtitle">Local workspace controls</p>
         </div>
         <button
           className="settings-back-button"
@@ -1123,7 +1146,6 @@ function SettingsRail({
           </span>
           <span>
             <strong>General</strong>
-            <small>Workspace preferences</small>
           </span>
         </button>
         <button
@@ -1142,7 +1164,6 @@ function SettingsRail({
           </span>
           <span>
             <strong>Appearance</strong>
-            <small>Theme and contrast</small>
           </span>
         </button>
         <button
@@ -1159,7 +1180,6 @@ function SettingsRail({
           </span>
           <span>
             <strong>Backups</strong>
-            <small>Export and restore</small>
           </span>
         </button>
       </nav>
@@ -1189,22 +1209,14 @@ function AppearanceSettingsWorkspace({
   return (
     <main className="workspace settings-workspace appearance-workspace">
       <header className="settings-workspace-header">
-        <p className="eyebrow">Personalization</p>
         <h1>Appearance</h1>
       </header>
       <section
         className="settings-panel appearance-panel"
-        aria-labelledby="theme-choice"
+        aria-label="Appearance theme"
       >
-        <div className="settings-panel-copy">
-          <h2 id="theme-choice">Choose a theme</h2>
-          <p>
-            Pick the lighting that makes project notes easiest to read. Layout
-            and project color identity stay the same.
-          </p>
-        </div>
         <fieldset className="theme-fieldset">
-          <legend>Theme</legend>
+          <legend className="visually-hidden">Theme</legend>
           <div className="theme-options">
             {THEMES.map((value) => {
               const selected = theme === value;

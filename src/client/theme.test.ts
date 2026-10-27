@@ -429,9 +429,7 @@ describe("appearance theme contract", () => {
       const rule = stylesheet.match(
         new RegExp(`${selector}\\s*\\{(?<body>[^}]+)\\}`),
       );
-      expect(rule?.groups?.body).toContain(
-        "border: 1px solid var(--line-strong)",
-      );
+      expect(rule?.groups?.body).toContain("border: 0");
       expect(rule?.groups?.body).not.toContain("var(--control-border)");
     }
   });

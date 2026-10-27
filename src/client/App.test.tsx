@@ -1994,10 +1994,17 @@ describe("personal project chat workspace", () => {
       await screen.findByRole("button", { name: "Open Discovery" }),
     );
     await user.click(await screen.findByRole("button", { name: "Edit" }));
-    expect(screen.getByRole("heading", { name: "Edit project" })).toBeVisible();
+    expect(screen.getByRole("main", { name: "Edit project" })).toBeVisible();
     expect(
       screen.queryByRole("dialog", { name: "Customize project" }),
     ).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Edit project" })).toBeNull();
+    expect(screen.queryByText(/Change project settings/)).toBeNull();
+    expect(
+      screen.getByRole("group", { name: "Project labels" }),
+    ).toHaveAccessibleDescription(
+      "Turning a label off keeps it on existing messages.",
+    );
     const name = screen.getByLabelText("Project name");
     await user.clear(name);
     await user.type(name, "Research");
@@ -2015,6 +2022,46 @@ describe("personal project chat workspace", () => {
       enabledLabels: ["todo", "milestone"],
       collapseLongMessages: false,
     });
+    expect(
+      await screen.findByRole("heading", { name: "Research" }),
+    ).toBeVisible();
+  });
+
+  it("shows save failures beside the top actions and preserves edits for retry", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Discovery",
+      accent: "moss" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      updateChat: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Database busy"))
+        .mockResolvedValue({ ...chat, title: "Research" }),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Discovery" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const name = screen.getByLabelText("Project name");
+    await user.clear(name);
+    await user.type(name, "Research");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Database busy");
+    expect(
+      alert.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(name).toHaveValue("Research");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     expect(
       await screen.findByRole("heading", { name: "Research" }),
     ).toBeVisible();
@@ -2767,13 +2814,13 @@ describe("personal project chat workspace", () => {
 
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(api.deleteChat).not.toHaveBeenCalled();
-    expect(screen.getByRole("heading", { name: "Edit project" })).toBeVisible();
+    expect(screen.getByRole("main", { name: "Edit project" })).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Delete project" }));
 
     expect(api.deleteChat).toHaveBeenCalledWith("chat-1");
     expect(await screen.findByRole("alert")).toHaveTextContent("Delete failed");
-    expect(screen.getByRole("heading", { name: "Edit project" })).toBeVisible();
+    expect(screen.getByRole("main", { name: "Edit project" })).toBeVisible();
   });
 
   it("keeps a failed draft, then saves multiline text with Cmd/Ctrl+Enter", async () => {

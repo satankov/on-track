@@ -15,23 +15,24 @@ recovery parts of that promise.
 
 ## Current phase
 
-Version 0.0.9 is the latest published plaintext alpha release under Apache
-License 2.0. It introduces threadstr and the primary `thr` CLI while preserving
-`ontrack` as a compatibility alias and existing data/update contracts. The managed
-compatibility floor remains `0.0.7`; installation remains experimental because
-clean OS/platform and published-upgrade evidence is incomplete.
+Version 0.1.0 is the latest published plaintext alpha release under Apache
+License 2.0, published on 2026-10-23. It includes the security hardening,
+history controls, composer feedback, managed uninstall, and project search.
+threadstr and the primary `thr` CLI retain the `ontrack` compatibility alias.
+The managed compatibility floor remains `0.0.7`; installation remains
+experimental because clean OS/platform and published-upgrade evidence is incomplete.
 
 ## Current objective
 
-Prepare v0.1.0 with the completed security hardening in
-[plan 0025](plans/0025-security-audit-response.md) and the history controls,
-send/edit-save feedback, and uninstall in [plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md),
-and current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
-Security phases 1–4 are implemented and
-locally verified; optional Phase 5 remains deferred. The selected candidate is
-v0.1.0; it is not yet published. Identity and compatibility decisions remain
-in [plan 0023](plans/0023-threadstr-rebrand.md),
-[ADR-0010](adr/0010-threadstr-identity-and-cli-transition.md), and
+The post-v0.1.0 source includes the completed flat UI and design cookbook
+slice in [plan 0029](plans/0029-flat-ui-and-design-contract.md). Its canonical
+standards are [DESIGN.md](../DESIGN.md), with an interactive reference under
+[branding/threadstr/ui](../branding/threadstr/ui/README.md). No next release
+version has been selected. The Zod dependency fix for issue #72 is complete
+locally and the aggregate local verification gate passes; see
+[plan 0025](plans/0025-security-audit-response.md#issue-72-remediation-2026-10-27). Security phases 1–4 remain implemented;
+optional Phase 5 remains deferred. Identity and compatibility decisions remain
+in [ADR-0010](adr/0010-threadstr-identity-and-cli-transition.md) and
 [compatibility guidance](compatibility.md).
 
 Complete installation/platform and upgrade validation, retain the manual Node
@@ -286,8 +287,8 @@ resolve that external evidence. Native uninstall validation is tracked in
 [issue #62](https://github.com/satankov/on-track/issues/62); history/composer
 assistive-technology validation is tracked in
 [issue #63](https://github.com/satankov/on-track/issues/63).
-[v0.0.9](https://github.com/satankov/on-track/releases/tag/v0.0.9) is the latest published release;
-v0.1.0 is the selected unpublished candidate; see the [release procedure](RELEASING.md).
+[v0.1.0](https://github.com/satankov/on-track/releases/tag/v0.1.0) is the latest published release;
+the design slice has not yet been released; see the [release procedure](RELEASING.md).
 Broader product priorities above remain strategy until scoped. Durable decisions
 live in `docs/adr/`; significant work lives in `docs/plans/`.
 
@@ -311,7 +312,9 @@ live in `docs/adr/`; significant work lives in `docs/plans/`.
   must be stopped and upgraded manually before explicit adoption.
 - Dependency advisories require ongoing review and compatible updates. A clean
   audit is a point-in-time check, not a guarantee that every dependency is safe;
-  current remediation and verification evidence lives in plan 0025.
+  the 2026-10-27 Zod remediation passes the production audit with zero findings.
+  Three moderate development-tool audit entries remain outside that gate, with
+  exposure assessment and verification evidence in plan 0025.
 - v0.0.4 deliberately does not restore v0.0.3/schema-2 backup bundles. Live
   v0.0.3 databases still migrate at startup, and this compatibility break is
   acceptable only under the current no-user alpha assumption.

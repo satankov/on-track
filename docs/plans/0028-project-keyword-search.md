@@ -1,7 +1,7 @@
 # Project keyword search implementation plan
 
-Status: Complete and locally verified on 2026-10-22. Included in the next release;
-published baseline remains v0.0.9.
+Status: Complete and locally verified on 2026-10-22. Published in
+[v0.1.0](https://github.com/satankov/on-track/releases/tag/v0.1.0) on 2026-10-23.
 
 ## Goal
 

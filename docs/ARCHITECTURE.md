@@ -2,12 +2,14 @@
 
 ## Status
 
-The published baseline is v0.0.9 (threadstr, primary `thr` CLI). The v0.1.0 candidate
-adds the security hardening recorded in [plan 0025](plans/0025-security-audit-response.md)
+The published baseline is v0.1.0 (released 2026-10-23, primary `thr` CLI). It includes the security hardening recorded in [plan 0025](plans/0025-security-audit-response.md)
 and the history controls, composer feedback, and managed uninstall in
 [plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md), plus
 current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
 Database and backup schema remain 7. The managed compatibility floor remains `0.0.7`.
+The subsequent flat UI/design-contract slice changes client UI, tests, and documentation
+only; see [plan 0029](plans/0029-flat-ui-and-design-contract.md). It changes no
+API, database, backup, dependency, or installation contract.
 
 Core boundaries are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md),
 encryption limits in [ADR-0002](adr/0002-defer-at-rest-encryption.md), source
@@ -44,6 +46,9 @@ Local browser -> loopback Fastify server -> application service -> repository ->
 
 ## Technology decisions
 
+- [DESIGN.md](../DESIGN.md) defines the UI contract; the
+  [visual cookbook](../branding/threadstr/ui/index.html) imports the application
+  stylesheet for specimens. Exact color values remain in `src/client/styles.css`.
 - React 19 and Vite 8 provide the TypeScript browser UI and production bundle.
 - Fastify 5 serves the static bundle and local API on IPv4 loopback.
 - `@fastify/rate-limit` limits local database transfer and native-file routes

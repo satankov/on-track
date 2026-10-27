@@ -226,7 +226,6 @@ export function BackupSettingsWorkspace({
   return (
     <main className="workspace settings-workspace">
       <header className="settings-workspace-header">
-        <p className="eyebrow">Backups</p>
         <h1>Backup settings</h1>
       </header>
       <p className="backup-help">
@@ -239,7 +238,6 @@ export function BackupSettingsWorkspace({
       >
         <div className="settings-panel-copy">
           <h2 id="backup-export-heading">Export projects</h2>
-          <p>Create one restorable threadstr backup.</p>
         </div>
         <ProjectChecklist
           label="Projects to export"
@@ -273,7 +271,6 @@ export function BackupSettingsWorkspace({
       >
         <div className="settings-panel-copy">
           <h2 id="backup-import-heading">Import projects</h2>
-          <p>Choose a backup to inspect its projects before importing.</p>
         </div>
         <label className="field-label" htmlFor="database-import">
           Choose threadstr backup
@@ -287,6 +284,9 @@ export function BackupSettingsWorkspace({
           aria-describedby={error ? "backup-error" : undefined}
           onChange={(event) => void selectFile(event.target.files?.[0])}
         />
+        <p className="backup-help">
+          Inspect the backup's projects before importing.
+        </p>
         {file && !preview && !busy && (
           <button
             className="button button-quiet"

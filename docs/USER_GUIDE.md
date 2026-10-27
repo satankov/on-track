@@ -44,7 +44,9 @@ keeping any custom data path unchanged. On PowerShell, use `npm.cmd` in place of
   message; future messages remain accessible through normal scrolling.
 - Pin important projects above the activity-sorted project list, and independently
   collapse Pinned and Projects during the current browser session.
-- Customize each project's title and accent.
+- Choose **Edit** to change a project's name, accent, labels, and message display.
+  Color swatches show the selected accent with a check; label checkboxes on the
+  right enable or disable labels. Choose **Save changes** to apply these settings.
 - Add multiline Markdown notes with a compact, selection-aware formatting strip
   for bold, italic, links, quotes, lists, checklists, code, and GFM tables. The
   add/edit input grows to eight lines before scrolling internally.

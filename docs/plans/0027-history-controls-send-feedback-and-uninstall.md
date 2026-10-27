@@ -1,6 +1,7 @@
 # History controls, send feedback, and uninstall
 
 Status: Implementation complete and locally verified, including edit-save glow.
+Published in [v0.1.0](https://github.com/satankov/on-track/releases/tag/v0.1.0) on 2026-10-23.
 Dreaming closeout reconciled on 2026-10-22; remaining native and accessibility
 validation is tracked in issues #62 and #63.
 The interactive send mockup is a review artifact outside the repository.
