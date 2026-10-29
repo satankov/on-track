@@ -109,8 +109,8 @@ export function GeneralSettingsWorkspace({
           />
         </label>
         <p id="examples-preference-description" className="field-help">
-          Display read-only example projects in the sidebar. Saved in this
-          browser.
+          Display read-only example projects in the sidebar. Saved in your local
+          database.
         </p>
         {warning && <p role="status">{warning}</p>}
       </section>

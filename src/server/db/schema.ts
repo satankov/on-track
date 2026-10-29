@@ -158,3 +158,28 @@ export const noteLabels = sqliteTable(
     ),
   ],
 );
+
+export const workspacePreferences = sqliteTable(
+  "workspace_preferences",
+  {
+    id: integer("id").primaryKey(),
+    theme: text("theme").notNull().default("light"),
+    showExamples: integer("show_examples").notNull().default(1),
+    collapsedPinned: integer("collapsed_pinned").notNull().default(0),
+    collapsedProjects: integer("collapsed_projects").notNull().default(0),
+    collapsedArchive: integer("collapsed_archive").notNull().default(0),
+    collapsedExamples: integer("collapsed_examples").notNull().default(0),
+    initialized: integer("initialized").notNull().default(0),
+  },
+  (table) => [
+    check("workspace_preferences_single_row", sql`${table.id} = 1`),
+    check(
+      "workspace_preferences_theme",
+      sql`${table.theme} IN ('light', 'neutral', 'dark')`,
+    ),
+    check(
+      "workspace_preferences_booleans",
+      sql`${table.showExamples} IN (0,1) AND ${table.collapsedPinned} IN (0,1) AND ${table.collapsedProjects} IN (0,1) AND ${table.collapsedArchive} IN (0,1) AND ${table.collapsedExamples} IN (0,1) AND ${table.initialized} IN (0,1)`,
+    ),
+  ],
+);

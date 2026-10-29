@@ -25,7 +25,10 @@ experimental because clean OS/platform and published-upgrade evidence is incompl
 ## Current objective
 
 The post-v0.1.0 source includes the completed flat UI and design cookbook
-slice in [plan 0029](plans/0029-flat-ui-and-design-contract.md). Its canonical
+slice in [plan 0029](plans/0029-flat-ui-and-design-contract.md), plus intersecting
+history filters and database preferences from Slices 1–2 of
+[plan 0031](plans/0031-multi-filters-durable-preferences-custom-labels.md).
+Current source uses schema 8; the published release remains schema 7. Its canonical
 standards are [DESIGN.md](../DESIGN.md), with an interactive reference under
 [branding/threadstr/ui](../branding/threadstr/ui/README.md). No next release
 version has been selected. The Zod dependency fix for issue #72 is complete
@@ -171,12 +174,12 @@ remains a regression-protected alpha, not a dedicated design target.
 - Built-in Examples contains one read-only 🇳🇱 Trip to Amsterdam notebook. Users
   explore its filters and create independent editable projects; originals update
   with the app and stay out of backups. General settings can hide Examples using
-  a browser-local preference. See [plan 0022](plans/0022-built-in-examples.md).
+  a database preference. See [plan 0022](plans/0022-built-in-examples.md).
 
 - Create and switch between personal project chats, return Home through the
   threadstr brand, and retain reading positions during the current browser session.
 - Independently collapse the Pinned, Projects, Archive, and Examples sidebar sections;
-  browser-local preferences retain their state across reloads.
+  database preferences retain their state across reloads and cleared browser storage.
   Pinned, Projects, and Archive headers remain visible when empty.
 - Pin and unpin projects in a stable sidebar section without changing their
   message-activity timestamps.
@@ -214,7 +217,7 @@ remains a regression-protected alpha, not a dedicated design target.
   their messages and attachments. Preview and select imported projects, then
   merge independent copies with conflict renaming or replace the whole database.
 - Choose Light, Neutral, or Dark appearance from large previews in Settings;
-  the browser-local preference applies immediately and persists across reloads.
+  the database preference applies immediately and survives browser-data clearing.
 - Persist state across browser and server restarts.
 - Use a responsive, accessible browser interface served from a local process.
 

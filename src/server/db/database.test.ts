@@ -1,3 +1,4 @@
+import { rewindToSchema7 } from "../../test/legacy-database.js";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -134,6 +135,7 @@ describe("SQLite project-chat persistence", () => {
       sender: "Maya",
       now: 30,
     });
+    rewindToSchema7(database);
     database.exec(`ALTER TABLE chats DROP COLUMN archived_at;
       DELETE FROM __drizzle_migrations WHERE created_at = 1789027200000;
       UPDATE app_metadata SET schema_version = 6;`);
@@ -220,6 +222,7 @@ describe("SQLite project-chat persistence", () => {
     });
     database.close();
     const legacy = new Database(databasePath);
+    rewindToSchema7(legacy);
     legacy.exec(`
       ALTER TABLE chats DROP COLUMN archived_at;
       ALTER TABLE chats DROP COLUMN collapse_long_messages;
@@ -239,7 +242,7 @@ describe("SQLite project-chat persistence", () => {
         .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
         .pluck()
         .get(),
-    ).toBe(7);
+    ).toBe(8);
     expect(repository.getChat("chat-a")?.pinnedAt).toBeNull();
     expect(repository.getChat("chat-a")?.collapseLongMessages).toBe(true);
     expect(repository.listNotes("chat-a")).toMatchObject([

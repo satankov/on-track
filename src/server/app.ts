@@ -1,3 +1,4 @@
+import { registerPreferenceRoutes } from "./preferences-routes.js";
 import { createHomeService, type HomeService } from "./home/service.js";
 import { registerHomeRoutes } from "./home/routes.js";
 import { registerExampleRoutes } from "./examples/routes.js";
@@ -267,6 +268,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       requestLeases.set(request, maintenanceGate.enterRequest());
     }
   });
+
+  registerPreferenceRoutes(app, () => database);
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ZodError || error instanceof InvalidInputError) {

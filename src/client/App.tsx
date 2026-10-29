@@ -21,14 +21,8 @@ import type {
   TimelineContent,
 } from "../domain/examples.js";
 import { ExamplesSection, GeneralSettingsWorkspace } from "./Examples.js";
-import {
-  readCollapsedSections,
-  persistCollapsedSections,
-  type RailSection,
-  readShowExamples,
-  persistShowExamples,
-  SHOW_EXAMPLES_KEY,
-} from "./preferences.js";
+import { useWorkspacePreferences } from "./useWorkspacePreferences.js";
+import type { RailSection } from "./preferences.js";
 import {
   Fragment,
   useContext,
@@ -69,13 +63,7 @@ import {
   markdownActionForShortcut,
   type MarkdownAction,
 } from "./markdown-assistance.js";
-import {
-  applyTheme,
-  persistTheme,
-  readStoredTheme,
-  THEMES,
-  type Theme,
-} from "./theme.js";
+import { THEMES, type Theme } from "./theme.js";
 import {
   useHistoryPosition,
   type ReadingPosition,
@@ -3339,8 +3327,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [examples, setExamples] = useState<ExampleSummary[]>([]);
   const [examplesError, setExamplesError] = useState("");
   const [examplesReload, setExamplesReload] = useState(0);
-  const [showExamples, setShowExamples] = useState(readShowExamples);
-  const [preferenceWarning, setPreferenceWarning] = useState("");
+  const workspacePreferences = useWorkspacePreferences(api);
+  const { theme, showExamples, collapsedSections } =
+    workspacePreferences.preferences;
+  const preferenceWarning = workspacePreferences.warning;
   const [copyingExample, setCopyingExample] = useState(false);
   const copyInProgress = useRef(false);
   const [exampleNotice, setExampleNotice] = useState("");
@@ -3367,7 +3357,6 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   );
   const [settingsSection, setSettingsSection] =
     useState<SettingsSection>("general");
-  const [theme, setTheme] = useState<Theme>(() => readStoredTheme());
   const [editingNote, setEditingNote] = useState<Note>();
   const [editingAttachmentIds, setEditingAttachmentIds] = useState<string[]>(
     [],
@@ -3414,12 +3403,6 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [readingPositions, setReadingPositions] = useState(
     () => new Map<string, ReadingPosition>(),
   );
-  const [collapsedSections, setCollapsedSections] = useState<
-    Record<RailSection, boolean>
-  >(readCollapsedSections);
-  useEffect(() => {
-    persistCollapsedSections(collapsedSections);
-  }, [collapsedSections]);
   const selectionRequest = useRef(0);
   const pendingSelection = useRef<"example" | "project" | undefined>(undefined);
   const copiedFocus = useRef<string | undefined>(undefined);
@@ -3438,11 +3421,6 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const copyResetTimer = useRef<number | undefined>(undefined);
   const newMessageSender = useRef("");
   const newMessageSenderOpen = useRef(false);
-
-  useLayoutEffect(() => {
-    applyTheme(theme);
-    persistTheme(theme);
-  }, [theme]);
 
   useEffect(() => {
     activeId.current = active?.id;
@@ -3513,38 +3491,18 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     };
   }, [api, examplesReload]);
 
-  function updateExamplesVisibility(show: boolean, persist = true) {
-    setShowExamples(show);
-    if (persist)
-      setPreferenceWarning(
-        persistShowExamples(show)
-          ? ""
-          : "This preference could not be saved. It applies until this page is closed.",
-      );
-    if (!show && (example || pendingSelection.current === "example")) {
+  function updateExamplesVisibility(show: boolean) {
+    workspacePreferences.update({ showExamples: show });
+  }
+  useEffect(() => {
+    if (!showExamples && (example || pendingSelection.current === "example")) {
       selectionRequest.current++;
       pendingSelection.current = undefined;
       setExample(undefined);
       setHistoryFilter([]);
+      setExampleNotice("Examples are hidden.");
     }
-  }
-  useEffect(() => {
-    const changed = (event: StorageEvent) => {
-      if (event.key === SHOW_EXAMPLES_KEY || event.key === null) {
-        const show = readShowExamples();
-        setShowExamples(show);
-        if (!show && (example || pendingSelection.current === "example")) {
-          selectionRequest.current++;
-          pendingSelection.current = undefined;
-          setExample(undefined);
-          setHistoryFilter([]);
-          setExampleNotice("Examples are hidden.");
-        }
-      }
-    };
-    window.addEventListener("storage", changed);
-    return () => window.removeEventListener("storage", changed);
-  }, [example]);
+  }, [showExamples, example]);
 
   async function selectExample(slug: string) {
     if (savingNote || copyInProgress.current) return;
@@ -3617,7 +3575,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         copiedFocus.current = detail.id;
         setLoadState("loaded");
         setHistoryFilter([]);
-        setCollapsedSections((current) => ({ ...current, Projects: false }));
+        workspacePreferences.update({ collapsedSections: { Projects: false } });
       }
       setExampleNotice("Editable copy created.");
     } catch (caught) {
@@ -4257,6 +4215,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       summaryRequest.current += 1;
     };
     invalidate();
+    await workspacePreferences.pause();
     try {
       const result = await api.importDatabase(file, options);
       invalidate();
@@ -4299,6 +4258,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       invalidate();
       importInProgress.current = false;
       setImporting(false);
+      await workspacePreferences.resume();
     }
   }
 
@@ -4344,6 +4304,18 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
 
   return (
     <div className="app-shell">
+      {preferenceWarning && (
+        <div className="global-error preference-error" role="alert">
+          {preferenceWarning}{" "}
+          <button
+            type="button"
+            className="button button-quiet"
+            onClick={workspacePreferences.retry}
+          >
+            Retry preferences
+          </button>
+        </div>
+      )}
       {exampleNotice && (
         <p className="visually-hidden" role="status">
           {exampleNotice}
@@ -4374,10 +4346,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
                 examples={examples}
                 collapsed={collapsedSections.Examples}
                 onToggle={() =>
-                  setCollapsedSections((current) => ({
-                    ...current,
-                    Examples: !current.Examples,
-                  }))
+                  workspacePreferences.update({
+                    collapsedSections: {
+                      Examples: !collapsedSections.Examples,
+                    },
+                  })
                 }
                 onSelect={selectExample}
                 activeSlug={example?.slug}
@@ -4389,10 +4362,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           }
           collapsedSections={collapsedSections}
           onToggleSection={(section) =>
-            setCollapsedSections((current) => ({
-              ...current,
-              [section]: !current[section],
-            }))
+            workspacePreferences.update({
+              collapsedSections: { [section]: !collapsedSections[section] },
+            })
           }
           chats={chats}
           activeId={active?.id ?? example?.id}
@@ -4427,10 +4399,13 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           <GeneralSettingsWorkspace
             showExamples={showExamples}
             onChange={updateExamplesVisibility}
-            warning={preferenceWarning}
+            warning=""
           />
         ) : settingsSection === "appearance" ? (
-          <AppearanceSettingsWorkspace theme={theme} onThemeChange={setTheme} />
+          <AppearanceSettingsWorkspace
+            theme={theme}
+            onThemeChange={(theme) => workspacePreferences.update({ theme })}
+          />
         ) : (
           <BackupSettingsWorkspace
             projects={chats}

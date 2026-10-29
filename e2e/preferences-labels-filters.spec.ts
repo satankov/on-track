@@ -1,5 +1,79 @@
 import { expect, test } from "./fixtures.js";
 
+test("restores database preferences before React, after clearing storage and restarting", async ({
+  page,
+  browser,
+  request,
+  localApp,
+}) => {
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: /Settings/ }).click();
+  await page.getByRole("button", { name: "Appearance", exact: true }).click();
+  await page.getByRole("radio", { name: /^Dark / }).check();
+  await expect
+    .poll(
+      async () =>
+        (await (await request.get(`${localApp.url}/api/preferences`)).json())
+          .theme,
+    )
+    .toBe("dark");
+  await page.getByRole("button", { name: "General", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Show Examples" }).uncheck();
+  await page
+    .getByRole("button", { name: "Back to projects", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Projects", exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await (await request.get(`${localApp.url}/api/preferences`)).json())
+          .collapsedSections.Projects,
+    )
+    .toBe(true);
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+  await localApp.restart();
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(
+    page.getByRole("button", { name: "Projects", exact: true }),
+  ).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    page.getByRole("button", { name: "Open example 🇳🇱 Trip to Amsterdam" }),
+  ).toHaveCount(0);
+
+  const fresh = await browser.newContext();
+  try {
+    const beforeReact = await fresh.newPage();
+    // Block React's bundle to prove the database theme is applied pre-mount.
+    await beforeReact.route("**/assets/*.js", (route) => route.abort());
+    await beforeReact.addInitScript(() =>
+      localStorage.setItem("on-track-theme", "light"),
+    );
+    const response = await beforeReact.goto(localApp.url);
+    expect(response!.ok()).toBe(true);
+    await expect(beforeReact.locator("#root")).toBeEmpty();
+    await expect(beforeReact.locator("html")).toHaveAttribute(
+      "data-theme",
+      "dark",
+    );
+    expect(
+      (
+        await request.get(`${localApp.url}/api/preferences/bootstrap.js`)
+      ).headers()["cache-control"],
+    ).toBe("no-store");
+  } finally {
+    await fresh.close();
+  }
+  await request.patch(`${localApp.url}/api/preferences`, {
+    data: { theme: "neutral" },
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "neutral");
+});
+
 test("keeps desktop filters independent of composer growth and matches shortcut typography", async ({
   page,
   request,

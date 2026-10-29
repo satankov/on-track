@@ -1,3 +1,8 @@
+import { readPreferences, writePreferences } from "../db/preferences.js";
+import {
+  DEFAULT_PREFERENCES,
+  type WorkspacePreferences,
+} from "../../domain/preferences.js";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
@@ -51,13 +56,14 @@ import {
 
 export const SQL_ON_TRACK_BACKUP_APPLICATION_ID = 0x4f545242;
 export const SQL_ON_TRACK_BACKUP_FORMAT_VERSION = 1;
-export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 7;
+export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 8;
 const LEGACY_SCHEMA_MIGRATIONS: Readonly<
   Record<number, { migrationAt: number; migrationCount: number }>
 > = {
   3: { migrationAt: 1_788_356_400_000, migrationCount: 4 },
   4: { migrationAt: 1_788_516_961_034, migrationCount: 5 },
   5: { migrationAt: 1_788_523_044_823, migrationCount: 6 },
+  7: { migrationAt: 1789027200000, migrationCount: 8 },
   6: { migrationAt: 1_788_566_400_000, migrationCount: 7 },
 };
 const SUPPORTED_SQL_ON_TRACK_BACKUP_SCHEMA_VERSIONS = new Set([
@@ -99,6 +105,7 @@ export interface CreateSqliteBackupBundleOptions {
 }
 
 export interface PrepareSqliteBackupBundleOptions {
+  destinationPreferences?: WorkspacePreferences;
   selection?: ProjectSelection;
   bundlePath: string;
   workspace: SqliteBackupPreparationWorkspace;
@@ -258,6 +265,12 @@ export async function createSqliteBackupBundle(
     bundle.pragma("journal_mode = DELETE");
     // Check the snapshot before a DELETE can invoke an imported trigger.
     validateExactSchema(bundle, trustedActiveSchemaDescriptor());
+    if (!options.selection || options.selection === "all") {
+      writePreferences(bundle, {
+        ...readPreferences(bundle),
+        initialized: true,
+      });
+    } else bundle.prepare("DELETE FROM workspace_preferences").run();
     pruneProjects(bundle, options.selection ?? "all");
     bundle.exec("VACUUM");
     validateActiveDatabase(bundle, limits);
@@ -571,6 +584,10 @@ export function prepareSqliteBackupBundle(
     candidate.pragma("trusted_schema = OFF");
     candidate.pragma("foreign_keys = ON");
     candidate.pragma("journal_mode = DELETE");
+    const sourcePreferences =
+      copiedManifest.schemaVersion >= 8
+        ? readPreferences(candidate)
+        : undefined;
     pruneProjects(candidate, options.selection ?? "all");
     const retained = candidate
       .prepare(
@@ -655,6 +672,12 @@ export function prepareSqliteBackupBundle(
     if (copiedManifest.schemaVersion !== SQL_ON_TRACK_BACKUP_SCHEMA_VERSION) {
       applyBundledMigrations(candidate);
     }
+    writePreferences(candidate, {
+      ...(sourcePreferences?.initialized
+        ? sourcePreferences
+        : (options.destinationPreferences ?? DEFAULT_PREFERENCES)),
+      initialized: true,
+    });
     candidate.exec("VACUUM");
     candidate.close();
     candidate = undefined;
@@ -866,6 +889,18 @@ function validateApplicationData(
   limits: SqliteBackupBundleLimits,
   schemaVersion: number,
 ): void {
+  if (schemaVersion >= 8) {
+    const rows = database
+      .prepare("SELECT id FROM workspace_preferences")
+      .all() as { id: unknown }[];
+    if (rows.length > 1 || rows.some((row) => row.id !== 1))
+      throw validationError("Workspace preferences are invalid.");
+    try {
+      readPreferences(database);
+    } catch {
+      throw validationError("Workspace preferences are invalid.");
+    }
+  }
   const chats = database
     .prepare(
       `SELECT id, title, accent, created_at, updated_at${schemaVersion >= 4 ? ", pinned_at" : ""}${schemaVersion >= 5 ? ", collapse_long_messages" : ""}${schemaVersion >= 7 ? ", archived_at" : ""}

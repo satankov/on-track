@@ -1,3 +1,7 @@
+import {
+  DEFAULT_PREFERENCES,
+  mergePreferences,
+} from "../domain/preferences.js";
 // @vitest-environment jsdom
 
 import {
@@ -26,7 +30,22 @@ function deferred<T>() {
 }
 
 function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
+  let preferences = structuredClone(DEFAULT_PREFERENCES);
   return {
+    getPreferences: vi.fn(async () => preferences),
+    initializePreferences: vi.fn(
+      async (input) =>
+        (preferences = preferences.initialized
+          ? preferences
+          : { ...mergePreferences(preferences, input), initialized: true }),
+    ),
+    updatePreferences: vi.fn(
+      async (input) =>
+        (preferences = {
+          ...mergePreferences(preferences, input),
+          initialized: true,
+        }),
+    ),
     homeInfo: vi
       .fn()
       .mockResolvedValue({ version: "0.0.8", installation: "manual" }),
@@ -584,26 +603,27 @@ describe("personal project chat workspace", () => {
       createdAt: 1,
       updatedAt: 2,
     };
-    render(
-      <App
-        api={createApi({
-          listChats: vi.fn().mockResolvedValue([project]),
-          getChat: vi.fn().mockResolvedValue(project),
-        })}
-      />,
-    );
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([project]),
+      getChat: vi.fn().mockResolvedValue(project),
+    });
+    render(<App api={api} />);
     await user.click(
       await screen.findByRole("button", { name: "Open My trip" }),
     );
     await user.click(screen.getByRole("button", { name: "Files 2" }));
-    localStorage.setItem("on-track-show-examples", "false");
-    act(() =>
-      window.dispatchEvent(
-        new StorageEvent("storage", {
-          key: "on-track-show-examples",
-          newValue: "false",
+    vi.mocked(api.getPreferences).mockResolvedValue({
+      ...DEFAULT_PREFERENCES,
+      initialized: true,
+      showExamples: false,
+    });
+    fireEvent(window, new Event("focus"));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", {
+          name: "Open example 🇳🇱 Trip to Amsterdam",
         }),
-      ),
+      ).toBeNull(),
     );
     expect(screen.getByRole("button", { name: "Files 2" })).toHaveAttribute(
       "aria-pressed",
@@ -655,7 +675,7 @@ describe("personal project chat workspace", () => {
     expect(
       screen.queryByRole("button", { name: "Examples" }),
     ).not.toBeInTheDocument();
-    expect(localStorage.getItem("on-track-show-examples")).toBe("false");
+    expect(localStorage.getItem("on-track-show-examples")).toBeNull();
     localStorage.clear();
   });
 
@@ -1358,6 +1378,30 @@ describe("personal project chat workspace", () => {
       await screen.findByRole("button", { name: "Links 1" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(screen.getAllByRole("article")).toHaveLength(1);
+  });
+
+  it("loads database preferences after browser storage is cleared and saves field-scoped changes", async () => {
+    localStorage.clear();
+    const api = createApi({
+      getPreferences: vi.fn().mockResolvedValue({
+        ...DEFAULT_PREFERENCES,
+        initialized: true,
+        theme: "dark",
+        showExamples: false,
+      }),
+    });
+    render(<App api={api} />);
+    await waitFor(() =>
+      expect(document.documentElement).toHaveAttribute("data-theme", "dark"),
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.click(screen.getByRole("button", { name: /Appearance/ }));
+    await user.click(screen.getByRole("radio", { name: /Neutral/ }));
+    await waitFor(() =>
+      expect(api.updatePreferences).toHaveBeenCalledWith({ theme: "neutral" }),
+    );
+    expect(localStorage.getItem("on-track-theme")).toBeNull();
   });
 
   it("combines filters with platform modifiers and displays a compact hint without a checkbox", async () => {
@@ -3526,7 +3570,7 @@ describe("personal project chat workspace", () => {
       expect(document.documentElement).toHaveAttribute("data-theme", "neutral");
       expect(document.documentElement.style.colorScheme).toBe("dark");
       expect(themeColor).toHaveAttribute("content", "#30343a");
-      expect(localStorage.getItem("on-track-theme")).toBe("neutral");
+      expect(localStorage.getItem("on-track-theme")).toBeNull();
       expect(screen.getByText("Selected", { selector: "small" })).toBeVisible();
 
       await user.click(screen.getByRole("button", { name: /Backups/ }));

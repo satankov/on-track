@@ -6,10 +6,13 @@ The published baseline is v0.1.0 (released 2026-10-23, primary `thr` CLI). It in
 and the history controls, composer feedback, and managed uninstall in
 [plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md), plus
 current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
-Database and backup schema remain 7. The managed compatibility floor remains `0.0.7`.
+Published database and backup schema is 7; current source advances to schema 8. The managed compatibility floor remains `0.0.7`.
 The subsequent flat UI/design-contract slice changes client UI, tests, and documentation
 only; see [plan 0029](plans/0029-flat-ui-and-design-contract.md). It changes no
-API, database, backup, dependency, or installation contract.
+API, database, backup, dependency, or installation contract. The subsequent
+[filters and preferences slice](plans/0031-multi-filters-durable-preferences-custom-labels.md)
+adds multi-filters and database preferences (schema 8); custom labels follow in Slice 3;
+see [ADR-0013](adr/0013-durable-preferences-and-project-labels.md).
 
 Core boundaries are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md),
 encryption limits in [ADR-0002](adr/0002-defer-at-rest-encryption.md), source
@@ -124,8 +127,8 @@ Uninstall retains ownership lock files on every platform. See [ADR-0012](adr/001
 
 - `src/client`: React workspace, styles, and typed API client. It never imports
   server or database modules. A closed Light/Neutral/Dark theme preference is
-  validated in the client and stored in browser-local storage; a same-origin
-  bootstrap script applies it before React mounts to avoid a theme flash. The
+  validated at the API boundary and stored in SQLite; a same-origin, no-store
+  `/api/preferences/bootstrap.js` applies it before React mounts to avoid a theme flash. The
   visible message timeline schedules its next future timestamp and renders one
   silent accessible boundary without moving the message rows when time advances.
   Rendered Markdown bodies measure their natural height and expose an accessible
@@ -141,13 +144,23 @@ Uninstall retains ownership lock files on every platform. See [ADR-0012](adr/001
   a chat is active. A Markdown analysis helper reuses unified/remark-parse and GFM
   to derive inert sidebar text and automatic Links filtering, using the renderer's
   URL policy without fetching destinations. Reading anchors live in the app
-  session. Sidebar disclosure state persists in browser-local storage alongside
-  Appearance and Show examples, outside project data and backups. External message links
+  session. Sidebar disclosure state, Appearance, and Show examples persist in
+  the database singleton `workspace_preferences`. Partial writes are serialized;
+  failed fields remain retryable, focus refreshes are ordered, and import pauses
+  pending writes. Valid legacy browser values initialize an uninitialized database
+  once, with atomic first-writer precedence; browser keys are removed only after
+  success. An initialized database always wins. External message links
   open in a new tab with opener/referrer isolation. Returning to a chat restores
   its message anchor and viewport offset; a first visit positions
   near the current/future boundary. Returning to All restores its isolated anchor;
-  each different Files, Links, or label filter opens at its own current/first-future
-  boundary. Ordinary refreshes preserve manual scrolling. Future messages stay in
+  each canonical combination of Files, Links, and label filters opens at its own
+  current/first-future boundary. Command-click on Apple platforms or Control-click
+  elsewhere toggles selection; touch taps toggle directly and modifier-assisted
+  keyboard activation follows the same rule. A compact hint follows the last
+  filter and shares the send shortcut typography. Desktop filters span history
+  and composer height independently of composer growth; overflowing lists scroll
+  within the rail. Mobile keeps horizontal filters. All clears the selection. Filters intersect (AND)
+  with each other and search; counts remain whole-project counts. Ordinary refreshes preserve manual scrolling. Future messages stay in
   normal scrolling, including short histories that can show several future rows.
   Contextual history controls scroll to the actual beginning/end of the filtered
   timeline without changing that initial placement policy. An accepted send or
@@ -205,7 +218,8 @@ appears below project sections on mobile without replacing navigation or Setting
 ## Data design and location
 
 The migrations create `chats`, `notes`, `note_attachments`,
-`chat_enabled_labels`, `note_labels`, and single-row `app_metadata` tables.
+`chat_enabled_labels`, `note_labels`, singleton `workspace_preferences`, and
+single-row `app_metadata` tables.
 Foreign keys and checks enforce ownership, closed label vocabularies,
 length/accent rules, unique repository-owned attachment paths, and nonnegative
 last-known byte sizes and modification times. Composite primary keys prevent
@@ -284,15 +298,18 @@ Attention time, local midnight, and browser focus.
 
 Settings exports all or selected projects to a versioned SQLite
 `.on-track-backup` container, including
-project label configuration and message assignments. An online snapshot
+project label configuration and message assignments. Full exports include initialized
+workspace preferences; selected-project exports omit the preference row. Replacement
+adopts included preferences, otherwise retains destination preferences; merge always
+retains destination preferences. An online snapshot
 temporarily gains reserved payload tables containing every readable
 managed file plus size, time, and SHA-256 metadata; strict canonical-schema,
 integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
 fresh managed paths, removes bundle payload tables, and compacts the current-
-schema candidate. Exact schema-6, schema-5, schema-4 development, and schema-3 v0.0.4
-bundles are accepted through fixed legacy descriptors and migrated to schema 7
+schema candidate. Exact schema-7, schema-6, schema-5, schema-4 development,
+and schema-3 v0.0.4 bundles are accepted through fixed legacy descriptors and migrated to schema 8
 only after copying into the staging workspace; older notes receive a null sender
 and all older projects receive null archive state.
 It then uses the maintenance gate and
@@ -353,7 +370,7 @@ shared timeline has an explicit read-only capability context; edit, label, nativ
 file actions, and composition require an editable copy. The header copy action
 replaces Edit. The same composer markup is disabled through a fieldset, with its
 read-only notice inside and an 800 ms glow on each blocked interaction. General's Show examples
-preference defaults on and is browser-local, like Appearance. Hiding affects
+preference defaults on and is database-backed, like Appearance. Hiding affects
 example selection only. Originals are replaced with app updates; copies remain
 ordinary user data. See [ADR-0009](adr/0009-application-owned-examples.md).
 
@@ -403,7 +420,7 @@ no search query, index, or history enters an API, URL, persistent browser storag
 SQLite, or backups. The memory-only history-position hook isolates search anchors
 from ordinary All/filter navigation. Search results reuse original message
 rendering and actions; the context action restores All and focuses the original
-message. Database/backup schema remains 7. This is linear search over a fully
+message. Search introduces no persistent data. This is linear search over a fully
 loaded, unvirtualized project, not an architecture for unbounded histories.
 
 ## Critical user journeys
@@ -429,8 +446,8 @@ loaded, unvirtualized project, not an architecture for unbounded histories.
   focus when timestamps arrive.
 - Export and restore a versioned backup bundle through Settings with validation.
 - Choose Light, Neutral, or Dark from accessible preview radios in Appearance,
-  reload without a theme flash, and keep project data and backups independent
-  from the browser-local preference.
+  reload without a theme flash, and retain preferences through cleared browser
+  storage, fresh profiles, restart, and full-backup replacement.
 - Attach a local file to a message, edit message attachments, filter the project
   history to messages with attached files, and use separate eligible Open and
   Show in Folder actions.

@@ -595,3 +595,71 @@ it.each(["before", "after"])(
   },
   30000,
 );
+
+it.each(["all", "selected"])(
+  "preserves preference scope through %s backup merge and replacement",
+  async (scope) => {
+    await app.inject({
+      method: "PATCH",
+      url: "/api/preferences",
+      payload: {
+        theme: "dark",
+        showExamples: false,
+        collapsedSections: { Archive: true },
+      },
+    });
+    const project = (
+      await app.inject({
+        method: "POST",
+        url: "/api/chats",
+        payload: { title: "Preference backup", accent: "ocean" },
+      })
+    ).json();
+    const url = `/api/chats/${project.id}`;
+    const exported = await app.inject({
+      method: "POST",
+      url: "/api/database/export",
+      payload: { selection: scope === "all" ? "all" : [project.id] },
+    });
+    expect(exported.statusCode, exported.body).toBe(200);
+    const backup = exported.rawPayload;
+    const preview = (
+      await app.inject({
+        method: "POST",
+        url: "/api/database/import/preview",
+        headers: { "content-type": "application/octet-stream" },
+        payload: backup,
+      })
+    ).json();
+    await app.inject({
+      method: "PATCH",
+      url: "/api/preferences",
+      payload: { theme: "neutral", showExamples: true },
+    });
+    const merged = await app.inject({
+      method: "POST",
+      url: "/api/database/import",
+      payload: importForm(backup, {
+        mode: "merge",
+        selection: [project.id],
+        digest: preview.digest,
+      }),
+    });
+    expect(merged.statusCode, merged.body).toBe(200);
+    expect((await app.inject("/api/preferences")).json().theme).toBe("neutral");
+    const replaced = await app.inject({
+      method: "POST",
+      url: "/api/database/import",
+      payload: importForm(backup, {
+        mode: "replace",
+        selection: [project.id],
+        digest: preview.digest,
+      }),
+    });
+    expect(replaced.statusCode, replaced.body).toBe(200);
+    expect((await app.inject(url)).json().title).toBe("Preference backup");
+    const preferences = (await app.inject("/api/preferences")).json();
+    expect(preferences.theme).toBe(scope === "all" ? "dark" : "neutral");
+    expect(preferences.initialized).toBe(true);
+  },
+);

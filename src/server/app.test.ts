@@ -75,6 +75,82 @@ describe("local project-chat API", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it("persists workspace preferences and lets the database win over stale browser initialization", async () => {
+    const get = await app.inject({ method: "GET", url: "/api/preferences" });
+    expect(get.statusCode).toBe(200);
+    expect(get.json()).toMatchObject({ theme: "light", initialized: false });
+    const initialized = await app.inject({
+      method: "POST",
+      url: "/api/preferences/initialize",
+      payload: {
+        theme: "dark",
+        showExamples: false,
+        collapsedSections: { Projects: true },
+      },
+    });
+    expect(initialized.json()).toMatchObject({
+      theme: "dark",
+      initialized: true,
+      showExamples: false,
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/preferences/initialize",
+      payload: { theme: "light" },
+    });
+    await app.inject({
+      method: "PATCH",
+      url: "/api/preferences",
+      payload: { collapsedSections: { Archive: true } },
+    });
+    const saved = (
+      await app.inject({ method: "GET", url: "/api/preferences" })
+    ).json();
+    expect(saved).toMatchObject({
+      theme: "dark",
+      showExamples: false,
+      collapsedSections: {
+        Projects: true,
+        Archive: true,
+        Pinned: false,
+        Examples: false,
+      },
+    });
+    const bootstrap = await app.inject({
+      method: "GET",
+      url: "/api/preferences/bootstrap.js",
+    });
+    expect(bootstrap.headers["cache-control"]).toBe("no-store");
+    expect(bootstrap.headers["content-type"]).toContain("javascript");
+    expect(bootstrap.body).toContain('"theme":"dark"');
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: "/api/preferences",
+          payload: { theme: "pink" },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: "/api/preferences",
+          payload: { unknown: true },
+        })
+      ).statusCode,
+    ).toBe(400);
+    await app.close();
+    app = buildApp({
+      database: openDatabase(join(directory, "on-track.sqlite")),
+      databasePath: join(directory, "on-track.sqlite"),
+    });
+    expect(
+      (await app.inject({ method: "GET", url: "/api/preferences" })).json(),
+    ).toEqual(saved);
+  });
+
   it("exposes safe Home information without contacting a release service", async () => {
     const response = await app.inject({ method: "GET", url: "/api/home/info" });
     expect(response.statusCode).toBe(200);

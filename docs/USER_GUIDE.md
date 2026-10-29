@@ -177,8 +177,8 @@ your browser normally and visits that website.
 
 This is an early plaintext alpha. Do not use it for confidential, NDA-bound, or
 irreplaceable information yet. Keep your own backups. Encryption and device sync
-are not currently available. Browser preferences such as theme and example
-visibility stay in that browser; they are not included in project backups.
+are not currently available. Full backups include theme, Examples visibility and sidebar disclosures;
+selected-project backups omit these settings.
 
 ## Further reading
 
@@ -241,3 +241,10 @@ History filters can be combined with Command-click on Apple platforms or Ctrl-cl
 on Windows/Linux; touch taps toggle directly. Messages must match every selected
 filter. All clears the selection. Desktop filters use available screen height
 independently of the composer.
+
+Theme, Examples visibility and sidebar disclosures are now saved in the local
+database and survive browser cache clearing. A one-time migration imports legacy
+browser values only when database preferences have not been initialized. Full
+backups include these settings; selected-project backups omit them. Merge keeps
+destination settings; replacement adopts initialized included preferences and
+otherwise retains the destination settings.

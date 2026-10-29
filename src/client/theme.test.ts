@@ -4,14 +4,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { ACCENTS } from "../domain/validation.js";
-import {
-  THEME_COLORS,
-  THEME_STORAGE_KEY,
-  THEMES,
-  isTheme,
-  persistTheme,
-  readStoredTheme,
-} from "./theme.js";
+import { THEME_COLORS, THEME_STORAGE_KEY, THEMES, isTheme } from "./theme.js";
 
 const stylesheet = readFileSync(
   resolve(process.cwd(), "src/client/styles.css"),
@@ -120,61 +113,24 @@ describe("accent accessibility", () => {
 });
 
 describe("appearance theme contract", () => {
-  it("validates stored values and safely falls back to light", () => {
+  it("validates the closed theme vocabulary", () => {
     expect(THEMES).toEqual(["light", "neutral", "dark"]);
     expect(isTheme("neutral")).toBe(true);
     expect(isTheme("system")).toBe(false);
-    expect(
-      readStoredTheme({ getItem: () => "dark" } as unknown as Storage),
-    ).toBe("dark");
-    expect(
-      readStoredTheme({ getItem: () => "invalid" } as unknown as Storage),
-    ).toBe("light");
-    expect(
-      readStoredTheme({
-        getItem: () => {
-          throw new Error("blocked");
-        },
-      } as unknown as Storage),
-    ).toBe("light");
-  });
-
-  it("survives browsers that block access to the localStorage property", () => {
-    const descriptor = Object.getOwnPropertyDescriptor(
-      globalThis,
-      "localStorage",
-    );
-    Object.defineProperty(globalThis, "localStorage", {
-      configurable: true,
-      get: () => {
-        throw new DOMException("blocked", "SecurityError");
-      },
-    });
-
-    try {
-      expect(readStoredTheme()).toBe("light");
-      expect(() => persistTheme("dark")).not.toThrow();
-    } finally {
-      if (descriptor) {
-        Object.defineProperty(globalThis, "localStorage", descriptor);
-      } else {
-        Reflect.deleteProperty(globalThis, "localStorage");
-      }
-    }
   });
 
   it("keeps the pre-render bootstrap synchronized with the typed theme model", () => {
     const bootstrap = readFileSync(
-      resolve(process.cwd(), "public/theme-init.js"),
+      resolve(process.cwd(), "src/server/preferences-routes.ts"),
       "utf8",
     );
     const page = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
 
     expect(bootstrap).toContain(THEME_STORAGE_KEY);
     for (const theme of THEMES) {
-      expect(bootstrap).toContain(`${theme}: "${THEME_COLORS[theme]}"`);
+      expect(bootstrap).toContain(THEME_COLORS[theme]);
     }
-    expect(page.indexOf("/theme-init.js")).toBeLessThan(
+    expect(page.indexOf("/api/preferences/bootstrap.js")).toBeLessThan(
       page.indexOf("/src/client/main.tsx"),
     );
   });
