@@ -366,7 +366,8 @@ test("pins projects and scans previews with Attention status", async ({
     accent: "coral",
   });
   const current = await createProject(request, localApp.url, {
-    title: `Current alert ${suffix}`,
+    // An unpinned project may also contain a section name in its title.
+    title: `Pinned discussion ${suffix}`,
     accent: "ocean",
   });
   const earlier = await createProject(request, localApp.url, {
@@ -411,8 +412,9 @@ test("pins projects and scans previews with Attention status", async ({
   ).toBe(true);
 
   await page.goto(localApp.url);
-  const pinnedSection = page.locator(".project-section", {
-    hasText: "Pinned",
+  const pinnedSection = page.getByRole("region", {
+    name: "Pinned",
+    exact: true,
   });
   await expect(pinnedSection).toContainText(pinned.title);
   await expect(
@@ -461,7 +463,7 @@ test("pins projects and scans previews with Attention status", async ({
   await currentPin.click();
   await expect(currentPin).toHaveAttribute("aria-pressed", "false");
   await expect(
-    page.locator(".project-section", { hasText: "Projects" }),
+    page.getByRole("region", { name: "Projects", exact: true }),
   ).toContainText(current.title);
 
   await localApp.restart();
