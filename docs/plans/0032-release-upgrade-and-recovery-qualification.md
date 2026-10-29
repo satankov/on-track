@@ -224,10 +224,24 @@ Main's docs-only squash `6bb41be` has the same tree as local `9ee198e`. A merge
 preview identifies only a README screenshot-caption conflict and three screenshot
 conflicts; the release branch contains the newer versions. Replaying the release
 commits onto current main while omitting that equivalent docs commit can preserve
-the final content. No branch integration or remote mutation has been performed.
+the final content. The user approved that rebase, branch push and draft PR.
+The rebase preserved the complete committed tree byte-for-byte, including the
+README addition; the preparation commit became `5a21caf` (previously `f0492fa`).
+[Draft PR #73](https://github.com/satankov/on-track/pull/73) now targets current
+main. The user will review its CI results; this task does not wait for them.
 
 The direct official-runtime verifier did not finish on this network: the first
 attempt verified macOS arm64 then timed out downloading Intel, and the second
-ended with a terminated response. Separate bounded official downloads are in
-progress for validation by the same unchanged hash/size checker; no all-platform
-runtime-byte PASS is claimed yet.
+ended with a terminated response. Separate bounded HTTPS downloads from the
+official URLs then completed. The same unchanged `verifyRuntimePins` validator
+read those cached bytes and the official checksum list: **all four platform
+archive hashes and sizes passed**. Log: `runtime-pins-cached.log` under the local
+qualification directory. This fallback changes no production script or runtime
+pin and does not verify detached signatures or platform execution.
+
+The committed v0.1.1 preparation also passed versioned build, release contract
+and managed-asset packaging under Node 24.14.0. Local rehearsal assets are in
+`v0.1.1-candidate-assets` and identify pre-rebase commit `f0492fa`; the rebased
+source tree is identical. Final publication must regenerate assets for the
+reviewed main/tag commit. No local assets were uploaded, no PR was merged, and
+no tag or GitHub Release was created.
