@@ -18,15 +18,15 @@ where you left off. Use it for work projects, a side project, or your next trip.
 
 **A project’s notes and plans, together in one timeline.**
 
-![Amsterdam project with Markdown notes, a checklist, and project filters](docs/screenshots/amsterdam-overview.png)
+![A personal workspace with pinned projects, Amsterdam trip notes, decisions, and a checklist in the light theme](docs/screenshots/amsterdam-overview.png)
 
 **Keep related files beside the conversation.**
 
-![Amsterdam packing list, booking notes, and an attributed attachment in the dark theme](docs/screenshots/amsterdam-files.png)
+![Amsterdam arrival notes, Maya's saved places, and a packing list kept beside their messages in the dark theme](docs/screenshots/amsterdam-files.png)
 
 **Filter the timeline to focus on what needs doing.**
 
-![Amsterdam plans filtered by Todo in the neutral theme](docs/screenshots/amsterdam-todos.png)
+![Amsterdam checklists and upcoming tasks filtered by Todo in the neutral theme](docs/screenshots/amsterdam-todos.png)
 
 ## What you can do
 
@@ -40,6 +40,14 @@ where you left off. Use it for work projects, a side project, or your next trip.
   then restore them or import independent copies.
 - **Define actors.** Even though this is a personal threads, you can display
   information as if it were sent by someone else (a friend or your boss).
+
+## Ultra Quick start
+
+Prompt your AI agent:
+
+```
+Install this tool https://github.com/satankov/on-track
+```
 
 ## Quick start
 

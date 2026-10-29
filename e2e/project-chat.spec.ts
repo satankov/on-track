@@ -366,7 +366,8 @@ test("pins projects and scans previews with Attention status", async ({
     accent: "coral",
   });
   const current = await createProject(request, localApp.url, {
-    title: `Current alert ${suffix}`,
+    // An unpinned project may also contain a section name in its title.
+    title: `Pinned discussion ${suffix}`,
     accent: "ocean",
   });
   const earlier = await createProject(request, localApp.url, {
@@ -411,8 +412,9 @@ test("pins projects and scans previews with Attention status", async ({
   ).toBe(true);
 
   await page.goto(localApp.url);
-  const pinnedSection = page.locator(".project-section", {
-    hasText: "Pinned",
+  const pinnedSection = page.getByRole("region", {
+    name: "Pinned",
+    exact: true,
   });
   await expect(pinnedSection).toContainText(pinned.title);
   await expect(
@@ -461,7 +463,7 @@ test("pins projects and scans previews with Attention status", async ({
   await currentPin.click();
   await expect(currentPin).toHaveAttribute("aria-pressed", "false");
   await expect(
-    page.locator(".project-section", { hasText: "Projects" }),
+    page.getByRole("region", { name: "Projects", exact: true }),
   ).toContainText(current.title);
 
   await localApp.restart();
@@ -810,7 +812,7 @@ test("uses compact desktop chrome and an auto-growing composer", async ({
   expect(geometry.composer.height).toBeLessThanOrEqual(116);
   expect(geometry.history.height).toBeGreaterThanOrEqual(628);
   expect(geometry.filters.top).toBeCloseTo(geometry.history.top, 0);
-  expect(geometry.filters.bottom).toBeCloseTo(geometry.history.bottom, 0);
+  expect(geometry.filters.bottom).toBeCloseTo(geometry.composer.bottom, 0);
   expect(geometry.filters.right).toBeLessThanOrEqual(geometry.history.left + 1);
 
   const composer = page.getByLabel("Add a note");

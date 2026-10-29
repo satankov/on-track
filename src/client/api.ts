@@ -1,3 +1,7 @@
+import type {
+  PreferenceInput,
+  WorkspacePreferences,
+} from "../domain/preferences.js";
 import type { HomeCheck, HomeInfo } from "../domain/home.js";
 import type {
   ExampleSummary,
@@ -34,6 +38,9 @@ import type {
 } from "../domain/validation.js";
 
 export interface ApiClient {
+  getPreferences(): Promise<WorkspacePreferences>;
+  initializePreferences(input: PreferenceInput): Promise<WorkspacePreferences>;
+  updatePreferences(input: PreferenceInput): Promise<WorkspacePreferences>;
   homeInfo(): Promise<HomeInfo>;
   checkReleases(): Promise<HomeCheck>;
   listExamples(): Promise<ExampleSummary[]>;
@@ -99,6 +106,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const apiClient: ApiClient = {
+  getPreferences: () => request("/api/preferences", { cache: "no-store" }),
+  initializePreferences: (input) =>
+    request("/api/preferences/initialize", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updatePreferences: (input) =>
+    request("/api/preferences", {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
   homeInfo: () => request<HomeInfo>("/api/home/info"),
   checkReleases: () =>
     request<HomeCheck>("/api/home/releases/check", {

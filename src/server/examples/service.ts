@@ -1,3 +1,4 @@
+import { projectLabels, labelNameKey } from "../../domain/labels.js";
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { ExampleDetail } from "../../domain/examples.js";
@@ -53,12 +54,22 @@ export function copyExample(
       sender: n.sender,
       created_at: n.createdAt,
     })),
-    enabledLabels: example.enabledLabels.map((label) => ({
+    labelDefinitions: projectLabels(example).map((label) => ({
       chat_id: id,
-      label,
+      id: label.id,
+      name: label.name,
+      name_key: labelNameKey(label.name),
+      symbol: label.symbol,
+      enabled: +label.enabled,
+      position: label.position,
+      builtin: +label.builtin,
     })),
     noteLabels: example.notes.flatMap((n) =>
-      n.labels.map((label) => ({ note_id: noteIds.get(n.id)!, label })),
+      n.labels.map((label) => ({
+        note_id: noteIds.get(n.id)!,
+        chat_id: id,
+        label,
+      })),
     ),
     attachments: [],
   };

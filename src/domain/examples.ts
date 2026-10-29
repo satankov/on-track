@@ -4,7 +4,14 @@ import { z } from "zod";
 /** Presentation shared by real projects and app-owned examples. */
 export type TimelineContent = Pick<
   ChatDetail,
-  "id" | "title" | "accent" | "enabledLabels" | "collapseLongMessages" | "notes"
+  | "id"
+  | "title"
+  | "accent"
+  | "enabledLabels"
+  | "collapseLongMessages"
+  | "notes"
+  | "labelDefinitions"
+  | "labelConfigurationRevision"
 >;
 export interface ExampleSummary {
   kind: "example";

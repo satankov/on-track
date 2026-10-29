@@ -1,3 +1,12 @@
+import { rewindToSchema7 } from "../../test/legacy-database.js";
+import {
+  createV010Database,
+  readV010Rows,
+  V010_FILE,
+  V010_MIGRATION_MARKER,
+} from "../../test/released-v010.js";
+import { DEFAULT_PREFERENCES } from "../../domain/preferences.js";
+import { readPreferences } from "./preferences.js";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -22,6 +31,259 @@ describe("SQLite project-chat persistence", () => {
   afterEach(() => {
     database.close();
     rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("upgrades forward-built v0.1.0 data to schema 9 without losing released state on restart", () => {
+    const released = createV010Database(join(directory, "released"), {
+      missingAttachment: true,
+    });
+    const before = readV010Rows(released.sqlite);
+    expect(
+      released.sqlite
+        .prepare("SELECT schema_version FROM app_metadata")
+        .pluck()
+        .get(),
+    ).toBe(7);
+    expect(
+      released.sqlite
+        .prepare("SELECT max(created_at) FROM __drizzle_migrations")
+        .pluck()
+        .get(),
+    ).toBe(V010_MIGRATION_MARKER);
+    released.sqlite.close();
+    for (let restart = 0; restart < 2; restart++) {
+      database.close();
+      database = openDatabase(released.databasePath);
+      repository = new SqliteChatRepository(database);
+      expect(readV010Rows(database)).toEqual(before);
+      expect(
+        database
+          .prepare("SELECT schema_version FROM app_metadata")
+          .pluck()
+          .get(),
+      ).toBe(9);
+      expect(
+        database
+          .prepare("SELECT max(created_at) FROM __drizzle_migrations")
+          .pluck()
+          .get(),
+      ).toBe(LATEST_BUNDLED_MIGRATION_AT);
+      expect(repository.getChat("release-archive")).toMatchObject({
+        enabledLabels: ["risk"],
+        labelConfigurationRevision: 0,
+        archivedAt: 50,
+        pinnedAt: null,
+        collapseLongMessages: false,
+      });
+      const definitions =
+        repository.getChat("release-archive")!.labelDefinitions!;
+      expect(definitions).toHaveLength(7);
+      expect(definitions.find((label) => label.id === "todo")!.enabled).toBe(
+        false,
+      );
+      expect(repository.listNotes("release-archive")[0]!.labels).toEqual([
+        "attention",
+        "todo",
+      ]);
+      expect(repository.getChat("release-pinned")!.pinnedAt).toBe(45);
+      expect(readPreferences(database)).toEqual(DEFAULT_PREFERENCES);
+      expect(
+        readFileSync(join(released.dataDirectory, V010_FILE.path), "utf8"),
+      ).toBe(V010_FILE.content);
+      expect(database.pragma("integrity_check", { simple: true })).toBe("ok");
+      expect(database.pragma("foreign_key_check")).toEqual([]);
+    }
+  });
+
+  it("migrates schema 7 with inactive assignments and enforces project-owned label references", () => {
+    repository.createChat({ id: "a", title: "A", accent: "ocean", now: 10 });
+    repository.createChat({ id: "b", title: "B", accent: "ocean", now: 10 });
+    repository.appendNote({ id: "n", chatId: "a", body: "Keep", now: 20 });
+    repository.setNoteLabel("a", "n", "todo", true);
+    repository.updateChat("a", { enabledLabels: [], now: 30 });
+    rewindToSchema7(database);
+    database.close();
+    database = openDatabase(join(directory, "on-track.sqlite"));
+    repository = new SqliteChatRepository(database);
+    expect(repository.listNotes("a")[0]!.labels).toEqual(["todo"]);
+    expect(repository.getChat("a")!.enabledLabels).toEqual([]);
+    expect(repository.getChat("a")!.labelDefinitions).toHaveLength(7);
+    expect(database.pragma("foreign_key_check")).toEqual([]);
+    expect(() =>
+      database
+        .prepare(
+          "INSERT INTO note_labels(note_id,chat_id,label) VALUES('n','b','pin')",
+        )
+        .run(),
+    ).toThrow(/FOREIGN KEY/);
+    expect(() =>
+      database
+        .prepare(
+          "INSERT INTO note_labels(note_id,chat_id,label) VALUES('n','a','unknown')",
+        )
+        .run(),
+    ).toThrow(/FOREIGN KEY/);
+  });
+
+  it("preserves custom enablement when an old client updates built-in labels", () => {
+    const chat = repository.createChat({
+      id: "a",
+      title: "A",
+      accent: "ocean",
+      now: 10,
+    });
+    repository.updateChat("a", {
+      now: 20,
+      labelConfiguration: {
+        revision: 0,
+        labels: [
+          ...chat.labelDefinitions!.map(({ id, name, symbol, enabled }) => ({
+            id,
+            name,
+            symbol,
+            enabled,
+          })),
+          { name: "Review", symbol: null, enabled: true },
+        ],
+      },
+    });
+    const updated = repository.updateChat("a", { enabledLabels: [], now: 30 })!;
+    expect(
+      updated.labelDefinitions!.find((label) => label.name === "Review")!
+        .enabled,
+    ).toBe(true);
+    expect(
+      updated.labelDefinitions!.find((label) => label.id === "todo")!.enabled,
+    ).toBe(false);
+  });
+
+  it("rolls back a stale label configuration and preserves activity for full-form label-only edits", () => {
+    const chat = repository.createChat({
+      id: "a",
+      title: "A",
+      accent: "ocean",
+      now: 10,
+    });
+    const labels = chat.labelDefinitions!.map(
+      ({ id, name, symbol, enabled }) => ({ id, name, symbol, enabled }),
+    );
+    const updated = repository.updateChat("a", {
+      title: "A",
+      accent: "ocean",
+      collapseLongMessages: true,
+      labelConfiguration: {
+        revision: 0,
+        labels: [...labels, { name: "Review", symbol: null, enabled: true }],
+      },
+      now: 40,
+    })!;
+    expect(updated.updatedAt).toBe(10);
+    expect(updated.labelConfigurationRevision).toBe(1);
+    expect(() =>
+      repository.updateChat("a", {
+        title: "Stale",
+        labelConfiguration: { revision: 0, labels },
+        now: 50,
+      }),
+    ).toThrow();
+    expect(repository.getChat("a")!.title).toBe("A");
+    expect(repository.getChat("a")!.labelDefinitions).toHaveLength(8);
+  });
+
+  it("removes omitted custom labels and only their assignments atomically", () => {
+    const chat = repository.createChat({
+      id: "a",
+      title: "A",
+      accent: "ocean",
+      now: 10,
+    });
+    const builtins = chat.labelDefinitions!.map(
+      ({ id, name, symbol, enabled }) => ({ id, name, symbol, enabled }),
+    );
+    const project = repository.updateChat("a", {
+      now: 20,
+      labelConfiguration: {
+        revision: 0,
+        labels: [
+          ...builtins,
+          { name: "Review", symbol: null, enabled: true },
+          { name: "Ready", symbol: null, enabled: true },
+        ],
+      },
+    })!;
+    const removed = project.labelDefinitions!.find(
+      (label) => label.name === "Review",
+    )!;
+    const retained = project.labelDefinitions!.find(
+      (label) => label.name === "Ready",
+    )!;
+    repository.appendNote({
+      id: "n",
+      chatId: "a",
+      body: "Keep this message",
+      now: 30,
+    });
+    for (const id of [removed.id, retained.id, "pin"] as const)
+      repository.setNoteLabel("a", "n", id, true);
+    const config = {
+      revision: 1,
+      labels: [
+        ...builtins,
+        {
+          id: retained.id,
+          name: retained.name,
+          symbol: retained.symbol,
+          enabled: true,
+        },
+      ],
+    };
+    database.exec(
+      "CREATE TRIGGER fail_label_update BEFORE UPDATE OF name ON project_labels BEGIN SELECT RAISE(ABORT, 'test rollback'); END",
+    );
+    expect(() =>
+      repository.updateChat("a", {
+        title: "Changed",
+        now: 40,
+        labelConfiguration: config,
+      }),
+    ).toThrow("test rollback");
+    expect(repository.getChat("a")!.title).toBe("A");
+    expect(repository.listNotes("a")[0]!.labels).toContain(removed.id);
+    database.exec("DROP TRIGGER fail_label_update");
+    const updated = repository.updateChat("a", {
+      now: 40,
+      labelConfiguration: config,
+    })!;
+    expect(updated.labelDefinitions!.map((label) => label.id)).not.toContain(
+      removed.id,
+    );
+    expect(updated.labelConfigurationRevision).toBe(2);
+    expect(repository.listNotes("a")[0]).toMatchObject({
+      body: "Keep this message",
+      labels: ["pin", retained.id],
+    });
+    expect(database.pragma("foreign_key_check")).toEqual([]);
+    expect(() =>
+      repository.updateChat("a", { now: 50, labelConfiguration: config }),
+    ).toThrow();
+    expect(() =>
+      repository.updateChat("a", {
+        now: 50,
+        labelConfiguration: { revision: 2, labels: builtins.slice(1) },
+      }),
+    ).toThrow();
+    expect(() =>
+      repository.updateChat("a", {
+        now: 50,
+        labelConfiguration: {
+          revision: 2,
+          labels: [
+            ...builtins,
+            { id: removed.id, name: "Review", symbol: null, enabled: true },
+          ],
+        },
+      }),
+    ).toThrow();
   });
 
   it("disables schema use of application functions on live connections", () => {
@@ -134,6 +396,7 @@ describe("SQLite project-chat persistence", () => {
       sender: "Maya",
       now: 30,
     });
+    rewindToSchema7(database);
     database.exec(`ALTER TABLE chats DROP COLUMN archived_at;
       DELETE FROM __drizzle_migrations WHERE created_at = 1789027200000;
       UPDATE app_metadata SET schema_version = 6;`);
@@ -220,6 +483,7 @@ describe("SQLite project-chat persistence", () => {
     });
     database.close();
     const legacy = new Database(databasePath);
+    rewindToSchema7(legacy);
     legacy.exec(`
       ALTER TABLE chats DROP COLUMN archived_at;
       ALTER TABLE chats DROP COLUMN collapse_long_messages;
@@ -239,7 +503,7 @@ describe("SQLite project-chat persistence", () => {
         .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
         .pluck()
         .get(),
-    ).toBe(7);
+    ).toBe(9);
     expect(repository.getChat("chat-a")?.pinnedAt).toBeNull();
     expect(repository.getChat("chat-a")?.collapseLongMessages).toBe(true);
     expect(repository.listNotes("chat-a")).toMatchObject([
@@ -502,9 +766,7 @@ describe("SQLite project-chat persistence", () => {
     repository.deleteChat("chat-a");
     expect(
       database
-        .prepare(
-          "SELECT count(*) FROM chat_enabled_labels WHERE chat_id = 'chat-a'",
-        )
+        .prepare("SELECT count(*) FROM project_labels WHERE chat_id = 'chat-a'")
         .pluck()
         .get(),
     ).toBe(0);

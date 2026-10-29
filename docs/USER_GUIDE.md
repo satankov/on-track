@@ -43,8 +43,21 @@ keeping any custom data path unchanged. On PowerShell, use `npm.cmd` in place of
   browser session. First visits open near current work and the first future
   message; future messages remain accessible through normal scrolling.
 - Pin important projects above the activity-sorted project list, and independently
-  collapse Pinned and Projects during the current browser session.
-- Customize each project's title and accent.
+  collapse Pinned, Projects, Archive, and Examples. Their state is saved in the database.
+- Choose **Edit** to change a project's name, accent, labels, and message display.
+  Color swatches show the selected accent with a check; label checkboxes on the
+  right enable or disable labels. Add up to **5 custom labels** per project, each
+  with a name of **1–8 characters** and an optional symbol or emoji. Type directly
+  in the empty last row; a new empty row appears as you enter data, until all five
+  custom slots are used. Name/symbol errors appear while typing. Use the × to
+  the right of a custom label's checkbox, or clear both fields, to remove it on
+  Save, including its tags on messages;
+  the messages remain. Cleared rows collapse into one empty row.
+  Drag the two-line handle to move the whole row and reorder optional labels.
+  You can also select a handle and then its destination, or use arrow keys while
+  the handle is focused. Built-in names and symbols remain fixed;
+  turning a label off preserves existing message assignments. Choose **Save changes**
+  to apply these settings.
 - Add multiline Markdown notes with a compact, selection-aware formatting strip
   for bold, italic, links, quotes, lists, checklists, code, and GFM tables. The
   add/edit input grows to eight lines before scrolling internally.
@@ -67,12 +80,17 @@ keeping any custom data path unchanged. On PowerShell, use `npm.cmd` in place of
   and legacy or macro-enabled Office formats, remain accessible through Show in
   Folder. An allowed format does not guarantee safe file contents.
 - Filter messages containing Markdown/GFM links with the automatic Links filter
-  after Files, without applying a label.
+  after Files, without applying a label. Hold **⌘** on macOS or **Ctrl** on
+  Windows/Linux while clicking filters to combine them; messages must match
+  **every selected filter**. Touch taps toggle filters directly; keyboard users
+  can hold the modifier while pressing Enter/Space. **All** clears the selection.
 - Export selected projects or all projects to one `.on-track-backup` bundle.
 - Preview backup projects, then import selected projects by merging independent
   copies or replacing the whole database.
 - Keep project data after closing and restarting the application. Reading
-  positions and sidebar collapse state reset when the browser reloads.
+  positions and filter/search selections remain session-only. Theme, Examples
+  visibility, and sidebar collapse state survive browser-data clearing and restart.
+  Existing browser preferences move into the database once when upgrading.
 - Use the main flow at desktop and mobile browser widths.
 - Run without accounts, telemetry, or an internet connection after installation.
 
@@ -145,7 +163,7 @@ Explicit project selections allow up to 10,000 projects and 1 MiB of options.
 A merge can grow the workspace beyond one bundle's limits; use selective export
 for smaller project sets.
 
-The current checkout uses schema 7 and accepts schema-7 and schema-6 backups plus
+The current checkout uses schema 9 and accepts schema-9, schema-8, schema-7 and schema-6 backups plus
 strictly validated schema-5, schema-4 development, and v0.0.4/schema-3 backups; it
 does not restore v0.0.3/schema-2 bundles. Older
 supported databases migrate during startup. You can isolate evaluation data
@@ -175,8 +193,11 @@ your browser normally and visits that website.
 
 This is an early plaintext alpha. Do not use it for confidential, NDA-bound, or
 irreplaceable information yet. Keep your own backups. Encryption and device sync
-are not currently available. Browser preferences such as theme and example
-visibility stay in that browser; they are not included in project backups.
+are not currently available. Preferences belong to the local database and are
+shared by browsers using it. Full backups include them; selected-project exports
+omit them. Replacing from a full backup restores its preferences. Replacing from
+a selected-project or older backup keeps your current preferences, as does merging
+projects. Custom label definitions and assignments travel with their projects.
 
 ## Further reading
 

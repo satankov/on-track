@@ -1,3 +1,23 @@
+import { ProjectLabelContext } from "./label-context.js";
+import { ProjectLabelsEditor } from "./ProjectLabelsEditor.js";
+import {
+  labelConfiguration,
+  withLabelPlaceholder,
+  type LabelDraft,
+} from "./label-drafts.js";
+import {
+  projectLabels,
+  labelConfigurationSchema,
+  type LabelConfiguration,
+} from "../domain/labels.js";
+import {
+  additiveModifier,
+  filterKey,
+  isApplePlatform,
+  selectFilter,
+  type FilterId,
+  type HistoryFilter,
+} from "./history-filters.js";
 import { HighlightText } from "./HighlightText.js";
 import { rehypeSearchHighlight } from "./search-highlight.js";
 import {
@@ -13,14 +33,8 @@ import type {
   TimelineContent,
 } from "../domain/examples.js";
 import { ExamplesSection, GeneralSettingsWorkspace } from "./Examples.js";
-import {
-  readCollapsedSections,
-  persistCollapsedSections,
-  type RailSection,
-  readShowExamples,
-  persistShowExamples,
-  SHOW_EXAMPLES_KEY,
-} from "./preferences.js";
+import { useWorkspacePreferences } from "./useWorkspacePreferences.js";
+import type { RailSection } from "./preferences.js";
 import {
   Fragment,
   useContext,
@@ -47,8 +61,6 @@ import type {
 import type { Chat, ChatDetail, Note } from "../domain/types.js";
 import {
   ACCENTS,
-  CONFIGURABLE_LABELS,
-  LABELS,
   PERMANENT_LABELS,
   type Accent,
   type ConfigurableLabel,
@@ -61,13 +73,7 @@ import {
   markdownActionForShortcut,
   type MarkdownAction,
 } from "./markdown-assistance.js";
-import {
-  applyTheme,
-  persistTheme,
-  readStoredTheme,
-  THEMES,
-  type Theme,
-} from "./theme.js";
+import { THEMES, type Theme } from "./theme.js";
 import {
   useHistoryPosition,
   type ReadingPosition,
@@ -120,8 +126,6 @@ const FILTER_LABEL_NAMES: Record<Label, string> = {
 
 const ICON_ONLY_MESSAGE_LABELS = new Set<Label>(["pin", "attention"]);
 const MESSAGE_COLLAPSED_HEIGHT_PX = 192;
-
-type HistoryFilter = "all" | "attachments" | "links" | Label;
 
 interface WorkspaceServerState {
   chats: Chat[];
@@ -184,6 +188,8 @@ function chatFromDetail(detail: ChatDetail, now = Date.now()): Chat {
     title: detail.title,
     accent: detail.accent,
     enabledLabels: detail.enabledLabels,
+    labelDefinitions: detail.labelDefinitions,
+    labelConfigurationRevision: detail.labelConfigurationRevision,
     collapseLongMessages: detail.collapseLongMessages ?? true,
     createdAt: detail.createdAt,
     updatedAt: detail.updatedAt,
@@ -320,6 +326,8 @@ function useModalDialog(): RefObject<HTMLDialogElement | null> {
     const dialog = dialogRef.current;
     if (!dialog || typeof dialog.showModal !== "function") return;
     dialog.removeAttribute("open");
+    // Let the native dialog move initial focus and remember its opener. React
+    // autoFocus would move it before showModal can capture the return target.
     dialog.showModal();
     return () => dialog.close();
   }, []);
@@ -432,6 +440,44 @@ interface ProjectFormProps {
   onSubmit: (input: { title: string; accent: Accent }) => Promise<void>;
 }
 
+function ProjectAccentPicker({
+  accent,
+  onChange,
+  name,
+}: {
+  accent: Accent;
+  onChange: (accent: Accent) => void;
+  name: string;
+}) {
+  return (
+    <fieldset className="accent-fieldset">
+      <legend>Project accent</legend>
+      <div className="accent-options">
+        {ACCENTS.map((value) => (
+          <label
+            className="accent-option"
+            data-accent={value}
+            key={value}
+            title={ACCENT_NAMES[value]}
+          >
+            <input
+              type="radio"
+              name={name}
+              aria-label={ACCENT_NAMES[value]}
+              value={value}
+              checked={accent === value}
+              onChange={() => onChange(value)}
+            />
+            <span className="accent-swatch" aria-hidden="true">
+              <CheckIcon />
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function ProjectForm({ chat, onCancel, onSubmit }: ProjectFormProps) {
   const dialogRef = useModalDialog();
   const [title, setTitle] = useState(chat?.title ?? "");
@@ -471,19 +517,14 @@ function ProjectForm({ chat, onCancel, onSubmit }: ProjectFormProps) {
         aria-labelledby="project-dialog-title"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <p className="eyebrow">{editing ? "Project settings" : "New thread"}</p>
         <h2 id="project-dialog-title">
           {editing ? "Edit project" : "Create project"}
         </h2>
-        <p className="dialog-copy">
-          Give this stream a clear name and a color you can spot quickly.
-        </p>
-        <form onSubmit={handleSubmit}>
+        <form className="project-settings-fields" onSubmit={handleSubmit}>
           <label className="field-label" htmlFor="project-title">
             Project name
           </label>
           <input
-            autoFocus
             id="project-title"
             className="text-input"
             value={title}
@@ -492,28 +533,11 @@ function ProjectForm({ chat, onCancel, onSubmit }: ProjectFormProps) {
             required
           />
 
-          <fieldset className="accent-fieldset">
-            <legend>Project accent</legend>
-            <div className="accent-options">
-              {ACCENTS.map((value) => (
-                <label
-                  className="accent-option"
-                  data-accent={value}
-                  key={value}
-                >
-                  <input
-                    type="radio"
-                    name="accent"
-                    value={value}
-                    checked={accent === value}
-                    onChange={() => setAccent(value)}
-                  />
-                  <span className="accent-swatch" aria-hidden="true" />
-                  <span>{ACCENT_NAMES[value]}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          <ProjectAccentPicker
+            accent={accent}
+            onChange={setAccent}
+            name="accent"
+          />
 
           {error && (
             <p role="alert" className="form-error">
@@ -557,20 +581,33 @@ function ProjectEditWorkspace({
   onSubmit: (input: {
     title: string;
     accent: Accent;
-    enabledLabels: ConfigurableLabel[];
+    labelConfiguration: LabelConfiguration;
     collapseLongMessages: boolean;
   }) => Promise<void>;
   onDelete: () => Promise<void>;
 }) {
   const [title, setTitle] = useState(chat.title);
   const [accent, setAccent] = useState<Accent>(chat.accent);
-  const [enabledLabels, setEnabledLabels] = useState<ConfigurableLabel[]>(
-    chat.enabledLabels ?? ["todo", "milestone"],
+  const [labelDrafts, setLabelDrafts] = useState<LabelDraft[]>(() =>
+    withLabelPlaceholder(
+      projectLabels(chat).map(({ id, name, symbol, enabled }) => ({
+        key: id,
+        id,
+        name,
+        symbol,
+        enabled,
+      })),
+    ),
   );
+  const [labelRevision] = useState(chat.labelConfigurationRevision ?? 0);
+  const [showLabelErrors, setShowLabelErrors] = useState(false);
   const [collapseLongMessages, setCollapseLongMessages] = useState(
     chat.collapseLongMessages ?? true,
   );
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{
+    action: "save" | "archive" | "delete";
+    message: string;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [archiveStatus, setArchiveStatus] = useState("");
@@ -584,7 +621,7 @@ function ProjectEditWorkspace({
   }, [mutationPending]);
 
   async function handleArchive() {
-    setError("");
+    setError(null);
     setArchiveStatus("");
     pendingArchiveFocus.current = true;
     try {
@@ -595,25 +632,40 @@ function ProjectEditWorkspace({
           : "Project restored to Projects.",
       );
     } catch (caught) {
-      setError(
-        errorMessage(caught, "The project archive state could not be saved."),
-      );
+      setError({
+        action: "archive",
+        message: errorMessage(
+          caught,
+          "The project archive state could not be saved.",
+        ),
+      });
     }
   }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setSaving(true);
-    setError("");
+    setError(null);
     try {
+      setShowLabelErrors(true);
+      const config = labelConfigurationSchema.safeParse(
+        labelConfiguration(labelDrafts, labelRevision),
+      );
+      if (!config.success)
+        throw new Error(
+          config.error.issues[0]?.message ?? "Check the label fields.",
+        );
       await onSubmit({
         title,
         accent,
-        enabledLabels,
+        labelConfiguration: config.data,
         collapseLongMessages,
       });
     } catch (caught) {
-      setError(errorMessage(caught, "The project could not be saved."));
+      setError({
+        action: "save",
+        message: errorMessage(caught, "The project could not be saved."),
+      });
       setSaving(false);
     }
   }
@@ -623,30 +675,51 @@ function ProjectEditWorkspace({
       return;
     }
     setDeleting(true);
-    setError("");
+    setError(null);
     try {
       await onDelete();
     } catch (caught) {
-      setError(errorMessage(caught, "The project could not be deleted."));
+      setError({
+        action: "delete",
+        message: errorMessage(caught, "The project could not be deleted."),
+      });
       setDeleting(false);
     }
   }
 
   return (
-    <main className="workspace settings-workspace project-edit-workspace">
-      <header className="settings-workspace-header">
-        <p className="eyebrow">Project</p>
-        <h1>Edit project</h1>
-      </header>
-      <section className="settings-panel" aria-labelledby="project-edit-title">
-        <div className="settings-panel-copy">
-          <h2 id="project-edit-title">{chat.title}</h2>
-          <p>
-            Change project settings, or archive it while keeping its messages
-            and files.
-          </p>
+    <main
+      className="workspace settings-workspace project-edit-workspace"
+      aria-label="Edit project"
+      data-accent={accent}
+    >
+      <form
+        className="project-edit-form project-settings-fields"
+        onSubmit={handleSubmit}
+      >
+        <div className="project-edit-actions">
+          <button
+            className="button button-quiet"
+            type="button"
+            onClick={onBack}
+            disabled={saving || deleting || mutationPending}
+          >
+            Back to project
+          </button>
+          <button
+            className="button button-primary"
+            type="submit"
+            disabled={saving || deleting || mutationPending}
+          >
+            {saving ? "Saving…" : "Save changes"}
+          </button>
         </div>
-        <form className="project-edit-form" onSubmit={handleSubmit}>
+        {error?.action === "save" && (
+          <p id="project-edit-error" role="alert" className="form-error">
+            {error.message}
+          </p>
+        )}
+        <div>
           <label className="field-label" htmlFor="project-edit-name">
             Project name
           </label>
@@ -659,126 +732,77 @@ function ProjectEditWorkspace({
             maxLength={80}
             required
           />
-          <fieldset className="accent-fieldset">
-            <legend>Project accent</legend>
-            <div className="accent-options">
-              {ACCENTS.map((value) => (
-                <label
-                  className="accent-option"
-                  data-accent={value}
-                  key={value}
-                >
-                  <input
-                    type="radio"
-                    name="project-edit-accent"
-                    value={value}
-                    checked={accent === value}
-                    onChange={() => setAccent(value)}
-                  />
-                  <span className="accent-swatch" aria-hidden="true" />
-                  <span>{ACCENT_NAMES[value]}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          <fieldset className="project-label-fieldset">
-            <legend>Project labels</legend>
-            <p className="field-help">
-              Choose which labels are useful in this project. Existing message
-              labels stay in place if you turn one off.
-            </p>
-            <div className="project-label-options">
-              {CONFIGURABLE_LABELS.map((label) => (
-                <label className="project-label-option" key={label}>
-                  <input
-                    type="checkbox"
-                    checked={enabledLabels.includes(label)}
-                    onChange={(event) =>
-                      setEnabledLabels((current) =>
-                        event.target.checked
-                          ? CONFIGURABLE_LABELS.filter(
-                              (candidate) =>
-                                current.includes(candidate) ||
-                                candidate === label,
-                            )
-                          : current.filter((candidate) => candidate !== label),
-                      )
-                    }
-                  />
-                  <span>{LABEL_NAMES[label]}</span>
-                  <LabelGlyph label={label} />
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          <fieldset className="project-message-display-fieldset">
-            <legend>Message display</legend>
-            <p className="field-help">
-              Choose how long messages first appear in this project. Every long
-              message can still be expanded or collapsed individually.
-            </p>
-            <label className="project-message-display-option">
-              <input
-                type="checkbox"
-                checked={collapseLongMessages}
-                onChange={(event) =>
-                  setCollapseLongMessages(event.target.checked)
-                }
-              />
-              <span>Collapse long messages by default</span>
-            </label>
-          </fieldset>
-          {error && (
-            <p id="project-edit-error" role="alert" className="form-error">
-              {error}
-            </p>
-          )}
-          <p role="status" className="visually-hidden">
-            {archiveStatus}
+        </div>
+        <ProjectAccentPicker
+          accent={accent}
+          onChange={setAccent}
+          name="project-edit-accent"
+        />
+        <ProjectLabelsEditor
+          labels={labelDrafts}
+          onChange={setLabelDrafts}
+          glyph={(label) => <LabelGlyph label={label} />}
+          showErrors={showLabelErrors}
+          disabled={saving || deleting || mutationPending}
+        />
+        <fieldset
+          className="project-message-display-fieldset"
+          aria-describedby="project-message-display-help"
+        >
+          <legend>Message display</legend>
+          <label className="project-message-display-option">
+            <span>Collapse long messages by default</span>
+            <input
+              type="checkbox"
+              checked={collapseLongMessages}
+              onChange={(event) =>
+                setCollapseLongMessages(event.target.checked)
+              }
+            />
+          </label>
+          <p id="project-message-display-help" className="field-help">
+            You can still expand or collapse each message.
           </p>
-          <div className="project-edit-actions">
-            <div className="project-lifecycle-actions">
-              <button
-                className="button button-danger"
-                type="button"
-                onClick={handleDelete}
-                disabled={saving || deleting || mutationPending}
-              >
-                {deleting ? "Deleting…" : "Delete project"}
-              </button>
-              <button
-                ref={archiveButton}
-                className="button button-quiet"
-                type="button"
-                onClick={handleArchive}
-                disabled={saving || deleting || mutationPending}
-                aria-busy={mutationPending || undefined}
-                aria-describedby={error ? "project-edit-error" : undefined}
-              >
-                {chat.archivedAt == null
-                  ? "Archive project"
-                  : "Restore project"}
-              </button>
-            </div>
-            <span />
-            <button
-              className="button button-quiet"
-              type="button"
-              onClick={onBack}
-              disabled={saving || deleting || mutationPending}
-            >
-              Back to project
-            </button>
-            <button
-              className="button button-primary"
-              type="submit"
-              disabled={saving || deleting || mutationPending}
-            >
-              {saving ? "Saving…" : "Save changes"}
-            </button>
-          </div>
-        </form>
-      </section>
+        </fieldset>
+        {error && error.action !== "save" && (
+          <p id="project-edit-error" role="alert" className="form-error">
+            {error.message}
+          </p>
+        )}
+        <p role="status" className="visually-hidden">
+          {archiveStatus}
+        </p>
+        <div className="project-lifecycle-actions">
+          <button
+            ref={archiveButton}
+            className="button button-quiet"
+            type="button"
+            onClick={handleArchive}
+            disabled={saving || deleting || mutationPending}
+            aria-busy={mutationPending || undefined}
+            aria-describedby={
+              error?.action === "archive"
+                ? "project-edit-error"
+                : "project-archive-help"
+            }
+          >
+            <ArchiveRestoreIcon />
+            {chat.archivedAt == null ? "Archive project" : "Restore project"}
+          </button>
+          <p id="project-archive-help" className="field-help">
+            Archiving keeps all messages and files.
+          </p>
+          <button
+            className="button button-danger"
+            type="button"
+            onClick={handleDelete}
+            disabled={saving || deleting || mutationPending}
+          >
+            <TrashIcon />
+            {deleting ? "Deleting…" : "Delete project"}
+          </button>
+        </div>
+      </form>
     </main>
   );
 }
@@ -1098,7 +1122,6 @@ function SettingsRail({
       <header className="rail-header settings-rail-header">
         <div>
           <p className="brand-mark">Settings</p>
-          <p className="brand-subtitle">Local workspace controls</p>
         </div>
         <button
           className="settings-back-button"
@@ -1123,7 +1146,6 @@ function SettingsRail({
           </span>
           <span>
             <strong>General</strong>
-            <small>Workspace preferences</small>
           </span>
         </button>
         <button
@@ -1142,7 +1164,6 @@ function SettingsRail({
           </span>
           <span>
             <strong>Appearance</strong>
-            <small>Theme and contrast</small>
           </span>
         </button>
         <button
@@ -1159,7 +1180,6 @@ function SettingsRail({
           </span>
           <span>
             <strong>Backups</strong>
-            <small>Export and restore</small>
           </span>
         </button>
       </nav>
@@ -1189,22 +1209,14 @@ function AppearanceSettingsWorkspace({
   return (
     <main className="workspace settings-workspace appearance-workspace">
       <header className="settings-workspace-header">
-        <p className="eyebrow">Personalization</p>
         <h1>Appearance</h1>
       </header>
       <section
         className="settings-panel appearance-panel"
-        aria-labelledby="theme-choice"
+        aria-label="Appearance theme"
       >
-        <div className="settings-panel-copy">
-          <h2 id="theme-choice">Choose a theme</h2>
-          <p>
-            Pick the lighting that makes project notes easiest to read. Layout
-            and project color identity stay the same.
-          </p>
-        </div>
         <fieldset className="theme-fieldset">
-          <legend>Theme</legend>
+          <legend className="visually-hidden">Theme</legend>
           <div className="theme-options">
             {THEMES.map((value) => {
               const selected = theme === value;
@@ -1482,6 +1494,18 @@ function QuestionIcon() {
 }
 
 function LabelGlyph({ label }: { label: Label }) {
+  const definition = useContext(ProjectLabelContext).find(
+    (item) => item.id === label,
+  );
+  if (label.startsWith("custom-"))
+    return (
+      <span
+        className={`label-glyph ${definition?.symbol ? "label-glyph--emoji" : "label-glyph--svg"}`}
+        aria-hidden="true"
+      >
+        {definition?.symbol ?? <LabelIcon />}
+      </span>
+    );
   if (label === "attention") {
     return (
       <span className="label-glyph" aria-hidden="true">
@@ -1584,27 +1608,31 @@ function MessageActionButton({
 }
 
 function MessageLabels({ labels }: { labels: Label[] }) {
+  const definitions = useContext(ProjectLabelContext);
   if (labels.length === 0) return null;
   return (
     <span className="message-labels" aria-label="Message labels" role="list">
-      {LABELS.filter((label) => labels.includes(label)).map((label) => {
-        const iconOnly = ICON_ONLY_MESSAGE_LABELS.has(label);
-        return (
-          <span
-            className={`message-label ${iconOnly ? "message-label--icon-only" : ""}`}
-            data-label={label}
-            aria-label={iconOnly ? LABEL_NAMES[label] : undefined}
-            title={iconOnly ? LABEL_NAMES[label] : undefined}
-            role="listitem"
-            key={label}
-          >
-            <LabelGlyph label={label} />
-            {!iconOnly && (
-              <span className="message-label-name">{LABEL_NAMES[label]}</span>
-            )}
-          </span>
-        );
-      })}
+      {definitions
+        .filter((definition) => labels.includes(definition.id))
+        .map((definition) => {
+          const label = definition.id;
+          const iconOnly = ICON_ONLY_MESSAGE_LABELS.has(label);
+          return (
+            <span
+              className={`message-label ${iconOnly ? "message-label--icon-only" : ""}`}
+              data-label={label}
+              aria-label={iconOnly ? LABEL_NAMES[label] : undefined}
+              title={iconOnly ? LABEL_NAMES[label] : undefined}
+              role="listitem"
+              key={label}
+            >
+              <LabelGlyph label={label} />
+              {!iconOnly && (
+                <span className="message-label-name">{definition.name}</span>
+              )}
+            </span>
+          );
+        })}
     </span>
   );
 }
@@ -1618,6 +1646,9 @@ function MessageLabelPicker({
   enabledLabels: ConfigurableLabel[];
   onToggle: (note: Note, label: Label, applied: boolean) => Promise<void>;
 }) {
+  const definitions = useContext(ProjectLabelContext);
+  const labelName = (id: Label) =>
+    definitions.find((item) => item.id === id)?.name ?? id;
   const explainReadOnly = useContext(ExampleReadOnlyContext);
   const [open, setOpen] = useState(false);
   const [busyLabel, setBusyLabel] = useState<Label>();
@@ -1628,12 +1659,14 @@ function MessageLabelPicker({
   const popoverId = useId();
   const appliedLabels = note.labels ?? [];
   const permanent = new Set<Label>(PERMANENT_LABELS);
-  const availableLabels = LABELS.filter(
-    (label) =>
-      permanent.has(label) ||
-      enabledLabels.includes(label as ConfigurableLabel) ||
-      appliedLabels.includes(label),
-  );
+  const availableLabels = definitions
+    .map((label) => label.id)
+    .filter(
+      (label) =>
+        permanent.has(label) ||
+        enabledLabels.includes(label as ConfigurableLabel) ||
+        appliedLabels.includes(label),
+    );
 
   useEffect(() => {
     if (!open) return;
@@ -1756,7 +1789,7 @@ function MessageLabelPicker({
                   />
                   <span>
                     <LabelGlyph label={label} />
-                    {LABEL_NAMES[label]}
+                    {labelName(label)}
                     {inactive ? " (inactive)" : ""}
                   </span>
                 </label>
@@ -1775,6 +1808,19 @@ function MessageLabelPicker({
 }
 
 const messageMarkdownComponents: Components = {
+  table: ({ node, ...props }) => {
+    void node;
+    return (
+      <div
+        className="message-table-scroll"
+        role="region"
+        aria-label="Scrollable table"
+        tabIndex={0}
+      >
+        <table {...props} />
+      </div>
+    );
+  },
   a: ({ node, ...props }) => {
     // The Markdown AST node is not a DOM attribute.
     void node;
@@ -1806,7 +1852,7 @@ function MarkdownMessage({
   );
 }
 
-function syncClippedMessageLinks(
+function syncClippedMessageFocus(
   bodyElement: HTMLDivElement,
   collapsed: boolean,
 ) {
@@ -1822,6 +1868,12 @@ function syncClippedMessageLinks(
       delete link.dataset.messageClippedLink;
       link.removeAttribute("tabindex");
     }
+  }
+  for (const table of bodyElement.querySelectorAll<HTMLDivElement>(
+    ".message-table-scroll",
+  )) {
+    table.tabIndex =
+      collapsed && table.getBoundingClientRect().bottom > clipBottom ? -1 : 0;
   }
 }
 
@@ -1853,8 +1905,8 @@ function CollapsibleMessageBody({
     if (!bodyElement) return;
     const nextIsLong = bodyElement.scrollHeight > MESSAGE_COLLAPSED_HEIGHT_PX;
     setIsLong((current) => (current === nextIsLong ? current : nextIsLong));
-    syncClippedMessageLinks(bodyElement, nextIsLong && !expanded);
-    return () => syncClippedMessageLinks(bodyElement, false);
+    syncClippedMessageFocus(bodyElement, nextIsLong && !expanded);
+    return () => syncClippedMessageFocus(bodyElement, false);
   }, [body, expanded]);
 
   useEffect(() => {
@@ -1863,7 +1915,7 @@ function CollapsibleMessageBody({
     const measure = () => {
       const nextIsLong = bodyElement.scrollHeight > MESSAGE_COLLAPSED_HEIGHT_PX;
       setIsLong((current) => (current === nextIsLong ? current : nextIsLong));
-      syncClippedMessageLinks(bodyElement, nextIsLong && !expanded);
+      syncClippedMessageFocus(bodyElement, nextIsLong && !expanded);
     };
     const observer =
       typeof ResizeObserver === "undefined"
@@ -2333,8 +2385,28 @@ function ChatWorkspace({
   copiedNoteId?: string;
   navigationDisabled: boolean;
 }) {
+  const definitions = projectLabels(detail);
+  const labelName = (id: Label) =>
+    definitions.find((item) => item.id === id)?.name ?? id;
   const explainReadOnly = useContext(ExampleReadOnlyContext);
   const historyRef = useRef<HTMLElement>(null);
+  const historyKey = filterKey(historyFilter);
+  const filterPointer = useRef("");
+  const applePlatform = isApplePlatform(
+    navigator.platform || navigator.userAgent,
+  );
+  const filterHelpId = useId();
+  const filterName = (filter: FilterId) =>
+    filter === "attachments"
+      ? "Files"
+      : filter === "links"
+        ? "Links"
+        : labelName(filter.slice(6) as Label);
+  const filterDescription = historyFilter.length
+    ? historyFilter.map(filterName).join(" + ")
+    : "All messages";
+  const isSelected = (filter: FilterId | "all") =>
+    filter === "all" ? !historyFilter.length : historyFilter.includes(filter);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchText, setSearchText] = useState(
     () => searchQueries.get(detail.id) ?? "",
@@ -2348,7 +2420,7 @@ function ChatWorkspace({
   const beforeFilterChange = useHistoryPosition(
     historyRef,
     detail.id,
-    historyFilter,
+    historyKey,
     readingPositions,
     Boolean(explainReadOnly),
     searchQuery.key,
@@ -2387,22 +2459,25 @@ function ChatWorkspace({
   );
   const attachmentCount = detail.notes.filter(hasAttachments).length;
   const enabledLabels = detail.enabledLabels ?? ["todo", "milestone"];
-  const filterLabels = [...PERMANENT_LABELS, ...enabledLabels];
+  const filterLabels = definitions
+    .filter((label) => label.enabled)
+    .map((label) => label.id);
   const searchMatches = detail.notes.filter((note) =>
     matchesSearch(searchDocuments.get(note.id)!, searchQuery),
   );
   const visibleNotes = searchMatches.filter((note) => {
-    if (historyFilter === "all") return true;
-    if (historyFilter === "attachments") return hasAttachments(note);
-    if (historyFilter === "links") return linkedNoteIds.has(note.id);
-    return (note.labels ?? []).includes(historyFilter);
+    return historyFilter.every((filter) => {
+      if (filter === "attachments") return hasAttachments(note);
+      if (filter === "links") return linkedNoteIds.has(note.id);
+      return (note.labels ?? []).includes(filter.slice(6) as Label);
+    });
   });
   const timelineNow = useTimelineNow(visibleNotes);
   const futureStartId = visibleNotes.find(
     (note) => note.createdAt > timelineNow,
   )?.id;
   const showingEmptyFilter =
-    historyFilter !== "all" && visibleNotes.length === 0;
+    historyFilter.length > 0 && visibleNotes.length === 0;
   const editingAttachments =
     editingNote?.attachments?.filter((attachment) =>
       editingAttachmentIds.includes(attachment.id),
@@ -2591,13 +2666,48 @@ function ChatWorkspace({
     }
   }
 
-  function changeHistoryFilter(filter: HistoryFilter) {
-    beforeFilterChange(filter);
-    onHistoryFilterChange(filter);
+  function changeHistoryFilter(
+    filter: FilterId | "all",
+    event?: {
+      metaKey: boolean;
+      ctrlKey: boolean;
+      nativeEvent?: Event;
+      detail?: number;
+    },
+  ) {
+    // WebKit may expose a compatibility MouseEvent for a touch-generated click.
+    const touch = event?.detail !== 0 && filterPointer.current === "touch";
+    filterPointer.current = "";
+    const next = selectFilter(
+      historyFilter,
+      filter,
+      Boolean(
+        event &&
+        (additiveModifier(event, applePlatform) ||
+          touch ||
+          (event.nativeEvent as PointerEvent | undefined)?.pointerType ===
+            "touch"),
+      ),
+    );
+    beforeFilterChange(filterKey(next));
+    onHistoryFilterChange(next);
+  }
+
+  function filterKeyboard(
+    event: KeyboardEvent<HTMLButtonElement>,
+    filter: FilterId | "all",
+  ) {
+    if (
+      (event.key === "Enter" || event.key === " ") &&
+      additiveModifier(event, applePlatform)
+    ) {
+      event.preventDefault();
+      changeHistoryFilter(filter, event);
+    }
   }
 
   function commitSearch(value: string) {
-    beforeFilterChange(historyFilter, parseSearchQuery(value).key);
+    beforeFilterChange(historyKey, parseSearchQuery(value).key);
     setSearchText(value);
   }
 
@@ -2608,13 +2718,13 @@ function ChatWorkspace({
 
   function openSearch() {
     const searchDraft = searchQueries.get(detail.id) ?? "";
-    beforeFilterChange(historyFilter, parseSearchQuery(searchDraft).key);
+    beforeFilterChange(historyKey, parseSearchQuery(searchDraft).key);
     setSearchText(searchDraft);
     setSearchOpen(true);
   }
 
   function closeSearch() {
-    beforeFilterChange(historyFilter, "");
+    beforeFilterChange(historyKey, "");
     setSearchOpen(false);
     searchToggleRef.current?.focus();
   }
@@ -2626,578 +2736,622 @@ function ChatWorkspace({
       offset: 16,
     });
     setSearchOpen(false);
-    onHistoryFilterChange("all");
+    onHistoryFilterChange([]);
   }
 
   return (
-    <main
-      className={`workspace workspace-chat ${explainReadOnly ? "workspace-example" : ""} ${searchOpen ? "workspace-chat--search" : ""}`}
-      data-accent={detail.accent}
-    >
-      <header className="chat-header">
-        <div className="chat-header-inner">
-          <button
-            className="back-button"
-            data-back-button
-            type="button"
-            onClick={onBack}
-            disabled={navigationDisabled}
-            aria-label="Back to projects"
-          >
-            <ArrowLeftIcon />
-          </button>
-          <div className="chat-heading">
-            <p className="eyebrow">
-              {explainReadOnly ? "Example project" : "Project thread"}
-            </p>
-            <h1>{detail.title}</h1>
-          </div>
-          <button
-            ref={searchToggleRef}
-            className="project-search-toggle"
-            type="button"
-            aria-label="Search messages"
-            title="Search messages"
-            aria-expanded={searchOpen}
-            aria-controls={searchOpen ? searchId : undefined}
-            onClick={() => (searchOpen ? closeSearch() : openSearch())}
-          >
-            <SearchIcon />
-          </button>
-          {exampleCopyAction ?? (
-            <button
-              className="button button-quiet edit-project-button"
-              type="button"
-              onClick={onCustomize}
-            >
-              <EditIcon />
-              <span>Edit</span>
-            </button>
-          )}
-        </div>
-      </header>
-
-      {searchOpen && (
-        <ProjectSearch
-          id={searchId}
-          initialValue={searchText}
-          onValueChange={rememberSearch}
-          count={
-            searchQuery.key && !searchQuery.error
-              ? visibleNotes.length
-              : undefined
-          }
-          onCommit={commitSearch}
-          onClose={closeSearch}
-          status={
-            searchQuery.error ??
-            (searchQuery.key
-              ? `${visibleNotes.length} matching messages. ${historyFilter === "all" ? "All messages" : historyFilter === "attachments" ? "Files" : historyFilter === "links" ? "Links" : LABEL_NAMES[historyFilter]}.`
-              : "Search message text, people and filenames.")
-          }
-        />
-      )}
-
-      <nav className="history-filter" aria-label="History filters">
-        <div className="history-filter-inner">
-          <button
-            type="button"
-            className={`history-filter-button ${historyFilter === "all" ? "history-filter-button--active" : ""}`}
-            aria-label={`All ${detail.notes.length}`}
-            aria-pressed={historyFilter === "all"}
-            onClick={() => changeHistoryFilter("all")}
-          >
-            <span className="history-filter-icon" aria-hidden="true">
-              <ListIcon />
-            </span>
-            <span className="history-filter-label">All</span>
-            <span className="history-filter-count">{detail.notes.length}</span>
-          </button>
-          <button
-            type="button"
-            className={`history-filter-button ${historyFilter === "attachments" ? "history-filter-button--active" : ""}`}
-            aria-label={`Files ${attachmentCount}`}
-            aria-pressed={historyFilter === "attachments"}
-            onClick={() => changeHistoryFilter("attachments")}
-          >
-            <span className="history-filter-icon" aria-hidden="true">
-              <PaperclipIcon />
-            </span>
-            <span className="history-filter-label">Files</span>
-            <span className="history-filter-count">{attachmentCount}</span>
-          </button>
-          <button
-            type="button"
-            className={`history-filter-button ${historyFilter === "links" ? "history-filter-button--active" : ""}`}
-            aria-label={`Links ${linkedNoteIds.size}`}
-            aria-pressed={historyFilter === "links"}
-            onClick={() => changeHistoryFilter("links")}
-          >
-            <span className="history-filter-icon" aria-hidden="true">
-              <LinkIcon />
-            </span>
-            <span className="history-filter-label">Links</span>
-            <span className="history-filter-count">{linkedNoteIds.size}</span>
-          </button>
-          {filterLabels.map((label) => {
-            const count = detail.notes.filter((note) =>
-              (note.labels ?? []).includes(label),
-            ).length;
-            return (
-              <button
-                type="button"
-                className={`history-filter-button ${historyFilter === label ? "history-filter-button--active" : ""}`}
-                aria-label={`${LABEL_NAMES[label]} ${count}`}
-                title={LABEL_NAMES[label]}
-                aria-pressed={historyFilter === label}
-                onClick={() => changeHistoryFilter(label)}
-                key={label}
-              >
-                <span className="history-filter-icon">
-                  <LabelGlyph label={label} />
-                </span>
-                <span className="history-filter-label">
-                  {FILTER_LABEL_NAMES[label]}
-                </span>
-                <span className="history-filter-count">{count}</span>
-              </button>
-            );
-          })}
-        </div>
-      </nav>
-
-      <section
-        ref={historyRef}
-        className="history"
-        tabIndex={-1}
-        aria-label={`${detail.title} messages`}
+    <ProjectLabelContext.Provider value={definitions}>
+      <main
+        className={`workspace workspace-chat ${explainReadOnly ? "workspace-example" : ""} ${searchOpen ? "workspace-chat--search" : ""}`}
+        data-accent={detail.accent}
       >
-        {searchQuery.error ? (
-          <div className="no-notes no-notes--filtered">
-            <p role="alert">{searchQuery.error}</p>
-          </div>
-        ) : searchQuery.key && visibleNotes.length === 0 ? (
-          <div className="no-notes no-notes--filtered">
-            <h2>No matching messages</h2>
-            <p>Try fewer words or clear the search.</p>
-            {historyFilter !== "all" && searchMatches.length > 0 && (
+        <header className="chat-header">
+          <div className="chat-header-inner">
+            <button
+              className="back-button"
+              data-back-button
+              type="button"
+              onClick={onBack}
+              disabled={navigationDisabled}
+              aria-label="Back to projects"
+            >
+              <ArrowLeftIcon />
+            </button>
+            <div className="chat-heading">
+              <p className="eyebrow">
+                {explainReadOnly ? "Example project" : "Project thread"}
+              </p>
+              <h1>{detail.title}</h1>
+            </div>
+            <button
+              ref={searchToggleRef}
+              className="project-search-toggle"
+              type="button"
+              aria-label="Search messages"
+              title="Search messages"
+              aria-expanded={searchOpen}
+              aria-controls={searchOpen ? searchId : undefined}
+              onClick={() => (searchOpen ? closeSearch() : openSearch())}
+            >
+              <SearchIcon />
+            </button>
+            {exampleCopyAction ?? (
               <button
+                className="button button-quiet edit-project-button"
                 type="button"
-                className="button button-quiet"
-                onClick={() => changeHistoryFilter("all")}
+                onClick={onCustomize}
               >
-                Search all messages
+                <EditIcon />
+                <span>Edit</span>
               </button>
             )}
           </div>
-        ) : detail.notes.length === 0 ? (
-          <>
-            <div className="no-notes">
-              <p className="eyebrow">The thread starts here</p>
-              <h2>What is worth remembering?</h2>
-              <p>
-                Record a decision, an open question, or the next concrete move.
-              </p>
-            </div>
-          </>
-        ) : showingEmptyFilter ? (
-          <div className="message-groups">
-            <div className="no-notes no-notes--filtered">
-              <p className="eyebrow">
-                {historyFilter === "attachments"
-                  ? "Files"
-                  : historyFilter === "links"
-                    ? "Links"
-                    : LABEL_NAMES[historyFilter]}
-              </p>
-              <h2>
-                No{" "}
-                {historyFilter === "attachments"
-                  ? "attached files"
-                  : historyFilter === "links"
-                    ? "links"
-                    : "matching messages"}{" "}
-                yet.
-              </h2>
-              <p>
-                This project slice will update when a matching message appears.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <MessageGroups
-            searchTerms={searchQuery.terms}
-            notes={visibleNotes}
-            futureStartId={futureStartId}
-            enabledLabels={enabledLabels}
-            collapseLongMessages={detail.collapseLongMessages ?? true}
-            copiedNoteId={copiedNoteId}
-            onAttachmentAction={onAttachmentAction}
-            onCopyNote={onCopyNote}
-            onDeleteNote={onDeleteNote}
-            onEditNote={beginEditingNote}
-            onSetNoteLabel={onSetNoteLabel}
-            onOpenInHistory={searchQuery.key ? openInHistory : undefined}
+        </header>
+
+        {searchOpen && (
+          <ProjectSearch
+            id={searchId}
+            initialValue={searchText}
+            onValueChange={rememberSearch}
+            count={
+              searchQuery.key && !searchQuery.error
+                ? visibleNotes.length
+                : undefined
+            }
+            onCommit={commitSearch}
+            onClose={closeSearch}
+            status={
+              searchQuery.error ??
+              (searchQuery.key
+                ? `${visibleNotes.length} matching messages. ${filterDescription}.`
+                : "Search message text, people and filenames.")
+            }
           />
         )}
-      </section>
 
-      <HistoryNavigation
-        historyRef={historyRef}
-        contentKey={`${detail.id}:${historyFilter}:${searchQuery.key}`}
-      />
-      <footer className="composer-wrap">
-        <SearchSaveStatus
-          savedNoteId={sendFeedback?.savedNoteId}
-          hidden={
-            Boolean(searchQuery.key) &&
-            !visibleNotes.some((note) => note.id === sendFeedback?.savedNoteId)
-          }
-        />
-        {exampleError}
-        {visibleComposerError && (
-          <p role="alert" className="composer-error">
-            Your note is still here. {visibleComposerError}
+        <nav
+          className="history-filter"
+          aria-label="History filters"
+          aria-describedby={filterHelpId}
+          onPointerDown={(event) => {
+            filterPointer.current = event.pointerType;
+          }}
+          onPointerCancel={() => {
+            filterPointer.current = "";
+          }}
+        >
+          <div className="history-filter-inner">
+            <button
+              type="button"
+              className={`history-filter-button ${isSelected("all") ? "history-filter-button--active" : ""}`}
+              aria-label={`All ${detail.notes.length}`}
+              aria-pressed={isSelected("all")}
+              onClick={(event) => changeHistoryFilter("all", event)}
+              onKeyDown={(event) => filterKeyboard(event, "all")}
+            >
+              <span className="history-filter-icon" aria-hidden="true">
+                <ListIcon />
+              </span>
+              <span className="history-filter-label">All</span>
+              <span className="history-filter-count">
+                {detail.notes.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`history-filter-button ${isSelected("attachments") ? "history-filter-button--active" : ""}`}
+              aria-label={`Files ${attachmentCount}`}
+              aria-pressed={isSelected("attachments")}
+              onClick={(event) => changeHistoryFilter("attachments", event)}
+              onKeyDown={(event) => filterKeyboard(event, "attachments")}
+            >
+              <span className="history-filter-icon" aria-hidden="true">
+                <PaperclipIcon />
+              </span>
+              <span className="history-filter-label">Files</span>
+              <span className="history-filter-count">{attachmentCount}</span>
+            </button>
+            <button
+              type="button"
+              className={`history-filter-button ${isSelected("links") ? "history-filter-button--active" : ""}`}
+              aria-label={`Links ${linkedNoteIds.size}`}
+              aria-pressed={isSelected("links")}
+              onClick={(event) => changeHistoryFilter("links", event)}
+              onKeyDown={(event) => filterKeyboard(event, "links")}
+            >
+              <span className="history-filter-icon" aria-hidden="true">
+                <LinkIcon />
+              </span>
+              <span className="history-filter-label">Links</span>
+              <span className="history-filter-count">{linkedNoteIds.size}</span>
+            </button>
+            {filterLabels.map((label) => {
+              const count = detail.notes.filter((note) =>
+                (note.labels ?? []).includes(label),
+              ).length;
+              return (
+                <button
+                  type="button"
+                  className={`history-filter-button ${isSelected(`label:${label}`) ? "history-filter-button--active" : ""}`}
+                  aria-label={`${labelName(label)} ${count}`}
+                  title={labelName(label)}
+                  aria-pressed={isSelected(`label:${label}`)}
+                  onClick={(event) =>
+                    changeHistoryFilter(`label:${label}`, event)
+                  }
+                  onKeyDown={(event) => filterKeyboard(event, `label:${label}`)}
+                  key={label}
+                >
+                  <span className="history-filter-icon">
+                    <LabelGlyph label={label} />
+                  </span>
+                  <span className="history-filter-label">
+                    {FILTER_LABEL_NAMES[label] ?? labelName(label)}
+                  </span>
+                  <span className="history-filter-count">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p id={filterHelpId} className="history-filter-help">
+            <kbd>⌘/Ctrl</kbd> + multiple
+            <span className="visually-hidden">
+              . Hold Command or Control while selecting filters, or tap to
+              toggle on touch screens. Messages must match every selected
+              filter.
+            </span>
           </p>
-        )}
-        <div
-          ref={composerRef}
-          className={`composer ${editingNote ? "composer--editing" : ""} ${fileDrop.active ? "composer--file-drag" : ""} ${fileDrop.over ? "composer--file-over" : ""}`}
-          data-readonly-highlight={exampleGlow ? "true" : undefined}
-          data-readonly={explainReadOnly ? "true" : undefined}
-          role={explainReadOnly ? "group" : undefined}
-          tabIndex={explainReadOnly ? 0 : undefined}
-          aria-label={
-            explainReadOnly ? "Read-only message composer" : undefined
-          }
-          aria-describedby={explainReadOnly ? "example-notice" : undefined}
-          onClickCapture={explainReadOnly ? () => explainReadOnly() : undefined}
-          onDrop={
-            explainReadOnly
-              ? (event) => {
+        </nav>
+
+        <section
+          ref={historyRef}
+          className="history"
+          tabIndex={-1}
+          aria-label={`${detail.title} messages`}
+        >
+          {searchQuery.error ? (
+            <div className="no-notes no-notes--filtered">
+              <p role="alert">{searchQuery.error}</p>
+            </div>
+          ) : searchQuery.key && visibleNotes.length === 0 ? (
+            <div className="no-notes no-notes--filtered">
+              <h2>No matching messages</h2>
+              <p>Try fewer words or clear the search.</p>
+              {historyFilter.length > 0 && searchMatches.length > 0 && (
+                <button
+                  type="button"
+                  className="button button-quiet"
+                  onClick={(event) => changeHistoryFilter("all", event)}
+                  onKeyDown={(event) => filterKeyboard(event, "all")}
+                >
+                  Search all messages
+                </button>
+              )}
+            </div>
+          ) : detail.notes.length === 0 ? (
+            <>
+              <div className="no-notes">
+                <p className="eyebrow">The thread starts here</p>
+                <h2>What is worth remembering?</h2>
+                <p>
+                  Record a decision, an open question, or the next concrete
+                  move.
+                </p>
+              </div>
+            </>
+          ) : showingEmptyFilter ? (
+            <div className="message-groups">
+              <div className="no-notes no-notes--filtered">
+                <p className="eyebrow">{filterDescription}</p>
+                <h2>
+                  No{" "}
+                  {historyFilter.length === 1 && isSelected("attachments")
+                    ? "attached files"
+                    : historyFilter.length === 1 && isSelected("links")
+                      ? "links"
+                      : "matching messages"}{" "}
+                  yet.
+                </h2>
+                <p>
+                  This project slice will update when a matching message
+                  appears.
+                </p>
+                <button
+                  type="button"
+                  className="button button-quiet"
+                  onClick={() => changeHistoryFilter("all")}
+                >
+                  Show all messages
+                </button>
+              </div>
+            </div>
+          ) : (
+            <MessageGroups
+              searchTerms={searchQuery.terms}
+              notes={visibleNotes}
+              futureStartId={futureStartId}
+              enabledLabels={enabledLabels}
+              collapseLongMessages={detail.collapseLongMessages ?? true}
+              copiedNoteId={copiedNoteId}
+              onAttachmentAction={onAttachmentAction}
+              onCopyNote={onCopyNote}
+              onDeleteNote={onDeleteNote}
+              onEditNote={beginEditingNote}
+              onSetNoteLabel={onSetNoteLabel}
+              onOpenInHistory={searchQuery.key ? openInHistory : undefined}
+            />
+          )}
+        </section>
+
+        <HistoryNavigation
+          historyRef={historyRef}
+          contentKey={`${detail.id}:${historyKey}:${searchQuery.key}`}
+        />
+        <footer className="composer-wrap">
+          <SearchSaveStatus
+            savedNoteId={sendFeedback?.savedNoteId}
+            hidden={
+              Boolean(searchQuery.key) &&
+              !visibleNotes.some(
+                (note) => note.id === sendFeedback?.savedNoteId,
+              )
+            }
+          />
+          {exampleError}
+          {visibleComposerError && (
+            <p role="alert" className="composer-error">
+              Your note is still here. {visibleComposerError}
+            </p>
+          )}
+          <div
+            ref={composerRef}
+            className={`composer ${editingNote ? "composer--editing" : ""} ${fileDrop.active ? "composer--file-drag" : ""} ${fileDrop.over ? "composer--file-over" : ""}`}
+            data-readonly-highlight={exampleGlow ? "true" : undefined}
+            data-readonly={explainReadOnly ? "true" : undefined}
+            role={explainReadOnly ? "group" : undefined}
+            tabIndex={explainReadOnly ? 0 : undefined}
+            aria-label={
+              explainReadOnly ? "Read-only message composer" : undefined
+            }
+            aria-describedby={explainReadOnly ? "example-notice" : undefined}
+            onClickCapture={
+              explainReadOnly ? () => explainReadOnly() : undefined
+            }
+            onDrop={
+              explainReadOnly
+                ? (event) => {
+                    event.preventDefault();
+                    explainReadOnly();
+                  }
+                : undefined
+            }
+            onDragOver={
+              explainReadOnly ? (event) => event.preventDefault() : undefined
+            }
+            onKeyDown={(event) => {
+              if (explainReadOnly) {
+                if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
                   explainReadOnly();
                 }
-              : undefined
-          }
-          onDragOver={
-            explainReadOnly ? (event) => event.preventDefault() : undefined
-          }
-          onKeyDown={(event) => {
-            if (explainReadOnly) {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                explainReadOnly();
+                return;
               }
-              return;
-            }
-            handleComposerKeyDown(event);
-          }}
-        >
-          {explainReadOnly && (
-            <p className="example-composer-notice" id="example-notice">
-              {EXAMPLE_NOTICE}
-            </p>
-          )}
-          <fieldset
-            className="composer-controls"
-            disabled={Boolean(explainReadOnly)}
+              handleComposerKeyDown(event);
+            }}
           >
-            {fileDrop.active && (
-              <div className="composer-drop-target" role="status">
-                <PaperclipIcon />
-                <span>
-                  {editingNote
-                    ? "Drop files here to attach to this message"
-                    : "Drop files here to attach"}
-                </span>
-              </div>
+            {explainReadOnly && (
+              <p className="example-composer-notice" id="example-notice">
+                {EXAMPLE_NOTICE}
+              </p>
             )}
-            <div className="composer-content">
-              {(editingAttachments.length > 0 || pendingFiles.length > 0) && (
-                <div className="pending-attachments" aria-label="Pending files">
-                  {editingAttachments.map((attachment) => (
-                    <span className="pending-attachment" key={attachment.id}>
-                      <span>
-                        <strong>{attachment.filename}</strong>
-                        <small>{formatFileSize(attachment.byteSize)}</small>
-                      </span>
-                      <button
-                        type="button"
-                        aria-label={`Remove ${attachment.filename}`}
-                        onClick={() => onRemoveEditingAttachment(attachment.id)}
-                      >
-                        <XIcon />
-                      </button>
-                    </span>
-                  ))}
-                  {pendingFiles.map((file, index) => (
-                    <span
-                      className="pending-attachment"
-                      key={`${file.name}-${index}`}
-                    >
-                      <span>
-                        <strong>{file.name}</strong>
-                        <small>{formatFileSize(file.size)}</small>
-                      </span>
-                      <button
-                        type="button"
-                        aria-label={`Remove ${file.name}`}
-                        onClick={() => onRemovePendingFile(index)}
-                      >
-                        <XIcon />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              {senderOpen && (
-                <div
-                  id={senderToolsId}
-                  className="composer-sender-row"
-                  role="group"
-                  aria-label="Message sender"
-                >
-                  <label
-                    className="field-label"
-                    htmlFor={`${senderToolsId}-name`}
-                  >
-                    Sender
-                  </label>
-                  <button
-                    className="composer-sender-you"
-                    type="button"
-                    aria-pressed={!draftSender.trim()}
-                    onClick={() => onDraftSenderChange("")}
-                  >
-                    You
-                  </button>
-                  <span className="composer-sender-or" aria-hidden="true">
-                    or
-                  </span>
-                  <input
-                    id={`${senderToolsId}-name`}
-                    className="text-input composer-sender-input"
-                    type="text"
-                    aria-label="Sender name"
-                    value={draftSender}
-                    maxLength={80}
-                    placeholder="Type a sender name…"
-                    onChange={(event) =>
-                      onDraftSenderChange(event.target.value)
-                    }
-                  />
-                  <span className="composer-sender-hint" aria-hidden="true">
-                    Participant messages appear on the left
+            <fieldset
+              className="composer-controls"
+              disabled={Boolean(explainReadOnly)}
+            >
+              {fileDrop.active && (
+                <div className="composer-drop-target" role="status">
+                  <PaperclipIcon />
+                  <span>
+                    {editingNote
+                      ? "Drop files here to attach to this message"
+                      : "Drop files here to attach"}
                   </span>
                 </div>
               )}
-              {timestampOpen && (
-                <div className="composer-timestamp-row">
-                  <label className="field-label" htmlFor="composer-timestamp">
-                    Timestamp
-                  </label>
-                  <input
-                    id="composer-timestamp"
-                    className="text-input composer-timestamp-input"
-                    type="datetime-local"
-                    aria-label="Message timestamp"
-                    value={draftTimestamp}
-                    onChange={(event) =>
-                      onDraftTimestampChange(event.target.value)
-                    }
-                  />
-                </div>
-              )}
-              {markdownOpen && (
-                <div
-                  id={markdownToolsId}
-                  className="markdown-tools-strip"
-                  role="group"
-                  aria-label="Markdown assistance"
-                >
-                  <span className="markdown-tools-label">Format</span>
-                  <div className="markdown-tools-scroll">
-                    {MARKDOWN_TOOLS.map((tool) => (
-                      <button
-                        className="markdown-tool-button"
-                        type="button"
-                        key={tool.action}
-                        aria-label={
-                          tool.shortcutLabel
-                            ? `${tool.label} (${tool.shortcutLabel})`
-                            : tool.label
-                        }
-                        aria-keyshortcuts={tool.ariaKeyShortcuts}
-                        title={`${tool.label} · ${tool.syntax}${tool.shortcutLabel ? ` · ${tool.shortcutLabel}` : ""}`}
-                        onPointerDown={rememberMarkdownSelection}
-                        onFocus={() => setActiveMarkdownAction(tool.action)}
-                        onMouseEnter={() =>
-                          setActiveMarkdownAction(tool.action)
-                        }
-                        onClick={() => applyMarkdownFormatting(tool.action)}
+              <div className="composer-content">
+                {(editingAttachments.length > 0 || pendingFiles.length > 0) && (
+                  <div
+                    className="pending-attachments"
+                    aria-label="Pending files"
+                  >
+                    {editingAttachments.map((attachment) => (
+                      <span className="pending-attachment" key={attachment.id}>
+                        <span>
+                          <strong>{attachment.filename}</strong>
+                          <small>{formatFileSize(attachment.byteSize)}</small>
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${attachment.filename}`}
+                          onClick={() =>
+                            onRemoveEditingAttachment(attachment.id)
+                          }
+                        >
+                          <XIcon />
+                        </button>
+                      </span>
+                    ))}
+                    {pendingFiles.map((file, index) => (
+                      <span
+                        className="pending-attachment"
+                        key={`${file.name}-${index}`}
                       >
-                        <MarkdownToolGlyph action={tool.action} />
-                      </button>
+                        <span>
+                          <strong>{file.name}</strong>
+                          <small>{formatFileSize(file.size)}</small>
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${file.name}`}
+                          onClick={() => onRemovePendingFile(index)}
+                        >
+                          <XIcon />
+                        </button>
+                      </span>
                     ))}
                   </div>
-                  <span className="markdown-tool-hint" aria-hidden="true">
-                    <strong>{activeMarkdownTool.label}</strong>
-                    <code>{activeMarkdownTool.syntax}</code>
-                    {activeMarkdownTool.shortcutLabel && (
-                      <span>{activeMarkdownTool.shortcutLabel}</span>
-                    )}
-                  </span>
-                  <span className="markdown-tools-escape" aria-hidden="true">
-                    Esc
-                  </span>
-                </div>
-              )}
-              <div className="composer-input-row">
-                <textarea
-                  ref={textareaRef}
-                  data-composer-textarea
-                  aria-label={editingNote ? "Edit message" : "Add a note"}
-                  placeholder={
-                    editingNote
-                      ? "Edit this message…"
-                      : "Add a note to this project…"
-                  }
-                  value={draft}
-                  maxLength={10_000}
-                  onChange={(event) => {
-                    fileDrop.clearError();
-                    setMarkdownError("");
-                    onDraftChange(event.target.value);
-                  }}
-                  onSelect={rememberMarkdownSelection}
-                  onBlur={rememberMarkdownSelection}
-                  onKeyDown={handleKeyDown}
-                />
-              </div>
-            </div>
-            <div className="composer-bar">
-              <div className="composer-tools">
-                <button
-                  className={`composer-icon-button ${draftSender.trim() ? "composer-icon-button--active" : ""}`}
-                  type="button"
-                  onClick={() => onSenderOpenChange(!senderOpen)}
-                  aria-label={`${senderOpen ? "Hide" : "Show"} sender options. Current sender: ${currentSender}`}
-                  aria-expanded={senderOpen}
-                  aria-controls={senderToolsId}
-                  title={`Sender: ${currentSender}`}
-                >
-                  <SenderIcon />
-                </button>
-                <button
-                  className="composer-icon-button composer-markdown-button"
-                  type="button"
-                  onClick={() => {
-                    setMarkdownOpen((open) => !open);
-                    setMarkdownError("");
-                  }}
-                  onPointerDown={rememberMarkdownSelection}
-                  aria-label={
-                    markdownOpen
-                      ? "Hide Markdown assistance"
-                      : "Show Markdown assistance"
-                  }
-                  aria-expanded={markdownOpen}
-                  aria-controls={markdownToolsId}
-                  title={
-                    markdownOpen
-                      ? "Hide Markdown assistance"
-                      : "Show Markdown assistance"
-                  }
-                >
-                  <span className="markdown-mark" aria-hidden="true">
-                    M↓
-                  </span>
-                </button>
-                <input
-                  ref={fileInputRef}
-                  className="visually-hidden-file"
-                  type="file"
-                  multiple
-                  aria-label="Attach files"
-                  onChange={(event) => {
-                    fileDrop.clearError();
-                    onFilesSelected(Array.from(event.target.files ?? []));
-                    event.target.value = "";
-                  }}
-                />
-                <button
-                  className="composer-icon-button"
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  aria-label="Open file picker"
-                  title="Attach files"
-                >
-                  <PaperclipIcon />
-                </button>
-                <button
-                  className="composer-icon-button"
-                  type="button"
-                  onClick={onToggleTimestamp}
-                  aria-label={
-                    timestampOpen ? "Hide timestamp" : "Choose timestamp"
-                  }
-                  aria-expanded={timestampOpen}
-                  title={timestampOpen ? "Hide timestamp" : "Choose timestamp"}
-                >
-                  <ClockIcon />
-                </button>
-              </div>
-              <div className="composer-actions">
-                <span className="composer-shortcut">
-                  <kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd>
-                </span>
-                {editingNote && (
-                  <button
-                    className="composer-cancel-button"
-                    type="button"
-                    onClick={cancelEditingNote}
-                  >
-                    Cancel
-                  </button>
                 )}
-                <button
-                  className="send-button"
-                  type="button"
-                  onClick={submitDraft}
-                  aria-label={
-                    saving
-                      ? editingNote
-                        ? "Saving message"
-                        : "Adding note"
-                      : editingNote
-                        ? "Save"
-                        : "Add note"
-                  }
-                  disabled={
-                    saving ||
-                    (!draft.trim() &&
-                      pendingFiles.length === 0 &&
-                      editingAttachments.length === 0)
-                  }
-                >
-                  <span>
-                    {saving
-                      ? editingNote
-                        ? "Saving…"
-                        : "Adding…"
-                      : editingNote
-                        ? "Save"
-                        : "Add"}
-                  </span>
-                  <SendIcon />
-                </button>
+                {senderOpen && (
+                  <div
+                    id={senderToolsId}
+                    className="composer-sender-row"
+                    role="group"
+                    aria-label="Message sender"
+                  >
+                    <label
+                      className="field-label"
+                      htmlFor={`${senderToolsId}-name`}
+                    >
+                      Sender
+                    </label>
+                    <button
+                      className="composer-sender-you"
+                      type="button"
+                      aria-pressed={!draftSender.trim()}
+                      onClick={() => onDraftSenderChange("")}
+                    >
+                      You
+                    </button>
+                    <span className="composer-sender-or" aria-hidden="true">
+                      or
+                    </span>
+                    <input
+                      id={`${senderToolsId}-name`}
+                      className="text-input composer-sender-input"
+                      type="text"
+                      aria-label="Sender name"
+                      value={draftSender}
+                      maxLength={80}
+                      placeholder="Type a sender name…"
+                      onChange={(event) =>
+                        onDraftSenderChange(event.target.value)
+                      }
+                    />
+                    <span className="composer-sender-hint" aria-hidden="true">
+                      Participant messages appear on the left
+                    </span>
+                  </div>
+                )}
+                {timestampOpen && (
+                  <div className="composer-timestamp-row">
+                    <label className="field-label" htmlFor="composer-timestamp">
+                      Timestamp
+                    </label>
+                    <input
+                      id="composer-timestamp"
+                      className="text-input composer-timestamp-input"
+                      type="datetime-local"
+                      aria-label="Message timestamp"
+                      value={draftTimestamp}
+                      onChange={(event) =>
+                        onDraftTimestampChange(event.target.value)
+                      }
+                    />
+                  </div>
+                )}
+                {markdownOpen && (
+                  <div
+                    id={markdownToolsId}
+                    className="markdown-tools-strip"
+                    role="group"
+                    aria-label="Markdown assistance"
+                  >
+                    <span className="markdown-tools-label">Format</span>
+                    <div className="markdown-tools-scroll">
+                      {MARKDOWN_TOOLS.map((tool) => (
+                        <button
+                          className="markdown-tool-button"
+                          type="button"
+                          key={tool.action}
+                          aria-label={
+                            tool.shortcutLabel
+                              ? `${tool.label} (${tool.shortcutLabel})`
+                              : tool.label
+                          }
+                          aria-keyshortcuts={tool.ariaKeyShortcuts}
+                          title={`${tool.label} · ${tool.syntax}${tool.shortcutLabel ? ` · ${tool.shortcutLabel}` : ""}`}
+                          onPointerDown={rememberMarkdownSelection}
+                          onFocus={() => setActiveMarkdownAction(tool.action)}
+                          onMouseEnter={() =>
+                            setActiveMarkdownAction(tool.action)
+                          }
+                          onClick={() => applyMarkdownFormatting(tool.action)}
+                        >
+                          <MarkdownToolGlyph action={tool.action} />
+                        </button>
+                      ))}
+                    </div>
+                    <span className="markdown-tool-hint" aria-hidden="true">
+                      <strong>{activeMarkdownTool.label}</strong>
+                      <code>{activeMarkdownTool.syntax}</code>
+                      {activeMarkdownTool.shortcutLabel && (
+                        <span>{activeMarkdownTool.shortcutLabel}</span>
+                      )}
+                    </span>
+                    <span className="markdown-tools-escape" aria-hidden="true">
+                      Esc
+                    </span>
+                  </div>
+                )}
+                <div className="composer-input-row">
+                  <textarea
+                    ref={textareaRef}
+                    data-composer-textarea
+                    aria-label={editingNote ? "Edit message" : "Add a note"}
+                    placeholder={
+                      editingNote
+                        ? "Edit this message…"
+                        : "Add a note to this project…"
+                    }
+                    value={draft}
+                    maxLength={10_000}
+                    onChange={(event) => {
+                      fileDrop.clearError();
+                      setMarkdownError("");
+                      onDraftChange(event.target.value);
+                    }}
+                    onSelect={rememberMarkdownSelection}
+                    onBlur={rememberMarkdownSelection}
+                    onKeyDown={handleKeyDown}
+                  />
+                </div>
               </div>
-            </div>
-          </fieldset>
-        </div>
-      </footer>
-    </main>
+              <div className="composer-bar">
+                <div className="composer-tools">
+                  <button
+                    className={`composer-icon-button ${draftSender.trim() ? "composer-icon-button--active" : ""}`}
+                    type="button"
+                    onClick={() => onSenderOpenChange(!senderOpen)}
+                    aria-label={`${senderOpen ? "Hide" : "Show"} sender options. Current sender: ${currentSender}`}
+                    aria-expanded={senderOpen}
+                    aria-controls={senderToolsId}
+                    title={`Sender: ${currentSender}`}
+                  >
+                    <SenderIcon />
+                  </button>
+                  <button
+                    className="composer-icon-button composer-markdown-button"
+                    type="button"
+                    onClick={() => {
+                      setMarkdownOpen((open) => !open);
+                      setMarkdownError("");
+                    }}
+                    onPointerDown={rememberMarkdownSelection}
+                    aria-label={
+                      markdownOpen
+                        ? "Hide Markdown assistance"
+                        : "Show Markdown assistance"
+                    }
+                    aria-expanded={markdownOpen}
+                    aria-controls={markdownToolsId}
+                    title={
+                      markdownOpen
+                        ? "Hide Markdown assistance"
+                        : "Show Markdown assistance"
+                    }
+                  >
+                    <span className="markdown-mark" aria-hidden="true">
+                      M↓
+                    </span>
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    className="visually-hidden-file"
+                    tabIndex={-1}
+                    type="file"
+                    multiple
+                    aria-label="Attach files"
+                    onChange={(event) => {
+                      fileDrop.clearError();
+                      onFilesSelected(Array.from(event.target.files ?? []));
+                      event.target.value = "";
+                    }}
+                  />
+                  <button
+                    className="composer-icon-button"
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    aria-label="Open file picker"
+                    title="Attach files"
+                  >
+                    <PaperclipIcon />
+                  </button>
+                  <button
+                    className="composer-icon-button"
+                    type="button"
+                    onClick={onToggleTimestamp}
+                    aria-label={
+                      timestampOpen ? "Hide timestamp" : "Choose timestamp"
+                    }
+                    aria-expanded={timestampOpen}
+                    title={
+                      timestampOpen ? "Hide timestamp" : "Choose timestamp"
+                    }
+                  >
+                    <ClockIcon />
+                  </button>
+                </div>
+                <div className="composer-actions">
+                  <span className="composer-shortcut">
+                    <kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd>
+                  </span>
+                  {editingNote && (
+                    <button
+                      className="composer-cancel-button"
+                      type="button"
+                      onClick={cancelEditingNote}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    className="send-button"
+                    type="button"
+                    onClick={submitDraft}
+                    aria-label={
+                      saving
+                        ? editingNote
+                          ? "Saving message"
+                          : "Adding note"
+                        : editingNote
+                          ? "Save"
+                          : "Add note"
+                    }
+                    disabled={
+                      saving ||
+                      (!draft.trim() &&
+                        pendingFiles.length === 0 &&
+                        editingAttachments.length === 0)
+                    }
+                  >
+                    <span>
+                      {saving
+                        ? editingNote
+                          ? "Saving…"
+                          : "Adding…"
+                        : editingNote
+                          ? "Save"
+                          : "Add"}
+                    </span>
+                    <SendIcon />
+                  </button>
+                </div>
+              </div>
+            </fieldset>
+          </div>
+        </footer>
+      </main>
+    </ProjectLabelContext.Provider>
   );
 }
 
@@ -3221,8 +3375,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [examples, setExamples] = useState<ExampleSummary[]>([]);
   const [examplesError, setExamplesError] = useState("");
   const [examplesReload, setExamplesReload] = useState(0);
-  const [showExamples, setShowExamples] = useState(readShowExamples);
-  const [preferenceWarning, setPreferenceWarning] = useState("");
+  const workspacePreferences = useWorkspacePreferences(api);
+  const { theme, showExamples, collapsedSections } =
+    workspacePreferences.preferences;
+  const preferenceWarning = workspacePreferences.warning;
   const [copyingExample, setCopyingExample] = useState(false);
   const copyInProgress = useRef(false);
   const [exampleNotice, setExampleNotice] = useState("");
@@ -3249,7 +3405,6 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   );
   const [settingsSection, setSettingsSection] =
     useState<SettingsSection>("general");
-  const [theme, setTheme] = useState<Theme>(() => readStoredTheme());
   const [editingNote, setEditingNote] = useState<Note>();
   const [editingAttachmentIds, setEditingAttachmentIds] = useState<string[]>(
     [],
@@ -3258,7 +3413,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [draft, setDraft] = useState("");
   const [draftSender, setDraftSender] = useState("");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>([]);
   const [draftTimestamp, setDraftTimestamp] = useState("");
   const [composerSenderOpen, setComposerSenderOpen] = useState(false);
   const [composerTimestampOpen, setComposerTimestampOpen] = useState(false);
@@ -3296,12 +3451,6 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [readingPositions, setReadingPositions] = useState(
     () => new Map<string, ReadingPosition>(),
   );
-  const [collapsedSections, setCollapsedSections] = useState<
-    Record<RailSection, boolean>
-  >(readCollapsedSections);
-  useEffect(() => {
-    persistCollapsedSections(collapsedSections);
-  }, [collapsedSections]);
   const selectionRequest = useRef(0);
   const pendingSelection = useRef<"example" | "project" | undefined>(undefined);
   const copiedFocus = useRef<string | undefined>(undefined);
@@ -3320,11 +3469,6 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const copyResetTimer = useRef<number | undefined>(undefined);
   const newMessageSender = useRef("");
   const newMessageSenderOpen = useRef(false);
-
-  useLayoutEffect(() => {
-    applyTheme(theme);
-    persistTheme(theme);
-  }, [theme]);
 
   useEffect(() => {
     activeId.current = active?.id;
@@ -3349,6 +3493,16 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ) {
             return;
           }
+          setHistoryFilter((current) =>
+            current.filter(
+              (filter) =>
+                filter === "attachments" ||
+                filter === "links" ||
+                projectLabels(detail).some(
+                  (label) => `label:${label.id}` === filter && label.enabled,
+                ),
+            ),
+          );
           setWorkspace((current) =>
             commitProjectUpdate(
               current,
@@ -3384,38 +3538,18 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     };
   }, [api, examplesReload]);
 
-  function updateExamplesVisibility(show: boolean, persist = true) {
-    setShowExamples(show);
-    if (persist)
-      setPreferenceWarning(
-        persistShowExamples(show)
-          ? ""
-          : "This preference could not be saved. It applies until this page is closed.",
-      );
-    if (!show && (example || pendingSelection.current === "example")) {
+  function updateExamplesVisibility(show: boolean) {
+    workspacePreferences.update({ showExamples: show });
+  }
+  useEffect(() => {
+    if (!showExamples && (example || pendingSelection.current === "example")) {
       selectionRequest.current++;
       pendingSelection.current = undefined;
       setExample(undefined);
-      setHistoryFilter("all");
+      setHistoryFilter([]);
+      setExampleNotice("Examples are hidden.");
     }
-  }
-  useEffect(() => {
-    const changed = (event: StorageEvent) => {
-      if (event.key === SHOW_EXAMPLES_KEY || event.key === null) {
-        const show = readShowExamples();
-        setShowExamples(show);
-        if (!show && (example || pendingSelection.current === "example")) {
-          selectionRequest.current++;
-          pendingSelection.current = undefined;
-          setExample(undefined);
-          setHistoryFilter("all");
-          setExampleNotice("Examples are hidden.");
-        }
-      }
-    };
-    window.addEventListener("storage", changed);
-    return () => window.removeEventListener("storage", changed);
-  }, [example]);
+  }, [showExamples, example]);
 
   async function selectExample(slug: string) {
     if (savingNote || copyInProgress.current) return;
@@ -3431,7 +3565,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       setExampleGlow(false);
       setExample(detail);
       setMode("projects");
-      setHistoryFilter("all");
+      setHistoryFilter([]);
       setExampleNotice("");
       setDraft("");
       setPendingFiles([]);
@@ -3487,8 +3621,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         activeId.current = detail.id;
         copiedFocus.current = detail.id;
         setLoadState("loaded");
-        setHistoryFilter("all");
-        setCollapsedSections((current) => ({ ...current, Projects: false }));
+        setHistoryFilter([]);
+        workspacePreferences.update({ collapsedSections: { Projects: false } });
       }
       setExampleNotice("Editable copy created.");
     } catch (caught) {
@@ -3600,7 +3734,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       setDraft("");
       resetSenderComposer();
       setPendingFiles([]);
-      setHistoryFilter("all");
+      setHistoryFilter([]);
       setDraftTimestamp("");
       setComposerTimestampOpen(false);
       setEditingNote(undefined);
@@ -3627,7 +3761,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setDraft("");
     resetSenderComposer();
     setPendingFiles([]);
-    setHistoryFilter("all");
+    setHistoryFilter([]);
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
     setEditingNote(undefined);
@@ -3742,7 +3876,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function updateChatUnlocked(input: {
     title: string;
     accent: Accent;
-    enabledLabels: ConfigurableLabel[];
+    labelConfiguration: LabelConfiguration;
     collapseLongMessages: boolean;
   }) {
     if (!active) return;
@@ -3757,17 +3891,24 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         (detail) => ({
           ...detail,
           ...chat,
+          notes: detail.notes.map((note) => ({
+            ...note,
+            labels: note.labels.filter((id) =>
+              projectLabels(chat).some((label) => label.id === id),
+            ),
+          })),
         }),
       ),
     );
-    if (
-      historyFilter !== "all" &&
-      historyFilter !== "attachments" &&
-      !PERMANENT_LABELS.includes(historyFilter as never) &&
-      !chat.enabledLabels.includes(historyFilter as ConfigurableLabel)
-    ) {
-      setHistoryFilter("all");
-    }
+    setHistoryFilter((current) =>
+      current.filter(
+        (filter) =>
+          filter === "attachments" ||
+          filter === "links" ||
+          PERMANENT_LABELS.includes(filter.slice(6) as never) ||
+          chat.enabledLabels.includes(filter.slice(6) as ConfigurableLabel),
+      ),
+    );
     setDialog(undefined);
     setMode("projects");
     if (activeId.current === projectId) focusMobileBackButton();
@@ -3795,7 +3936,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       setDraft("");
       resetSenderComposer();
       setPendingFiles([]);
-      setHistoryFilter("all");
+      setHistoryFilter([]);
       setDraftTimestamp("");
       setComposerTimestampOpen(false);
       setError("");
@@ -4127,6 +4268,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       summaryRequest.current += 1;
     };
     invalidate();
+    await workspacePreferences.pause();
     try {
       const result = await api.importDatabase(file, options);
       invalidate();
@@ -4139,7 +4281,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         setDraftTimestamp("");
         resetSenderComposer();
         setPendingFiles([]);
-        setHistoryFilter("all");
+        setHistoryFilter([]);
         setComposerTimestampOpen(false);
         setDraft("");
         setEditingNote(undefined);
@@ -4169,6 +4311,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       invalidate();
       importInProgress.current = false;
       setImporting(false);
+      await workspacePreferences.resume();
     }
   }
 
@@ -4186,7 +4329,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setDraft("");
     resetSenderComposer();
     setPendingFiles([]);
-    setHistoryFilter("all");
+    setHistoryFilter([]);
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
     if (exampleSlug) {
@@ -4214,6 +4357,18 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
 
   return (
     <div className="app-shell">
+      {preferenceWarning && (
+        <div className="global-error preference-error" role="alert">
+          {preferenceWarning}{" "}
+          <button
+            type="button"
+            className="button button-quiet"
+            onClick={workspacePreferences.retry}
+          >
+            Retry preferences
+          </button>
+        </div>
+      )}
       {exampleNotice && (
         <p className="visually-hidden" role="status">
           {exampleNotice}
@@ -4244,10 +4399,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
                 examples={examples}
                 collapsed={collapsedSections.Examples}
                 onToggle={() =>
-                  setCollapsedSections((current) => ({
-                    ...current,
-                    Examples: !current.Examples,
-                  }))
+                  workspacePreferences.update({
+                    collapsedSections: {
+                      Examples: !collapsedSections.Examples,
+                    },
+                  })
                 }
                 onSelect={selectExample}
                 activeSlug={example?.slug}
@@ -4259,10 +4415,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           }
           collapsedSections={collapsedSections}
           onToggleSection={(section) =>
-            setCollapsedSections((current) => ({
-              ...current,
-              [section]: !current[section],
-            }))
+            workspacePreferences.update({
+              collapsedSections: { [section]: !collapsedSections[section] },
+            })
           }
           chats={chats}
           activeId={active?.id ?? example?.id}
@@ -4297,10 +4452,13 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           <GeneralSettingsWorkspace
             showExamples={showExamples}
             onChange={updateExamplesVisibility}
-            warning={preferenceWarning}
+            warning=""
           />
         ) : settingsSection === "appearance" ? (
-          <AppearanceSettingsWorkspace theme={theme} onThemeChange={setTheme} />
+          <AppearanceSettingsWorkspace
+            theme={theme}
+            onThemeChange={(theme) => workspacePreferences.update({ theme })}
+          />
         ) : (
           <BackupSettingsWorkspace
             projects={chats}
