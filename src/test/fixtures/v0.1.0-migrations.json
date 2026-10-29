@@ -1,0 +1,76 @@
+{
+  "release": "v0.1.0",
+  "commit": "f42a822655ad99566df4356f263dd88cb2a050bb",
+  "journal": {
+    "version": "7",
+    "dialect": "sqlite",
+    "entries": [
+      {
+        "idx": 0,
+        "version": "6",
+        "when": 1788169614319,
+        "tag": "0000_keen_scream",
+        "breakpoints": true
+      },
+      {
+        "idx": 1,
+        "version": "6",
+        "when": 1788171601656,
+        "tag": "0001_dusty_rafael_vega",
+        "breakpoints": true
+      },
+      {
+        "idx": 2,
+        "version": "6",
+        "when": 1788270000000,
+        "tag": "0002_attachment_messages",
+        "breakpoints": true
+      },
+      {
+        "idx": 3,
+        "version": "6",
+        "when": 1788356400000,
+        "tag": "0003_project_message_labels",
+        "breakpoints": true
+      },
+      {
+        "idx": 4,
+        "version": "6",
+        "when": 1788516961034,
+        "tag": "0004_project_sidebar_state",
+        "breakpoints": true
+      },
+      {
+        "idx": 5,
+        "version": "6",
+        "when": 1788523044823,
+        "tag": "0005_collapsible_messages",
+        "breakpoints": true
+      },
+      {
+        "idx": 6,
+        "version": "6",
+        "when": 1788566400000,
+        "tag": "0006_message_senders",
+        "breakpoints": true
+      },
+      {
+        "idx": 7,
+        "version": "6",
+        "when": 1789027200000,
+        "tag": "0007_project_archive",
+        "breakpoints": true
+      }
+    ]
+  },
+  "sha256": {
+    "0000_keen_scream.sql": "0a5000a28b6f455e65f7fa9648627fd1910cbbabe6cdd00a800b2d45daf45897",
+    "0001_dusty_rafael_vega.sql": "dc66ebe31774bcbbc9e5fd91cbb879ee71fe1791a7df512f4e46d155e8ea021d",
+    "0002_attachment_messages.sql": "84439f25c8a4051cda7f9a337b70573d9ed8cb0014db8e74de1f2a253d721e05",
+    "0003_project_message_labels.sql": "260b85fe08f1685c379004bb0f27d0e13daeeeeef9b076a2d8bf879a6db7d120",
+    "0004_project_sidebar_state.sql": "0cae27f7635a581c2100214cfbacb59daf869da75e5b9cfe1ad7df3dc80e5265",
+    "0005_collapsible_messages.sql": "95ada88039eea11b7e9c1fe5d835a85c819f6e89c102f1d5d1e9d94e81cd1f4f",
+    "0006_message_senders.sql": "1f5aeba96ba6c66f74a296a8cfe6e3255fdee279178960d3e7173edc39fa2338",
+    "0007_project_archive.sql": "1f79c9485ffc8575f743784afccaeadf7a054d69841ae66919e80ff94d8a8fdc"
+  }
+}

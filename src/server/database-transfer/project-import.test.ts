@@ -15,6 +15,7 @@ import { openDatabase } from "../db/database.js";
 import { ManagedAttachmentStore } from "../attachments/managed-attachment-store.js";
 import { allocateImportedTitles } from "./project-import.js";
 import * as projectImport from "./project-import.js";
+import { createV010Backup, V010_FILE } from "../../test/released-v010.js";
 
 let directory: string;
 let app: FastifyInstance;
@@ -95,6 +96,142 @@ function importForm(backup: Buffer, options: unknown) {
   );
   return form;
 }
+
+it.each(["replace", "merge"] as const)(
+  "imports a selected v0.1.0 schema-7 archive through %s and retains destination preferences after restart",
+  async (mode) => {
+    const bundlePath = await createV010Backup(join(directory, "released"));
+    const backup = readFileSync(bundlePath);
+    const destination = (
+      await app.inject({
+        method: "POST",
+        url: "/api/chats",
+        payload: { title: "Destination", accent: "iris" },
+      })
+    ).json();
+    const preferences = (
+      await app.inject({
+        method: "PATCH",
+        url: "/api/preferences",
+        payload: {
+          theme: "neutral",
+          showExamples: false,
+          collapsedSections: { Archive: true, Pinned: true },
+        },
+      })
+    ).json();
+    const previewResponse = await app.inject({
+      method: "POST",
+      url: "/api/database/import/preview",
+      headers: { "content-type": "application/octet-stream" },
+      payload: backup,
+    });
+    expect(previewResponse.statusCode, previewResponse.body).toBe(200);
+    const preview = previewResponse.json();
+    expect(preview.projects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "release-archive",
+          archivedAt: 50,
+          messageCount: 1,
+          attachmentCount: 1,
+        }),
+        expect.objectContaining({ id: "release-pinned" }),
+      ]),
+    );
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/database/import",
+      payload: importForm(backup, {
+        mode,
+        selection: ["release-archive"],
+        digest: preview.digest,
+      }),
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    for (let restart = 0; restart < 2; restart++) {
+      const projects = (await app.inject("/api/chats")).json();
+      expect(projects).toHaveLength(mode === "merge" ? 2 : 1);
+      expect(
+        projects.some(
+          (project: { id: string }) => project.id === destination.id,
+        ),
+      ).toBe(mode === "merge");
+      expect(
+        projects.some(
+          (project: { title: string }) => project.title === "Released pinned",
+        ),
+      ).toBe(false);
+      const project = projects.find(
+        (project: { title: string }) => project.title === "Released archive",
+      );
+      expect(project.id === "release-archive").toBe(mode === "replace");
+      const detail = (await app.inject(`/api/chats/${project.id}`)).json();
+      expect(detail).toMatchObject({
+        createdAt: 10,
+        updatedAt: 40,
+        archivedAt: 50,
+        pinnedAt: null,
+        collapseLongMessages: false,
+        enabledLabels: ["risk"],
+        labelConfigurationRevision: 0,
+      });
+      expect(detail.labelDefinitions).toHaveLength(7);
+      expect(
+        detail.labelDefinitions.find(
+          (label: { id: string }) => label.id === "todo",
+        ).enabled,
+      ).toBe(false);
+      expect(detail.notes).toHaveLength(1);
+      expect(detail.notes[0]).toMatchObject({
+        body: "Keep **Markdown**, sender and disabled labels",
+        sender: "Alex",
+        createdAt: 20,
+        labels: ["attention", "todo"],
+      });
+      expect(detail.notes[0].id === "release-note").toBe(mode === "replace");
+      expect(detail.notes[0].attachments).toHaveLength(1);
+      expect(detail.notes[0].attachments[0].id === V010_FILE.id).toBe(
+        mode === "replace",
+      );
+      expect((await app.inject("/api/preferences")).json()).toEqual(
+        preferences,
+      );
+      await app.close();
+      const path = join(directory, "on-track.sqlite");
+      const db = openDatabase(path);
+      try {
+        expect(
+          db.prepare("SELECT schema_version FROM app_metadata").pluck().get(),
+        ).toBe(9);
+        const paths = db
+          .prepare("SELECT storage_path FROM note_attachments")
+          .pluck()
+          .all() as string[];
+        expect(paths).toHaveLength(1);
+        // Restore publishes into a fresh managed tree even when IDs are retained.
+        expect(paths[0]).not.toBe(V010_FILE.path);
+        expect(readFileSync(join(directory, paths[0]), "utf8")).toBe(
+          V010_FILE.content,
+        );
+        // Excluded payloads must not survive as unreferenced files either.
+        expect(
+          readdirSync(join(directory, "attachments"), {
+            recursive: true,
+            withFileTypes: true,
+          }).filter((entry) => entry.isFile()),
+        ).toHaveLength(1);
+        expect(db.pragma("integrity_check", { simple: true })).toBe("ok");
+        expect(db.pragma("foreign_key_check")).toEqual([]);
+      } finally {
+        db.close();
+      }
+      app = buildApp({ database: openDatabase(path), databasePath: path });
+    }
+    expect(readFileSync(bundlePath)).toEqual(backup);
+  },
+);
+
 it("previews and merges selected independent projects with all content and fresh identities", async () => {
   const { a, b, backup, preview } = await fixture();
   expect(preview.projects).toEqual(

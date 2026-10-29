@@ -39,6 +39,11 @@ optional Phase 5 remains deferred. Identity and compatibility decisions remain
 in [ADR-0010](adr/0010-threadstr-identity-and-cli-transition.md) and
 [compatibility guidance](compatibility.md).
 
+Local qualification of v0.1.0/schema-7 upgrades, selected backup replacement
+and merge, and schema-9 update recovery is recorded in
+[plan 0032](plans/0032-release-upgrade-and-recovery-qualification.md).
+Platform and published-candidate upgrade evidence remain separate release gates.
+
 Complete installation/platform and upgrade validation, retain the manual Node
 matrix and plaintext warnings, and record remaining evidence limits. Mobile
 remains a regression-protected alpha, not a dedicated design target.

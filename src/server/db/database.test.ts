@@ -1,4 +1,12 @@
 import { rewindToSchema7 } from "../../test/legacy-database.js";
+import {
+  createV010Database,
+  readV010Rows,
+  V010_FILE,
+  V010_MIGRATION_MARKER,
+} from "../../test/released-v010.js";
+import { DEFAULT_PREFERENCES } from "../../domain/preferences.js";
+import { readPreferences } from "./preferences.js";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -23,6 +31,68 @@ describe("SQLite project-chat persistence", () => {
   afterEach(() => {
     database.close();
     rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("upgrades forward-built v0.1.0 data to schema 9 without losing released state on restart", () => {
+    const released = createV010Database(join(directory, "released"), {
+      missingAttachment: true,
+    });
+    const before = readV010Rows(released.sqlite);
+    expect(
+      released.sqlite
+        .prepare("SELECT schema_version FROM app_metadata")
+        .pluck()
+        .get(),
+    ).toBe(7);
+    expect(
+      released.sqlite
+        .prepare("SELECT max(created_at) FROM __drizzle_migrations")
+        .pluck()
+        .get(),
+    ).toBe(V010_MIGRATION_MARKER);
+    released.sqlite.close();
+    for (let restart = 0; restart < 2; restart++) {
+      database.close();
+      database = openDatabase(released.databasePath);
+      repository = new SqliteChatRepository(database);
+      expect(readV010Rows(database)).toEqual(before);
+      expect(
+        database
+          .prepare("SELECT schema_version FROM app_metadata")
+          .pluck()
+          .get(),
+      ).toBe(9);
+      expect(
+        database
+          .prepare("SELECT max(created_at) FROM __drizzle_migrations")
+          .pluck()
+          .get(),
+      ).toBe(LATEST_BUNDLED_MIGRATION_AT);
+      expect(repository.getChat("release-archive")).toMatchObject({
+        enabledLabels: ["risk"],
+        labelConfigurationRevision: 0,
+        archivedAt: 50,
+        pinnedAt: null,
+        collapseLongMessages: false,
+      });
+      const definitions =
+        repository.getChat("release-archive")!.labelDefinitions!;
+      expect(definitions).toHaveLength(7);
+      expect(definitions.find((label) => label.id === "todo")!.enabled).toBe(
+        false,
+      );
+      expect(repository.listNotes("release-archive")[0]!.labels).toEqual([
+        "attention",
+        "todo",
+      ]);
+      expect(repository.getChat("release-pinned")!.pinnedAt).toBe(45);
+      expect(readPreferences(database)).toEqual(DEFAULT_PREFERENCES);
+      expect(
+        readFileSync(join(released.dataDirectory, V010_FILE.path), "utf8"),
+      ).toBe(V010_FILE.content);
+      expect(database.pragma("integrity_check", { simple: true })).toBe("ok");
+      expect(database.pragma("foreign_key_check")).toEqual([]);
+    }
   });
 
   it("migrates schema 7 with inactive assignments and enforces project-owned label references", () => {
