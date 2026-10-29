@@ -65,8 +65,10 @@ The implementation cycle ran:
 No unfinished UI implementation is identified. The current security follow-up
 is tracked in [issue #72](https://github.com/satankov/on-track/issues/72), with
 audit evidence in [plan 0025](0025-security-audit-response.md#current-dependency-follow-up-2026-10-27).
-Existing native/platform/accessibility follow-ups #32, #33, #34, #61, #62, and
-#63 remain open in GitHub. Local visual passes do not close their evidence gaps.
+Existing native/platform/accessibility follow-ups #32, #33, #34, #62, and #63
+remain open in GitHub. Local visual passes do not close their evidence gaps.
+Issue #61 also remains open, but subsequent review found its published focus fix
+and passing Linux CI; see [plan 0025](0025-security-audit-response.md#tracker-reconciliation).
 
 ## Final cycle verification after issue #72
 

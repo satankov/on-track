@@ -202,10 +202,11 @@ under collapsed content and accent-sensitive literal matching are documented.
 No unfinished implementation remains in this slice. Cross-project/semantic search,
 indexing and timeline virtualization remain non-goals, not committed follow-ups.
 Manual history/composer accessibility validation remains tracked by
-[issue #63](https://github.com/satankov/on-track/issues/63); the existing Linux/mobile
-WebKit attachment-focus CI failure remains tracked by
-[issue #61](https://github.com/satankov/on-track/issues/61). Both are open. Local
-search browser passes do not resolve those external/manual evidence gaps.
+[issue #63](https://github.com/satankov/on-track/issues/63). Issue #61 remains open
+for tracker reconciliation, but its focus fix and regression shipped in v0.1.0;
+subsequent Linux Node 22.16/24 CI passed the attachment test. See
+[the closure evidence](0025-security-audit-response.md#tracker-reconciliation).
+Local search browser passes do not establish manual accessibility support.
 
 ## Verification evidence
 

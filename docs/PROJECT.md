@@ -32,8 +32,9 @@ Current source uses schema 9; the published release remains schema 7. Its canoni
 standards are [DESIGN.md](../DESIGN.md), with an interactive reference under
 [branding/threadstr/ui](../branding/threadstr/ui/README.md). No next release
 version has been selected. The Zod dependency fix for issue #72 is complete
-locally and the aggregate local verification gate passes; see
-[plan 0025](plans/0025-security-audit-response.md#issue-72-remediation-2026-10-27). Security phases 1–4 remain implemented;
+locally. Approved pre-release security maintenance also updates static serving
+and the paired Vitest packages; verification and tracker evidence are recorded in
+[plan 0025](plans/0025-security-audit-response.md#pre-release-security-maintenance-slice-a-2026-10-29). Security phases 1–4 remain implemented;
 optional Phase 5 remains deferred. Identity and compatibility decisions remain
 in [ADR-0010](adr/0010-threadstr-identity-and-cli-transition.md) and
 [compatibility guidance](compatibility.md).
@@ -293,9 +294,11 @@ Native-action smoke tests are tracked in
 validation in [issue #33](https://github.com/satankov/on-track/issues/33), and
 managed installation/upgrade validation in
 [issue #34](https://github.com/satankov/on-track/issues/34).
-[Issue #61](https://github.com/satankov/on-track/issues/61) tracks the unresolved
-Linux/mobile-WebKit attachment focus failure reported in CI; local passes do not
-resolve that external evidence. Native uninstall validation is tracked in
+[Issue #61](https://github.com/satankov/on-track/issues/61) remains open for tracker
+reconciliation: v0.1.0 contains the focus fix and regression test, and subsequent
+Linux Node 22.16/24 CI passed the mobile-WebKit attachment test. Closure evidence
+is recorded in [plan 0025](plans/0025-security-audit-response.md#tracker-reconciliation).
+Native uninstall validation is tracked in
 [issue #62](https://github.com/satankov/on-track/issues/62); history/composer
 assistive-technology validation is tracked in
 [issue #63](https://github.com/satankov/on-track/issues/63).
@@ -324,10 +327,11 @@ live in `docs/adr/`; significant work lives in `docs/plans/`.
   independent backups of attachment files. Existing pre-protocol source releases
   must be stopped and upgraded manually before explicit adoption.
 - Dependency advisories require ongoing review and compatible updates. A clean
-  audit is a point-in-time check, not a guarantee that every dependency is safe;
-  the 2026-10-27 Zod remediation passes the production audit with zero findings.
-  Three moderate development-tool audit entries remain outside that gate, with
-  exposure assessment and verification evidence in plan 0025.
+  audit is a point-in-time check, not a guarantee that every dependency is safe.
+  Plan 0025 records the Zod, static-serving and Vitest patches, plus the deferred
+  multipart advisory: its affected `saveRequestFiles()` API is unused, while
+  application uploads use `request.parts()` and owned staging. Reassess that
+  exposure before adopting another multipart API.
 - v0.0.4 deliberately does not restore v0.0.3/schema-2 backup bundles. Live
   v0.0.3 databases still migrate at startup, and this compatibility break is
   acceptable only under the current no-user alpha assumption.

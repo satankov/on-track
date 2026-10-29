@@ -6,6 +6,14 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+### Security
+
+- Update Zod to 4.6.7 to reject oversized bounded collections before allocating
+  per-element validation errors, with regression coverage for labels,
+  attachments, and backup selection.
+- Update `@fastify/static` to 10.1.7, including the case-folded path guard fix,
+  and Vitest/coverage to 4.1.12 for the upstream mock-registration fixes.
+
 ## [0.1.0] - 2026-10-22
 
 ### Added
