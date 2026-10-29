@@ -597,7 +597,7 @@ it.each(["before", "after"])(
 );
 
 it.each(["all", "selected"])(
-  "preserves preference scope through %s backup merge and replacement",
+  "preserves custom label assignments and preference scope through %s backup merge and replacement",
   async (scope) => {
     await app.inject({
       method: "PATCH",
@@ -612,10 +612,48 @@ it.each(["all", "selected"])(
       await app.inject({
         method: "POST",
         url: "/api/chats",
-        payload: { title: "Preference backup", accent: "ocean" },
+        payload: { title: "Custom backup", accent: "ocean" },
       })
     ).json();
     const url = `/api/chats/${project.id}`;
+    const labels = project.labelDefinitions.map(
+      (label: {
+        id: string;
+        name: string;
+        symbol: string | null;
+        enabled: boolean;
+      }) => ({
+        id: label.id,
+        name: label.name,
+        symbol: label.symbol,
+        enabled: label.enabled,
+      }),
+    );
+    const configured = await app.inject({
+      method: "PATCH",
+      url,
+      payload: {
+        labelConfiguration: {
+          revision: 0,
+          labels: [...labels, { name: "Review", symbol: "✓", enabled: true }],
+        },
+      },
+    });
+    expect(configured.statusCode, configured.body).toBe(200);
+    const custom = configured.json().labelDefinitions.at(-1);
+    const form = new FormData();
+    form.set("body", "Assigned custom label");
+    const note = (
+      await app.inject({ method: "POST", url: `${url}/notes`, payload: form })
+    ).json();
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url: `${url}/notes/${note.id}/labels/${custom.id}`,
+        })
+      ).statusCode,
+    ).toBe(200);
     const exported = await app.inject({
       method: "POST",
       url: "/api/database/export",
@@ -646,6 +684,17 @@ it.each(["all", "selected"])(
       }),
     });
     expect(merged.statusCode, merged.body).toBe(200);
+    const projects = (await app.inject("/api/chats")).json();
+    const copy = projects.find(
+      (candidate: { id: string }) => candidate.id !== project.id,
+    );
+    const detail = (await app.inject(`/api/chats/${copy.id}`)).json();
+    const copiedLabel = detail.labelDefinitions.find(
+      (label: { name: string }) => label.name === "Review",
+    );
+    expect(copiedLabel.id).not.toBe(custom.id);
+    expect(detail.notes[0].labels).toEqual([copiedLabel.id]);
+    expect(detail.labelConfigurationRevision).toBe(0);
     expect((await app.inject("/api/preferences")).json().theme).toBe("neutral");
     const replaced = await app.inject({
       method: "POST",
@@ -657,7 +706,7 @@ it.each(["all", "selected"])(
       }),
     });
     expect(replaced.statusCode, replaced.body).toBe(200);
-    expect((await app.inject(url)).json().title).toBe("Preference backup");
+    expect((await app.inject(url)).json().notes[0].labels).toEqual([custom.id]);
     const preferences = (await app.inject("/api/preferences")).json();
     expect(preferences.theme).toBe(scope === "all" ? "dark" : "neutral");
     expect(preferences.initialized).toBe(true);

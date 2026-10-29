@@ -75,7 +75,7 @@ the complete active palette, including inherited values, directly from CSS.
 - Errors, warnings, success, and search use `--critical`, `--critical-soft`,
   `--warning`, `--success`, `--search-match`, and `--search-match-ink`. Include
   text or an icon/state marker; color alone cannot communicate status.
-- Theme preference is Light/Neutral/Dark, browser-local; Light is the fallback.
+- Theme preference is Light/Neutral/Dark, database-backed; Light is the fresh-database fallback.
   Theme changes colors and native `color-scheme`, never layout or type metrics.
 
 ## Typography
@@ -239,6 +239,28 @@ introductory sentence explaining that this is the settings screen.
   selected swatch. Color names remain accessible, not printed beside every dot.
 - Project labels: one column, icon then name then right-aligned square checkbox.
   On = filled square with check; off = empty outlined square. No iPhone switch.
+  Optional rows use a quiet two-line drag handle in a 36px left column with a
+  44px target. The entire row follows the pointer; neighbors shift to open its
+  destination. Stable layout slots support hit testing and autoscroll. Use the
+  dragged row's center, including its grab offset, and the final release coordinates
+  to choose the destination. Arrow keys and
+  Home/End reorder from the focused handle; selecting a handle and then another
+  provides a tap alternative. Escape cancels. Keep touch scrolling on the rest
+  of the row; only the handle has `touch-action:none`.
+  Built-in and custom rows share a 48px base height, 44px symbol and checkbox
+  columns, flexible name, 44px controls, and settings-row typography. Built-in
+  values stay read-only. Custom inputs have accessible names and visible `☆` /
+  `Label name` placeholders; no field headings. Every filled custom row has a
+  small × action right of its checkbox, including saved and shuffled labels;
+  removal applies on Save and restores focus to a neighboring control. Keep one empty
+  row last until five custom slots are occupied. Typing a name or symbol
+  activates it and reveals the next empty row without losing focus. Empty rows
+  have no handle/actions and never enter Save. Fully cleared custom rows collapse
+  into one blank, including saved labels; Save removes their definitions and
+  message tags. Retyping before Save retains the current row's identity.
+  Custom names allow eight grapheme characters and one optional glyph; field
+  errors appear while typing. Use the concise “Drag rows to reorder.” note,
+  with keyboard/tap details in the handle's accessible description.
 - General uses the same row/checkbox. Backups keep left-side selection checkboxes
   because these are bulk selection lists, not setting switches.
 - Archive and Delete stay in one column, separated by the archive preservation
@@ -302,7 +324,8 @@ whole project even when the selected filters intersect.
   native datetime-local input, 34px tall, max 240px wide; no `margin-left:auto`.
 - The textarea uses 24px line height and grows to eight lines through existing
   logic. Keep the outer height cap and reachable toolbar on short viewports.
-  Mobile reserves 260px for header/filter/history space, or 300px with search.
+  At mobile widths reserve 260px above/below the composer (300px with search)
+  within its viewport height cap, accounting for the two-row filter area.
 - Label chips are borderless muted tonal pills; icon-only labels have transparent
   backgrounds. Reuse `LabelGlyph`, existing SVG icon components and catalog.
 - Label popup: native checkbox choices, keyboard/Escape/focus behavior, automatic

@@ -3759,3 +3759,142 @@ kbd {
     flex: 0 0 auto;
   }
 }
+
+/* Stable slots preserve hit-testing while their rows follow the pointer. */
+.project-label-edit-slot {
+  min-width: 0;
+}
+.project-label-edit-slot--dragging {
+  background: var(--selection);
+}
+.project-label-edit-row {
+  display: grid;
+  position: relative;
+  grid-template-columns: 36px minmax(0, 1fr) 36px;
+  min-height: 48px;
+  padding-block: 2px;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+}
+.project-label-options--dragging .project-label-edit-row {
+  background: var(--paper);
+}
+.project-label-edit-fields {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+.project-label-drag-handle {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 44px;
+  padding: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.project-label-drag-handle svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.project-label-drag-handle:hover {
+  color: var(--ink);
+  background: var(--selection);
+}
+.project-label-drag-handle[aria-pressed="true"] {
+  cursor: grabbing;
+  color: var(--ink);
+}
+.project-label-drag-handle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.project-label-edit-row--picked {
+  background: var(--selection);
+}
+.project-label-edit-row--moving {
+  z-index: 2;
+  cursor: grabbing;
+  outline: 1px solid var(--focus);
+  outline-offset: -1px;
+  user-select: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .project-label-options--dragging
+    .project-label-edit-row:not(.project-label-edit-row--moving) {
+    transition: transform 140ms ease;
+  }
+}
+.project-label-actions .button {
+  width: 36px;
+  min-height: 44px;
+  padding: 4px;
+}
+.project-edit-form .project-label-actions .button {
+  color: var(--muted);
+  background: transparent;
+}
+.project-edit-form .project-label-actions .button:hover {
+  color: var(--ink);
+  background: var(--selection);
+}
+.custom-label-symbol,
+.custom-label-name {
+  min-width: 0;
+  margin: 0;
+}
+.project-label-value,
+.project-settings-fields .project-label-edit-fields .text-input {
+  height: 44px;
+  min-height: 44px;
+  width: 100%;
+  padding: 8px;
+  font-size: 0.84rem;
+  font-weight: 500;
+  line-height: 1.5;
+  background: transparent;
+}
+.project-label-value {
+  display: flex;
+  align-items: center;
+}
+.project-label-value.custom-label-symbol {
+  justify-content: center;
+}
+.project-label-value .label-glyph,
+.project-label-value .label-glyph svg {
+  width: 18px;
+  height: 18px;
+  flex-basis: 18px;
+}
+.project-settings-fields .custom-label-symbol .text-input {
+  text-align: center;
+}
+.project-label-edit-fields > .custom-label-enabled {
+  min-height: 44px;
+  height: 44px;
+  padding: 11px;
+}
+.custom-label-error {
+  grid-column: 2 / -1;
+  margin: 0;
+  padding: 0 8px 4px;
+}
+@media (max-width: 480px) {
+  .project-label-edit-row,
+  .project-label-edit-fields {
+    gap: 4px;
+  }
+}

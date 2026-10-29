@@ -26,9 +26,9 @@ experimental because clean OS/platform and published-upgrade evidence is incompl
 
 The post-v0.1.0 source includes the completed flat UI and design cookbook
 slice in [plan 0029](plans/0029-flat-ui-and-design-contract.md), plus intersecting
-history filters and database preferences from Slices 1–2 of
+history filters, database-backed preferences and custom project labels in
 [plan 0031](plans/0031-multi-filters-durable-preferences-custom-labels.md).
-Current source uses schema 8; the published release remains schema 7. Its canonical
+Current source uses schema 9; the published release remains schema 7. Its canonical
 standards are [DESIGN.md](../DESIGN.md), with an interactive reference under
 [branding/threadstr/ui](../branding/threadstr/ui/README.md). No next release
 version has been selected. The Zod dependency fix for issue #72 is complete
@@ -151,6 +151,15 @@ remains a regression-protected alpha, not a dedicated design target.
 
 ## Current capabilities
 
+- [Multi-filters, durable preferences and custom labels](plans/0031-multi-filters-durable-preferences-custom-labels.md)
+  add intersecting Cmd/Ctrl-selected history filters, database-backed theme,
+  Examples visibility and rail disclosures, and up to five custom labels per
+  project with eight-character names, optional glyphs, drag ordering, enablement
+  and Save-based removal. Cleared/deleted definitions remove only their message
+  tags; messages remain. Desktop filter height is independent of composer growth.
+  Current source uses schema 9; full backups include preferences and all exports
+  preserve project definitions and assignments.
+
 - Current-project keyword search filters loaded message text, participant names,
   and filenames locally. Its compact magnifier/input UI combines with history
   filters, highlights matches, shows counts, restores reading positions, and opens
@@ -231,8 +240,8 @@ remains a regression-protected alpha, not a dedicated design target.
    application.
 3. Design the encryption threat model, unlock and recovery experience, encrypted
    database/sidecar/attachment handling, and plaintext migration.
-4. Evaluate richer label workflows only after observing the fixed built-in
-   vocabulary in planning, decision, risk, and milestone use.
+4. Evaluate further label workflows after observing the built-in and bounded
+   custom labels in planning, decision, risk, and milestone use.
 5. Evaluate native desktop packaging once the storage and key lifecycle are
    credible.
 
@@ -247,7 +256,7 @@ options without pretending those choices are solved.
 
 ## Non-goals for current plaintext alpha
 
-Collaboration, accounts, user-created label definitions, cross-project or semantic search, encryption,
+Collaboration, accounts, cross-project or semantic search, encryption,
 NDA-safe claims, native installers, mobile apps, peer-to-peer sync, public
 hosting, analytics, and telemetry.
 
@@ -291,7 +300,8 @@ resolve that external evidence. Native uninstall validation is tracked in
 assistive-technology validation is tracked in
 [issue #63](https://github.com/satankov/on-track/issues/63).
 [v0.1.0](https://github.com/satankov/on-track/releases/tag/v0.1.0) is the latest published release;
-the design slice has not yet been released; see the [release procedure](RELEASING.md).
+the design and plan 0031 feature slices remain unreleased; see the
+[release procedure](RELEASING.md).
 Broader product priorities above remain strategy until scoped. Durable decisions
 live in `docs/adr/`; significant work lives in `docs/plans/`.
 

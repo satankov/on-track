@@ -265,36 +265,239 @@
               >
                 <legend>Project labels</legend>
                 <div class="project-label-options">
-                  <label class="project-label-option"
-                    ><svg
-                      class="label-glyph cb-icon"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
+                  <div class="project-label-edit-slot">
+                    <div class="project-label-edit-row">
+                      <button
+                        type="button"
+                        class="project-label-drag-handle"
+                        aria-label="Reorder Todo"
+                        aria-describedby="cb-sort-help"
+                        aria-pressed="false"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M5 8h14M5 16h14" />
+                        </svg>
+                      </button>
+                      <div class="project-label-edit-fields">
+                        <span class="custom-label-symbol project-label-value"
+                          ><span class="label-glyph" aria-hidden="true"
+                            >☑</span
+                          ></span
+                        ><span class="custom-label-name project-label-value"
+                          >Todo</span
+                        ><label
+                          class="project-label-option custom-label-enabled"
+                          ><input
+                            type="checkbox"
+                            aria-label="Enable Todo"
+                            checked
+                        /></label>
+                      </div>
+                      <span></span>
+                    </div>
+                  </div>
+                  <div class="project-label-edit-slot">
+                    <div class="project-label-edit-row">
+                      <button
+                        type="button"
+                        class="project-label-drag-handle"
+                        aria-label="Reorder Decision"
+                        aria-describedby="cb-sort-help"
+                        aria-pressed="false"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M5 8h14M5 16h14" />
+                        </svg>
+                      </button>
+                      <div class="project-label-edit-fields">
+                        <span class="custom-label-symbol project-label-value"
+                          ><span class="label-glyph" aria-hidden="true"
+                            >⚑</span
+                          ></span
+                        ><span class="custom-label-name project-label-value"
+                          >Decision</span
+                        ><label
+                          class="project-label-option custom-label-enabled"
+                          ><input type="checkbox" aria-label="Enable Decision"
+                        /></label>
+                      </div>
+                      <span></span>
+                    </div>
+                  </div>
+                  <div class="project-label-edit-slot">
+                    <div class="project-label-edit-row">
+                      <button
+                        type="button"
+                        class="project-label-drag-handle"
+                        aria-label="Reorder Open question"
+                        aria-describedby="cb-sort-help"
+                        aria-pressed="false"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M5 8h14M5 16h14" />
+                        </svg>
+                      </button>
+                      <div class="project-label-edit-fields">
+                        <span class="custom-label-symbol project-label-value"
+                          ><span class="label-glyph" aria-hidden="true"
+                            >?</span
+                          ></span
+                        ><span class="custom-label-name project-label-value"
+                          >Open question</span
+                        ><label
+                          class="project-label-option custom-label-enabled"
+                          ><input
+                            type="checkbox"
+                            aria-label="Enable Open question"
+                        /></label>
+                      </div>
+                      <span></span>
+                    </div>
+                  </div>
+                  <div class="project-label-edit-slot">
+                    <div class="project-label-edit-row">
+                      <button
+                        type="button"
+                        class="project-label-drag-handle"
+                        aria-label="Reorder Risk"
+                        aria-describedby="cb-sort-help"
+                        aria-pressed="false"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M5 8h14M5 16h14" />
+                        </svg>
+                      </button>
+                      <div class="project-label-edit-fields">
+                        <span class="custom-label-symbol project-label-value"
+                          ><span class="label-glyph" aria-hidden="true"
+                            >⚠️</span
+                          ></span
+                        ><span class="custom-label-name project-label-value"
+                          >Risk</span
+                        ><label
+                          class="project-label-option custom-label-enabled"
+                          ><input type="checkbox" aria-label="Enable Risk"
+                        /></label>
+                      </div>
+                      <span></span>
+                    </div>
+                  </div>
+                  <div class="project-label-edit-slot">
+                    <div class="project-label-edit-row">
+                      <button
+                        type="button"
+                        class="project-label-drag-handle"
+                        aria-label="Reorder Milestone"
+                        aria-describedby="cb-sort-help"
+                        aria-pressed="false"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M5 8h14M5 16h14" />
+                        </svg>
+                      </button>
+                      <div class="project-label-edit-fields">
+                        <span class="custom-label-symbol project-label-value"
+                          ><span class="label-glyph" aria-hidden="true"
+                            >🎖️</span
+                          ></span
+                        ><span class="custom-label-name project-label-value"
+                          >Milestone</span
+                        ><label
+                          class="project-label-option custom-label-enabled"
+                          ><input
+                            type="checkbox"
+                            aria-label="Enable Milestone"
+                            checked
+                        /></label>
+                      </div>
+                      <span></span>
+                    </div>
+                  </div>
+                  <div class="project-label-edit-slot">
+                    <div class="project-label-edit-row">
+                      <button
+                        type="button"
+                        class="project-label-drag-handle"
+                        aria-label="Reorder Review"
+                        aria-describedby="cb-sort-help"
+                        aria-pressed="false"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M5 8h14M5 16h14" />
+                        </svg>
+                      </button>
+                      <div class="project-label-edit-fields">
+                        <label class="custom-label-symbol"
+                          ><input
+                            class="text-input"
+                            aria-label="Review label symbol"
+                            placeholder="☆"
+                            value="✓" /></label
+                        ><label class="custom-label-name"
+                          ><input
+                            class="text-input"
+                            aria-label="Review label name"
+                            placeholder="Label name"
+                            value="Review" /></label
+                        ><label
+                          class="project-label-option custom-label-enabled"
+                          ><input
+                            type="checkbox"
+                            aria-label="Enable Review"
+                            checked
+                        /></label>
+                      </div>
+                      <div class="project-label-actions">
+                        <button
+                          type="button"
+                          class="button button-quiet"
+                          aria-label="Delete Review"
+                          title="Delete Review"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="project-label-edit-slot">
+                    <div
+                      class="project-label-edit-row project-label-edit-row--empty"
                     >
-                      <rect x="3" y="3" width="18" height="18" rx="4" />
-                      <path d="m7.5 12 3 3 6-7" /></svg
-                    ><span>Todo</span><input type="checkbox" checked
-                  /></label>
-                  <label class="project-label-option"
-                    ><svg
-                      class="label-glyph cb-icon"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                    >
-                      <circle cx="12" cy="12" r="9" />
-                      <path
-                        d="M9.7 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1.2.9-1.2 1.7M12 17h.01"
-                      /></svg
-                    ><span>Open question</span><input type="checkbox"
-                  /></label>
-                  <label class="project-label-option"
-                    ><span class="label-glyph" aria-hidden="true">⚠️</span
-                    ><span>Risk</span><input type="checkbox"
-                  /></label>
+                      <span aria-hidden="true"></span>
+                      <div class="project-label-edit-fields">
+                        <label class="custom-label-symbol"
+                          ><input
+                            class="text-input"
+                            aria-label="New label symbol"
+                            placeholder="☆"
+                            value="" /></label
+                        ><label class="custom-label-name"
+                          ><input
+                            class="text-input"
+                            aria-label="New label name"
+                            placeholder="Label name"
+                            value="" /></label
+                        ><span aria-hidden="true"></span>
+                      </div>
+                      <span></span>
+                    </div>
+                  </div>
                 </div>
                 <p class="field-help" id="cb-label-help">
-                  Turning a label off keeps it on existing messages.
+                  Up to 5 custom labels, 8 characters per name, and one optional
+                  symbol or emoji. Turning a label off keeps it on existing
+                  messages.
                 </p>
+                <p class="field-help">
+                  Clear both fields to remove a custom label and its message
+                  tags when you save.
+                </p>
+                <p class="field-help">Drag rows to reorder.</p>
+                <span class="visually-hidden" id="cb-sort-help"
+                  >Drag using the handle. Or select a handle, then its
+                  destination. Use ↑/↓ or Home/End on a focused handle. Escape
+                  cancels.</span
+                >
               </fieldset>
               <fieldset
                 class="project-message-display-fieldset"
@@ -700,7 +903,7 @@
                 aria-pressed="false"
               >
                 <span class="history-filter-icon" aria-hidden="true">✓</span
-                ><span class="history-filter-label">Todo</span
+                ><span class="history-filter-label">Review</span
                 ><span class="history-filter-count">2</span>
               </button>
             </div>

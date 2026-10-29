@@ -1,3 +1,7 @@
+import {
+  LabelConfigurationConflictError,
+  InvalidLabelConfigurationError,
+} from "./db/project-labels.js";
 import { registerPreferenceRoutes } from "./preferences-routes.js";
 import { createHomeService, type HomeService } from "./home/service.js";
 import { registerHomeRoutes } from "./home/routes.js";
@@ -272,12 +276,22 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   registerPreferenceRoutes(app, () => database);
 
   app.setErrorHandler((error, _request, reply) => {
-    if (error instanceof ZodError || error instanceof InvalidInputError) {
+    if (
+      error instanceof ZodError ||
+      error instanceof InvalidInputError ||
+      error instanceof InvalidLabelConfigurationError
+    ) {
       return reply.code(400).send({
         code: "invalid_input",
         message: "Please check the submitted values.",
       });
     }
+    if (error instanceof LabelConfigurationConflictError)
+      return reply.code(409).send({
+        code: "label_conflict",
+        message:
+          "Project labels changed in another window. Reload the project before saving.",
+      });
     if (error instanceof ArchivedProjectPinError) {
       return reply
         .code(409)

@@ -75,6 +75,152 @@ describe("local project-chat API", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it("creates five short custom labels, preserves assignments on rename/disable, and rejects stale edits", async () => {
+    const created = (
+      await app.inject({
+        method: "POST",
+        url: "/api/chats",
+        payload: { title: "Labels", accent: "ocean" },
+      })
+    ).json();
+    const url = `/api/chats/${created.id}`;
+    const configuration = {
+      revision: 0,
+      labels: [
+        { id: "pin", name: "Pin", symbol: null, enabled: true },
+        { id: "attention", name: "Attention", symbol: null, enabled: true },
+        { id: "todo", name: "Todo", symbol: null, enabled: true },
+        { id: "decision", name: "Decision", symbol: null, enabled: false },
+        {
+          id: "open-question",
+          name: "Open question",
+          symbol: null,
+          enabled: false,
+        },
+        { id: "risk", name: "Risk", symbol: "⚠️", enabled: false },
+        { id: "milestone", name: "Milestone", symbol: "🎖️", enabled: true },
+        { name: "Review", symbol: "👨‍👩‍👧‍👦", enabled: true },
+      ],
+    };
+    const save = await app.inject({
+      method: "PATCH",
+      url,
+      payload: { labelConfiguration: configuration },
+    });
+    expect(save.statusCode).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url,
+          payload: { labelConfiguration: configuration, enabledLabels: [] },
+        })
+      ).statusCode,
+    ).toBe(400);
+    const project = save.json();
+    const custom = project.labelDefinitions.find(
+      (label: { name: string }) => label.name === "Review",
+    );
+    expect(custom.id).toMatch(/^custom-/);
+    const note = (
+      await app.inject({
+        method: "POST",
+        url: `${url}/notes`,
+        payload: noteForm({ body: "Review me" }),
+      })
+    ).json();
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url: `${url}/notes/${note.id}/labels/${custom.id}`,
+        })
+      ).statusCode,
+    ).toBe(200);
+    const labels = project.labelDefinitions.map(
+      (label: {
+        id: string;
+        name: string;
+        symbol: string | null;
+        enabled: boolean;
+      }) => ({
+        id: label.id,
+        name: label.id === custom.id ? "Checked" : label.name,
+        symbol: label.symbol,
+        enabled: label.id === custom.id ? false : label.enabled,
+      }),
+    );
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url,
+          payload: {
+            labelConfiguration: {
+              revision: project.labelConfigurationRevision,
+              labels,
+            },
+          },
+        })
+      ).statusCode,
+    ).toBe(200);
+    const detail = (await app.inject({ method: "GET", url })).json();
+    expect(detail.notes[0].labels).toContain(custom.id);
+    expect(detail.labelDefinitions.at(-1)).toMatchObject({
+      id: custom.id,
+      name: "Checked",
+      enabled: false,
+    });
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url,
+          payload: { labelConfiguration: configuration },
+        })
+      ).statusCode,
+    ).toBe(409);
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url,
+          payload: {
+            labelConfiguration: {
+              ...configuration,
+              revision: 2,
+              labels: [
+                ...labels,
+                { name: "123456789", symbol: null, enabled: true },
+              ],
+            },
+          },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url,
+          payload: {
+            labelConfiguration: {
+              revision: 2,
+              labels: [
+                ...labels,
+                ...Array.from({ length: 5 }, (_, i) => ({
+                  name: `Extra${i}`,
+                  symbol: null,
+                  enabled: true,
+                })),
+              ],
+            },
+          },
+        })
+      ).statusCode,
+    ).toBe(400);
+  });
+
   it("persists workspace preferences and lets the database win over stale browser initialization", async () => {
     const get = await app.inject({ method: "GET", url: "/api/preferences" });
     expect(get.statusCode).toBe(200);
@@ -1561,7 +1707,9 @@ describe("local project-chat API", () => {
   it("rejects a valid SQLite file that is not a threadstr database", async () => {
     const otherPath = join(directory, "other.sqlite");
     const otherDatabase = openDatabase(otherPath);
-    otherDatabase.exec("DROP TABLE notes; DROP TABLE chats;");
+    otherDatabase.exec(
+      "DROP TABLE note_labels; DROP TABLE note_attachments; DROP TABLE project_labels; DROP TABLE notes; DROP TABLE chats;",
+    );
     otherDatabase.close();
 
     const imported = await app.inject({

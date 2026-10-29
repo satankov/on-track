@@ -6,12 +6,12 @@ The published baseline is v0.1.0 (released 2026-10-23, primary `thr` CLI). It in
 and the history controls, composer feedback, and managed uninstall in
 [plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md), plus
 current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
-Published database and backup schema is 7; current source advances to schema 8. The managed compatibility floor remains `0.0.7`.
+Published database and backup schema is 7; current source advances to schema 9. The managed compatibility floor remains `0.0.7`.
 The subsequent flat UI/design-contract slice changes client UI, tests, and documentation
 only; see [plan 0029](plans/0029-flat-ui-and-design-contract.md). It changes no
 API, database, backup, dependency, or installation contract. The subsequent
-[filters and preferences slice](plans/0031-multi-filters-durable-preferences-custom-labels.md)
-adds multi-filters and database preferences (schema 8); custom labels follow in Slice 3;
+[preferences and labels slice](plans/0031-multi-filters-durable-preferences-custom-labels.md)
+adds multi-filters, database preferences (schema 8), and custom labels (schema 9);
 see [ADR-0013](adr/0013-durable-preferences-and-project-labels.md).
 
 Core boundaries are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md),
@@ -170,7 +170,7 @@ Uninstall retains ownership lock files on every platform. See [ADR-0012](adr/001
   Both navigation and feedback respect reduced motion.
   A pure sender helper maps a normalized sender name deterministically onto a closed set of theme-safe color
   roles; only the sender text, not a color value, crosses the API boundary.
-- `src/domain`: shared data contracts, closed built-in label vocabularies, and
+- `src/domain`: shared data contracts, immutable built-in labels, bounded custom definitions, and
   validation rules with no UI or persistence dependency.
 - `src/server/app.ts`: Fastify transport, boundary controls, safe error mapping,
   and route wiring.
@@ -218,9 +218,22 @@ appears below project sections on mobile without replacing navigation or Setting
 ## Data design and location
 
 The migrations create `chats`, `notes`, `note_attachments`,
-`chat_enabled_labels`, `note_labels`, singleton `workspace_preferences`, and
-single-row `app_metadata` tables.
-Foreign keys and checks enforce ownership, closed label vocabularies,
+`project_labels`, `note_labels`, singleton `workspace_preferences`, and single-row
+`app_metadata` tables. Migration 9 replaces `chat_enabled_labels` with seven
+built-in definitions per project, preserving disabled assignments. Up to five
+custom definitions have server-generated stable UUID identities, names of 1–8
+grapheme clusters and an optional single-grapheme symbol. Definitions are ordered,
+uniquely named per project, and soft-disabled. Pin and Attention remain first
+and enabled; built-in names/symbols cannot change. A project revision rejects
+stale definition edits; scoped composite foreign keys prevent cross-project
+assignments. The editor keeps one empty custom row for immediate entry and
+validates limits while typing. Fully cleared custom rows are omitted from Save;
+the project transaction removes omitted custom definitions and cascades only
+their note-label assignments. Built-ins cannot be omitted. Pointer Events move
+whole rows over stable layout slots, using the row center and final pointer
+coordinates, with keyboard and tap-to-place alternatives. Every filled custom row
+also exposes removal beside its checkbox; removal remains a draft until Save.
+Dragging changes only the local draft until Save. Foreign keys and checks enforce ownership,
 length/accent rules, unique repository-owned attachment paths, and nonnegative
 last-known byte sizes and modification times. Composite primary keys prevent
 duplicate label settings and assignments. Indexed `(chat_id, created_at, id)`
@@ -308,8 +321,8 @@ integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
 fresh managed paths, removes bundle payload tables, and compacts the current-
-schema candidate. Exact schema-7, schema-6, schema-5, schema-4 development,
-and schema-3 v0.0.4 bundles are accepted through fixed legacy descriptors and migrated to schema 8
+schema candidate. Exact schema-8, schema-7, schema-6, schema-5, schema-4 development,
+and schema-3 v0.0.4 bundles are accepted through fixed legacy descriptors and migrated to schema 9
 only after copying into the staging workspace; older notes receive a null sender
 and all older projects receive null archive state.
 It then uses the maintenance gate and
@@ -329,7 +342,7 @@ options and repeats validation; excluded payloads cannot bypass validation.
 Selection is applied only to the validated candidate, before file extraction.
 
 `database-transfer/routes.ts` owns transfer transport; `project-import.ts` prepares
-fresh identities, conflict titles, and managed files; `db/project-import.ts`
+fresh project, note, custom-label and attachment identities, conflict titles, and managed files; `db/project-import.ts`
 inserts explicit project/note/label/attachment records in one transaction.
 Replace activates the selected candidate through the existing journal. Merge
 uses the exclusive maintenance gate, publishes and flushes only imported files,
@@ -451,9 +464,11 @@ loaded, unvirtualized project, not an architecture for unbounded histories.
 - Attach a local file to a message, edit message attachments, filter the project
   history to messages with attached files, and use separate eligible Open and
   Show in Folder actions.
-- Enable project labels, apply several labels to one message, filter by active
-  labels, deactivate a label without deleting assignments, and reopen the
-  persisted state after restart.
+- Add, rename, order and toggle up to five custom project labels with immediate
+  limit feedback; apply several labels to one message, combine filters,
+  deactivate a label without deleting assignments, or remove a custom definition
+  and its tags while preserving messages. Reopen the persisted state after
+  restart or backup import.
 - Stop and restart the server against the same isolated data directory and
   recover all state.
 - Complete the flow at desktop and mobile widths with keyboard/focus behavior and

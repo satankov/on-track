@@ -238,7 +238,7 @@ it("round-trips the actual released schema 6 through bundled schema 7 migration 
   connections.push(candidate);
   expect(
     candidate.prepare("SELECT schema_version FROM app_metadata").pluck().get(),
-  ).toBe(8);
+  ).toBe(9);
   expect(candidate.prepare("SELECT * FROM notes").get()).toEqual(beforeNote);
   candidate.close();
   restoreDatabaseCheckpoint({

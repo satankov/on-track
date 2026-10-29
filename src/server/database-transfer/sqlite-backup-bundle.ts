@@ -1,3 +1,9 @@
+import {
+  labelConfigurationSchema,
+  labelNameKey,
+  isBuiltinLabel,
+} from "../../domain/labels.js";
+import type { ProjectLabelRow } from "../db/project-labels.js";
 import { readPreferences, writePreferences } from "../db/preferences.js";
 import {
   DEFAULT_PREFERENCES,
@@ -56,13 +62,14 @@ import {
 
 export const SQL_ON_TRACK_BACKUP_APPLICATION_ID = 0x4f545242;
 export const SQL_ON_TRACK_BACKUP_FORMAT_VERSION = 1;
-export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 8;
+export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 9;
 const LEGACY_SCHEMA_MIGRATIONS: Readonly<
   Record<number, { migrationAt: number; migrationCount: number }>
 > = {
   3: { migrationAt: 1_788_356_400_000, migrationCount: 4 },
   4: { migrationAt: 1_788_516_961_034, migrationCount: 5 },
   5: { migrationAt: 1_788_523_044_823, migrationCount: 6 },
+  8: { migrationAt: 1793269343386, migrationCount: 9 },
   7: { migrationAt: 1789027200000, migrationCount: 8 },
   6: { migrationAt: 1_788_566_400_000, migrationCount: 7 },
 };
@@ -1021,7 +1028,46 @@ function validateApplicationData(
       "A message exceeds the attachments per message limit.",
     );
   }
-  validateLabelData(database);
+  if (schemaVersion >= 9) validateProjectLabelData(database);
+  else validateLabelData(database);
+}
+
+function validateProjectLabelData(database: Database.Database): void {
+  const projects = database
+    .prepare("SELECT id, label_configuration_revision FROM chats")
+    .all() as { id: string; label_configuration_revision: unknown }[];
+  const statement = database.prepare(
+    "SELECT * FROM project_labels WHERE chat_id=? ORDER BY position",
+  );
+  for (const project of projects) {
+    requireNonnegativeSafeInteger(
+      project.label_configuration_revision,
+      "label configuration revision",
+    );
+    const rows = statement.all(project.id) as ProjectLabelRow[];
+    const valid = labelConfigurationSchema.safeParse({
+      revision: 0,
+      labels: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        symbol: row.symbol,
+        enabled: row.enabled === 1,
+      })),
+    });
+    if (
+      !valid.success ||
+      rows.some(
+        (row, i) =>
+          row.position !== i ||
+          ![0, 1].includes(row.enabled) ||
+          ![0, 1].includes(row.builtin) ||
+          Boolean(row.builtin) !== isBuiltinLabel(row.id) ||
+          row.name !== valid.data.labels[i]!.name ||
+          row.name_key !== labelNameKey(row.name),
+      )
+    )
+      throw validationError("Project label metadata is invalid.");
+  }
 }
 
 function validateLabelData(database: Database.Database): void {

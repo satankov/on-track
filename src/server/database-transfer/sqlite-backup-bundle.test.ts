@@ -1,4 +1,5 @@
 import { rewindToSchema7 } from "../../test/legacy-database.js";
+import { insertProjectLabel, seedProjectLabels } from "../db/project-labels.js";
 import { readPreferences, writePreferences } from "../db/preferences.js";
 import { DEFAULT_PREFERENCES } from "../../domain/preferences.js";
 import {
@@ -51,9 +52,9 @@ describe("SQLite backup bundle", () => {
         VALUES ('chat-a', 'Roadmap', 'ocean', 1, 1);
       INSERT INTO notes (id, chat_id, body, created_at)
         VALUES ('note-a', 'chat-a', 'Plan', 1);
-      INSERT INTO chat_enabled_labels (chat_id, label) VALUES
-        ('chat-a', 'todo'), ('chat-a', 'milestone');
+
     `);
+    seedProjectLabels(sourceDatabase, "chat-a");
   });
 
   afterEach(() => {
@@ -114,7 +115,7 @@ describe("SQLite backup bundle", () => {
       mutateBundle(bundlePath, (legacy) => {
         const preferenceMigration = legacy
           .prepare(
-            "SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1",
+            "SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1 OFFSET 1",
           )
           .get() as { hash: string; created_at: number };
         rewindToSchema7(legacy);
@@ -146,13 +147,19 @@ describe("SQLite backup bundle", () => {
         expect(readPreferences(candidate)).toEqual(
           schema === 8 ? sourcePreferences : destinationPreferences,
         );
+        expect(
+          candidate
+            .prepare("SELECT COUNT(*) FROM project_labels")
+            .pluck()
+            .get(),
+        ).toBe(7);
         expect(candidate.pragma("foreign_key_check")).toEqual([]);
         expect(
           candidate
             .prepare("SELECT schema_version FROM app_metadata")
             .pluck()
             .get(),
-        ).toBe(8);
+        ).toBe(9);
       } finally {
         candidate.close();
       }
@@ -162,12 +169,25 @@ describe("SQLite backup bundle", () => {
   it.each([
     "UPDATE workspace_preferences SET theme='invalid'",
     "UPDATE workspace_preferences SET initialized=2",
+    "UPDATE project_labels SET name_key='wrong' WHERE chat_id='chat-b' AND id='todo'",
+    "UPDATE project_labels SET position=99 WHERE chat_id='chat-b' AND id='todo'",
+    "UPDATE project_labels SET name='123456789',name_key='123456789' WHERE chat_id='chat-b' AND builtin=0",
+    "UPDATE project_labels SET symbol='ab' WHERE chat_id='chat-b' AND builtin=0",
   ])(
-    "rejects hostile preference metadata before excluding projects: %s",
+    "rejects hostile preference/label metadata before excluding projects: %s",
     async (sql) => {
       sourceDatabase.exec(
         "INSERT INTO chats(id,title,accent,created_at,updated_at) VALUES('chat-b','Excluded','ocean',1,1)",
       );
+      seedProjectLabels(sourceDatabase, "chat-b");
+      insertProjectLabel(sourceDatabase, "chat-b", {
+        id: "custom-00000000-0000-4000-8000-000000000001",
+        name: "Review",
+        symbol: null,
+        enabled: true,
+        position: 7,
+        builtin: false,
+      });
       const bundlePath = join(directory, "hostile.on-track-backup");
       await createSqliteBackupBundle({
         sourceDatabase,
@@ -223,7 +243,7 @@ describe("SQLite backup bundle", () => {
     );
     expect(manifest).toEqual({
       formatVersion: 1,
-      schemaVersion: 8,
+      schemaVersion: 9,
       createdAt: 1_725_000_100_000,
       attachmentCount: 1,
       totalBytes: 12,
@@ -271,6 +291,7 @@ describe("SQLite backup bundle", () => {
         "INSERT INTO chats (id,title,accent,created_at,updated_at) VALUES ('excluded',?,'ocean',1,1)",
       )
       .run(secret);
+    seedProjectLabels(sourceDatabase, "excluded");
     sourceDatabase
       .prepare(
         "INSERT INTO notes (id,chat_id,body,created_at) VALUES ('excluded-note','excluded',?,1)",
@@ -300,6 +321,7 @@ describe("SQLite backup bundle", () => {
     sourceDatabase.exec(
       "INSERT INTO chats (id,title,accent,created_at,updated_at) VALUES ('other','Other','ocean',1,1)",
     );
+    seedProjectLabels(sourceDatabase, "other", []);
     insertAttachment(sourceDatabase, {
       id: "broken",
       filename: "private.txt",
@@ -337,6 +359,7 @@ describe("SQLite backup bundle", () => {
       sourceDatabase.exec(
         "INSERT INTO chats (id,title,accent,created_at,updated_at) VALUES ('other','Other','ocean',1,1)",
       );
+      seedProjectLabels(sourceDatabase, "other", []);
       const bundlePath = join(directory, `legacy-${schema}.on-track-backup`);
       await createSqliteBackupBundle({
         sourceDatabase,
@@ -390,7 +413,9 @@ describe("SQLite backup bundle", () => {
       ).toEqual({ body: "Plan", sender: null });
       expect(
         sourceDatabase
-          .prepare("SELECT count(*) FROM chat_enabled_labels")
+          .prepare(
+            "SELECT count(*) FROM project_labels WHERE enabled=1 AND id NOT IN ('pin','attention')",
+          )
           .pluck()
           .get(),
       ).toBe(4);
@@ -1265,7 +1290,7 @@ describe("SQLite backup bundle", () => {
     });
 
     expect(validateSqliteBackupBundle(bundlePath)).toMatchObject({
-      schemaVersion: 8,
+      schemaVersion: 9,
     });
     const prepared = prepareSqliteBackupBundle({
       bundlePath,
@@ -1403,7 +1428,7 @@ describe("SQLite backup bundle", () => {
     });
 
     expect(validateSqliteBackupBundle(bundlePath)).toMatchObject({
-      schemaVersion: 8,
+      schemaVersion: 9,
     });
     const prepared = prepareSqliteBackupBundle({
       bundlePath,
@@ -1488,7 +1513,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(8);
+      ).toBe(9);
       expect(
         candidate
           .prepare("SELECT sender FROM notes WHERE id = 'note-a'")
@@ -1542,7 +1567,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(8);
+      ).toBe(9);
       expect(
         candidate
           .prepare(
@@ -1558,11 +1583,9 @@ describe("SQLite backup bundle", () => {
 
   it("preserves current labels and rejects an exact schema-2 bundle", async () => {
     sourceDatabase.exec(`
-      DELETE FROM chat_enabled_labels;
-      INSERT INTO chat_enabled_labels (chat_id, label) VALUES
-        ('chat-a', 'decision'), ('chat-a', 'risk');
-      INSERT INTO note_labels (note_id, label) VALUES
-        ('note-a', 'pin'), ('note-a', 'decision');
+      UPDATE project_labels SET enabled = CASE WHEN id IN ('pin','attention','decision','risk') THEN 1 ELSE 0 END;
+      INSERT INTO note_labels (note_id, chat_id, label) VALUES
+        ('note-a', 'chat-a', 'pin'), ('note-a', 'chat-a', 'decision');
     `);
     const currentPath = join(directory, "labels.on-track-backup");
     await createSqliteBackupBundle({
@@ -1584,7 +1607,9 @@ describe("SQLite backup bundle", () => {
     });
     expect(
       current
-        .prepare("SELECT label FROM chat_enabled_labels ORDER BY label")
+        .prepare(
+          "SELECT id FROM project_labels WHERE enabled=1 AND id NOT IN ('pin','attention') ORDER BY id",
+        )
         .pluck()
         .all(),
     ).toEqual(["decision", "risk"]);
@@ -1663,7 +1688,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(8);
+      ).toBe(9);
       expect(
         candidate
           .prepare("SELECT pinned_at FROM chats WHERE id = 'chat-a'")
