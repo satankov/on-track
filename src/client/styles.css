@@ -828,7 +828,7 @@ button.rail-section-label {
   grid-template-areas:
     "header header"
     "filters history"
-    "composer composer";
+    "filters composer";
 }
 .chat-header {
   grid-area: header;
@@ -857,7 +857,7 @@ button.rail-section-label {
     "header header"
     "filters search"
     "filters history"
-    "composer composer";
+    "filters composer";
 }
 .project-search {
   grid-area: search;
@@ -1005,13 +1005,17 @@ button.rail-section-label {
   height: 16px;
 }
 .history-filter {
+  display: flex;
+  flex-direction: column;
   grid-area: filters;
   min-height: 0;
   padding: 12px 8px;
   background: var(--history);
 }
 .history-filter-inner {
-  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  flex: 0 1 auto;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -2094,13 +2098,12 @@ button.rail-section-label {
   overflow: visible;
   z-index: 3;
   padding: 8px clamp(20px, 5vw, 72px) 10px;
-  padding-left: calc(var(--history-filter-width) + clamp(20px, 5vw, 72px));
   background: var(--history);
 }
 .composer-wrap::before {
   content: "";
   position: absolute;
-  inset: -32px 0 100% var(--history-filter-width);
+  inset: -32px 0 100% 0;
   pointer-events: none;
   background: linear-gradient(to bottom, transparent, var(--history));
 }
@@ -2315,9 +2318,12 @@ button.rail-section-label {
   gap: 6px;
   margin-left: auto;
 }
-.composer-shortcut {
+.composer-shortcut,
+.history-filter-help {
   color: var(--muted);
   font-size: 0.64rem;
+  font-weight: 400;
+  line-height: normal;
   white-space: nowrap;
 }
 .composer-tools {
@@ -3072,6 +3078,13 @@ kbd {
   .composer-wrap::before {
     left: 0;
   }
+  .composer {
+    /* Reserve the header, two filter rows, and history padding at 200% reflow. */
+    max-height: min(60dvh, calc(100dvh - 260px));
+  }
+  .workspace-chat--search .composer {
+    max-height: min(60dvh, calc(100dvh - 300px));
+  }
   .composer textarea {
     min-height: 76px;
   }
@@ -3730,5 +3743,19 @@ kbd {
     display: inline-flex;
     align-items: center;
     min-height: 44px;
+  }
+}
+
+.history-filter-help {
+  flex: 0 0 auto;
+  margin: 8px 0 0;
+  padding: 0 4px;
+}
+.history-filter-button {
+  flex-shrink: 0;
+}
+@media (max-width: 760px) {
+  .history-filter-inner {
+    flex: 0 0 auto;
   }
 }

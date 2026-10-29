@@ -655,6 +655,61 @@
           </p>
         </section>
 
+        <section class="cb-section">
+          <h2>Filters combine without changing the rail.</h2>
+          <p>
+            Keep the fixed desktop width; the helper follows the final label.
+            Links and Pin are both pressed here.
+          </p>
+          <nav
+            class="history-filter cb-filter-sample"
+            aria-label="Sample history filters"
+            aria-describedby="cb-filter-help"
+          >
+            <div class="history-filter-inner">
+              <button
+                type="button"
+                class="history-filter-button"
+                aria-pressed="false"
+              >
+                <span class="history-filter-icon" aria-hidden="true">☷</span
+                ><span class="history-filter-label">All</span
+                ><span class="history-filter-count">12</span>
+              </button>
+              <button
+                type="button"
+                class="history-filter-button history-filter-button--active"
+                aria-pressed="true"
+              >
+                <span class="history-filter-icon" aria-hidden="true">↗</span
+                ><span class="history-filter-label">Links</span
+                ><span class="history-filter-count">6</span>
+              </button>
+              <button
+                type="button"
+                class="history-filter-button history-filter-button--active"
+                aria-pressed="true"
+              >
+                <span class="history-filter-icon" aria-hidden="true">⌖</span
+                ><span class="history-filter-label">Pin</span
+                ><span class="history-filter-count">4</span>
+              </button>
+              <button
+                type="button"
+                class="history-filter-button"
+                aria-pressed="false"
+              >
+                <span class="history-filter-icon" aria-hidden="true">✓</span
+                ><span class="history-filter-label">Todo</span
+                ><span class="history-filter-count">2</span>
+              </button>
+            </div>
+            <p class="history-filter-help" id="cb-filter-help">
+              <kbd>⌘/Ctrl</kbd> + multiple
+            </p>
+          </nav>
+        </section>
+
         <section id="responsive" class="cb-section">
           <p class="cb-kicker">08 / Responsive rules</p>
           <h2>Adapt the structure, preserve the language.</h2>

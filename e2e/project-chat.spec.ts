@@ -810,7 +810,7 @@ test("uses compact desktop chrome and an auto-growing composer", async ({
   expect(geometry.composer.height).toBeLessThanOrEqual(116);
   expect(geometry.history.height).toBeGreaterThanOrEqual(628);
   expect(geometry.filters.top).toBeCloseTo(geometry.history.top, 0);
-  expect(geometry.filters.bottom).toBeCloseTo(geometry.history.bottom, 0);
+  expect(geometry.filters.bottom).toBeCloseTo(geometry.composer.bottom, 0);
   expect(geometry.filters.right).toBeLessThanOrEqual(geometry.history.left + 1);
 
   const composer = page.getByLabel("Add a note");

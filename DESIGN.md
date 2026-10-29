@@ -273,6 +273,21 @@ scoped shared family. Focus must remain visible after decorative borders are
 removed. Placeholders supplement real labels. Validation uses `role="alert"`
 and associated fields where applicable; success/status uses polite announcements.
 
+### History filters
+
+Preserve the existing filter width and button geometry. Labels use the existing
+icon/name/count columns and truncation; adding definitions must not widen the
+sidebar. On desktop its grid area spans both history and composer rows down to
+the viewport bottom; composer growth cannot shorten the rail. Composer padding
+and fade start in the right grid column. The filter list scrolls only when its
+contents exceed that available height; its natural height puts the
+quiet `⌘/Ctrl + multiple` hint immediately below the final label, without a
+checkbox or bottom anchoring. The hint shares the send shortcut's 0.64rem size,
+normal line height, 400 weight, inherited font and muted color. Each selected button is pressed; All represents
+the empty selection. Mobile retains horizontal filters with the hint underneath.
+Touch taps toggle selections directly; mouse clicks use platform modifiers. Counts represent the
+whole project even when the selected filters intersect.
+
 ### Message stream, composer, labels, attachments
 
 - Own bubbles align right; participants align left with a sender label and
@@ -287,6 +302,7 @@ and associated fields where applicable; success/status uses polite announcements
   native datetime-local input, 34px tall, max 240px wide; no `margin-left:auto`.
 - The textarea uses 24px line height and grows to eight lines through existing
   logic. Keep the outer height cap and reachable toolbar on short viewports.
+  Mobile reserves 260px for header/filter/history space, or 300px with search.
 - Label chips are borderless muted tonal pills; icon-only labels have transparent
   backgrounds. Reuse `LabelGlyph`, existing SVG icon components and catalog.
 - Label popup: native checkbox choices, keyboard/Escape/focus behavior, automatic

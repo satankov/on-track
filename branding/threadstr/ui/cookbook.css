@@ -587,3 +587,13 @@
     border: 1px solid ButtonText;
   }
 }
+
+.cb-filter-sample {
+  width: 128px;
+  max-width: 100%;
+}
+@media (max-width: 760px) {
+  .cb-filter-sample {
+    width: 100%;
+  }
+}

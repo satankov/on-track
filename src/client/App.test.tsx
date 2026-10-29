@@ -1360,6 +1360,57 @@ describe("personal project chat workspace", () => {
     expect(screen.getAllByRole("article")).toHaveLength(1);
   });
 
+  it("combines filters with platform modifiers and displays a compact hint without a checkbox", async () => {
+    const chat = {
+      id: "combined",
+      title: "Combined",
+      accent: "ocean",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const notes = [
+      { id: "both", body: "Pinned https://example.com", labels: ["pin"] },
+      { id: "link", body: "Other https://example.org", labels: [] },
+      { id: "pin", body: "Pinned plain", labels: ["pin"] },
+    ].map((note) => ({ ...note, chatId: chat.id, createdAt: 1 }));
+    render(
+      <App
+        api={createApi({
+          listChats: vi.fn().mockResolvedValue([chat]),
+          getChat: vi.fn().mockResolvedValue({ ...chat, notes }),
+        })}
+      />,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open Combined" }),
+    );
+    const links = await screen.findByRole("button", { name: "Links 2" });
+    const pin = screen.getByRole("button", { name: "Pin 2" });
+    fireEvent.click(links);
+    const mac = /Mac|iPhone|iPad|iPod/i.test(
+      navigator.platform || navigator.userAgent,
+    );
+    fireEvent.click(pin, { metaKey: mac, ctrlKey: !mac });
+    expect(links).toHaveAttribute("aria-pressed", "true");
+    expect(pin).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    expect(screen.queryByText("Pinned plain")).toBeNull();
+    expect(
+      screen.queryByRole("checkbox", { name: "Select multiple" }),
+    ).toBeNull();
+    expect(
+      screen.getByText(/multiple/, { selector: ".history-filter-help" }),
+    ).toHaveTextContent("⌘/Ctrl + multiple");
+    fireEvent.click(pin, { metaKey: mac, ctrlKey: !mac });
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+    fireEvent.click(links, { metaKey: mac, ctrlKey: !mac });
+    expect(screen.getByRole("button", { name: "All 3" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getAllByRole("article")).toHaveLength(3);
+  });
+
   it("offers an empty Links filter without adding a message label", async () => {
     const user = userEvent.setup();
     const chat = {

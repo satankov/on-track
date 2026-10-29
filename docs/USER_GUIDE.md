@@ -236,3 +236,8 @@ keeping projects. `thr uninstall --delete-data` also deletes projects and manage
 attachments after showing the paths and asking for confirmation. Export a backup
 first if needed. See the [complete uninstall instructions](install/README.md#uninstall-next-release)
 for retained files, manual installations, interrupted cleanup, and Windows receipts.
+
+History filters can be combined with Command-click on Apple platforms or Ctrl-click
+on Windows/Linux; touch taps toggle directly. Messages must match every selected
+filter. All clears the selection. Desktop filters use available screen height
+independently of the composer.

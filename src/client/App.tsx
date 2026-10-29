@@ -1,3 +1,11 @@
+import {
+  additiveModifier,
+  filterKey,
+  isApplePlatform,
+  selectFilter,
+  type FilterId,
+  type HistoryFilter,
+} from "./history-filters.js";
 import { HighlightText } from "./HighlightText.js";
 import { rehypeSearchHighlight } from "./search-highlight.js";
 import {
@@ -120,8 +128,6 @@ const FILTER_LABEL_NAMES: Record<Label, string> = {
 
 const ICON_ONLY_MESSAGE_LABELS = new Set<Label>(["pin", "attention"]);
 const MESSAGE_COLLAPSED_HEIGHT_PX = 192;
-
-type HistoryFilter = "all" | "attachments" | "links" | Label;
 
 interface WorkspaceServerState {
   chats: Chat[];
@@ -2365,8 +2371,26 @@ function ChatWorkspace({
   copiedNoteId?: string;
   navigationDisabled: boolean;
 }) {
+  const labelName = (id: Label) => LABEL_NAMES[id];
   const explainReadOnly = useContext(ExampleReadOnlyContext);
   const historyRef = useRef<HTMLElement>(null);
+  const historyKey = filterKey(historyFilter);
+  const filterPointer = useRef("");
+  const applePlatform = isApplePlatform(
+    navigator.platform || navigator.userAgent,
+  );
+  const filterHelpId = useId();
+  const filterName = (filter: FilterId) =>
+    filter === "attachments"
+      ? "Files"
+      : filter === "links"
+        ? "Links"
+        : labelName(filter.slice(6) as Label);
+  const filterDescription = historyFilter.length
+    ? historyFilter.map(filterName).join(" + ")
+    : "All messages";
+  const isSelected = (filter: FilterId | "all") =>
+    filter === "all" ? !historyFilter.length : historyFilter.includes(filter);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchText, setSearchText] = useState(
     () => searchQueries.get(detail.id) ?? "",
@@ -2380,7 +2404,7 @@ function ChatWorkspace({
   const beforeFilterChange = useHistoryPosition(
     historyRef,
     detail.id,
-    historyFilter,
+    historyKey,
     readingPositions,
     Boolean(explainReadOnly),
     searchQuery.key,
@@ -2424,17 +2448,18 @@ function ChatWorkspace({
     matchesSearch(searchDocuments.get(note.id)!, searchQuery),
   );
   const visibleNotes = searchMatches.filter((note) => {
-    if (historyFilter === "all") return true;
-    if (historyFilter === "attachments") return hasAttachments(note);
-    if (historyFilter === "links") return linkedNoteIds.has(note.id);
-    return (note.labels ?? []).includes(historyFilter);
+    return historyFilter.every((filter) => {
+      if (filter === "attachments") return hasAttachments(note);
+      if (filter === "links") return linkedNoteIds.has(note.id);
+      return (note.labels ?? []).includes(filter.slice(6) as Label);
+    });
   });
   const timelineNow = useTimelineNow(visibleNotes);
   const futureStartId = visibleNotes.find(
     (note) => note.createdAt > timelineNow,
   )?.id;
   const showingEmptyFilter =
-    historyFilter !== "all" && visibleNotes.length === 0;
+    historyFilter.length > 0 && visibleNotes.length === 0;
   const editingAttachments =
     editingNote?.attachments?.filter((attachment) =>
       editingAttachmentIds.includes(attachment.id),
@@ -2623,13 +2648,48 @@ function ChatWorkspace({
     }
   }
 
-  function changeHistoryFilter(filter: HistoryFilter) {
-    beforeFilterChange(filter);
-    onHistoryFilterChange(filter);
+  function changeHistoryFilter(
+    filter: FilterId | "all",
+    event?: {
+      metaKey: boolean;
+      ctrlKey: boolean;
+      nativeEvent?: Event;
+      detail?: number;
+    },
+  ) {
+    // WebKit may expose a compatibility MouseEvent for a touch-generated click.
+    const touch = event?.detail !== 0 && filterPointer.current === "touch";
+    filterPointer.current = "";
+    const next = selectFilter(
+      historyFilter,
+      filter,
+      Boolean(
+        event &&
+        (additiveModifier(event, applePlatform) ||
+          touch ||
+          (event.nativeEvent as PointerEvent | undefined)?.pointerType ===
+            "touch"),
+      ),
+    );
+    beforeFilterChange(filterKey(next));
+    onHistoryFilterChange(next);
+  }
+
+  function filterKeyboard(
+    event: KeyboardEvent<HTMLButtonElement>,
+    filter: FilterId | "all",
+  ) {
+    if (
+      (event.key === "Enter" || event.key === " ") &&
+      additiveModifier(event, applePlatform)
+    ) {
+      event.preventDefault();
+      changeHistoryFilter(filter, event);
+    }
   }
 
   function commitSearch(value: string) {
-    beforeFilterChange(historyFilter, parseSearchQuery(value).key);
+    beforeFilterChange(historyKey, parseSearchQuery(value).key);
     setSearchText(value);
   }
 
@@ -2640,13 +2700,13 @@ function ChatWorkspace({
 
   function openSearch() {
     const searchDraft = searchQueries.get(detail.id) ?? "";
-    beforeFilterChange(historyFilter, parseSearchQuery(searchDraft).key);
+    beforeFilterChange(historyKey, parseSearchQuery(searchDraft).key);
     setSearchText(searchDraft);
     setSearchOpen(true);
   }
 
   function closeSearch() {
-    beforeFilterChange(historyFilter, "");
+    beforeFilterChange(historyKey, "");
     setSearchOpen(false);
     searchToggleRef.current?.focus();
   }
@@ -2658,7 +2718,7 @@ function ChatWorkspace({
       offset: 16,
     });
     setSearchOpen(false);
-    onHistoryFilterChange("all");
+    onHistoryFilterChange([]);
   }
 
   return (
@@ -2724,20 +2784,31 @@ function ChatWorkspace({
           status={
             searchQuery.error ??
             (searchQuery.key
-              ? `${visibleNotes.length} matching messages. ${historyFilter === "all" ? "All messages" : historyFilter === "attachments" ? "Files" : historyFilter === "links" ? "Links" : LABEL_NAMES[historyFilter]}.`
+              ? `${visibleNotes.length} matching messages. ${filterDescription}.`
               : "Search message text, people and filenames.")
           }
         />
       )}
 
-      <nav className="history-filter" aria-label="History filters">
+      <nav
+        className="history-filter"
+        aria-label="History filters"
+        aria-describedby={filterHelpId}
+        onPointerDown={(event) => {
+          filterPointer.current = event.pointerType;
+        }}
+        onPointerCancel={() => {
+          filterPointer.current = "";
+        }}
+      >
         <div className="history-filter-inner">
           <button
             type="button"
-            className={`history-filter-button ${historyFilter === "all" ? "history-filter-button--active" : ""}`}
+            className={`history-filter-button ${isSelected("all") ? "history-filter-button--active" : ""}`}
             aria-label={`All ${detail.notes.length}`}
-            aria-pressed={historyFilter === "all"}
-            onClick={() => changeHistoryFilter("all")}
+            aria-pressed={isSelected("all")}
+            onClick={(event) => changeHistoryFilter("all", event)}
+            onKeyDown={(event) => filterKeyboard(event, "all")}
           >
             <span className="history-filter-icon" aria-hidden="true">
               <ListIcon />
@@ -2747,10 +2818,11 @@ function ChatWorkspace({
           </button>
           <button
             type="button"
-            className={`history-filter-button ${historyFilter === "attachments" ? "history-filter-button--active" : ""}`}
+            className={`history-filter-button ${isSelected("attachments") ? "history-filter-button--active" : ""}`}
             aria-label={`Files ${attachmentCount}`}
-            aria-pressed={historyFilter === "attachments"}
-            onClick={() => changeHistoryFilter("attachments")}
+            aria-pressed={isSelected("attachments")}
+            onClick={(event) => changeHistoryFilter("attachments", event)}
+            onKeyDown={(event) => filterKeyboard(event, "attachments")}
           >
             <span className="history-filter-icon" aria-hidden="true">
               <PaperclipIcon />
@@ -2760,10 +2832,11 @@ function ChatWorkspace({
           </button>
           <button
             type="button"
-            className={`history-filter-button ${historyFilter === "links" ? "history-filter-button--active" : ""}`}
+            className={`history-filter-button ${isSelected("links") ? "history-filter-button--active" : ""}`}
             aria-label={`Links ${linkedNoteIds.size}`}
-            aria-pressed={historyFilter === "links"}
-            onClick={() => changeHistoryFilter("links")}
+            aria-pressed={isSelected("links")}
+            onClick={(event) => changeHistoryFilter("links", event)}
+            onKeyDown={(event) => filterKeyboard(event, "links")}
           >
             <span className="history-filter-icon" aria-hidden="true">
               <LinkIcon />
@@ -2778,24 +2851,34 @@ function ChatWorkspace({
             return (
               <button
                 type="button"
-                className={`history-filter-button ${historyFilter === label ? "history-filter-button--active" : ""}`}
-                aria-label={`${LABEL_NAMES[label]} ${count}`}
-                title={LABEL_NAMES[label]}
-                aria-pressed={historyFilter === label}
-                onClick={() => changeHistoryFilter(label)}
+                className={`history-filter-button ${isSelected(`label:${label}`) ? "history-filter-button--active" : ""}`}
+                aria-label={`${labelName(label)} ${count}`}
+                title={labelName(label)}
+                aria-pressed={isSelected(`label:${label}`)}
+                onClick={(event) =>
+                  changeHistoryFilter(`label:${label}`, event)
+                }
+                onKeyDown={(event) => filterKeyboard(event, `label:${label}`)}
                 key={label}
               >
                 <span className="history-filter-icon">
                   <LabelGlyph label={label} />
                 </span>
                 <span className="history-filter-label">
-                  {FILTER_LABEL_NAMES[label]}
+                  {FILTER_LABEL_NAMES[label] ?? labelName(label)}
                 </span>
                 <span className="history-filter-count">{count}</span>
               </button>
             );
           })}
         </div>
+        <p id={filterHelpId} className="history-filter-help">
+          <kbd>⌘/Ctrl</kbd> + multiple
+          <span className="visually-hidden">
+            . Hold Command or Control while selecting filters, or tap to toggle
+            on touch screens. Messages must match every selected filter.
+          </span>
+        </p>
       </nav>
 
       <section
@@ -2812,11 +2895,12 @@ function ChatWorkspace({
           <div className="no-notes no-notes--filtered">
             <h2>No matching messages</h2>
             <p>Try fewer words or clear the search.</p>
-            {historyFilter !== "all" && searchMatches.length > 0 && (
+            {historyFilter.length > 0 && searchMatches.length > 0 && (
               <button
                 type="button"
                 className="button button-quiet"
-                onClick={() => changeHistoryFilter("all")}
+                onClick={(event) => changeHistoryFilter("all", event)}
+                onKeyDown={(event) => filterKeyboard(event, "all")}
               >
                 Search all messages
               </button>
@@ -2835,18 +2919,12 @@ function ChatWorkspace({
         ) : showingEmptyFilter ? (
           <div className="message-groups">
             <div className="no-notes no-notes--filtered">
-              <p className="eyebrow">
-                {historyFilter === "attachments"
-                  ? "Files"
-                  : historyFilter === "links"
-                    ? "Links"
-                    : LABEL_NAMES[historyFilter]}
-              </p>
+              <p className="eyebrow">{filterDescription}</p>
               <h2>
                 No{" "}
-                {historyFilter === "attachments"
+                {historyFilter.length === 1 && isSelected("attachments")
                   ? "attached files"
-                  : historyFilter === "links"
+                  : historyFilter.length === 1 && isSelected("links")
                     ? "links"
                     : "matching messages"}{" "}
                 yet.
@@ -2854,6 +2932,13 @@ function ChatWorkspace({
               <p>
                 This project slice will update when a matching message appears.
               </p>
+              <button
+                type="button"
+                className="button button-quiet"
+                onClick={() => changeHistoryFilter("all")}
+              >
+                Show all messages
+              </button>
             </div>
           </div>
         ) : (
@@ -2876,7 +2961,7 @@ function ChatWorkspace({
 
       <HistoryNavigation
         historyRef={historyRef}
-        contentKey={`${detail.id}:${historyFilter}:${searchQuery.key}`}
+        contentKey={`${detail.id}:${historyKey}:${searchQuery.key}`}
       />
       <footer className="composer-wrap">
         <SearchSaveStatus
@@ -3291,7 +3376,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [draft, setDraft] = useState("");
   const [draftSender, setDraftSender] = useState("");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>([]);
   const [draftTimestamp, setDraftTimestamp] = useState("");
   const [composerSenderOpen, setComposerSenderOpen] = useState(false);
   const [composerTimestampOpen, setComposerTimestampOpen] = useState(false);
@@ -3382,6 +3467,17 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ) {
             return;
           }
+          setHistoryFilter((current) =>
+            current.filter(
+              (filter) =>
+                filter === "attachments" ||
+                filter === "links" ||
+                [
+                  ...PERMANENT_LABELS,
+                  ...(detail.enabledLabels ?? ["todo", "milestone"]),
+                ].some((label) => `label:${label}` === filter),
+            ),
+          );
           setWorkspace((current) =>
             commitProjectUpdate(
               current,
@@ -3429,7 +3525,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       selectionRequest.current++;
       pendingSelection.current = undefined;
       setExample(undefined);
-      setHistoryFilter("all");
+      setHistoryFilter([]);
     }
   }
   useEffect(() => {
@@ -3441,7 +3537,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           selectionRequest.current++;
           pendingSelection.current = undefined;
           setExample(undefined);
-          setHistoryFilter("all");
+          setHistoryFilter([]);
           setExampleNotice("Examples are hidden.");
         }
       }
@@ -3464,7 +3560,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       setExampleGlow(false);
       setExample(detail);
       setMode("projects");
-      setHistoryFilter("all");
+      setHistoryFilter([]);
       setExampleNotice("");
       setDraft("");
       setPendingFiles([]);
@@ -3520,7 +3616,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         activeId.current = detail.id;
         copiedFocus.current = detail.id;
         setLoadState("loaded");
-        setHistoryFilter("all");
+        setHistoryFilter([]);
         setCollapsedSections((current) => ({ ...current, Projects: false }));
       }
       setExampleNotice("Editable copy created.");
@@ -3633,7 +3729,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       setDraft("");
       resetSenderComposer();
       setPendingFiles([]);
-      setHistoryFilter("all");
+      setHistoryFilter([]);
       setDraftTimestamp("");
       setComposerTimestampOpen(false);
       setEditingNote(undefined);
@@ -3660,7 +3756,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setDraft("");
     resetSenderComposer();
     setPendingFiles([]);
-    setHistoryFilter("all");
+    setHistoryFilter([]);
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
     setEditingNote(undefined);
@@ -3793,14 +3889,15 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         }),
       ),
     );
-    if (
-      historyFilter !== "all" &&
-      historyFilter !== "attachments" &&
-      !PERMANENT_LABELS.includes(historyFilter as never) &&
-      !chat.enabledLabels.includes(historyFilter as ConfigurableLabel)
-    ) {
-      setHistoryFilter("all");
-    }
+    setHistoryFilter((current) =>
+      current.filter(
+        (filter) =>
+          filter === "attachments" ||
+          filter === "links" ||
+          PERMANENT_LABELS.includes(filter.slice(6) as never) ||
+          chat.enabledLabels.includes(filter.slice(6) as ConfigurableLabel),
+      ),
+    );
     setDialog(undefined);
     setMode("projects");
     if (activeId.current === projectId) focusMobileBackButton();
@@ -3828,7 +3925,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       setDraft("");
       resetSenderComposer();
       setPendingFiles([]);
-      setHistoryFilter("all");
+      setHistoryFilter([]);
       setDraftTimestamp("");
       setComposerTimestampOpen(false);
       setError("");
@@ -4172,7 +4269,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         setDraftTimestamp("");
         resetSenderComposer();
         setPendingFiles([]);
-        setHistoryFilter("all");
+        setHistoryFilter([]);
         setComposerTimestampOpen(false);
         setDraft("");
         setEditingNote(undefined);
@@ -4219,7 +4316,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setDraft("");
     resetSenderComposer();
     setPendingFiles([]);
-    setHistoryFilter("all");
+    setHistoryFilter([]);
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
     if (exampleSlug) {
