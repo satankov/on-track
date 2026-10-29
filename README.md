@@ -41,6 +41,14 @@ where you left off. Use it for work projects, a side project, or your next trip.
 - **Define actors.** Even though this is a personal threads, you can display
   information as if it were sent by someone else (a friend or your boss).
 
+## Ultra Quick start
+
+Prompt your AI agent:
+
+```
+Install this tool https://github.com/satankov/on-track
+```
+
 ## Quick start
 
 **macOS / Linux** — run in Terminal:

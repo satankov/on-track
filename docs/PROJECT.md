@@ -30,8 +30,8 @@ history filters, database-backed preferences and custom project labels in
 [plan 0031](plans/0031-multi-filters-durable-preferences-custom-labels.md).
 Current source uses schema 9; the published release remains schema 7. Its canonical
 standards are [DESIGN.md](../DESIGN.md), with an interactive reference under
-[branding/threadstr/ui](../branding/threadstr/ui/README.md). No next release
-version has been selected. The Zod dependency fix for issue #72 is complete
+[branding/threadstr/ui](../branding/threadstr/ui/README.md). The next candidate
+is v0.1.1; it has not been published. The Zod dependency fix for issue #72 is complete
 locally. Approved pre-release security maintenance also updates static serving
 and the paired Vitest packages; verification and tracker evidence are recorded in
 [plan 0025](plans/0025-security-audit-response.md#pre-release-security-maintenance-slice-a-2026-10-29). Security phases 1–4 remain implemented;

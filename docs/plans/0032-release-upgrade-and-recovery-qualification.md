@@ -149,3 +149,85 @@ The approved local Slice B is complete. The remaining release gates are the
 platform matrix and manual/published-candidate checks described in
 `docs/RELEASING.md` and tracked by the existing installation/platform issues.
 No push, issue modification, tag or release was performed.
+
+## Remaining local platform qualification — 2026-10-29
+
+After committing Slice B as `4f3e134`, the user requested continuation of the
+remaining release work. The next local checks use that exact commit in two
+independent disposable clones, leaving the user's README edit and working
+installation unchanged.
+
+1. Verify and extract official macOS arm64 Node 22.16.0 and the already pinned
+   Node 24.14.0 into temporary directories. Keep separate dependencies and build
+   outputs for their different native ABIs.
+2. Sequentially run clean `npm ci`, native SQLite loading, and
+   `CI=true npm run verify` on both runtimes. The Node 24 aggregate also exercises
+   the real two-process managed-uninstall dispatcher relevant to issue #62.
+3. Run `node scripts/verify-managed-runtime.mjs` once to verify all four pinned
+   runtime archives against official checksums and sizes. Rehearse managed asset
+   packaging from the clean committed copy without publishing or selecting a
+   new release version.
+4. Reconcile current GitHub results by commit and distinguish completed local
+   checks from remaining Linux/Windows/macOS Intel, clean-machine and real
+   desktop/published-upgrade checks. Do not repeat the completed v0.0.8 baseline
+   gate without a relevant change.
+
+Acceptance: both local runtime gates and artifact checks pass, or concrete
+failures are diagnosed and recorded. No application feature, schema, dependency
+version, system Node, shell profile or user data change is planned. Test outputs
+stay outside tracked source. Remote mutations and publication remain separate
+actions requiring explicit approval under `AGENTS.md`.
+
+The user selected **v0.1.1** during this qualification. Prepare matching package
+and lockfile versions plus complete release notes, retaining the published
+v0.1.0 history. Validate the local release contract with `RELEASE_TAG=v0.1.1`.
+The runtime matrix above qualifies implementation commit `4f3e134`; final
+versioned packaging and remote CI must identify the eventual candidate commit.
+
+### Runtime matrix and version preparation results
+
+On macOS **15.8.1 (24H32), arm64**, zsh 5.9, both independent clean clones of
+`4f3e134755a4d3e951cdbd3bc8e2e5386651c3aa` passed:
+
+| Runtime      | Bundled npm | Clean install/native SQLite | Full verification |
+| ------------ | ----------- | --------------------------- | ----------------- |
+| Node 22.16.0 | 10.9.2      | PASS; SQLite 3.53.1         | PASS              |
+| Node 24.14.0 | 11.9.0      | PASS; SQLite 3.53.1         | PASS              |
+
+Each aggregate passed 83 files/1,120 tests (nine platform skips), 28 migration
+tests, 82 browser tests (16 intentional skips), audit with zero production
+findings, and real-process lifecycle/update/uninstall checks. Coverage remained
+91.09% statements, 85.64% branches, 93.01% functions and 92.23% lines. The Node 24
+uninstall log confirms dispatch through `bin/command.mjs`, adding macOS arm64
+evidence for issue #62. This does not qualify its Windows/Linux requirements.
+Logs and runtime provenance are under `/tmp/ontrack-release-matrix.g66KCz/`.
+
+The clean implementation snapshot passed managed-asset packaging with floor
+`0.0.7`. That rehearsal retained its old manifest version and is stored under
+`packaging-rehearsal-not-for-publication`; those assets are not v0.1.1 release
+assets. Final versioned assets require the committed preparation.
+
+The user-selected v0.1.1 changes only the three root manifest version fields;
+dependencies are unchanged. Complete release notes cover the previously missing
+flat UI, preferences, intersecting filters, custom labels and schema-9 upgrade
+limits. `RELEASE_TAG=v0.1.1 npm run release:check`, all 24 release-contract tests,
+and the versioned build passed. Review found no actionable release-preparation
+issues. The user subsequently requested inclusion of their README addition.
+
+Current GitHub main is `6bb41be`, whose October 23 matrix passed. It does not
+contain the candidate. The old PR #68 Node-24 failure was the Zod audit already
+fixed locally; its Node-22 job timed out during Ubuntu package downloads before
+tests. All five native jobs on that PR passed. Neither result qualifies the
+current candidate. Fresh CI is still needed without weakening its gates.
+
+Main's docs-only squash `6bb41be` has the same tree as local `9ee198e`. A merge
+preview identifies only a README screenshot-caption conflict and three screenshot
+conflicts; the release branch contains the newer versions. Replaying the release
+commits onto current main while omitting that equivalent docs commit can preserve
+the final content. No branch integration or remote mutation has been performed.
+
+The direct official-runtime verifier did not finish on this network: the first
+attempt verified macOS arm64 then timed out downloading Intel, and the second
+ended with a terminated response. Separate bounded official downloads are in
+progress for validation by the same unchanged hash/size checker; no all-platform
+runtime-byte PASS is claimed yet.

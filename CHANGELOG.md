@@ -6,6 +6,29 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-29
+
+### Added
+
+- Combine history filters with Command/Control selection on desktop or taps on
+  touch devices. Selected filters intersect with each other and project search.
+- Store theme, Examples visibility, and sidebar disclosure preferences in the
+  local database so they survive cleared browser storage. Full backups include
+  these preferences; selected-project backups and merge imports preserve the
+  destination workspace's preferences.
+- Configure up to five custom labels per project, with short names, optional
+  symbols, enablement, drag ordering, and explicit Save-based removal. Removing
+  a label clears its assignments without deleting messages.
+
+### Changed
+
+- Refresh the workspace with a consistent flat visual design, compact controls,
+  and project-label editing. Desktop filter height stays independent of composer
+  growth.
+- Advance the database schema from 7 to 9 for preferences and project labels.
+  Legacy backups remain importable; backup format 1, existing data paths, the
+  `ontrack` alias, and managed compatibility floor `0.0.7` remain unchanged.
+
 ### Security
 
 - Update Zod to 4.6.7 to reject oversized bounded collections before allocating
@@ -13,6 +36,16 @@ below `1.0.0`, releases may contain breaking changes.
   attachments, and backup selection.
 - Update `@fastify/static` to 10.1.7, including the case-folded path guard fix,
   and Vitest/coverage to 4.1.12 for the upstream mock-registration fixes.
+
+### Known limitations
+
+- This remains a plaintext alpha: databases, attachments, checkpoints, and
+  exported backups are not encrypted. Export a backup before upgrading; older
+  releases cannot reopen a schema-9 database after activation commits.
+- Managed installation remains experimental. Clean-machine installation,
+  published-candidate upgrades, and remaining native-platform and
+  assistive-technology checks still require evidence. Local automated checks
+  do not establish those guarantees.
 
 ## [0.1.0] - 2026-10-22
 
