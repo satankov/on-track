@@ -3894,3 +3894,169 @@ kbd {
     gap: 4px;
   }
 }
+
+/* Flat project subthreads reuse the rail, date markers and icon controls. */
+.project-row--subthread {
+  margin-left: 24px;
+}
+.subthread-disclosure-row {
+  margin-left: 24px;
+  list-style: none;
+}
+.subthread-disclosure {
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.subthread-disclosure:hover {
+  color: var(--ink);
+  background: var(--selection);
+}
+.chat-heading .subthread-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: 100%;
+}
+.subthread-parent-title {
+  flex: 0 1 auto;
+  max-width: 40%;
+  min-width: 0;
+  text-align: left;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  letter-spacing: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.subthread-parent-title:hover {
+  color: var(--ink);
+}
+.subthread-title-separator {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.conversation-title {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subthread-heading .conversation-title {
+  flex: 1 1 60%;
+}
+.thread-origin {
+  max-width: var(--chat-column-width);
+  margin: 0 auto 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.thread-origin button {
+  padding: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.thread-origin button:hover {
+  color: var(--ink);
+  background: var(--selection);
+}
+.message-row:has(.thread-continuation) {
+  flex-wrap: wrap;
+}
+.thread-continuation {
+  flex: 0 0 100%;
+  margin: 8px 0 0;
+}
+.project-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.project-search-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.project-search-scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 44px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.project-search-scope input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--button-primary);
+}
+.project-search-results {
+  max-width: var(--chat-column-width);
+  margin: 0 auto;
+}
+.project-search-results > section + section {
+  margin-top: 24px;
+}
+.project-search-result {
+  margin: 8px 0;
+}
+.project-search-result-context {
+  gap: 12px;
+  overflow-wrap: anywhere;
+}
+.project-search-result-body {
+  margin: 0;
+}
+.project-search-result-file {
+  margin: 8px 0 0;
+  color: var(--message-muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.project-search-result-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  color: var(--message-muted);
+  font-size: 0.72rem;
+}
+.project-search-result-footer .message-history-button {
+  position: static;
+  transform: none;
+  margin-left: auto;
+}
+@media (min-width: 961px) {
+  .workspace-chat:not(.workspace-example) .message-stack {
+    max-width: min(760px, 82%, calc(100% - 160px));
+  }
+}
+@media (forced-colors: active) {
+  .thread-origin button,
+  .subthread-parent-title {
+    color: LinkText;
+  }
+}

@@ -56,6 +56,8 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
     copyExample: vi.fn(),
     listChats: vi.fn().mockResolvedValue([]),
     getChat: vi.fn(),
+    createSubthread: vi.fn(),
+    getProject: vi.fn(),
     createChat: vi.fn().mockResolvedValue({
       id: "chat-1",
       title: "Launch",
@@ -1214,7 +1216,7 @@ describe("personal project chat workspace", () => {
       screen.getByRole("heading", { name: "Choose a project to continue." }),
     ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Open Home journey" }));
-    expect(screen.getByLabelText("Add a note")).toHaveValue("");
+    expect(screen.getByLabelText("Add a note")).toHaveValue("Draft");
     await user.click(screen.getByRole("button", { name: "Edit" }));
     await user.click(screen.getByRole("link", { name: "Home" }));
     expect(
@@ -2553,6 +2555,7 @@ describe("personal project chat workspace", () => {
         .map((button) => button.getAttribute("aria-label")),
     ).toEqual([
       "Change labels",
+      "Continue in subthread",
       "Copy message",
       "Edit message",
       "Delete message",
@@ -5345,4 +5348,333 @@ describe("personal project chat workspace", () => {
       .filter((label) => label?.startsWith("Open "));
     expect(projectButtons).toEqual(["Open Beta updated", "Open Alpha"]);
   });
+});
+
+it("keeps subthreads under Main, expands five then all, and collapses without closing Main", async () => {
+  const root = {
+    id: "root",
+    title: "Website redesign",
+    accent: "ocean",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const children = Array.from({ length: 7 }, (_, index) => ({
+    ...root,
+    id: `child-${index}`,
+    projectId: root.id,
+    title: `Topic ${index}`,
+    pinnedAt: index === 6 ? 3 : null,
+  }));
+  const api = createApi({
+    listChats: vi.fn().mockResolvedValue([root, ...children]),
+    getChat: vi.fn(
+      async (id) =>
+        ({
+          ...[root, ...children].find((chat) => chat.id === id)!,
+          notes: [],
+        }) as never,
+    ),
+  });
+  render(<App api={api} />);
+  const open = await screen.findByRole("button", {
+    name: "Open Website redesign",
+  });
+  expect(
+    screen.queryByRole("button", { name: "Open Topic 6" }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(open);
+  await screen.findByRole("heading", { name: "Website redesign" });
+  expect(
+    screen.getByRole("button", { name: "Open Topic 6" }),
+  ).toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: /^Open Topic/ })).toHaveLength(
+    5,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Show all subthreads" }));
+  expect(screen.getAllByRole("button", { name: /^Open Topic/ })).toHaveLength(
+    7,
+  );
+  fireEvent.click(open);
+  expect(
+    screen.queryByRole("button", { name: /^Open Topic/ }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "Website redesign" }),
+  ).toBeInTheDocument();
+});
+
+it("offers continuation between labels and copy and creates an empty named subthread", async () => {
+  const root = {
+    id: "root",
+    title: "Website redesign",
+    accent: "ocean",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const note = {
+    id: "source",
+    chatId: "root",
+    body: "Try a simpler navigation",
+    sender: null,
+    labels: [],
+    createdAt: 1,
+  };
+  const child = {
+    ...root,
+    id: "child",
+    projectId: "root",
+    title: "Navigation",
+    origin: { sourceChatId: "root", sourceNoteId: "source" },
+  };
+  const api = createApi({
+    listChats: vi.fn().mockResolvedValue([root]),
+    getChat: vi.fn().mockResolvedValue({ ...root, notes: [note] }),
+    createSubthread: vi.fn().mockResolvedValue(child),
+  } as Partial<ApiClient>);
+  render(<App api={api} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Open Website redesign" }),
+  );
+  const actions = (
+    await screen.findByRole("button", { name: "Copy message" })
+  ).closest(".message-actions")!;
+  expect(
+    within(actions as HTMLElement)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label")),
+  ).toEqual([
+    "Change labels",
+    "Continue in subthread",
+    "Copy message",
+    "Edit message",
+    "Delete message",
+  ]);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Continue in subthread" }),
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Subthread name" }), {
+    target: { value: "Navigation" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create subthread" }));
+  await waitFor(() => expect(api.createSubthread).toHaveBeenCalled());
+  await screen.findByRole("heading", { name: "Website redesign / Navigation" });
+  expect(api.createSubthread).toHaveBeenCalledWith("root", {
+    title: "Navigation",
+    sourceNoteId: "source",
+  });
+  expect(screen.queryByText(note.body)).not.toBeInTheDocument();
+  expect(screen.getByText("Subthread from")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  expect(
+    screen.queryByRole("group", { name: "Project accent" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Delete subthread" }),
+  ).toBeInTheDocument();
+});
+
+it("preserves edits typed during navigation and clears cached work after replacement", async () => {
+  const user = userEvent.setup();
+  const root = {
+    id: "draft-root",
+    title: "Draft project",
+    accent: "ocean" as const,
+    enabledLabels: [],
+    collapseLongMessages: true,
+    archivedAt: null,
+    pinnedAt: null,
+    latestAttentionAt: null,
+    nextAttentionAt: null,
+    createdAt: 1,
+    updatedAt: 1,
+    notes: [],
+  };
+  const child = {
+    ...root,
+    id: "draft-child",
+    title: "Side topic",
+    projectId: root.id,
+  };
+  const pending = deferred<typeof child>();
+  let waitForChild = true;
+  const api = createApi({
+    listChats: vi.fn().mockResolvedValue([root, child]),
+    getChat: vi.fn((id) =>
+      id === root.id
+        ? Promise.resolve(root)
+        : waitForChild
+          ? pending.promise
+          : Promise.resolve(child),
+    ) as ApiClient["getChat"],
+  });
+  render(<App api={api} />);
+  await user.click(
+    await screen.findByRole("button", { name: "Open Draft project" }),
+  );
+  await user.type(screen.getByLabelText("Add a note"), "Before");
+  fireEvent.click(screen.getByRole("button", { name: "Open Side topic" }));
+  await user.type(screen.getByLabelText("Add a note"), " during navigation");
+  await act(async () => {
+    waitForChild = false;
+    pending.resolve(child);
+  });
+  await user.click(screen.getByRole("button", { name: "Draft project" }));
+  expect(screen.getByLabelText("Add a note")).toHaveValue(
+    "Before during navigation",
+  );
+  await user.click(screen.getByRole("button", { name: "Open Side topic" }));
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  await user.click(screen.getByRole("button", { name: /Settings/ }));
+  await user.click(screen.getByRole("button", { name: /Backups/ }));
+  await user.upload(
+    screen.getByLabelText("Choose threadstr backup"),
+    new File(["data"], "data.on-track-backup"),
+  );
+  await user.click(
+    await screen.findByRole("radio", { name: "Replace whole DB" }),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Replace with selected (1)" }),
+  );
+  await waitFor(() => expect(api.importDatabase).toHaveBeenCalled());
+  await user.click(screen.getByRole("button", { name: "Back to projects" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Open Draft project" }),
+  );
+  expect(screen.getByLabelText("Add a note")).toHaveValue("");
+});
+
+it("retains a newly created subthread when a stale refresh finishes later", async () => {
+  const root = {
+    id: "race-root",
+    title: "Race project",
+    accent: "ocean",
+    createdAt: 1,
+    updatedAt: 1,
+    notes: [],
+  };
+  const child = {
+    ...root,
+    id: "race-child",
+    projectId: root.id,
+    title: "New topic",
+  };
+  const creation = deferred<typeof child>();
+  const staleList = deferred<(typeof root)[]>();
+  const api = createApi({
+    listChats: vi
+      .fn()
+      .mockResolvedValueOnce([root])
+      .mockReturnValue(staleList.promise),
+    getChat: vi.fn().mockResolvedValue(root),
+    createSubthread: vi.fn().mockReturnValue(creation.promise),
+  });
+  render(<App api={api} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Open Race project" }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "New subthread" }));
+  fireEvent.change(screen.getByLabelText("Subthread name"), {
+    target: { value: "New topic" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create subthread" }));
+  fireEvent(window, new Event("focus"));
+  await act(async () => creation.resolve(child));
+  await act(async () => staleList.resolve([root]));
+  expect(
+    screen.getByRole("button", { name: "Open New topic" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "Race project / New topic" }),
+  ).toBeInTheDocument();
+});
+
+it("deduplicates a created child observed by a refresh before the create response", async () => {
+  const root = {
+    id: "observed-root",
+    title: "Observed project",
+    accent: "ocean",
+    createdAt: 1,
+    updatedAt: 1,
+    notes: [],
+  };
+  const child = {
+    ...root,
+    id: "observed-child",
+    projectId: root.id,
+    title: "Observed topic",
+  };
+  const creation = deferred<typeof child>();
+  const api = createApi({
+    listChats: vi
+      .fn()
+      .mockResolvedValueOnce([root])
+      .mockResolvedValue([root, child]),
+    getChat: vi.fn().mockResolvedValue(root),
+    createSubthread: vi.fn().mockReturnValue(creation.promise),
+  });
+  render(<App api={api} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Open Observed project" }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "New subthread" }));
+  fireEvent.change(screen.getByLabelText("Subthread name"), {
+    target: { value: "Observed topic" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create subthread" }));
+  fireEvent(window, new Event("focus"));
+  await screen.findByRole("button", { name: "Open Observed topic" });
+  await act(async () => creation.resolve(child));
+  expect(
+    screen.getAllByRole("button", { name: "Open Observed topic" }),
+  ).toHaveLength(1);
+});
+
+it("updates the open child origin when its source deletion finishes after navigation", async () => {
+  const root = {
+    id: "deleted-root",
+    title: "Source project",
+    accent: "ocean",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const note = {
+    id: "deleted-note",
+    chatId: root.id,
+    body: "Original source",
+    labels: [],
+    sender: null,
+    createdAt: 1,
+  };
+  const child = {
+    ...root,
+    id: "deleted-child",
+    projectId: root.id,
+    title: "Continued topic",
+    origin: { sourceChatId: root.id, sourceNoteId: note.id },
+  };
+  const deletion = deferred<void>();
+  const api = createApi({
+    listChats: vi.fn().mockResolvedValue([root, child]),
+    getChat: vi
+      .fn()
+      .mockImplementation(async (id) =>
+        id === root.id ? { ...root, notes: [note] } : { ...child, notes: [] },
+      ),
+    deleteNote: vi.fn().mockReturnValue(deletion.promise),
+  });
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  render(<App api={api} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Open Source project" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Delete message" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Open Continued topic" }));
+  await screen.findByRole("heading", {
+    name: "Source project / Continued topic",
+  });
+  await act(async () => deletion.resolve());
+  expect(screen.getByText(/Original message deleted/)).toBeInTheDocument();
 });

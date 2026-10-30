@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>threadstr · Subthreads desktop concept</title>
+    <link rel="icon" href="../v1/social/threadstr-thr-square-dark.svg" />
+    <link rel="stylesheet" href="../../../src/client/styles.css" />
+    <link rel="stylesheet" href="mockup.css" />
+    <script src="mockup.js" defer></script>
+  </head>
+  <body class="prototype">
+    <header class="prototype-toolbar" aria-label="Design preview controls">
+      <span class="prototype-label"
+        >Subthreads <span>· Desktop concept</span></span
+      >
+      <nav aria-label="Mockup views">
+        <button type="button" data-scene="sidebar" aria-pressed="true">
+          Sidebar
+        </button>
+        <button type="button" data-scene="source" aria-pressed="false">
+          From a message
+        </button>
+        <button type="button" data-scene="subthread" aria-pressed="false">
+          Subthread
+        </button>
+        <button type="button" data-scene="titles" aria-pressed="false">
+          Titles
+        </button>
+      </nav>
+      <label class="prototype-theme"
+        >Theme
+        <select id="preview-theme" aria-label="Preview theme">
+          <option value="light">Light</option>
+          <option value="neutral">Neutral</option>
+          <option value="dark" selected>Dark</option>
+        </select>
+      </label>
+      <span class="prototype-sample">Sample data</span>
+    </header>
+    <div class="app-shell" id="preview-shell" data-accent="ocean">
+      <aside class="project-rail" aria-label="Projects">
+        <header class="rail-header">
+          <a class="brand-mark" href="#main" aria-label="threadstr home">
+            <img
+              class="brand-wordmark brand-wordmark--light"
+              src="../v1/wordmark/threadstr-wordmark-on-light.svg"
+              alt="threadstr"
+            />
+            <img
+              class="brand-wordmark brand-wordmark--dark"
+              src="../v1/wordmark/threadstr-wordmark-on-dark.svg"
+              alt="threadstr"
+            />
+            <span class="brand-fallback">threadstr</span>
+          </a>
+          <button
+            class="new-project-button"
+            type="button"
+            disabled
+            aria-label="New project"
+            title="New project (outside this preview)"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+        </header>
+        <nav
+          class="project-list"
+          id="project-list"
+          aria-label="Project threads"
+        ></nav>
+        <footer class="local-footnote">
+          <span class="local-indicator" aria-hidden="true"></span>
+          <span class="local-footnote-copy"><strong>Local only</strong></span>
+        </footer>
+      </aside>
+      <main class="workspace workspace-chat" id="chat" data-accent="ocean">
+        <header class="chat-header" id="chat-header"></header>
+        <div class="project-search subthread-search" id="search" hidden>
+          <div class="project-search-field">
+            <input
+              id="search-input"
+              type="search"
+              aria-label="Search messages"
+              placeholder="Search messages…"
+            />
+          </div>
+          <label class="search-scope"
+            ><input id="search-project" type="checkbox" /><span
+              >Project</span
+            ></label
+          >
+          <span
+            class="project-search-count"
+            id="search-count"
+            role="status"
+          ></span>
+        </div>
+        <aside
+          class="history-filter"
+          aria-label="History filters"
+          id="filters"
+        ></aside>
+        <section
+          class="history"
+          id="history"
+          aria-label="Message history"
+        ></section>
+        <div class="composer-wrap">
+          <form class="composer" id="composer">
+            <div class="composer-content">
+              <div class="composer-input-row">
+                <textarea
+                  id="message-input"
+                  rows="2"
+                  aria-label="New message"
+                  placeholder="Add a note to this project…"
+                ></textarea>
+              </div>
+            </div>
+            <div class="composer-bar">
+              <span class="composer-shortcut">⌘ / Ctrl + Enter to send</span>
+              <div class="composer-actions">
+                <button
+                  class="send-button"
+                  type="submit"
+                  id="send-button"
+                  disabled
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </main>
+      <main
+        class="workspace settings-workspace project-edit-workspace"
+        id="edit-workspace"
+        aria-label="Edit subthread"
+        hidden
+      ></main>
+    </div>
+    <main id="title-comparison" class="title-comparison" hidden>
+      <section class="title-specimen" aria-labelledby="main-title-label">
+        <p class="field-label" id="main-title-label">
+          Project · main conversation
+        </p>
+        <div id="main-title-preview" data-accent="ocean"></div>
+      </section>
+      <section class="title-specimen" aria-labelledby="child-title-label">
+        <p class="field-label" id="child-title-label">
+          Subthread · same project, own conversation
+        </p>
+        <div id="child-title-preview" data-accent="ocean"></div>
+      </section>
+      <div class="title-note">
+        The project name links back to Main. The subthread keeps the same title
+        style and inherits the project accent.
+      </div>
+      <section
+        class="title-specimen long-title-specimen"
+        aria-labelledby="long-title-label"
+      >
+        <p class="field-label" id="long-title-label">
+          Long names · both titles remain visible
+        </p>
+        <div id="long-title-preview" data-accent="ocean"></div>
+      </section>
+      <section
+        class="origin-comparison"
+        aria-label="Subthread beginnings"
+        data-accent="ocean"
+      >
+        <div>
+          <p class="field-label">Continued from a message</p>
+          <div class="message-date-separator">30 October 2026</div>
+          <div class="message-date-separator subthread-event">
+            Subthread from <a href="#main/source-pricing">Website redesign</a>
+          </div>
+        </div>
+        <div>
+          <p class="field-label">Independent subthread</p>
+          <div class="message-date-separator">30 October 2026</div>
+          <div class="message-date-separator subthread-event">
+            Independent subthread
+          </div>
+        </div>
+      </section>
+    </main>
+    <dialog
+      class="dialog-backdrop"
+      id="create-dialog"
+      aria-labelledby="create-title"
+    >
+      <form class="project-dialog project-settings-fields" id="create-form">
+        <h2 id="create-title">New subthread</h2>
+        <label class="field-label" for="subthread-name">Name</label>
+        <input
+          class="text-input"
+          id="subthread-name"
+          name="name"
+          required
+          maxlength="100"
+          placeholder="Subthread name"
+          autocomplete="off"
+        />
+        <p class="field-help" id="create-origin"></p>
+        <div class="dialog-actions">
+          <button class="button button-quiet" type="button" id="cancel-create">
+            Cancel</button
+          ><button class="button button-primary" type="submit">
+            Create subthread
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog
+      class="dialog-backdrop"
+      id="delete-dialog"
+      aria-labelledby="delete-title"
+    >
+      <form class="project-dialog" method="dialog">
+        <h2 id="delete-title">Delete subthread?</h2>
+        <p class="field-help">
+          This removes the selected sample conversation from the preview.
+          Reloading restores all sample data.
+        </p>
+        <div class="dialog-actions">
+          <button class="button button-quiet" value="cancel">Cancel</button
+          ><button class="button button-danger" value="delete">
+            Delete subthread
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <span class="visually-hidden" id="announcement" role="status"></span>
+    <dialog
+      class="dialog-backdrop"
+      id="message-dialog"
+      aria-labelledby="message-dialog-title"
+    >
+      <form
+        class="project-dialog project-settings-fields"
+        id="message-form"
+      ></form>
+    </dialog>
+  </body>
+</html>

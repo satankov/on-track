@@ -1,3 +1,5 @@
+import { ProjectSearchResults } from "./ProjectSearchResults.js";
+import { findProjectSearchResults } from "./project-search-results.js";
 import { labelDisplayName } from "./label-display.js";
 import { ProjectLabelContext } from "./label-context.js";
 import { ProjectLabelsEditor } from "./ProjectLabelsEditor.js";
@@ -76,6 +78,7 @@ import {
 } from "./markdown-assistance.js";
 import { THEMES, type Theme } from "./theme.js";
 import {
+  restoreReadingPosition,
   useHistoryPosition,
   type ReadingPosition,
 } from "./history-position.js";
@@ -172,6 +175,8 @@ function chatFromDetail(detail: ChatDetail, now = Date.now()): Chat {
     .map((note) => note.createdAt);
   return {
     id: detail.id,
+    projectId: detail.projectId ?? null,
+    origin: detail.origin ?? null,
     title: detail.title,
     accent: detail.accent,
     enabledLabels: detail.enabledLabels,
@@ -548,6 +553,96 @@ function ProjectForm({ chat, onCancel, onSubmit }: ProjectFormProps) {
   );
 }
 
+function SubthreadForm({
+  source,
+  onCancel,
+  onSubmit,
+}: {
+  source: { chatId: string; sourceNoteId?: string };
+  onCancel: () => void;
+  onSubmit: (title: string) => Promise<void>;
+}) {
+  const dialogRef = useModalDialog();
+  const [title, setTitle] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  return (
+    <dialog
+      ref={dialogRef}
+      open
+      className="dialog-backdrop"
+      aria-labelledby="subthread-dialog-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!saving) onCancel();
+      }}
+      onMouseDown={(event) => {
+        if (!saving && event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <section className="project-dialog">
+        <h2 id="subthread-dialog-title">
+          {source.sourceNoteId ? "Continue in subthread" : "New subthread"}
+        </h2>
+        <form
+          className="project-settings-fields"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (saving) return;
+            setSaving(true);
+            setError("");
+            try {
+              await onSubmit(title.trim());
+            } catch (caught) {
+              setError(
+                errorMessage(caught, "The subthread could not be created."),
+              );
+              setSaving(false);
+            }
+          }}
+        >
+          <label className="field-label" htmlFor="subthread-title">
+            Subthread name
+          </label>
+          <input
+            id="subthread-title"
+            className="text-input"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            maxLength={80}
+            required
+            disabled={saving}
+          />
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="dialog-actions">
+            <div className="dialog-action-buttons">
+              <button
+                className="button button-quiet"
+                type="button"
+                onClick={onCancel}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                className="button button-primary"
+                type="submit"
+                disabled={saving || !title.trim()}
+              >
+                {saving ? "Creating…" : "Create subthread"}
+              </button>
+            </div>
+          </div>
+        </form>
+      </section>
+    </dialog>
+  );
+}
+
 function ProjectEditWorkspace({
   chat,
   onBack,
@@ -562,12 +657,14 @@ function ProjectEditWorkspace({
   onBack: () => void;
   onSubmit: (input: {
     title: string;
-    accent: Accent;
+    accent?: Accent;
     labelConfiguration: LabelConfiguration;
     collapseLongMessages: boolean;
   }) => Promise<void>;
   onDelete: () => Promise<void>;
 }) {
+  const isSubthread = Boolean(chat.projectId);
+  const kind = isSubthread ? "subthread" : "project";
   const [title, setTitle] = useState(chat.title);
   const [accent, setAccent] = useState<Accent>(chat.accent);
   const [labelDrafts, setLabelDrafts] = useState<LabelDraft[]>(() =>
@@ -610,8 +707,8 @@ function ProjectEditWorkspace({
       await onToggleArchived();
       setArchiveStatus(
         chat.archivedAt == null
-          ? "Project moved to Archive."
-          : "Project restored to Projects.",
+          ? `${isSubthread ? "Subthread" : "Project"} moved to Archive.`
+          : `${isSubthread ? "Subthread" : "Project"} restored.`,
       );
     } catch (caught) {
       setError({
@@ -639,7 +736,7 @@ function ProjectEditWorkspace({
         );
       await onSubmit({
         title,
-        accent,
+        ...(isSubthread ? {} : { accent }),
         labelConfiguration: config.data,
         collapseLongMessages,
       });
@@ -653,7 +750,11 @@ function ProjectEditWorkspace({
   }
 
   async function handleDelete() {
-    if (!window.confirm(`Delete "${chat.title}" and all of its messages?`)) {
+    if (
+      !window.confirm(
+        `Delete "${chat.title}" and all of its ${isSubthread ? "messages and files" : "subthreads, messages and files"}?`,
+      )
+    ) {
       return;
     }
     setDeleting(true);
@@ -672,7 +773,7 @@ function ProjectEditWorkspace({
   return (
     <main
       className="workspace settings-workspace project-edit-workspace"
-      aria-label="Edit project"
+      aria-label={`Edit ${kind}`}
       data-accent={accent}
     >
       <form
@@ -704,7 +805,7 @@ function ProjectEditWorkspace({
         )}
         <div>
           <label className="field-label" htmlFor="project-edit-name">
-            Project name
+            {isSubthread ? "Subthread name" : "Project name"}
           </label>
           <input
             autoFocus
@@ -716,11 +817,13 @@ function ProjectEditWorkspace({
             required
           />
         </div>
-        <ProjectAccentPicker
-          accent={accent}
-          onChange={setAccent}
-          name="project-edit-accent"
-        />
+        {!isSubthread && (
+          <ProjectAccentPicker
+            accent={accent}
+            onChange={setAccent}
+            name="project-edit-accent"
+          />
+        )}
         <ProjectLabelsEditor
           labels={labelDrafts}
           onChange={setLabelDrafts}
@@ -770,7 +873,7 @@ function ProjectEditWorkspace({
             }
           >
             <ArchiveRestoreIcon />
-            {chat.archivedAt == null ? "Archive project" : "Restore project"}
+            {chat.archivedAt == null ? `Archive ${kind}` : `Restore ${kind}`}
           </button>
           <p id="project-archive-help" className="field-help">
             Archiving keeps all messages and files.
@@ -782,7 +885,7 @@ function ProjectEditWorkspace({
             disabled={saving || deleting || mutationPending}
           >
             <TrashIcon />
-            {deleting ? "Deleting…" : "Delete project"}
+            {deleting ? "Deleting…" : `Delete ${kind}`}
           </button>
         </div>
       </form>
@@ -798,6 +901,7 @@ function ProjectRail({
   onToggleSection,
   chats,
   activeId,
+  expandedProjects,
   onSelect,
   onTogglePinned,
   onRestore,
@@ -815,6 +919,7 @@ function ProjectRail({
   onToggleSection: (section: RailSection) => void;
   chats: Chat[];
   activeId?: string;
+  expandedProjects: ReadonlySet<string>;
   onSelect: (id: string) => void;
   onTogglePinned: (chat: Chat) => void;
   onRestore: (chat: Chat) => void;
@@ -825,16 +930,24 @@ function ProjectRail({
   pinErrors: Record<string, string>;
   projectMutationIds: ReadonlySet<string>;
 }) {
+  const [showAll, setShowAll] = useState<ReadonlySet<string>>(() => new Set());
   const [now, setNow] = useState(() => Date.now());
   const boundaryCallback = useRef(onTemporalBoundary);
   const handledTemporalKey = useRef("");
   const pinned = chats.filter(
-    (chat) => chat.archivedAt == null && chat.pinnedAt != null,
+    (chat) =>
+      !chat.projectId && chat.archivedAt == null && chat.pinnedAt != null,
   );
   const projects = chats.filter(
-    (chat) => chat.archivedAt == null && chat.pinnedAt == null,
+    (chat) =>
+      !chat.projectId && chat.archivedAt == null && chat.pinnedAt == null,
   );
-  const archived = chats.filter((chat) => chat.archivedAt != null);
+  const archived = chats.filter(
+    (chat) =>
+      chat.archivedAt != null &&
+      (!chat.projectId ||
+        chats.find((root) => root.id === chat.projectId)?.archivedAt == null),
+  );
   const temporalKey = chats
     .map((chat) => `${chat.id}:${chat.nextAttentionAt ?? ""}`)
     .join("\u0000");
@@ -894,6 +1007,90 @@ function ProjectRail({
     return () => window.removeEventListener("focus", refresh);
   }, [temporalKey]);
 
+  function renderRow(chat: Chat) {
+    const attention = projectAttentionState(chat, now);
+    const error = pinErrors[chat.id];
+    const isPinned = chat.pinnedAt != null;
+    const isArchived = chat.archivedAt != null;
+    const statusId = `project-status-${chat.id}`;
+    const errorId = `project-pin-error-${chat.id}`;
+    return (
+      <li
+        className={`project-row ${chat.projectId ? "project-row--subthread" : ""} ${activeId === chat.id ? "project-row--active" : ""} ${error ? "project-row--error" : ""}`}
+        data-accent={chat.accent}
+        data-attention-state={attention}
+        key={chat.id}
+      >
+        <button
+          className={`project-item ${activeId === chat.id ? "project-item--active" : ""}`}
+          data-chat-id={chat.id}
+          type="button"
+          aria-label={`Open ${chat.title}`}
+          aria-describedby={`${statusId}${error ? ` ${errorId}` : ""}`}
+          aria-expanded={
+            !chat.projectId &&
+            chats.some((child) => child.projectId === chat.id)
+              ? expandedProjects.has(chat.id)
+              : undefined
+          }
+          aria-current={activeId === chat.id ? "page" : undefined}
+          disabled={navigationDisabled}
+          onClick={() => onSelect(chat.id)}
+        >
+          <span className="project-item-copy">
+            <strong title={chat.title}>{chat.title}</strong>
+            {chat.projectId && isArchived && (
+              <small>
+                {chats.find((root) => root.id === chat.projectId)?.title}
+              </small>
+            )}
+            {error && <small>{error}</small>}
+          </span>
+        </button>
+        <button
+          className="project-pin-button"
+          data-project-pin-id={chat.id}
+          type="button"
+          aria-label={
+            isArchived
+              ? `Restore ${chat.title} from archive`
+              : `Pin ${chat.title}`
+          }
+          title={isArchived ? "Restore project" : undefined}
+          aria-pressed={isArchived ? undefined : isPinned}
+          aria-describedby={error ? errorId : undefined}
+          disabled={navigationDisabled || projectMutationIds.has(chat.id)}
+          onClick={() => (isArchived ? onRestore(chat) : onTogglePinned(chat))}
+        >
+          {isArchived ? <ArchiveRestoreIcon /> : <PinIcon />}
+        </button>
+        {attention && (
+          <span
+            className={`attention-dot attention-dot--${attention} project-attention-dot project-attention-dot--${attention}`}
+            aria-hidden="true"
+          />
+        )}
+        <span className="visually-hidden" id={statusId}>
+          {isArchived
+            ? "Archived project. "
+            : isPinned
+              ? "Pinned project. "
+              : ""}
+          {attention === "today"
+            ? "Attention today."
+            : attention === "earlier"
+              ? "Earlier attention."
+              : "No attention."}
+        </span>
+        {error && (
+          <span className="visually-hidden" id={errorId} role="alert">
+            {error}
+          </span>
+        )}
+      </li>
+    );
+  }
+
   function renderSection(label: RailSection, items: Chat[]) {
     return (
       <section className="project-section" aria-labelledby={`rail-${label}`}>
@@ -917,79 +1114,46 @@ function ProjectRail({
           hidden={collapsedSections[label]}
         >
           {items.map((chat) => {
-            const attention = projectAttentionState(chat, now);
-            const error = pinErrors[chat.id];
-            const isPinned = chat.pinnedAt != null;
-            const isArchived = chat.archivedAt != null;
-            const statusId = `project-status-${chat.id}`;
-            const errorId = `project-pin-error-${chat.id}`;
+            const children = sortChats(
+              chats.filter(
+                (child) =>
+                  child.projectId === chat.id &&
+                  (chat.archivedAt != null || child.archivedAt == null),
+              ),
+            );
+            const expanded = expandedProjects.has(chat.id);
+            const all = showAll.has(chat.id);
+            let visible = all ? children : children.slice(0, 5);
+            const selected = children.find((child) => child.id === activeId);
+            if (!all && selected && !visible.includes(selected))
+              visible = [...visible.slice(0, 4), selected];
             return (
-              <li
-                className={`project-row ${activeId === chat.id ? "project-row--active" : ""} ${error ? "project-row--error" : ""}`}
-                data-accent={chat.accent}
-                data-attention-state={attention}
-                key={chat.id}
-              >
-                <button
-                  className={`project-item ${activeId === chat.id ? "project-item--active" : ""}`}
-                  data-chat-id={chat.id}
-                  type="button"
-                  aria-label={`Open ${chat.title}`}
-                  aria-describedby={`${statusId}${error ? ` ${errorId}` : ""}`}
-                  aria-current={activeId === chat.id ? "page" : undefined}
-                  disabled={navigationDisabled}
-                  onClick={() => onSelect(chat.id)}
-                >
-                  <span className="project-item-copy">
-                    <strong>{chat.title}</strong>
-                    {error && <small>{error}</small>}
-                  </span>
-                </button>
-                <button
-                  className="project-pin-button"
-                  data-project-pin-id={chat.id}
-                  type="button"
-                  aria-label={
-                    isArchived
-                      ? `Restore ${chat.title} from archive`
-                      : `Pin ${chat.title}`
-                  }
-                  title={isArchived ? "Restore project" : undefined}
-                  aria-pressed={isArchived ? undefined : isPinned}
-                  aria-describedby={error ? errorId : undefined}
-                  disabled={
-                    navigationDisabled || projectMutationIds.has(chat.id)
-                  }
-                  onClick={() =>
-                    isArchived ? onRestore(chat) : onTogglePinned(chat)
-                  }
-                >
-                  {isArchived ? <ArchiveRestoreIcon /> : <PinIcon />}
-                </button>
-                {attention && (
-                  <span
-                    className={`attention-dot attention-dot--${attention} project-attention-dot project-attention-dot--${attention}`}
-                    aria-hidden="true"
-                  />
+              <Fragment key={chat.id}>
+                {renderRow(chat)}
+                {expanded && visible.map(renderRow)}
+                {expanded && children.length > 5 && (
+                  <li className="subthread-disclosure-row">
+                    <button
+                      type="button"
+                      className="subthread-disclosure"
+                      aria-label={
+                        all ? "Show fewer subthreads" : "Show all subthreads"
+                      }
+                      aria-expanded={all}
+                      onClick={() =>
+                        setShowAll((current) => {
+                          const next = new Set(current);
+                          if (all) next.delete(chat.id);
+                          else next.add(chat.id);
+                          return next;
+                        })
+                      }
+                    >
+                      {all ? "Show less" : "Show all"}
+                    </button>
+                  </li>
                 )}
-                <span className="visually-hidden" id={statusId}>
-                  {isArchived
-                    ? "Archived project. "
-                    : isPinned
-                      ? "Pinned project. "
-                      : ""}
-                  {attention === "today"
-                    ? "Attention today."
-                    : attention === "earlier"
-                      ? "Earlier attention."
-                      : "No attention."}
-                </span>
-                {error && (
-                  <span className="visually-hidden" id={errorId} role="alert">
-                    {error}
-                  </span>
-                )}
-              </li>
+              </Fragment>
             );
           })}
         </ul>
@@ -1283,6 +1447,17 @@ function PlusIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="M12 5v14" />
       <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function SubthreadIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="6" cy="5" r="2" />
+      <circle cx="18" cy="6" r="2" />
+      <circle cx="6" cy="19" r="2" />
+      <path d="M6 7v10M8 15h2a8 8 0 0 0 8-7" />
     </svg>
   );
 }
@@ -2107,7 +2282,13 @@ function MessageGroups({
   onEditNote,
   onSetNoteLabel,
   onOpenInHistory,
+  onContinue,
+  subthreads = [],
+  onNavigate,
 }: {
+  onContinue?: (note: Note) => void;
+  subthreads?: Chat[];
+  onNavigate?: (chatId: string, noteId?: string) => void;
   notes: Note[];
   searchTerms: string[];
   futureStartId?: string;
@@ -2246,6 +2427,14 @@ function MessageGroups({
                             enabledLabels={enabledLabels}
                             onToggle={onSetNoteLabel}
                           />
+                          {onContinue && (
+                            <MessageActionButton
+                              label="Continue in subthread"
+                              onClick={() => onContinue(note)}
+                            >
+                              <SubthreadIcon />
+                            </MessageActionButton>
+                          )}
                           <MessageActionButton
                             allowReadOnly
                             label={copied ? "Message copied" : "Copy message"}
@@ -2268,6 +2457,24 @@ function MessageGroups({
                           </MessageActionButton>
                         </div>
                       </div>
+                      {subthreads
+                        .filter(
+                          (child) => child.origin?.sourceNoteId === note.id,
+                        )
+                        .map((child) => (
+                          <div
+                            className="thread-origin thread-continuation"
+                            key={child.id}
+                          >
+                            Continued in{" "}
+                            <button
+                              type="button"
+                              onClick={() => onNavigate?.(child.id)}
+                            >
+                              {child.title}
+                            </button>
+                          </div>
+                        ))}
                     </li>
                   </Fragment>
                 );
@@ -2281,6 +2488,11 @@ function MessageGroups({
 }
 
 function ChatWorkspace({
+  chats = [],
+  projectApi,
+  onNewSubthread,
+  onNavigate,
+  navigationTarget,
   sendFeedback,
   exampleCopyAction,
   exampleError,
@@ -2320,10 +2532,15 @@ function ChatWorkspace({
   copiedNoteId,
   navigationDisabled,
 }: {
+  chats?: Chat[];
+  projectApi?: Pick<ApiClient, "getProject">;
+  onNewSubthread?: (sourceNoteId?: string) => void;
+  onNavigate?: (chatId: string, noteId?: string) => void;
+  navigationTarget?: ReadingPosition;
   sendFeedback?: SendFeedback;
   readingPositions: Map<string, ReadingPosition>;
   searchQueries: Map<string, string>;
-  detail: TimelineContent;
+  detail: TimelineContent & Pick<Chat, "projectId" | "origin">;
   exampleCopyAction?: ReactNode;
   exampleError?: ReactNode;
   exampleGlow?: boolean;
@@ -2388,6 +2605,49 @@ function ChatWorkspace({
   const isSelected = (filter: FilterId | "all") =>
     filter === "all" ? !historyFilter.length : historyFilter.includes(filter);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [projectScope, setProjectScope] = useState(false);
+  const [projectConversations, setProjectConversations] = useState<
+    ChatDetail[]
+  >([]);
+  const [projectSearchError, setProjectSearchError] = useState("");
+  const [projectSearchLoading, setProjectSearchLoading] = useState(false);
+  const [projectSearchRetry, setProjectSearchRetry] = useState(0);
+  const projectSearchActive = projectScope && searchOpen;
+  const root = chats.find((chat) => chat.id === detail.projectId);
+  const source = chats.find((chat) => chat.id === detail.origin?.sourceChatId);
+  useEffect(() => {
+    if (!projectSearchActive || !projectApi) return;
+    let current = true;
+    Promise.resolve()
+      .then(() => {
+        if (!current) return [];
+        setProjectSearchLoading(true);
+        setProjectSearchError("");
+        return projectApi.getProject(detail.id);
+      })
+      .then((result) => {
+        if (current) setProjectConversations(result);
+      })
+      .catch((caught) => {
+        if (current)
+          setProjectSearchError(
+            errorMessage(caught, "Project search could not be loaded."),
+          );
+      })
+      .finally(() => {
+        if (current) setProjectSearchLoading(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [
+    projectApi,
+    detail.id,
+    detail.notes,
+    chats,
+    projectSearchActive,
+    projectSearchRetry,
+  ]);
   const [searchText, setSearchText] = useState(
     () => searchQueries.get(detail.id) ?? "",
   );
@@ -2403,8 +2663,21 @@ function ChatWorkspace({
     historyKey,
     readingPositions,
     Boolean(explainReadOnly),
-    searchQuery.key,
+    `${projectSearchActive ? "project:" : ""}${searchQuery.key}`,
   );
+  useLayoutEffect(() => {
+    if (!navigationTarget) return;
+    const frame = requestAnimationFrame(() => {
+      const history = historyRef.current;
+      if (!history) return;
+      restoreReadingPosition(history, navigationTarget);
+      const row = [
+        ...history.querySelectorAll<HTMLElement>("[data-note-id]"),
+      ].find((item) => item.dataset.noteId === navigationTarget.noteId);
+      row?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [navigationTarget]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   useSendFeedback(composerRef, historyRef, sendFeedback);
@@ -2428,21 +2701,28 @@ function ChatWorkspace({
   const [markdownError, setMarkdownError] = useState("");
   const previousUtilityRows = useRef([false, false, false]);
   const analyzeNotes = useMemo(() => createSearchDocumentBuilder(), []);
+  const searchNotes = useMemo(
+    () =>
+      projectSearchActive
+        ? projectConversations.flatMap((conversation) => conversation.notes)
+        : detail.notes,
+    [projectSearchActive, projectConversations, detail.notes],
+  );
   const searchDocuments = useMemo(
-    () => analyzeNotes(detail.notes),
-    [detail.notes, analyzeNotes],
+    () => analyzeNotes(searchNotes),
+    [searchNotes, analyzeNotes],
   );
   const linkedNoteIds = new Set(
-    detail.notes
+    searchNotes
       .filter((note) => searchDocuments.get(note.id)!.hasLinks)
       .map((note) => note.id),
   );
-  const attachmentCount = detail.notes.filter(hasAttachments).length;
+  const attachmentCount = searchNotes.filter(hasAttachments).length;
   const enabledLabels = detail.enabledLabels ?? ["todo", "milestone"];
   const filterLabels = definitions
     .filter((label) => label.enabled)
     .map((label) => label.id);
-  const searchMatches = detail.notes.filter((note) =>
+  const searchMatches = searchNotes.filter((note) =>
     matchesSearch(searchDocuments.get(note.id)!, searchQuery),
   );
   const visibleNotes = searchMatches.filter((note) => {
@@ -2452,6 +2732,11 @@ function ChatWorkspace({
       return (note.labels ?? []).includes(filter.slice(6) as Label);
     });
   });
+  const projectResults = useMemo(
+    () => findProjectSearchResults(projectConversations, searchQuery),
+    [projectConversations, searchQuery],
+  );
+  const visibleIds = new Set(visibleNotes.map((note) => note.id));
   const timelineNow = useTimelineNow(visibleNotes);
   const futureStartId = visibleNotes.find(
     (note) => note.createdAt > timelineNow,
@@ -2741,7 +3026,33 @@ function ChatWorkspace({
               <p className="eyebrow">
                 {explainReadOnly ? "Example project" : "Project thread"}
               </p>
-              <h1>{detail.title}</h1>
+              <h1
+                className={detail.projectId ? "subthread-heading" : undefined}
+                title={detail.title}
+                aria-label={
+                  detail.projectId
+                    ? `${root?.title ?? "Project"} / ${detail.title}`
+                    : detail.title
+                }
+              >
+                {detail.projectId && (
+                  <>
+                    <button
+                      className="subthread-parent-title"
+                      type="button"
+                      title={root?.title ?? "Project"}
+                      onClick={() => onNavigate?.(detail.projectId!)}
+                      disabled={navigationDisabled}
+                    >
+                      {root?.title ?? "Project"}
+                    </button>
+                    <span className="subthread-title-separator"> / </span>
+                  </>
+                )}
+                <span className="conversation-title" title={detail.title}>
+                  {detail.title}
+                </span>
+              </h1>
             </div>
             <button
               ref={searchToggleRef}
@@ -2755,6 +3066,18 @@ function ChatWorkspace({
             >
               <SearchIcon />
             </button>
+            {onNewSubthread && (
+              <button
+                className="project-search-toggle new-subthread-button"
+                type="button"
+                aria-label="New subthread"
+                title="New subthread"
+                disabled={navigationDisabled}
+                onClick={() => onNewSubthread()}
+              >
+                <SubthreadIcon />
+              </button>
+            )}
             {exampleCopyAction ?? (
               <button
                 className="button button-quiet edit-project-button"
@@ -2770,17 +3093,37 @@ function ChatWorkspace({
 
         {searchOpen && (
           <ProjectSearch
+            projectScope={projectScope}
+            onProjectScopeChange={
+              projectApi
+                ? (checked) => {
+                    beforeFilterChange(
+                      historyKey,
+                      `${checked ? "project:" : ""}${searchQuery.key}`,
+                    );
+                    setProjectScope(checked);
+                  }
+                : undefined
+            }
             id={searchId}
             initialValue={searchText}
             onValueChange={rememberSearch}
             count={
-              searchQuery.key && !searchQuery.error
+              searchQuery.key &&
+              !searchQuery.error &&
+              !projectSearchLoading &&
+              !projectSearchError
                 ? visibleNotes.length
                 : undefined
             }
             onCommit={commitSearch}
             onClose={closeSearch}
             status={
+              (projectSearchActive && projectSearchLoading
+                ? "Loading project messages…"
+                : projectSearchActive && projectSearchError
+                  ? projectSearchError
+                  : undefined) ??
               searchQuery.error ??
               (searchQuery.key
                 ? `${visibleNotes.length} matching messages. ${filterDescription}.`
@@ -2804,7 +3147,7 @@ function ChatWorkspace({
             <button
               type="button"
               className={`history-filter-button ${isSelected("all") ? "history-filter-button--active" : ""}`}
-              aria-label={`All ${detail.notes.length}`}
+              aria-label={`All ${searchNotes.length}`}
               aria-pressed={isSelected("all")}
               onClick={(event) => changeHistoryFilter("all", event)}
               onKeyDown={(event) => filterKeyboard(event, "all")}
@@ -2813,9 +3156,7 @@ function ChatWorkspace({
                 <ListIcon />
               </span>
               <span className="history-filter-label">All</span>
-              <span className="history-filter-count">
-                {detail.notes.length}
-              </span>
+              <span className="history-filter-count">{searchNotes.length}</span>
             </button>
             <button
               type="button"
@@ -2846,7 +3187,7 @@ function ChatWorkspace({
               <span className="history-filter-count">{linkedNoteIds.size}</span>
             </button>
             {filterLabels.map((label) => {
-              const count = detail.notes.filter((note) =>
+              const count = searchNotes.filter((note) =>
                 (note.labels ?? []).includes(label),
               ).length;
               return (
@@ -2889,7 +3230,46 @@ function ChatWorkspace({
           tabIndex={-1}
           aria-label={`${detail.title} messages`}
         >
-          {searchQuery.error ? (
+          {detail.projectId && !projectSearchActive && (
+            <div className="thread-origin">
+              {!detail.origin ? (
+                "Independent subthread"
+              ) : source ? (
+                <>
+                  <span>Subthread from</span>{" "}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onNavigate?.(
+                        source.id,
+                        detail.origin?.sourceNoteId ?? undefined,
+                      )
+                    }
+                  >
+                    {source.title}
+                  </button>
+                  {!detail.origin.sourceNoteId && " · Original message deleted"}
+                </>
+              ) : (
+                "Subthread from a deleted conversation"
+              )}
+            </div>
+          )}
+          {projectSearchActive && projectSearchLoading ? (
+            <p className="thread-origin" role="status">
+              Loading project messages…
+            </p>
+          ) : projectSearchActive && projectSearchError ? (
+            <div className="no-notes">
+              <p role="alert">{projectSearchError}</p>
+              <button
+                className="button button-quiet"
+                onClick={() => setProjectSearchRetry((value) => value + 1)}
+              >
+                Retry search
+              </button>
+            </div>
+          ) : searchQuery.error ? (
             <div className="no-notes no-notes--filtered">
               <p role="alert">{searchQuery.error}</p>
             </div>
@@ -2907,6 +3287,18 @@ function ChatWorkspace({
                   Search all messages
                 </button>
               )}
+            </div>
+          ) : projectSearchActive && searchQuery.key ? (
+            <ProjectSearchResults
+              results={projectResults.filter((result) =>
+                visibleIds.has(result.note.id),
+              )}
+              query={searchQuery}
+              onOpen={(chatId, note) => onNavigate?.(chatId, note.id)}
+            />
+          ) : projectSearchActive ? (
+            <div className="no-notes">
+              <p>Search across this project’s conversations.</p>
             </div>
           ) : detail.notes.length === 0 ? (
             <>
@@ -2947,6 +3339,13 @@ function ChatWorkspace({
             </div>
           ) : (
             <MessageGroups
+              subthreads={chats.filter(
+                (chat) => chat.origin?.sourceChatId === detail.id,
+              )}
+              onContinue={
+                onNewSubthread ? (note) => onNewSubthread(note.id) : undefined
+              }
+              onNavigate={onNavigate}
               searchTerms={searchQuery.terms}
               notes={visibleNotes}
               futureStartId={futureStartId}
@@ -3346,6 +3745,31 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     chats: [],
   });
   const { chats, active } = workspace;
+  const [expandedProjects, setExpandedProjects] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [subthreadSource, setSubthreadSource] = useState<{
+    chatId: string;
+    sourceNoteId?: string;
+  }>();
+  const [navigationTarget, setNavigationTarget] = useState<ReadingPosition>();
+  const [navigationRevision, setNavigationRevision] = useState(0);
+  const conversationDrafts = useRef(
+    new Map<
+      string,
+      {
+        draft: string;
+        sender: string;
+        timestamp: string;
+        senderOpen: boolean;
+        timestampOpen: boolean;
+        files: File[];
+        filter: HistoryFilter;
+        editing?: Note;
+        attachmentIds: string[];
+      }
+    >(),
+  );
   const [example, setExample] = useState<ExampleDetail>();
   const [examples, setExamples] = useState<ExampleSummary[]>([]);
   const [examplesError, setExamplesError] = useState("");
@@ -3444,6 +3868,32 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const copyResetTimer = useRef<number | undefined>(undefined);
   const newMessageSender = useRef("");
   const newMessageSenderOpen = useRef(false);
+  useLayoutEffect(() => {
+    if (!active || example) return;
+    conversationDrafts.current.set(active.id, {
+      draft,
+      sender: draftSender,
+      timestamp: draftTimestamp,
+      senderOpen: composerSenderOpen,
+      timestampOpen: composerTimestampOpen,
+      files: pendingFiles,
+      filter: historyFilter,
+      editing: editingNote,
+      attachmentIds: editingAttachmentIds,
+    });
+  }, [
+    active,
+    example,
+    draft,
+    draftSender,
+    draftTimestamp,
+    composerSenderOpen,
+    composerTimestampOpen,
+    pendingFiles,
+    historyFilter,
+    editingNote,
+    editingAttachmentIds,
+  ]);
 
   useEffect(() => {
     activeId.current = active?.id;
@@ -3679,8 +4129,39 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     if (!editingNote) newMessageSenderOpen.current = open;
   }
 
-  async function selectChat(id: string) {
+  function rememberConversation() {
+    if (!active || example) return;
+    conversationDrafts.current.set(active.id, {
+      draft,
+      sender: draftSender,
+      timestamp: draftTimestamp,
+      senderOpen: composerSenderOpen,
+      timestampOpen: composerTimestampOpen,
+      files: pendingFiles,
+      filter: historyFilter,
+      editing: editingNote,
+      attachmentIds: editingAttachmentIds,
+    });
+  }
+  function restoreConversation(id: string) {
+    const saved = conversationDrafts.current.get(id);
+    setDraft(saved?.draft ?? "");
+    setDraftSender(saved?.sender ?? "");
+    setDraftTimestamp(saved?.timestamp ?? "");
+    setComposerSenderOpen(saved?.senderOpen ?? false);
+    setComposerTimestampOpen(saved?.timestampOpen ?? false);
+    newMessageSender.current = saved?.editing ? "" : (saved?.sender ?? "");
+    newMessageSenderOpen.current = saved?.editing
+      ? false
+      : (saved?.senderOpen ?? false);
+    setPendingFiles(saved?.files ?? []);
+    setHistoryFilter(saved?.filter ?? []);
+    setEditingNote(saved?.editing);
+    setEditingAttachmentIds(saved?.attachmentIds ?? []);
+  }
+  async function selectChat(id: string, noteId?: string) {
     if (savingNote || copyInProgress.current) return;
+    rememberConversation();
     pendingSelection.current = "project";
     const request = ++selectionRequest.current;
     setMode("projects");
@@ -3689,6 +4170,21 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       const detail = await api.getChat(id);
       if (request !== selectionRequest.current) return;
       setExample(undefined);
+      setExpandedProjects((current) =>
+        new Set(current).add(detail.projectId ?? detail.id),
+      );
+      const targetNote = noteId
+        ? detail.notes.find((note) => note.id === noteId)
+        : undefined;
+      const target = targetNote
+        ? { noteId: targetNote.id, createdAt: targetNote.createdAt, offset: 16 }
+        : undefined;
+      setNavigationTarget(target);
+      if (noteId) {
+        setNavigationRevision((value) => value + 1);
+        if (target)
+          setReadingPositions((current) => new Map(current).set(id, target));
+      }
       setWorkspace((current) => {
         const summary = current.chats.find((chat) => chat.id === id);
         return {
@@ -3706,14 +4202,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           },
         };
       });
-      setDraft("");
-      resetSenderComposer();
-      setPendingFiles([]);
-      setHistoryFilter([]);
-      setDraftTimestamp("");
-      setComposerTimestampOpen(false);
-      setEditingNote(undefined);
-      setEditingAttachmentIds([]);
+      restoreConversation(id);
+      if (noteId) setHistoryFilter([]);
       focusMobileBackButton();
     } catch (caught) {
       if (request !== selectionRequest.current) return;
@@ -3725,7 +4215,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   }
 
   async function createChat(input: { title: string; accent: Accent }) {
+    rememberConversation();
     const chat = await api.createChat(input);
+    setNavigationTarget(undefined);
+    setExpandedProjects((current) => new Set(current).add(chat.id));
     setExample(undefined);
     selectionRequest.current += 1;
     setWorkspace((current) => ({
@@ -3742,6 +4235,37 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setEditingNote(undefined);
     setEditingAttachmentIds([]);
     focusMobileBackButton();
+  }
+
+  async function createSubthread(title: string) {
+    if (!subthreadSource) return;
+    const source = subthreadSource;
+    rememberConversation();
+    activeMutationGeneration.current += 1;
+    summaryRequest.current += 1;
+    const chat = await api.createSubthread(source.chatId, {
+      title,
+      ...(source.sourceNoteId ? { sourceNoteId: source.sourceNoteId } : {}),
+    });
+    activeMutationGeneration.current += 1;
+    summaryRequest.current += 1;
+    selectionRequest.current += 1;
+    setExample(undefined);
+    setMode("projects");
+    setNavigationTarget(undefined);
+    setExpandedProjects((current) =>
+      new Set(current).add(chat.projectId ?? chat.id),
+    );
+    copiedFocus.current = chat.id;
+    setWorkspace((current) => ({
+      chats: sortChats([
+        ...current.chats.filter((item) => item.id !== chat.id),
+        chat,
+      ]),
+      active: { ...chat, notes: [] },
+    }));
+    restoreConversation(chat.id);
+    setSubthreadSource(undefined);
   }
 
   async function runProjectMutation(id: string, mutation: () => Promise<void>) {
@@ -3850,7 +4374,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
 
   async function updateChatUnlocked(input: {
     title: string;
-    accent: Accent;
+    accent?: Accent;
     labelConfiguration: LabelConfiguration;
     collapseLongMessages: boolean;
   }) {
@@ -3858,8 +4382,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     const projectId = active.id;
     const chat = await api.updateChat(active.id, input);
     activeMutationGeneration.current += 1;
-    setWorkspace((current) =>
-      commitProjectUpdate(
+    setWorkspace((current) => {
+      const next = commitProjectUpdate(
         current,
         chat.id,
         () => chat,
@@ -3873,8 +4397,16 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
             ),
           })),
         }),
-      ),
-    );
+      );
+      if (!chat.projectId) {
+        next.chats = next.chats.map((item) =>
+          item.projectId === chat.id ? { ...item, accent: chat.accent } : item,
+        );
+        if (next.active?.projectId === chat.id)
+          next.active = { ...next.active, accent: chat.accent };
+      }
+      return next;
+    });
     setHistoryFilter((current) =>
       current.filter(
         (filter) =>
@@ -3894,18 +4426,41 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     const projectId = active.id;
     const selectionAtStart = selectionRequest.current;
     await api.deleteChat(projectId);
-    searchQueries.delete(projectId);
+    const deletedIds = new Set(
+      chats
+        .filter((chat) => chat.id === projectId || chat.projectId === projectId)
+        .map((chat) => chat.id),
+    );
+    for (const id of deletedIds) {
+      searchQueries.delete(id);
+      conversationDrafts.current.delete(id);
+    }
     setReadingPositions((current) => {
       const next = new Map(current);
-      next.delete(projectId);
+      for (const id of deletedIds) next.delete(id);
       return next;
     });
     const navigationUnchanged = selectionRequest.current === selectionAtStart;
     if (navigationUnchanged) selectionRequest.current += 1;
     activeMutationGeneration.current += 1;
     setWorkspace((current) => ({
-      chats: current.chats.filter((chat) => chat.id !== projectId),
-      active: current.active?.id === projectId ? undefined : current.active,
+      chats: current.chats
+        .filter((chat) => !deletedIds.has(chat.id))
+        .map((chat) =>
+          chat.origin?.sourceChatId && deletedIds.has(chat.origin.sourceChatId)
+            ? { ...chat, origin: { sourceChatId: null, sourceNoteId: null } }
+            : chat,
+        ),
+      active:
+        current.active && deletedIds.has(current.active.id)
+          ? undefined
+          : current.active?.origin?.sourceChatId &&
+              deletedIds.has(current.active.origin.sourceChatId)
+            ? {
+                ...current.active,
+                origin: { sourceChatId: null, sourceNoteId: null },
+              }
+            : current.active,
     }));
     if (navigationUnchanged) {
       setDraft("");
@@ -4158,8 +4713,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       notes: submittedNotes,
       updatedAt: submittedUpdatedAt,
     };
-    setWorkspace((current) =>
-      commitProjectUpdate(
+    setWorkspace((current) => {
+      const next = commitProjectUpdate(
         current,
         projectId,
         (chat) => mergeMessageSummary(chat, submittedDetail),
@@ -4171,8 +4726,20 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
             updatedAt: chatActivityFromNotes(detail, notes),
           };
         },
-      ),
-    );
+      );
+      next.chats = next.chats.map((chat) =>
+        chat.origin?.sourceNoteId === note.id
+          ? { ...chat, origin: { ...chat.origin, sourceNoteId: null } }
+          : chat,
+      );
+      if (next.active?.origin?.sourceNoteId === note.id) {
+        next.active = {
+          ...next.active,
+          origin: { ...next.active.origin, sourceNoteId: null },
+        };
+      }
+      return next;
+    });
   }
 
   async function setNoteLabel(note: Note, label: Label, applied: boolean) {
@@ -4248,6 +4815,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       const result = await api.importDatabase(file, options);
       invalidate();
       if (options.mode === "replace") {
+        conversationDrafts.current.clear();
+        setExpandedProjects(new Set());
+        setSubthreadSource(undefined);
+        setNavigationTarget(undefined);
         activeId.current = undefined;
         setExample(undefined);
         setWorkspace({ chats: [] });
@@ -4292,6 +4863,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
 
   function backToProjects() {
     if (savingNote || copyInProgress.current) return;
+    rememberConversation();
+    if (active) {
+      const saved = conversationDrafts.current.get(active.id);
+      if (saved)
+        conversationDrafts.current.set(active.id, { ...saved, filter: [] });
+    }
     const exampleSlug = example?.slug;
     setExample(undefined);
     const projectId = active?.id;
@@ -4396,7 +4973,18 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           }
           chats={chats}
           activeId={active?.id ?? example?.id}
-          onSelect={selectChat}
+          expandedProjects={expandedProjects}
+          onSelect={(id) => {
+            const chat = chats.find((item) => item.id === id);
+            if (active?.id === id && !chat?.projectId && mode === "projects") {
+              setExpandedProjects((current) => {
+                const next = new Set(current);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              });
+            } else void selectChat(id);
+          }}
           onTogglePinned={toggleChatPinned}
           onRestore={restoreChat}
           onTemporalBoundary={refreshProjectSummaries}
@@ -4436,7 +5024,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           />
         ) : (
           <BackupSettingsWorkspace
-            projects={chats}
+            projects={chats.filter((chat) => !chat.projectId)}
             onPreview={previewDatabase}
             unavailable={
               importing ||
@@ -4527,7 +5115,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         />
       ) : active ? (
         <ChatWorkspace
-          key={active.id}
+          key={`${active.id}:${navigationRevision}`}
+          chats={chats}
+          projectApi={api}
+          onNewSubthread={(sourceNoteId) =>
+            setSubthreadSource({ chatId: active.id, sourceNoteId })
+          }
+          onNavigate={(id, noteId) => void selectChat(id, noteId)}
+          navigationTarget={navigationTarget}
           sendFeedback={
             sendFeedback?.projectId === active.id ? sendFeedback : undefined
           }
@@ -4588,6 +5183,13 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
               <HomeUtilities updates={homeUpdates} />
             )}
         </HomeWorkspace>
+      )}
+      {subthreadSource && (
+        <SubthreadForm
+          source={subthreadSource}
+          onCancel={() => setSubthreadSource(undefined)}
+          onSubmit={createSubthread}
+        />
       )}
       {dialog === "create" && (
         <ProjectForm

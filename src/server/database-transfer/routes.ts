@@ -26,6 +26,7 @@ import {
   prepareSqliteBackupBundle,
   validateSqliteBackupBundle,
   readBackupProjects,
+  SQL_ON_TRACK_BACKUP_SCHEMA_VERSION,
   SqliteBackupBundleValidationError,
   DEFAULT_SQLITE_BACKUP_BUNDLE_LIMITS,
 } from "./sqlite-backup-bundle.js";
@@ -264,7 +265,7 @@ export async function registerDatabaseTransferRoutes(
         }
         const count = readBackupProjects(
           workspace.candidateDatabasePath,
-          7,
+          SQL_ON_TRACK_BACKUP_SCHEMA_VERSION,
         ).length;
         const oldPaths = options.oldStoragePaths();
         coordinator.activate(workspace.restoreId);

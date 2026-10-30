@@ -48,6 +48,11 @@ export interface ApiClient {
   copyExample(slug: string, revision: number): Promise<CopyExampleResult>;
   listChats(): Promise<Chat[]>;
   getChat(id: string): Promise<ChatDetail>;
+  createSubthread(
+    id: string,
+    input: { title: string; sourceNoteId?: string },
+  ): Promise<Chat>;
+  getProject(id: string): Promise<ChatDetail[]>;
   createChat(input: CreateChatInput): Promise<Chat>;
   updateChat(id: string, input: UpdateChatInput): Promise<Chat>;
   setChatArchived(id: string, archived: boolean): Promise<ProjectArchiveState>;
@@ -159,6 +164,13 @@ export const apiClient: ApiClient = {
   },
   listChats: () => request<Chat[]>("/api/chats"),
   getChat: (id) => request<ChatDetail>(`/api/chats/${encodeURIComponent(id)}`),
+  createSubthread: (id, input) =>
+    request<Chat>(`/api/chats/${encodeURIComponent(id)}/subthreads`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  getProject: (id) =>
+    request<ChatDetail[]>(`/api/chats/${encodeURIComponent(id)}/project`),
   createChat: (input) =>
     request<Chat>("/api/chats", {
       method: "POST",

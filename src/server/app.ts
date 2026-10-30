@@ -1,3 +1,4 @@
+import { InvalidSubthreadError } from "./db/repository.js";
 import {
   LabelConfigurationConflictError,
   InvalidLabelConfigurationError,
@@ -279,6 +280,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     if (
       error instanceof ZodError ||
       error instanceof InvalidInputError ||
+      error instanceof InvalidSubthreadError ||
       error instanceof InvalidLabelConfigurationError
     ) {
       return reply.code(400).send({
@@ -380,6 +382,20 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   });
   app.get<{ Params: { id: string } }>("/api/chats/:id", async (request) =>
     maintenanceGate.runMutation(() => service.getChat(request.params.id)),
+  );
+  app.post<{ Params: { id: string } }>(
+    "/api/chats/:id/subthreads",
+    async (request, reply) => {
+      const chat = await maintenanceGate.runMutation(() =>
+        service.createSubthread(request.params.id, request.body),
+      );
+      return reply.code(201).send(chat);
+    },
+  );
+  app.get<{ Params: { id: string } }>(
+    "/api/chats/:id/project",
+    async (request) =>
+      maintenanceGate.runMutation(() => service.getProject(request.params.id)),
   );
   app.patch<{ Params: { id: string } }>("/api/chats/:id", async (request) =>
     maintenanceGate.runMutation(() =>

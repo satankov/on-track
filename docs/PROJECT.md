@@ -29,14 +29,16 @@ experimental because clean OS/platform and published-upgrade evidence is incompl
 The next release candidate includes the completed, locally verified UI trim in
 [plan 0033](plans/0033-release-candidate-ui-trim.md): title-only project rows with
 Attention indicators, “Question” display text, and simplified guidance/navigation.
-This work is unreleased; its release version is not yet assigned. Schema 9 and
-backup compatibility are unchanged.
+This UI trim is preserved alongside the unreleased project-subthreads slice in
+[plan 0034](plans/0034-project-subthreads.md). Current source uses schema 10;
+published v0.1.1 remains schema 9. Backup format remains 1, with schema 3–9
+bundles migrated in validated staging. The next release version is not assigned.
 
 The published v0.1.1 release includes the completed flat UI and design cookbook
 slice in [plan 0029](plans/0029-flat-ui-and-design-contract.md), plus intersecting
 history filters, database-backed preferences and custom project labels in
 [plan 0031](plans/0031-multi-filters-durable-preferences-custom-labels.md).
-Current source and the published release use schema 9. Its canonical
+The published release uses schema 9; current source advances to schema 10. Its canonical
 standards are [DESIGN.md](../DESIGN.md), with an interactive reference under
 [branding/threadstr/ui](../branding/threadstr/ui/README.md). The Zod dependency
 fix for issue #72 and the static-serving and paired Vitest updates are published
@@ -168,21 +170,30 @@ remains a regression-protected alpha, not a dedicated design target.
 
 ## Current capabilities
 
+- [Project subthreads](plans/0034-project-subthreads.md) keep the project as its
+  main conversation and add one flat level of independently named conversations.
+  Independent subthreads and continuations start empty; continuations retain
+  source links without copying messages. Children inherit the root accent
+  dynamically and own their labels, message-display setting, pin and archive
+  state. Project selection reveals five indented children with Show all for the
+  remainder. Each child has its own Edit and delete controls. Search's Project
+  checkbox covers Main and every child from any conversation in the project.
+
 - [Multi-filters, durable preferences and custom labels](plans/0031-multi-filters-durable-preferences-custom-labels.md)
   add intersecting Cmd/Ctrl-selected history filters, database-backed theme,
   Examples visibility and rail disclosures, and up to five custom labels per
   project with eight-character names, optional glyphs, drag ordering, enablement
   and Save-based removal. Cleared/deleted definitions remove only their message
   tags; messages remain. Desktop filter height is independent of composer growth.
-  Current source uses schema 9; full backups include preferences and all exports
+  The labels slice introduced schema 9; full backups include preferences and all exports
   preserve project definitions and assignments.
 
-- Current-project keyword search filters loaded message text, participant names,
+- Conversation keyword search filters loaded message text, participant names,
   and filenames locally. Its compact magnifier/input UI combines with history
   filters, highlights matches, shows counts, restores reading positions, and opens
   matching messages in context. Last queries are remembered per project for the
-  app session until cleared.
-  No search service, index, or schema change is required. See
+  app session until cleared. Project scope includes Main and every child,
+  including archives; query matching remains local. No search index is required. See
   [plan 0028](plans/0028-project-keyword-search.md).
 
 - Current source adds contextual beginning/end history controls, a short accent

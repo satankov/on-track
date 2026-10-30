@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import {
+  insertProjectLabel,
   readProjectLabels,
   saveProjectLabels,
   seedProjectLabels,
@@ -23,6 +25,11 @@ import {
 } from "../../domain/validation.js";
 
 interface ChatRow {
+  project_id: string | null;
+  effective_accent: Accent;
+  origin_id: string | null;
+  source_chat_id: string | null;
+  source_note_id: string | null;
   id: string;
   title: string;
   accent: Accent;
@@ -69,7 +76,15 @@ function toChat(
   return {
     id: row.id,
     title: row.title,
-    accent: row.accent,
+    accent: row.effective_accent,
+    projectId: row.project_id,
+    origin:
+      row.origin_id == null
+        ? null
+        : {
+            sourceChatId: row.source_chat_id,
+            sourceNoteId: row.source_note_id,
+          },
     enabledLabels: definitions
       .filter(
         (label) =>
@@ -136,6 +151,17 @@ export class InvalidAttachmentSelectionError extends Error {
   }
 }
 
+export class InvalidSubthreadError extends Error {
+  constructor() {
+    super("Please check the subthread source and settings.");
+  }
+}
+
+const CHAT_SELECT = `SELECT chats.*, COALESCE(root.accent, chats.accent) AS effective_accent,
+  origin.chat_id AS origin_id, origin.source_chat_id, origin.source_note_id
+  FROM chats LEFT JOIN chats AS root ON root.id = chats.project_id
+  LEFT JOIN subthread_origins AS origin ON origin.chat_id = chats.id`;
+
 export class SqliteChatRepository {
   constructor(private readonly database: Database.Database) {}
 
@@ -159,16 +185,71 @@ export class SqliteChatRepository {
     return this.getChat(input.id, input.now)!;
   }
 
+  createSubthread(
+    sourceId: string,
+    input: { id: string; title: string; sourceNoteId?: string; now: number },
+  ): Chat | undefined {
+    return this.database.transaction(() => {
+      const source = this.getChat(sourceId, input.now);
+      if (!source) return undefined;
+      const root = source.projectId
+        ? this.getChat(source.projectId, input.now)
+        : source;
+      if (!root || root.projectId != null) throw new InvalidSubthreadError();
+      if (
+        input.sourceNoteId !== undefined &&
+        !this.database
+          .prepare("SELECT 1 FROM notes WHERE id = ? AND chat_id = ?")
+          .get(input.sourceNoteId, sourceId)
+      )
+        throw new InvalidSubthreadError();
+      this.database
+        .prepare(
+          `INSERT INTO chats (id, title, accent, created_at, updated_at, project_id, collapse_long_messages)
+        VALUES (@id, @title, @accent, @now, @now, @projectId, @collapseLongMessages)`,
+        )
+        .run({
+          id: input.id,
+          title: input.title,
+          now: input.now,
+          accent: root.accent,
+          projectId: root.id,
+          collapseLongMessages: Number(root.collapseLongMessages),
+        });
+      for (const label of readProjectLabels(this.database, root.id))
+        insertProjectLabel(this.database, input.id, {
+          ...label,
+          id: label.builtin ? label.id : `custom-${randomUUID()}`,
+        });
+      if (input.sourceNoteId !== undefined)
+        this.database
+          .prepare(
+            "INSERT INTO subthread_origins (chat_id, source_chat_id, source_note_id) VALUES (?, ?, ?)",
+          )
+          .run(input.id, sourceId, input.sourceNoteId);
+      return this.getChat(input.id, input.now)!;
+    })();
+  }
+
+  listProjectChats(id: string, now = Date.now()): Chat[] | undefined {
+    const chat = this.getChat(id, now);
+    if (!chat) return undefined;
+    const rootId = chat.projectId ?? chat.id;
+    return this.listChats(now).filter(
+      (candidate) => candidate.id === rootId || candidate.projectId === rootId,
+    );
+  }
+
   listChats(now = Date.now()): Chat[] {
     const rows = this.database
       .prepare(
-        `SELECT * FROM chats
-         ORDER BY archived_at IS NOT NULL ASC,
-                  archived_at DESC,
-                  pinned_at IS NULL ASC,
-                  pinned_at DESC,
-                  CASE WHEN pinned_at IS NULL AND archived_at IS NULL THEN updated_at END DESC,
-                  id ASC`,
+        `${CHAT_SELECT}
+         ORDER BY chats.archived_at IS NOT NULL ASC,
+                  chats.archived_at DESC,
+                  chats.pinned_at IS NULL ASC,
+                  chats.pinned_at DESC,
+                  CASE WHEN chats.pinned_at IS NULL AND chats.archived_at IS NULL THEN chats.updated_at END DESC,
+                  chats.id ASC`,
       )
       .all() as ChatRow[];
     const labelsByChat = this.listDefinitionsForChats(
@@ -185,7 +266,7 @@ export class SqliteChatRepository {
 
   getChat(id: string, now = Date.now()): Chat | undefined {
     const row = this.database
-      .prepare("SELECT * FROM chats WHERE id = ?")
+      .prepare(`${CHAT_SELECT} WHERE chats.id = ?`)
       .get(id) as ChatRow | undefined;
     if (!row) return undefined;
     return toChat(
@@ -207,6 +288,11 @@ export class SqliteChatRepository {
     },
   ): Chat | undefined {
     const update = this.database.transaction(() => {
+      if (
+        input.accent !== undefined &&
+        this.getChat(id, input.now)?.projectId != null
+      )
+        throw new InvalidSubthreadError();
       const result = this.database
         .prepare(
           `UPDATE chats
@@ -313,12 +399,11 @@ export class SqliteChatRepository {
           `SELECT note_attachments.storage_path
            FROM note_attachments
            INNER JOIN notes ON notes.id = note_attachments.note_id
-           WHERE notes.chat_id = ?
+           WHERE notes.chat_id = ? OR notes.chat_id IN (SELECT id FROM chats WHERE project_id = ?)
            ORDER BY note_attachments.storage_path`,
         )
         .pluck()
-        .all(id) as string[];
-      this.database.prepare("DELETE FROM notes WHERE chat_id = ?").run(id);
+        .all(id, id) as string[];
       const result = this.database
         .prepare("DELETE FROM chats WHERE id = ?")
         .run(id);

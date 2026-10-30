@@ -62,13 +62,14 @@ import {
 
 export const SQL_ON_TRACK_BACKUP_APPLICATION_ID = 0x4f545242;
 export const SQL_ON_TRACK_BACKUP_FORMAT_VERSION = 1;
-export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 9;
+export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 10;
 const LEGACY_SCHEMA_MIGRATIONS: Readonly<
   Record<number, { migrationAt: number; migrationCount: number }>
 > = {
   3: { migrationAt: 1_788_356_400_000, migrationCount: 4 },
   4: { migrationAt: 1_788_516_961_034, migrationCount: 5 },
   5: { migrationAt: 1_788_523_044_823, migrationCount: 6 },
+  9: { migrationAt: 1793269712711, migrationCount: 10 },
   8: { migrationAt: 1793269343386, migrationCount: 9 },
   7: { migrationAt: 1789027200000, migrationCount: 8 },
   6: { migrationAt: 1_788_566_400_000, migrationCount: 7 },
@@ -272,6 +273,7 @@ export async function createSqliteBackupBundle(
     bundle.pragma("journal_mode = DELETE");
     // Check the snapshot before a DELETE can invoke an imported trigger.
     validateExactSchema(bundle, trustedActiveSchemaDescriptor());
+    validateSubthreadData(bundle);
     if (!options.selection || options.selection === "all") {
       writePreferences(bundle, {
         ...readPreferences(bundle),
@@ -595,7 +597,11 @@ export function prepareSqliteBackupBundle(
       copiedManifest.schemaVersion >= 8
         ? readPreferences(candidate)
         : undefined;
-    pruneProjects(candidate, options.selection ?? "all");
+    pruneProjects(
+      candidate,
+      options.selection ?? "all",
+      copiedManifest.schemaVersion,
+    );
     const retained = candidate
       .prepare(
         "SELECT count(*) AS attachmentCount, coalesce(sum(byte_size), 0) AS totalBytes FROM _on_track_bundle_files",
@@ -716,11 +722,14 @@ export function prepareSqliteBackupBundle(
 function pruneProjects(
   database: Database.Database,
   input: ProjectSelection,
+  schemaVersion = SQL_ON_TRACK_BACKUP_SCHEMA_VERSION,
 ): void {
   const selection = projectSelectionSchema.parse(input);
   if (selection === "all") return;
   const ids = database
-    .prepare("SELECT id FROM chats ORDER BY id")
+    .prepare(
+      `SELECT id FROM chats ${schemaVersion >= 10 ? "WHERE project_id IS NULL" : ""} ORDER BY id`,
+    )
     .pluck()
     .all() as string[];
   const existing = new Set(ids);
@@ -745,9 +754,9 @@ export function readBackupProjects(
         `SELECT c.id, c.title, c.created_at AS createdAt,
       ${schemaVersion >= 4 ? "c.pinned_at" : "NULL"} AS pinnedAt,
       ${schemaVersion >= 7 ? "c.archived_at" : "NULL"} AS archivedAt,
-      (SELECT count(*) FROM notes n WHERE n.chat_id = c.id) AS messageCount,
-      (SELECT count(*) FROM note_attachments a JOIN notes n ON a.note_id = n.id WHERE n.chat_id = c.id) AS attachmentCount
-      FROM chats c ORDER BY c.title, c.id`,
+      (SELECT count(*) FROM notes n WHERE ${schemaVersion >= 10 ? "n.chat_id IN (SELECT id FROM chats WHERE id = c.id OR project_id = c.id)" : "n.chat_id = c.id"}) AS messageCount,
+      (SELECT count(*) FROM note_attachments a JOIN notes n ON a.note_id = n.id WHERE ${schemaVersion >= 10 ? "n.chat_id IN (SELECT id FROM chats WHERE id = c.id OR project_id = c.id)" : "n.chat_id = c.id"}) AS attachmentCount
+      FROM chats c ${schemaVersion >= 10 ? "WHERE c.project_id IS NULL" : ""} ORDER BY c.title, c.id`,
       )
       .all() as BackupProject[];
   } finally {
@@ -1028,8 +1037,43 @@ function validateApplicationData(
       "A message exceeds the attachments per message limit.",
     );
   }
+  if (schemaVersion >= 10) validateSubthreadData(database);
   if (schemaVersion >= 9) validateProjectLabelData(database);
   else validateLabelData(database);
+}
+
+/** Foreign keys establish existence; these checks establish project ownership. */
+function validateSubthreadData(database: Database.Database): void {
+  const invalidRoot = database
+    .prepare(
+      `
+    SELECT c.id FROM chats c LEFT JOIN chats root ON root.id = c.project_id
+    WHERE c.project_id IS NOT NULL AND (
+      c.project_id = c.id OR root.id IS NULL OR root.project_id IS NOT NULL
+    ) LIMIT 1
+  `,
+    )
+    .get();
+  const invalidOrigin = database
+    .prepare(
+      `
+    SELECT o.chat_id FROM subthread_origins o
+    LEFT JOIN chats child ON child.id = o.chat_id
+    LEFT JOIN chats source ON source.id = o.source_chat_id
+    LEFT JOIN notes note ON note.id = o.source_note_id
+    WHERE child.project_id IS NULL
+      OR (o.source_chat_id IS NOT NULL AND (
+        source.id IS NULL OR COALESCE(source.project_id, source.id) != child.project_id
+      ))
+      OR (o.source_note_id IS NOT NULL AND (
+        o.source_chat_id IS NULL OR note.id IS NULL OR note.chat_id != o.source_chat_id
+      ))
+    LIMIT 1
+  `,
+    )
+    .get();
+  if (invalidRoot || invalidOrigin)
+    throw validationError("Subthread project or origin metadata is invalid.");
 }
 
 function validateProjectLabelData(database: Database.Database): void {

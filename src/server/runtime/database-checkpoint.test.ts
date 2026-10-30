@@ -200,7 +200,7 @@ it("refuses checkpoint paths outside the owned directory and symbolic-link sidec
   expect(readFileSync(outside, "utf8")).toBe("preserve");
 });
 
-it("round-trips the actual released schema 6 through bundled schema 9 migration and recovery", async () => {
+it("round-trips the actual released schema 6 through bundled schema 10 migration and recovery", async () => {
   const directory = mkdtempSync(join(tmpdir(), "threadstr-schema-update-"));
   roots.push(directory);
   const migrationsFolder = join(directory, "old-migrations");
@@ -244,7 +244,7 @@ it("round-trips the actual released schema 6 through bundled schema 9 migration 
   connections.push(candidate);
   expect(
     candidate.prepare("SELECT schema_version FROM app_metadata").pluck().get(),
-  ).toBe(9);
+  ).toBe(10);
   expect(candidate.prepare("SELECT * FROM notes").get()).toEqual(beforeNote);
   candidate.close();
   restoreDatabaseCheckpoint({
@@ -269,7 +269,7 @@ it.each([
   "after_sidecars_removed",
   "after_database_replaced",
 ] as const)(
-  "recovers v0.1.0 data repeatedly after schema-9 migration and restore interruption at %s",
+  "recovers v0.1.0 data repeatedly after schema-10 migration and restore interruption at %s",
   async (point) => {
     const directory = mkdtempSync(join(tmpdir(), "threadstr-v010-recovery-"));
     roots.push(directory);
@@ -290,7 +290,7 @@ it.each([
         .prepare("SELECT schema_version FROM app_metadata")
         .pluck()
         .get(),
-    ).toBe(9);
+    ).toBe(10);
     candidate.close();
     const file = join(directory, V010_FILE.path);
     writeFileSync(file, "Externally edited after checkpoint", { mode: 0o600 });

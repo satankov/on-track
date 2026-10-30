@@ -308,6 +308,30 @@ scoped shared family. Focus must remain visible after decorative borders are
 removed. Placeholders supplement real labels. Validation uses `role="alert"`
 and associated fields where applicable; success/status uses polite announcements.
 
+### Project subthreads
+
+The project row is Main, with no project-level chevron. Clicking it opens Main
+and reveals children; clicking the already-open Main collapses children without
+closing Main. Children and Show all indent 24px. Show five active children, pins
+first, keeping the selected child visible; Show all expands in place. Preserve
+candidate title-only rows and Attention indicators.
+
+Child headers contain a muted clickable root, slash, and child title. Both titles
+have min-width:0, single-line overflow and independent ellipsis; actions stay
+visible. The root consumes at most 40% of available title space and short names
+remain adjacent. Use the same branch glyph in New subthread and message actions.
+
+Centered muted date-style markers show Independent subthread, Subthread from a
+linked source, or Continued in a linked child. Never quote the source. Deleted
+sources receive explicit fallback text. Links retain visible keyboard focus.
+
+Message action order: Change labels, Continue in subthread, Copy message, Edit
+message, Delete message. Reuse compact icon controls and reserve 160px beside
+desktop bubbles for five actions. Keep focus/touch visibility and existing narrow
+layout behavior. Creation asks for a name only. Child Edit has all settings except
+accent, plus archive/delete. Search uses a native Project checkbox for whole-project
+scope, including archived conversations. These new layout decisions target desktop.
+
 ### History filters
 
 Preserve the existing filter width and button geometry. Labels use the existing
@@ -349,7 +373,8 @@ whole project even when the selected filters intersect.
   a decorative card imply that a blocked native action is available.
   Wrap explanations instead of ellipsizing them. The visible file-picker button
   is the composer's attachment Tab stop; its hidden file input is not a second one.
-- Search stays within the current project with a quiet compact field, counts,
+- Search defaults to the current conversation; Project includes Main and all
+  children. Reuse the quiet compact field, counts,
   clear action, no-results feedback, and the existing highlight color pair.
 - Hover-only message actions must also appear on focus and touch layouts. Keep
   state markers and counts readable without hover.

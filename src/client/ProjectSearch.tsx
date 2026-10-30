@@ -17,6 +17,8 @@ export function ProjectSearch({
   initialValue = "",
   onValueChange,
   count,
+  projectScope = false,
+  onProjectScopeChange,
 }: {
   id: string;
   onCommit: (value: string) => void;
@@ -25,6 +27,8 @@ export function ProjectSearch({
   initialValue?: string;
   onValueChange?: (value: string) => void;
   count?: number;
+  projectScope?: boolean;
+  onProjectScopeChange?: (checked: boolean) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const composing = useRef(false);
@@ -35,6 +39,7 @@ export function ProjectSearch({
   }, [onCommit]);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const statusId = useId();
+  const scopeHelpId = useId();
   useEffect(() => {
     inputRef.current?.focus();
     return () => clearTimeout(timer.current);
@@ -115,6 +120,24 @@ export function ProjectSearch({
           </svg>
         </button>
       </div>
+      {onProjectScopeChange && (
+        <>
+          <label className="project-search-scope">
+            <input
+              type="checkbox"
+              checked={projectScope}
+              onChange={(event) =>
+                onProjectScopeChange(event.currentTarget.checked)
+              }
+              aria-describedby={scopeHelpId}
+            />
+            <span>Project</span>
+          </label>
+          <span id={scopeHelpId} className="visually-hidden">
+            Search Main and all subthreads, including archived conversations.
+          </span>
+        </>
+      )}
       <span id={statusId} className="visually-hidden" role="status">
         {pending ? "Updating results…" : status}
       </span>

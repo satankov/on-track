@@ -7,6 +7,11 @@ export function rewindToSchema7(database: Database.Database): void {
     .prepare("SELECT schema_version FROM app_metadata")
     .pluck()
     .get() as number;
+  if (version >= 10) {
+    database.exec(
+      "DROP TABLE subthread_origins; DROP INDEX chats_project_idx; ALTER TABLE chats DROP COLUMN project_id;",
+    );
+  }
   if (version >= 9) {
     const enabled = database
       .prepare(

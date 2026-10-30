@@ -49,6 +49,14 @@ export const createChatInputSchema = z.object({
   accent: accentSchema,
 });
 
+export const createSubthreadInputSchema = z
+  .object({
+    title: titleSchema,
+    sourceNoteId: z.string().min(1).max(256).optional(),
+  })
+  .strict();
+export type CreateSubthreadInput = z.infer<typeof createSubthreadInputSchema>;
+
 export const updateChatInputSchema = z
   .object({
     title: titleSchema.optional(),

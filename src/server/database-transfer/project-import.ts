@@ -101,10 +101,11 @@ export function mergePreparedProjects(options: {
     }
     throw new Error("Could not allocate an import identity.");
   };
+  const roots = records.projects.filter((row) => row.project_id === null);
   const titles = allocateImportedTitles(
-    records.projects,
+    roots,
     options.database
-      .prepare("SELECT title FROM chats")
+      .prepare("SELECT title FROM chats WHERE project_id IS NULL")
       .pluck()
       .all() as string[],
     options.now,
@@ -121,8 +122,8 @@ export function mergePreparedProjects(options: {
     ]),
   );
   const result: ImportResult = {
-    importedCount: records.projects.length,
-    renames: records.projects
+    importedCount: roots.length,
+    renames: roots
       .filter((row) => titles.get(row.id) !== row.title)
       .map((row) => ({ original: row.title, renamed: titles.get(row.id)! })),
   };
@@ -163,7 +164,9 @@ export function mergePreparedProjects(options: {
       projects: records.projects.map((row) => ({
         ...row,
         id: projectIds.get(row.id)!,
-        title: titles.get(row.id)!,
+        title: titles.get(row.id) ?? row.title,
+        project_id:
+          row.project_id === null ? null : projectIds.get(row.project_id)!,
       })),
       notes: records.notes.map((row) => ({
         ...row,
@@ -175,6 +178,15 @@ export function mergePreparedProjects(options: {
         ...row,
         chat_id: projectIds.get(row.chat_id)!,
         id: labelIds.get(JSON.stringify([row.chat_id, row.id]))!,
+      })),
+      origins: records.origins.map((row) => ({
+        chat_id: projectIds.get(row.chat_id)!,
+        source_chat_id:
+          row.source_chat_id === null
+            ? null
+            : projectIds.get(row.source_chat_id)!,
+        source_note_id:
+          row.source_note_id === null ? null : noteIds.get(row.source_note_id)!,
       })),
       noteLabels: records.noteLabels.map((row) => ({
         ...row,

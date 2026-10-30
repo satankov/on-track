@@ -232,7 +232,7 @@ it("reconciles a stopped committed update without erasing later notes", async ()
 });
 
 it.each(["candidate_started", "committed"] as const)(
-  "recovers a real v0.1.0-to-schema-9 update at %s without crossing the durable commit boundary",
+  "recovers a real v0.1.0-to-schema-10 update at %s without crossing the durable commit boundary",
   async (state) => {
     const f = fixture(true);
     const old = new Database(f.databasePath);
@@ -290,7 +290,7 @@ it.each(["candidate_started", "committed"] as const)(
           .prepare("SELECT schema_version FROM app_metadata")
           .pluck()
           .get(),
-      ).toBe(state === "committed" ? 9 : 7);
+      ).toBe(state === "committed" ? 10 : 7);
       if (state === "committed") {
         expect(
           recovered

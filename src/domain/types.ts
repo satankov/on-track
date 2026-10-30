@@ -2,6 +2,10 @@ import type { ProjectLabel } from "./labels.js";
 import type { Accent, ConfigurableLabel, Label } from "./validation.js";
 
 export interface Chat {
+  /** Null for Main; children always reference a root project. */
+  projectId?: string | null;
+  /** Present for continued subthreads even when their source is deleted. */
+  origin?: { sourceChatId: string | null; sourceNoteId: string | null } | null;
   labelDefinitions?: ProjectLabel[];
   labelConfigurationRevision?: number;
   id: string;

@@ -17,7 +17,10 @@ export function copyExample(
 ): string {
   const id = randomUUID();
   const titles = new Set(
-    database.prepare("SELECT title FROM chats").pluck().all(),
+    database
+      .prepare("SELECT title FROM chats WHERE project_id IS NULL")
+      .pluck()
+      .all(),
   );
   let number = 1;
   let title: string;
@@ -38,6 +41,7 @@ export function copyExample(
     projects: [
       {
         id,
+        project_id: null,
         title,
         accent: example.accent,
         created_at: now,
@@ -72,6 +76,7 @@ export function copyExample(
       })),
     ),
     attachments: [],
+    origins: [],
   };
   const published: string[] = [];
   let committed = false;

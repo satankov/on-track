@@ -203,7 +203,7 @@ it.each(["replace", "merge"] as const)(
       try {
         expect(
           db.prepare("SELECT schema_version FROM app_metadata").pluck().get(),
-        ).toBe(9);
+        ).toBe(10);
         const paths = db
           .prepare("SELECT storage_path FROM note_attachments")
           .pluck()
@@ -849,3 +849,173 @@ it.each(["all", "selected"])(
     expect(preferences.initialized).toBe(true);
   },
 );
+
+it.each([
+  ["replace", "selected"],
+  ["merge", "selected"],
+  ["replace", "all"],
+  ["merge", "all"],
+] as const)(
+  "%s imports a complete subthread project from a %s export",
+  async (mode, scope) => {
+    const root = (
+      await app.inject({
+        method: "POST",
+        url: "/api/chats",
+        payload: { title: "Website", accent: "ocean" },
+      })
+    ).json();
+    const other = (
+      await app.inject({
+        method: "POST",
+        url: "/api/chats",
+        payload: { title: "Other project", accent: "moss" },
+      })
+    ).json();
+    const rootForm = new FormData();
+    rootForm.set("body", "Main context");
+    const rootNote = (
+      await app.inject({
+        method: "POST",
+        url: `/api/chats/${root.id}/notes`,
+        payload: rootForm,
+      })
+    ).json();
+    const childResponse = await app.inject({
+      method: "POST",
+      url: `/api/chats/${root.id}/subthreads`,
+      payload: { title: "Website", sourceNoteId: rootNote.id },
+    });
+    expect(childResponse.statusCode, childResponse.body).toBe(201);
+    const child = childResponse.json();
+    const form = new FormData();
+    form.set("body", "Pricing context");
+    form.append("files", new File(["child attachment"], "child.txt"));
+    const childNote = (
+      await app.inject({
+        method: "POST",
+        url: `/api/chats/${child.id}/notes`,
+        payload: form,
+      })
+    ).json();
+    const sibling = (
+      await app.inject({
+        method: "POST",
+        url: `/api/chats/${child.id}/subthreads`,
+        payload: { title: "Experiment", sourceNoteId: childNote.id },
+      })
+    ).json();
+    await app.inject({ method: "PUT", url: `/api/chats/${child.id}/archive` });
+    const exported = await app.inject({
+      method: "POST",
+      url: "/api/database/export",
+      payload: { selection: scope === "all" ? "all" : [root.id] },
+    });
+    expect(exported.statusCode, exported.body).toBe(200);
+    const backup = exported.rawPayload;
+    const previewResponse = await app.inject({
+      method: "POST",
+      url: "/api/database/import/preview",
+      headers: { "content-type": "application/octet-stream" },
+      payload: backup,
+    });
+    expect(previewResponse.statusCode, previewResponse.body).toBe(200);
+    const preview = previewResponse.json();
+    expect(preview.projects).toHaveLength(scope === "all" ? 2 : 1);
+    expect(
+      preview.projects.find(
+        (project: { id: string }) => project.id === root.id,
+      ),
+    ).toMatchObject({ messageCount: 2, attachmentCount: 1 });
+    expect(
+      preview.projects.some(
+        (project: { id: string }) =>
+          project.id === child.id || project.id === sibling.id,
+      ),
+    ).toBe(false);
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/database/import",
+      payload: importForm(backup, {
+        mode,
+        selection: [root.id],
+        digest: preview.digest,
+      }),
+    });
+    expect(imported.statusCode, imported.body).toBe(200);
+    expect(imported.json().importedCount).toBe(1);
+    expect(imported.json().renames).toHaveLength(mode === "merge" ? 1 : 0);
+    const chats = (await app.inject("/api/chats")).json();
+    const newRoot = chats.find(
+      (chat: { id: string; projectId: string | null }) =>
+        chat.projectId === null &&
+        chat.id !== other.id &&
+        (mode === "replace" || chat.id !== root.id),
+    );
+    expect(newRoot).toBeDefined();
+    const project = (
+      await app.inject(`/api/chats/${newRoot.id}/project`)
+    ).json();
+    expect(project).toHaveLength(3);
+    const copiedChild = project.find(
+      (chat: { projectId: string | null; title: string }) =>
+        chat.projectId === newRoot.id && chat.title === "Website",
+    );
+    const copiedSibling = project.find(
+      (chat: { title: string }) => chat.title === "Experiment",
+    );
+    const copiedMain = project.find(
+      (chat: { id: string }) => chat.id === newRoot.id,
+    );
+    expect(copiedChild).toMatchObject({
+      projectId: newRoot.id,
+      origin: {
+        sourceChatId: newRoot.id,
+        sourceNoteId: copiedMain.notes[0].id,
+      },
+    });
+    expect(copiedChild.archivedAt).not.toBeNull();
+    expect(copiedChild.notes[0].attachments).toHaveLength(1);
+    expect(copiedSibling).toMatchObject({
+      projectId: newRoot.id,
+      origin: {
+        sourceChatId: copiedChild.id,
+        sourceNoteId: copiedChild.notes[0].id,
+      },
+    });
+    expect(copiedSibling.notes).toEqual([]);
+    expect(copiedChild.id === child.id).toBe(mode === "replace");
+    expect(copiedSibling.id === sibling.id).toBe(mode === "replace");
+    expect(copiedChild.notes[0].id === childNote.id).toBe(mode === "replace");
+    await app.close();
+    const path = join(directory, "on-track.sqlite");
+    app = buildApp({ database: openDatabase(path), databasePath: path });
+    expect(
+      (await app.inject(`/api/chats/${copiedSibling.id}/project`)).json(),
+    ).toEqual(project);
+  },
+);
+
+it("does not accept a child as a selected project export", async () => {
+  const root = (
+    await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      payload: { title: "Website", accent: "ocean" },
+    })
+  ).json();
+  const child = (
+    await app.inject({
+      method: "POST",
+      url: `/api/chats/${root.id}/subthreads`,
+      payload: { title: "Child" },
+    })
+  ).json();
+  const result = await app.inject({
+    method: "POST",
+    url: "/api/database/export",
+    payload: { selection: [child.id] },
+  });
+  expect(result.statusCode).toBe(400);
+  expect((await app.inject("/api/chats")).json()).toHaveLength(2);
+});

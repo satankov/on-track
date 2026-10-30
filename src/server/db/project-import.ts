@@ -4,6 +4,7 @@ import type Database from "better-sqlite3";
 export interface ImportedProject {
   id: string;
   title: string;
+  project_id: string | null;
   accent: string;
   created_at: number;
   updated_at: number;
@@ -33,6 +34,11 @@ export interface ImportedRecords {
   notes: ImportedNote[];
   attachments: ImportedAttachment[];
   labelDefinitions: ProjectLabelRow[];
+  origins: Array<{
+    chat_id: string;
+    source_chat_id: string | null;
+    source_note_id: string | null;
+  }>;
   noteLabels: Array<{ note_id: string; chat_id: string; label: string }>;
 }
 export function readImportedRecords(
@@ -41,7 +47,7 @@ export function readImportedRecords(
   return {
     projects: source
       .prepare(
-        "SELECT id,title,accent,created_at,updated_at,pinned_at,archived_at,collapse_long_messages FROM chats ORDER BY id",
+        "SELECT id,title,accent,created_at,updated_at,pinned_at,archived_at,collapse_long_messages,project_id FROM chats ORDER BY project_id IS NOT NULL, id",
       )
       .all() as ImportedProject[],
     notes: source
@@ -57,6 +63,11 @@ export function readImportedRecords(
     labelDefinitions: source
       .prepare("SELECT * FROM project_labels ORDER BY chat_id,position")
       .all() as ProjectLabelRow[],
+    origins: source
+      .prepare(
+        "SELECT chat_id,source_chat_id,source_note_id FROM subthread_origins",
+      )
+      .all() as ImportedRecords["origins"],
     noteLabels: source
       .prepare("SELECT note_id,chat_id,label FROM note_labels")
       .all() as ImportedRecords["noteLabels"],
@@ -67,7 +78,7 @@ export function insertImportedRecords(
   records: ImportedRecords,
 ): void {
   const project = database.prepare(
-    "INSERT INTO chats (id,title,accent,created_at,updated_at,pinned_at,archived_at,collapse_long_messages) VALUES (@id,@title,@accent,@created_at,@updated_at,@pinned_at,@archived_at,@collapse_long_messages)",
+    "INSERT INTO chats (id,title,accent,created_at,updated_at,pinned_at,archived_at,collapse_long_messages,project_id) VALUES (@id,@title,@accent,@created_at,@updated_at,@pinned_at,@archived_at,@collapse_long_messages,@project_id)",
   );
   const note = database.prepare(
     "INSERT INTO notes (id,chat_id,body,sender,created_at) VALUES (@id,@chat_id,@body,@sender,@created_at)",
@@ -81,11 +92,18 @@ export function insertImportedRecords(
   const label = database.prepare(
     "INSERT INTO note_labels (note_id,chat_id,label) VALUES (@note_id,@chat_id,@label)",
   );
+  const origin = database.prepare(
+    "INSERT INTO subthread_origins(chat_id,source_chat_id,source_note_id) VALUES(@chat_id,@source_chat_id,@source_note_id)",
+  );
   database.transaction(() => {
-    for (const row of records.projects) project.run(row);
+    for (const row of [...records.projects].sort(
+      (a, b) => Number(a.project_id !== null) - Number(b.project_id !== null),
+    ))
+      project.run(row);
     for (const row of records.notes) note.run(row);
     for (const row of records.attachments) file.run(row);
     for (const row of records.labelDefinitions) definition.run(row);
     for (const row of records.noteLabels) label.run(row);
+    for (const row of records.origins) origin.run(row);
   })();
 }

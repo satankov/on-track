@@ -46,6 +46,7 @@
         <a href="#spacing">04 &nbsp; Space & shape</a>
         <a href="#settings">05 &nbsp; Settings recipe</a>
         <a href="#messages">06 &nbsp; Messages & fade</a>
+        <a href="#subthreads">Subthreads</a>
         <a href="#states">07 &nbsp; States & feedback</a>
         <a href="#responsive">08 &nbsp; Responsive rules</a>
         <a href="#guardrails">09 &nbsp; Agent checklist</a>
@@ -742,6 +743,97 @@
           </p>
         </section>
 
+        <section id="subthreads" class="cb-section">
+          <p class="cb-kicker">Project conversations</p>
+          <h2>One project, distinct conversations.</h2>
+          <p>
+            Main remains the project. Children stay one level deep, indented
+            24px.
+          </p>
+          <ul class="project-items" aria-label="Subthread rail specimen">
+            <li class="project-row" data-accent="ocean">
+              <button class="project-item" type="button" aria-expanded="true">
+                <span class="project-item-copy"
+                  ><strong>Website redesign</strong></span
+                >
+              </button>
+            </li>
+            <li
+              class="project-row project-row--subthread project-row--active"
+              data-accent="ocean"
+            >
+              <button
+                class="project-item project-item--active"
+                type="button"
+                aria-current="page"
+              >
+                <span class="project-item-copy"
+                  ><strong>Navigation ideas</strong></span
+                >
+              </button>
+            </li>
+            <li class="project-row project-row--subthread" data-accent="ocean">
+              <button class="project-item" type="button">
+                <span class="project-item-copy"
+                  ><strong>Pricing experiment</strong></span
+                >
+              </button>
+            </li>
+            <li class="subthread-disclosure-row">
+              <button
+                class="subthread-disclosure"
+                type="button"
+                aria-expanded="false"
+              >
+                Show all
+              </button>
+            </li>
+          </ul>
+          <div class="chat-heading">
+            <h1 class="subthread-heading">
+              <button
+                class="subthread-parent-title"
+                type="button"
+                title="Website redesign and the complete customer experience"
+              >
+                Website redesign and the complete customer experience
+              </button>
+              <span class="subthread-title-separator"> / </span>
+              <span
+                class="conversation-title"
+                title="Navigation ideas for returning and first-time customers"
+                >Navigation ideas for returning and first-time customers</span
+              >
+            </h1>
+          </div>
+          <div class="thread-origin">
+            Subthread from <button type="button">Website redesign</button>
+          </div>
+          <div class="thread-origin">Independent subthread</div>
+          <div class="thread-origin">
+            Continued in <button type="button">Navigation ideas</button>
+          </div>
+          <button
+            class="project-search-toggle"
+            type="button"
+            aria-label="New subthread"
+            title="New subthread"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <circle cx="6" cy="5" r="2" />
+              <circle cx="18" cy="6" r="2" />
+              <circle cx="6" cy="19" r="2" />
+              <path d="M6 7v10M8 15h2a8 8 0 0 0 8-7" />
+            </svg>
+          </button>
+          <label class="project-search-scope"
+            ><input type="checkbox" checked /> Project</label
+          >
+          <p class="cb-note">
+            Static anatomy specimens. Both header titles truncate independently.
+            The same branch icon sits between Change labels and Copy message.
+          </p>
+        </section>
         <section id="states" class="cb-section">
           <p class="cb-kicker">07 / States & feedback</p>
           <h2>Flat, with visible affordances.</h2>
