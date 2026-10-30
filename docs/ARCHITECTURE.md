@@ -2,14 +2,17 @@
 
 ## Status
 
-The published baseline is v0.1.0 (released 2026-10-23, primary `thr` CLI). It includes the security hardening recorded in [plan 0025](plans/0025-security-audit-response.md)
+The published baseline is [v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1),
+with the primary `thr` CLI. It includes the security hardening and dependency
+patches recorded in [plan 0025](plans/0025-security-audit-response.md)
 and the history controls, composer feedback, and managed uninstall in
 [plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md), plus
 current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
-Published database and backup schema is 7; current source advances to schema 9. The managed compatibility floor remains `0.0.7`.
-The subsequent flat UI/design-contract slice changes client UI, tests, and documentation
+Published database and backup schema is 9, matching current source; backup format
+remains 1. The managed compatibility floor remains `0.0.7`.
+The included flat UI/design-contract slice changes client UI, tests, and documentation
 only; see [plan 0029](plans/0029-flat-ui-and-design-contract.md). It changes no
-API, database, backup, dependency, or installation contract. The subsequent
+API, database, backup, dependency, or installation contract. The included
 [preferences and labels slice](plans/0031-multi-filters-durable-preferences-custom-labels.md)
 adds multi-filters, database preferences (schema 8), and custom labels (schema 9);
 see [ADR-0013](adr/0013-durable-preferences-and-project-labels.md).

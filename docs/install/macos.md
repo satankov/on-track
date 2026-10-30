@@ -1,10 +1,9 @@
 # Install threadstr on macOS
 
 > **Release guidance:** the latest published release is
-> [threadstr v0.0.9](https://github.com/satankov/on-track/releases/tag/v0.0.9),
-> with `thr` and the `ontrack` compatibility alias. The selected v0.1.0 candidate
-> is not yet published. Until publication, `latest` downloads install v0.0.9;
-> the uninstall commands below require v0.1.0.
+> [threadstr v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1),
+> with `thr` and the `ontrack` compatibility alias. The `latest` downloads include
+> the uninstall commands below, available since v0.1.0.
 
 ## Quick setup — one command
 

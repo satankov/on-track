@@ -15,25 +15,26 @@ recovery parts of that promise.
 
 ## Current phase
 
-Version 0.1.0 is the latest published plaintext alpha release under Apache
-License 2.0, published on 2026-10-23. It includes the security hardening,
-history controls, composer feedback, managed uninstall, and project search.
+[Version 0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1) is the
+latest published plaintext alpha release under Apache License 2.0. It includes
+the flat UI, intersecting history filters, database-backed preferences, custom
+project labels, and dependency security fixes, alongside the existing history
+controls, composer feedback, managed uninstall, and project search.
 threadstr and the primary `thr` CLI retain the `ontrack` compatibility alias.
 The managed compatibility floor remains `0.0.7`; installation remains
 experimental because clean OS/platform and published-upgrade evidence is incomplete.
 
 ## Current objective
 
-The post-v0.1.0 source includes the completed flat UI and design cookbook
+The published v0.1.1 release includes the completed flat UI and design cookbook
 slice in [plan 0029](plans/0029-flat-ui-and-design-contract.md), plus intersecting
 history filters, database-backed preferences and custom project labels in
 [plan 0031](plans/0031-multi-filters-durable-preferences-custom-labels.md).
-Current source uses schema 9; the published release remains schema 7. Its canonical
+Current source and the published release use schema 9. Its canonical
 standards are [DESIGN.md](../DESIGN.md), with an interactive reference under
-[branding/threadstr/ui](../branding/threadstr/ui/README.md). The next candidate
-is v0.1.1; it has not been published. The Zod dependency fix for issue #72 is complete
-locally. Approved pre-release security maintenance also updates static serving
-and the paired Vitest packages; verification and tracker evidence are recorded in
+[branding/threadstr/ui](../branding/threadstr/ui/README.md). The Zod dependency
+fix for issue #72 and the static-serving and paired Vitest updates are published
+in v0.1.1; verification and tracker evidence are recorded in
 [plan 0025](plans/0025-security-audit-response.md#pre-release-security-maintenance-slice-a-2026-10-29). Security phases 1–4 remain implemented;
 optional Phase 5 remains deferred. Identity and compatibility decisions remain
 in [ADR-0010](adr/0010-threadstr-identity-and-cli-transition.md) and
@@ -42,7 +43,11 @@ in [ADR-0010](adr/0010-threadstr-identity-and-cli-transition.md) and
 Local qualification of v0.1.0/schema-7 upgrades, selected backup replacement
 and merge, and schema-9 update recovery is recorded in
 [plan 0032](plans/0032-release-upgrade-and-recovery-qualification.md).
-Platform and published-candidate upgrade evidence remain separate release gates.
+The [v0.1.1 release workflow](https://github.com/satankov/on-track/actions/runs/40955814178)
+passed full verification on Linux Node 22.16.0 and 24 and managed lifecycle/update
+checks on Linux x64, Windows x64, and macOS arm64/x64. Clean-machine installation,
+real desktop behavior, accessibility, and live published-upgrade evidence remain
+separate validation requirements.
 
 Complete installation/platform and upgrade validation, retain the manual Node
 matrix and plaintext warnings, and record remaining evidence limits. Mobile
@@ -299,16 +304,17 @@ Native-action smoke tests are tracked in
 validation in [issue #33](https://github.com/satankov/on-track/issues/33), and
 managed installation/upgrade validation in
 [issue #34](https://github.com/satankov/on-track/issues/34).
-[Issue #61](https://github.com/satankov/on-track/issues/61) remains open for tracker
-reconciliation: v0.1.0 contains the focus fix and regression test, and subsequent
-Linux Node 22.16/24 CI passed the mobile-WebKit attachment test. Closure evidence
-is recorded in [plan 0025](plans/0025-security-audit-response.md#tracker-reconciliation).
+[Issue #61](https://github.com/satankov/on-track/issues/61) is closed: v0.1.0
+introduced the mobile focus fix and regression test, and the v0.1.1 release
+workflow passed the attachment-safety browser test on Linux Node 22.16.0 and 24.
+[Issue #72](https://github.com/satankov/on-track/issues/72) is closed with the
+patched Zod pin and bounded-validation coverage published in v0.1.1.
 Native uninstall validation is tracked in
 [issue #62](https://github.com/satankov/on-track/issues/62); history/composer
 assistive-technology validation is tracked in
 [issue #63](https://github.com/satankov/on-track/issues/63).
-[v0.1.0](https://github.com/satankov/on-track/releases/tag/v0.1.0) is the latest published release;
-the design and plan 0031 feature slices remain unreleased; see the
+[v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1) is the latest
+published release and includes the design and plan 0031 feature slices; see the
 [release procedure](RELEASING.md).
 Broader product priorities above remain strategy until scoped. Durable decisions
 live in `docs/adr/`; significant work lives in `docs/plans/`.
