@@ -229,9 +229,13 @@ may be smaller; verify target size/spacing and do not shrink them further.
 ### Project rail
 
 User-project rows show the title and existing pin/restore and Attention controls.
-No message preview or empty-message placeholder is rendered. Keep the 58px row
-target, center the title vertically, and preserve visible mutation errors and
+No message preview or empty-message placeholder is rendered. Rows have a 40px
+minimum height (44px on narrow/touch layouts), with vertically centered titles.
+Attention and pin/restore share a centered right-hand slot; hovering or focusing
+the row replaces the dot with the action. Narrow/touch layouts keep the action
+visible and place Attention beside it. Preserve visible mutation errors and
 accessible Attention descriptions. The wordmark has no subtitle.
+Section headers show their name and disclosure chevron, without item counts.
 
 ### Settings and Edit project
 
@@ -312,8 +316,10 @@ and associated fields where applicable; success/status uses polite announcements
 
 The project row is Main, with no project-level chevron. Clicking it opens Main
 and reveals children; clicking the already-open Main collapses children without
-closing Main. Children and Show all indent 24px. Show five active children, pins
-first, keeping the selected child visible; Show all expands in place. Preserve
+closing Main. Child text and Show all indent 24px; child titles use normal (400)
+weight. Child hover/selection backgrounds span the same full width as Main.
+Show five active children, pins first, keeping the selected child visible;
+Show all expands in place. Preserve
 candidate title-only rows and Attention indicators.
 
 Child headers contain a muted clickable root, slash, and child title. Both titles
@@ -340,7 +346,7 @@ sidebar. On desktop its grid area spans both history and composer rows down to
 the viewport bottom; composer growth cannot shorten the rail. Composer padding
 and fade start in the right grid column. The filter list scrolls only when its
 contents exceed that available height; its natural height puts the
-quiet `⌘/Ctrl + multiple` hint immediately below the final label, without a
+centered, quiet `⌘/Ctrl + multiple` hint immediately below the final label, without a
 checkbox or bottom anchoring. The hint shares the send shortcut's 0.64rem size,
 normal line height, 400 weight, inherited font and muted color. Each selected button is pressed; All represents
 the empty selection. Mobile retains horizontal filters with the hint underneath.

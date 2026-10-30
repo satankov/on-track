@@ -60,6 +60,95 @@ async function submitSubthread(page: Page, title: string) {
   await expect(page.locator(".chat-heading h1")).toContainText(title);
 }
 
+test("keeps child rows compact and full width with one centered Attention and pin slot", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  const root = await createProject(request, localApp.url, "Compact sidebar");
+  const child = await createSubthread(
+    request,
+    localApp.url,
+    root.id,
+    "Navigation ideas",
+  );
+  const note = await addNote(
+    request,
+    localApp.url,
+    child.id,
+    "Review navigation",
+  );
+  expect(
+    (
+      await request.put(
+        `${localApp.url}/api/chats/${child.id}/notes/${note.id}/labels/attention`,
+      )
+    ).ok(),
+  ).toBe(true);
+  await page.goto(localApp.url);
+  const parent = page.getByRole("button", {
+    name: `Open ${root.title}`,
+    exact: true,
+  });
+  await parent.click();
+  const open = page.getByRole("button", {
+    name: `Open ${child.title}`,
+    exact: true,
+  });
+  const row = open.locator("..");
+  const pin = row.getByRole("button", {
+    name: `Pin ${child.title}`,
+    exact: true,
+  });
+  const dot = row.locator(".project-attention-dot");
+  await page.mouse.move(600, 10);
+  await parent.blur();
+  const parentBox = (await parent.boundingBox())!;
+  const rowBox = (await row.boundingBox())!;
+  expect(rowBox.height).toBeLessThanOrEqual(44);
+  expect(rowBox.x).toBe(parentBox.x);
+  expect(rowBox.width).toBe(parentBox.width);
+  expect(rowBox.y - (parentBox.y + parentBox.height)).toBeLessThanOrEqual(1);
+  expect(
+    Number(
+      await open
+        .locator("strong")
+        .evaluate((el) => getComputedStyle(el).fontWeight),
+    ),
+  ).toBeLessThan(600);
+  const dotBox = (await dot.boundingBox())!;
+  const pinBox = (await pin.boundingBox())!;
+  expect(
+    Math.abs(dotBox.y + dotBox.height / 2 - (rowBox.y + rowBox.height / 2)),
+  ).toBeLessThan(1);
+  expect(
+    Math.abs(dotBox.x + dotBox.width / 2 - (pinBox.x + pinBox.width / 2)),
+  ).toBeLessThan(1);
+  await expect(dot).toHaveCSS("opacity", "1");
+  await expect(pin).toHaveCSS("opacity", "0");
+  // Hover the indented gutter: it belongs to the same full-width row.
+  await row.hover({ position: { x: 5, y: rowBox.height / 2 } });
+  await expect(pin).toHaveCSS("opacity", "1");
+  await expect(dot).toHaveCSS("opacity", "0");
+  await page.mouse.move(600, 10);
+  await pin.focus();
+  await expect(dot).toHaveCSS("opacity", "0");
+  await pin.press("Enter");
+  await expect(pin).toHaveAttribute("aria-pressed", "true");
+  await pin.press("Enter");
+  await expect(pin).toHaveAttribute("aria-pressed", "false");
+  await pin.blur();
+  await expect(dot).toHaveCSS("opacity", "1");
+  for (const theme of ["light", "neutral", "dark"]) {
+    await page.evaluate((value) => {
+      document.documentElement.dataset.theme = value;
+    }, theme);
+    await page.screenshot({
+      path: testInfo.outputPath(`compact-sidebar-${theme}.png`),
+    });
+  }
+});
+
 test("creates empty subthreads, follows origins and keeps sibling settings and drafts independent", async ({
   page,
   request,

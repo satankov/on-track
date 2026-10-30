@@ -65,7 +65,9 @@ removes sibling forks. Root selection in backups includes its full closure;
 merge remaps root, child, note, label and origin identities.
 
 New controls reuse existing icon buttons, project dialog, native checkbox,
-settings groups and date-divider typography. Child rows indent 24px. Header uses
+settings groups and date-divider typography. Child text indents 24px; subsequent
+sidebar polish keeps row backgrounds full width and child titles regular-weight,
+as defined in [DESIGN.md](../../DESIGN.md#project-subthreads). Header uses
 flex items with min-width:0 and separate overflow ellipsis; message actions keep
 adequate gutter for all five controls. Inspect Light/Neutral/Dark at desktop sizes.
 

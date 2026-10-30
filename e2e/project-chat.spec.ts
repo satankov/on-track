@@ -456,6 +456,14 @@ test("pins projects in a title-only rail with Attention status", async ({
   const currentPin = page.getByRole("button", {
     name: `Pin ${current.title}`,
   });
+  if (testInfo.project.name === "mobile-webkit") {
+    const dot = currentPin.locator("..").locator(".project-attention-dot");
+    await currentPin.focus();
+    await expect(dot).toHaveCSS("opacity", "1");
+    const dotBox = (await dot.boundingBox())!;
+    const pinBox = (await currentPin.boundingBox())!;
+    expect(dotBox.x + dotBox.width).toBeLessThan(pinBox.x);
+  }
   await currentPin.click();
   await expect(currentPin).toHaveAttribute("aria-pressed", "true");
   await expect(currentPin).toBeFocused();

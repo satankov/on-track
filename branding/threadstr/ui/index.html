@@ -747,8 +747,9 @@
           <p class="cb-kicker">Project conversations</p>
           <h2>One project, distinct conversations.</h2>
           <p>
-            Main remains the project. Children stay one level deep, indented
-            24px.
+            Main remains the project. Compact children use regular text indented
+            24px, with full-width hover and selection. Hover or focus a row to
+            replace Attention with its pin control.
           </p>
           <ul class="project-items" aria-label="Subthread rail specimen">
             <li class="project-row" data-accent="ocean">
@@ -761,6 +762,7 @@
             <li
               class="project-row project-row--subthread project-row--active"
               data-accent="ocean"
+              data-attention-state="today"
             >
               <button
                 class="project-item project-item--active"
@@ -771,6 +773,21 @@
                   ><strong>Navigation ideas</strong></span
                 >
               </button>
+              <button
+                class="project-pin-button"
+                type="button"
+                aria-label="Pin Navigation ideas"
+                aria-pressed="false"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m14 4 6 6-3 1-4 4 1 4-1 1-9-9 1-1 4 1 4-4Z" />
+                  <path d="m9 15-5 5" />
+                </svg>
+              </button>
+              <span
+                class="attention-dot attention-dot--today project-attention-dot"
+                aria-hidden="true"
+              ></span>
             </li>
             <li class="project-row project-row--subthread" data-accent="ocean">
               <button class="project-item" type="button">

@@ -969,7 +969,7 @@ describe("personal project chat workspace", () => {
     render(<App api={createApi()} />);
     for (const name of ["Pinned", "Projects", "Archive"]) {
       const header = await screen.findByRole("button", { name });
-      expect(header).toHaveTextContent("00");
+      expect(header).toHaveTextContent(new RegExp(`^${name}$`));
       expect(header).toHaveAttribute("aria-expanded", "true");
       await user.click(header);
       expect(header).toHaveAttribute("aria-expanded", "false");
@@ -1007,9 +1007,12 @@ describe("personal project chat workspace", () => {
     expect(screen.getByLabelText("Project name")).toHaveValue(
       "Failed archive draft",
     );
-    expect(screen.getByRole("button", { name: "Archive" })).toHaveTextContent(
-      "00",
-    );
+    expect(
+      within(screen.getByRole("region", { name: "Archive" })).queryAllByRole(
+        "button",
+        { name: /^Open /, hidden: true },
+      ),
+    ).toHaveLength(0);
   });
 
   it("ignores stale archive reads started during a restore and preserves the selected draft", async () => {
@@ -1053,9 +1056,12 @@ describe("personal project chat workspace", () => {
       list.resolve([chat]);
       detail.resolve({ ...chat, notes: [] });
     });
-    expect(screen.getByRole("button", { name: "Archive" })).toHaveTextContent(
-      "00",
-    );
+    expect(
+      within(screen.getByRole("region", { name: "Archive" })).queryAllByRole(
+        "button",
+        { name: /^Open /, hidden: true },
+      ),
+    ).toHaveLength(0);
     expect(
       screen.getByRole("button", { name: "Pin Restore race" }),
     ).toHaveAttribute("aria-pressed", "false");
@@ -1089,9 +1095,12 @@ describe("personal project chat workspace", () => {
     expect(button).toHaveAccessibleDescription("Try again");
     expect(screen.getByRole("button", { name: "Archive" })).toBeVisible();
     await user.click(button);
-    expect(screen.getByRole("button", { name: "Archive" })).toHaveTextContent(
-      "00",
-    );
+    expect(
+      within(screen.getByRole("region", { name: "Archive" })).queryAllByRole(
+        "button",
+        { name: /^Open /, hidden: true },
+      ),
+    ).toHaveLength(0);
   });
 
   it("archives only from settings and preserves unsaved fields through both settings actions", async () => {
@@ -1138,9 +1147,12 @@ describe("personal project chat workspace", () => {
     ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Restore project" }));
     expect(api.setChatArchived).toHaveBeenLastCalledWith("archive", false);
-    expect(screen.getByRole("button", { name: "Archive" })).toHaveTextContent(
-      "00",
-    );
+    expect(
+      within(screen.getByRole("region", { name: "Archive" })).queryAllByRole(
+        "button",
+        { name: /^Open /, hidden: true },
+      ),
+    ).toHaveLength(0);
     expect(screen.getByLabelText("Project name")).toHaveValue("Unsaved name");
     expect(
       screen.getByRole("button", { name: "Archive project" }),
@@ -1177,9 +1189,12 @@ describe("personal project chat workspace", () => {
         pending.resolve({ archivedAt: null, pinnedAt: null }),
       );
       expect(api.getChat).not.toHaveBeenCalled();
-      expect(screen.getByRole("button", { name: "Archive" })).toHaveTextContent(
-        "00",
-      );
+      expect(
+        within(screen.getByRole("region", { name: "Archive" })).queryAllByRole(
+          "button",
+          { name: /^Open /, hidden: true },
+        ),
+      ).toHaveLength(0);
       expect(
         screen.getByRole("button", {
           name: collapsed ? "Projects" : "Pin Archive journey",
@@ -1852,6 +1867,11 @@ describe("personal project chat workspace", () => {
     expect(
       screen.getByText("Pinned", { selector: ".rail-section-label span" }),
     ).toBeVisible();
+    for (const label of ["Pinned", "Projects", "Archive", "Examples"]) {
+      expect(screen.getByRole("button", { name: label })).toHaveTextContent(
+        new RegExp(`^${label}$`),
+      );
+    }
     expect(
       screen.getByRole("button", { name: "Open Pinned" }).closest("li"),
     ).toHaveAttribute("data-attention-state", "earlier");
@@ -2000,9 +2020,12 @@ describe("personal project chat workspace", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Database busy");
     expect(pin).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "Pinned" })).toHaveTextContent(
-      "00",
-    );
+    expect(
+      within(screen.getByRole("region", { name: "Pinned" })).queryAllByRole(
+        "button",
+        { name: /^Open /, hidden: true },
+      ),
+    ).toHaveLength(0);
     await waitFor(() => expect(pin).toHaveFocus());
   });
 

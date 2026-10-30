@@ -1106,7 +1106,6 @@ function ProjectRail({
             {label}
             <ChevronDownIcon />
           </span>
-          <span>{String(items.length).padStart(2, "0")}</span>
         </button>
         <ul
           className="project-items"

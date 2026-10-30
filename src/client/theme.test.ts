@@ -293,15 +293,9 @@ describe("appearance theme contract", () => {
     },
   );
 
-  it("centers the project status cluster and separates rail sections", () => {
+  it("separates rail sections", () => {
     expect(stylesheet).toMatch(
       /\.project-section \+ \.project-section\s*\{[^}]*margin-top:\s*10px/s,
-    );
-    expect(stylesheet).toMatch(
-      /\.project-pin-button svg\s*\{[^}]*transform:\s*translateY\(-3px\)/s,
-    );
-    expect(stylesheet).toMatch(
-      /\.project-attention-dot\s*\{[^}]*bottom:\s*13px/s,
     );
   });
 

@@ -388,7 +388,7 @@ button.rail-section-label {
 
 .project-row {
   position: relative;
-  min-height: 58px;
+  min-height: 40px;
   border-radius: 8px;
 }
 .project-row:hover {
@@ -409,10 +409,10 @@ button.rail-section-label {
 
 .project-item {
   width: 100%;
-  min-height: 58px;
+  min-height: 40px;
   display: flex;
   align-items: center;
-  padding: 9px 46px 9px 10px;
+  padding: 6px 46px 6px 10px;
   border: 0;
   border-radius: 8px;
   color: var(--ink);
@@ -446,9 +446,10 @@ button.rail-section-label {
 .project-pin-button {
   position: absolute;
   z-index: 2;
-  inset: 0 0 auto auto;
+  inset: 50% 0 auto auto;
+  transform: translateY(-50%);
   width: 44px;
-  height: 44px;
+  height: 40px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -479,7 +480,6 @@ button.rail-section-label {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 2;
-  transform: translateY(-3px);
 }
 .project-pin-button[aria-pressed="true"] svg {
   fill: color-mix(in srgb, currentColor 20%, transparent);
@@ -502,8 +502,13 @@ button.rail-section-label {
 .project-attention-dot {
   position: absolute;
   z-index: 2;
-  right: 18px;
-  bottom: 13px;
+  right: 22px;
+  top: 50%;
+  transform: translate(50%, -50%);
+}
+.project-row:hover .project-attention-dot,
+.project-row:focus-within .project-attention-dot {
+  opacity: 0;
 }
 
 .visually-hidden {
@@ -3310,8 +3315,23 @@ kbd {
   }
 }
 
-@media (pointer: coarse) {
+@media (pointer: coarse), (hover: none), (max-width: 760px) {
+  .project-row,
+  .project-item {
+    min-height: 44px;
+  }
   .project-pin-button {
+    height: 44px;
+    opacity: 1;
+  }
+  .project-row[data-attention-state="today"] .project-item,
+  .project-row[data-attention-state="earlier"] .project-item {
+    padding-right: 64px;
+  }
+  .project-row .project-attention-dot,
+  .project-row:hover .project-attention-dot,
+  .project-row:focus-within .project-attention-dot {
+    right: 54px;
     opacity: 1;
   }
 }
@@ -3746,6 +3766,7 @@ kbd {
   flex: 0 0 auto;
   margin: 8px 0 0;
   padding: 0 4px;
+  text-align: center;
 }
 .history-filter-button {
   flex-shrink: 0;
@@ -3896,8 +3917,11 @@ kbd {
 }
 
 /* Flat project subthreads reuse the rail, date markers and icon controls. */
-.project-row--subthread {
-  margin-left: 24px;
+.project-row--subthread .project-item {
+  padding-left: 34px;
+}
+.project-row--subthread .project-item-copy strong {
+  font-weight: 400;
 }
 .subthread-disclosure-row {
   margin-left: 24px;

@@ -84,6 +84,10 @@ name after removing its second line. Remove only preview-specific styling;
 recoverable row errors still need visible text and accessible association.
 Update affected cookbook specimens and contract wording in the same change.
 
+Subsequent sidebar polish supersedes this slice's retained row dimensions:
+[the current rail contract](../../DESIGN.md#project-rail) defines compact rows,
+the shared Attention/action slot, and group headers without counts.
+
 Use a single client presentation helper keyed by built-in ID for “Question”.
 Apply it to both visible and accessible text, including reorder announcements.
 Keep draft/configuration values canonical when saving. Custom labels retain

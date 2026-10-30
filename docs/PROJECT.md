@@ -34,6 +34,11 @@ This UI trim is preserved alongside the completed, unreleased project-subthreads
 published v0.1.1 remains schema 9. Backup format remains 1, with schema 3–9
 bundles migrated in validated staging. The next release target is v0.2.0 on `release/v0.2.0`; it is not published.
 
+The candidate also includes compact project/subthread rows, full-width child
+hover states, a shared Attention/pin slot, count-free group headers, and centered
+filter shortcut guidance. [DESIGN.md](../DESIGN.md#project-rail) owns the current
+rail contract and its touch/keyboard behavior.
+
 The published v0.1.1 release includes the completed flat UI and design cookbook
 slice in [plan 0029](plans/0029-flat-ui-and-design-contract.md), plus intersecting
 history filters, database-backed preferences and custom project labels in
