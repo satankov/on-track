@@ -32,7 +32,7 @@ Attention indicators, “Question” display text, and simplified guidance/navig
 This UI trim is preserved alongside the completed, unreleased project-subthreads slice in
 [plan 0034](plans/0034-project-subthreads.md). Current source uses schema 10;
 published v0.1.1 remains schema 9. Backup format remains 1, with schema 3–9
-bundles migrated in validated staging. The next release version is not assigned.
+bundles migrated in validated staging. The next release target is v0.2.0 on `release/v0.2.0`; it is not published.
 
 The published v0.1.1 release includes the completed flat UI and design cookbook
 slice in [plan 0029](plans/0029-flat-ui-and-design-contract.md), plus intersecting

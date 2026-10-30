@@ -3,7 +3,8 @@
 Status: implemented, verified locally, and committed as `7eaba47` on 2026-10-30.
 Integrated into `codex/next-release-candidate` from `codex/project-subthreads`,
 preserving candidate `60217a5` and main's managed-server test stability fix.
-The feature is unreleased; no next release version has been assigned.
+The feature is unreleased. The subsequent release preparation targets v0.2.0
+on `release/v0.2.0`, integrating the candidate and main.
 
 ## Goal
 
