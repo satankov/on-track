@@ -107,7 +107,7 @@ technical values. Use the approved SVG for the logo; preserve the existing
 The small metadata/caption roles are existing compact UI exceptions, not sizes
 for new body text, instructions, or ordinary controls. Use the nearest role;
 do not invent intermediate font sizes. Keep sentence case except established
-rail/toolbar captions. Long message text wraps; rail previews and chat titles
+rail/toolbar captions. Long message text wraps; project names and chat titles
 may truncate with ellipsis. Preserve full accessible names.
 
 Large Home/empty-state headings and the mobile chat title (1.65rem) are existing
@@ -226,6 +226,13 @@ may be smaller; verify target size/spacing and do not shrink them further.
 
 ## Components
 
+### Project rail
+
+User-project rows show the title and existing pin/restore and Attention controls.
+No message preview or empty-message placeholder is rendered. Keep the 58px row
+target, center the title vertically, and preserve visible mutation errors and
+accessible Attention descriptions. The wordmark has no subtitle.
+
 ### Settings and Edit project
 
 Use **heading → one adjustable group → useful note below**. Reuse
@@ -234,7 +241,8 @@ and `.field-help`. Outer panels are transparent. No title echo, eyebrow, or
 introductory sentence explaining that this is the settings screen.
 
 - Edit has an accessible main landmark named Edit project, no visible duplicate
-  title. Back to project and Save changes are first in DOM and at the top.
+  title. The Settings-style back arrow (accessible name “Back to project”) and
+  Save changes are first in DOM and at the top. The arrow stays left aligned.
 - Project accent: one horizontal swatch strip, native radios, visible check on
   selected swatch. Color names remain accessible, not printed beside every dot.
 - Project labels: one column, icon then name then right-aligned square checkbox.
@@ -259,8 +267,10 @@ introductory sentence explaining that this is the settings screen.
   into one blank, including saved labels; Save removes their definitions and
   message tags. Retyping before Save retains the current row's identity.
   Custom names allow eight grapheme characters and one optional glyph; field
-  errors appear while typing. Use the concise “Drag rows to reorder.” note,
-  with keyboard/tap details in the handle's accessible description.
+  errors appear while typing. Keep the concise limits/disablement note,
+  with keyboard/tap reordering details in the handle's accessible description.
+  Display the built-in `open-question` label as “Question”; its stored canonical
+  name remains unchanged for backup compatibility.
 - General uses the same row/checkbox. Backups keep left-side selection checkboxes
   because these are bulk selection lists, not setting switches.
 - Archive and Delete stay in one column, separated by the archive preservation
@@ -270,6 +280,9 @@ introductory sentence explaining that this is the settings screen.
   the fold while its initiating button is at the top.
 - Create project reuses the same field/swatch treatment in a real modal dialog.
   Keep its accessible title, Cancel/Create actions, Escape and focus restoration.
+  Place “More settings in Edit project.” in the action footer using `.field-help`,
+  vertically aligned with Cancel/Create. Keep the buttons together and right
+  aligned; wrap the hint above them when narrow.
   Let `showModal()` establish initial focus and remember the opener; do not move
   focus into the form before opening the native modal.
 - Appearance uses native radio previews, a check, and Selected text. Selection

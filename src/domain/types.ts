@@ -1,8 +1,6 @@
 import type { ProjectLabel } from "./labels.js";
 import type { Accent, ConfigurableLabel, Label } from "./validation.js";
 
-export const MAX_PROJECT_PREVIEW_SOURCE_LENGTH = 512;
-
 export interface Chat {
   labelDefinitions?: ProjectLabel[];
   labelConfigurationRevision?: number;
@@ -15,8 +13,6 @@ export interface Chat {
   updatedAt: number;
   archivedAt: number | null;
   pinnedAt: number | null;
-  latestMessagePreview: string | null;
-  nextMessageAt: number | null;
   latestAttentionAt: number | null;
   nextAttentionAt: number | null;
 }

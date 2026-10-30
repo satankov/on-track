@@ -598,7 +598,7 @@ describe("SQLite project-chat persistence", () => {
     ).toThrow(/CHECK constraint/);
   });
 
-  it("persists stable project pins and batches sidebar message and Attention summaries", () => {
+  it("persists stable project pins and batches sidebar Attention summaries without message previews", () => {
     repository.createChat({
       id: "chat-a",
       title: "Alpha",
@@ -665,6 +665,10 @@ describe("SQLite project-chat persistence", () => {
     });
 
     const chats = repository.listChats(1_000);
+    for (const chat of chats) {
+      expect(chat).not.toHaveProperty("latestMessagePreview");
+      expect(chat).not.toHaveProperty("nextMessageAt");
+    }
     expect(chats.map((chat) => chat.id)).toEqual([
       "chat-a",
       "chat-b",
@@ -672,24 +676,17 @@ describe("SQLite project-chat persistence", () => {
     ]);
     expect(chats[0]).toMatchObject({
       pinnedAt: 800,
-      latestMessagePreview: expect.stringMatching(/^Latest preview/),
-      nextMessageAt: null,
       latestAttentionAt: null,
       nextAttentionAt: null,
     });
-    expect(chats[0].latestMessagePreview!.length).toBeLessThanOrEqual(512);
     expect(chats[1]).toMatchObject({
       pinnedAt: 600,
-      latestMessagePreview: "Old attention",
-      nextMessageAt: 1_500,
       latestAttentionAt: 250,
       nextAttentionAt: 1_500,
       updatedAt: betaActivity,
     });
     expect(chats[2]).toMatchObject({
       pinnedAt: null,
-      latestMessagePreview: null,
-      nextMessageAt: null,
       latestAttentionAt: null,
       nextAttentionAt: null,
     });

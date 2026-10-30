@@ -52,9 +52,6 @@ export function HomeUtilities({
               {busy ? "Checking…" : result ? "Check again" : "Check releases"}
             </button>
           </div>
-          <p className="home-small">
-            Contacts GitHub only when you check. No project content is sent.
-          </p>
           <div role="status" aria-live="polite">
             {busy && <p>Looking for published releases…</p>}
           </div>
@@ -158,7 +155,6 @@ export function HomeUtilities({
         </section>
         <section aria-labelledby="home-help-title">
           <h2 id="home-help-title">Need a hand?</h2>
-          <p>Find help in the guides below.</p>
           <p className="home-report-placeholder">Report a bug — coming soon</p>
         </section>
       </div>

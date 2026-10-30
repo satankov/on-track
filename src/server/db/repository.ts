@@ -15,7 +15,6 @@ import type {
   ProjectArchiveState,
   StoredNoteAttachment,
 } from "../../domain/types.js";
-import { MAX_PROJECT_PREVIEW_SOURCE_LENGTH } from "../../domain/types.js";
 import {
   PERMANENT_LABELS,
   type Accent,
@@ -36,8 +35,6 @@ interface ChatRow {
 }
 
 interface ChatSidebarSummary {
-  latestMessagePreview: string | null;
-  nextMessageAt: number | null;
   latestAttentionAt: number | null;
   nextAttentionAt: number | null;
 }
@@ -65,8 +62,6 @@ function toChat(
   row: ChatRow,
   definitions: ProjectLabel[] = [],
   summary: ChatSidebarSummary = {
-    latestMessagePreview: null,
-    nextMessageAt: null,
     latestAttentionAt: null,
     nextAttentionAt: null,
   },
@@ -691,8 +686,6 @@ export class SqliteChatRepository {
     const result = new Map<string, ChatSidebarSummary>();
     for (const chatId of chatIds) {
       result.set(chatId, {
-        latestMessagePreview: null,
-        nextMessageAt: null,
         latestAttentionAt: null,
         nextAttentionAt: null,
       });
@@ -700,46 +693,6 @@ export class SqliteChatRepository {
     if (chatIds.length === 0) return result;
 
     const placeholders = chatIds.map(() => "?").join(", ");
-    const latestRows = this.database
-      .prepare(
-        `SELECT chat_id, substr(body, 1, ?) AS latest_message_preview
-         FROM (
-           SELECT chat_id, body,
-                  row_number() OVER (
-                    PARTITION BY chat_id
-                    ORDER BY created_at DESC, id DESC
-                  ) AS row_number
-           FROM notes
-           WHERE chat_id IN (${placeholders})
-             AND created_at <= ?
-         )
-         WHERE row_number = 1`,
-      )
-      .all(MAX_PROJECT_PREVIEW_SOURCE_LENGTH, ...chatIds, now) as Array<{
-      chat_id: string;
-      latest_message_preview: string;
-    }>;
-    for (const row of latestRows) {
-      result.get(row.chat_id)!.latestMessagePreview =
-        row.latest_message_preview;
-    }
-
-    const futureMessageRows = this.database
-      .prepare(
-        `SELECT chat_id, min(created_at) AS next_message_at
-         FROM notes
-         WHERE created_at > ?
-           AND chat_id IN (${placeholders})
-         GROUP BY chat_id`,
-      )
-      .all(now, ...chatIds) as Array<{
-      chat_id: string;
-      next_message_at: number;
-    }>;
-    for (const row of futureMessageRows) {
-      result.get(row.chat_id)!.nextMessageAt = row.next_message_at;
-    }
-
     const attentionRows = this.database
       .prepare(
         `SELECT notes.chat_id,

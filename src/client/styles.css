@@ -292,12 +292,6 @@ select:focus {
   }
 }
 
-.brand-subtitle {
-  margin: 3px 0 0;
-  color: var(--muted);
-  font-size: 0.72rem;
-}
-
 .new-project-button {
   width: 38px;
   height: 38px;
@@ -2425,8 +2419,7 @@ kbd {
   color: var(--ink);
   background: color-mix(in srgb, var(--accent) 8%, var(--paper));
 }
-.composer-sender-or,
-.composer-sender-hint {
+.composer-sender-or {
   flex: 0 0 auto;
   color: var(--muted);
   font-size: 0.66rem;
@@ -2442,11 +2435,6 @@ kbd {
   background: var(--control);
   font-size: 0.72rem;
   font-weight: 650;
-}
-.composer-sender-hint {
-  margin-left: auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .composer-timestamp-row {
   min-width: 0;
@@ -2715,9 +2703,21 @@ kbd {
 }
 .dialog-actions {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 26px;
+}
+.project-settings-fields .dialog-actions .field-help {
+  flex: 1 1 160px;
+  margin: 0;
+}
+.dialog-action-buttons {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  margin-left: auto;
 }
 .settings-actions {
   display: grid;
@@ -2925,9 +2925,8 @@ kbd {
   gap: 8px;
   margin: 0 0 28px;
 }
-.project-edit-actions .button-quiet {
-  border: 0;
-  background: transparent;
+.project-edit-actions .settings-back-button {
+  margin-left: 0;
 }
 @media (forced-colors: active) {
   .project-settings-fields .text-input,
@@ -3104,9 +3103,6 @@ kbd {
   .composer-sender-row {
     gap: 6px;
     padding-inline: 7px;
-  }
-  .composer-sender-hint {
-    display: none;
   }
   .text-input.composer-sender-input {
     flex: 1 1 auto;

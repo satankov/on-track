@@ -29,6 +29,12 @@ transition; [compatibility guidance](compatibility.md) inventories retained
 storage, environment, protocol, and distribution names. Platform validation
 remains incomplete; see [plan 0021](plans/0021-managed-install-and-cli.md).
 
+Current source also includes the unreleased
+[UI trim](plans/0033-release-candidate-ui-trim.md). It removes derived preview
+fields and queries from project summaries while retaining Attention scheduling;
+the “Question” label change is presentation-only. No database or backup migration
+is required.
+
 ## System context
 
 One person runs one trusted Node.js process on their computer and opens the UI in
@@ -145,8 +151,8 @@ Uninstall retains ownership lock files on every platform. See [ADR-0012](adr/001
   file drops into the composer reuse the picker pending-file and multipart save
   flow; window-level file-drop guards prevent accidental browser navigation while
   a chat is active. A Markdown analysis helper reuses unified/remark-parse and GFM
-  to derive inert sidebar text and automatic Links filtering, using the renderer's
-  URL policy without fetching destinations. Reading anchors live in the app
+  to derive readable keyword-search text and automatic Links filtering, using
+  the renderer's URL policy without fetching destinations. Reading anchors live in the app
   session. Sidebar disclosure state, Appearance, and Show examples persist in
   the database singleton `workspace_preferences`. Partial writes are serialized;
   failed fields remain retryable, focus refreshes are ordered, and import pauses
@@ -253,11 +259,16 @@ clear the pin atomically without changing activity; restore returns to Projects.
 Archive is ordered by archive time descending and ID, and remains fully editable.
 Each project also stores a checked integer boolean controlling whether
 long messages start collapsed; new and migrated projects default to enabled.
-Sidebar reads batch the latest bounded message preview at or before the service
-clock, the nearest future message timestamp, and the nearest past/future
-Attention timestamps across all projects, then order pinned projects by pin time
-and other projects by activity. All child relations cascade with their owning
-project or message.
+Sidebar reads batch the nearest past/future Attention timestamps across all
+projects, then order pinned projects by pin time and other projects by activity.
+Current source removes the derived last-message preview and ordinary future
+message timestamp fields and queries; sidebar timers track Attention and local
+midnight only. The visible timeline keeps its independent future boundary.
+Built-in `open-question` displays as “Question” through a client presentation
+helper while retaining its canonical schema-9 name in storage and save payloads;
+backup validation is unchanged. See
+[plan 0033](plans/0033-release-candidate-ui-trim.md). All child relations cascade
+with their owning project or message.
 
 Default data directories:
 
@@ -445,8 +456,8 @@ loaded, unvirtualized project, not an architecture for unbounded histories.
   result in context without losing the query or composer draft.
 - Empty state -> create project -> customize title/accent -> add multiline note.
 - Create/switch multiple projects and preserve project-specific histories.
-- Pin/unpin projects, preserve pin order across restart/backup, and scan latest
-  message and current/earlier Attention status in the project rail.
+- Pin/unpin projects, preserve pin order across restart/backup, and scan project
+  titles and current/earlier Attention status in the project rail.
 - Expand and collapse one long message without affecting its neighbors, change
   the project default, and preserve that default through restart and backup.
 - Copy, edit, timestamp-adjust, and delete notes while preserving deterministic

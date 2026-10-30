@@ -1,3 +1,4 @@
+import { labelDisplayName } from "./label-display.js";
 import { ProjectLabelContext } from "./label-context.js";
 import { ProjectLabelsEditor } from "./ProjectLabelsEditor.js";
 import {
@@ -78,7 +79,6 @@ import {
   useHistoryPosition,
   type ReadingPosition,
 } from "./history-position.js";
-import { analyzeMarkdown } from "./markdown-analysis.js";
 import { senderColor } from "./sender-color.js";
 import { useComposerFileDrop } from "./composer-file-drop.js";
 import { HistoryNavigation } from "./HistoryNavigation.js";
@@ -103,25 +103,13 @@ const ACCENT_NAMES: Record<Accent, string> = {
   slate: "Slate",
 };
 
-const LABEL_NAMES: Record<Label, string> = {
-  pin: "Pin",
-  attention: "Attention",
-  todo: "Todo",
-  decision: "Decision",
-  "open-question": "Open question",
-  risk: "Risk",
-  milestone: "Milestone",
-};
-
 const LABEL_MARKS: Partial<Record<Label, string>> = {
   risk: "⚠️",
   milestone: "🎖️",
 };
 
-const FILTER_LABEL_NAMES: Record<Label, string> = {
-  ...LABEL_NAMES,
+const FILTER_LABEL_NAMES: Partial<Record<Label, string>> = {
   attention: "Alert",
-  "open-question": "Question",
 };
 
 const ICON_ONLY_MESSAGE_LABELS = new Set<Label>(["pin", "attention"]);
@@ -179,7 +167,6 @@ function chatActivityFromNotes(chat: ChatDetail, notes: Note[]): number {
 
 function chatFromDetail(detail: ChatDetail, now = Date.now()): Chat {
   const notes = sortNotes(detail.notes);
-  const latest = notes.filter((note) => note.createdAt <= now).at(-1);
   const attentionTimestamps = notes
     .filter((note) => note.labels?.includes("attention"))
     .map((note) => note.createdAt);
@@ -195,9 +182,6 @@ function chatFromDetail(detail: ChatDetail, now = Date.now()): Chat {
     updatedAt: detail.updatedAt,
     archivedAt: detail.archivedAt ?? null,
     pinnedAt: detail.pinnedAt ?? null,
-    latestMessagePreview: latest?.body.slice(0, 512) ?? null,
-    nextMessageAt:
-      notes.find((note) => note.createdAt > now)?.createdAt ?? null,
     latestAttentionAt:
       attentionTimestamps.filter((timestamp) => timestamp <= now).at(-1) ??
       null,
@@ -211,20 +195,9 @@ function mergeMessageSummary(chat: Chat, detail: ChatDetail): Chat {
   return {
     ...chat,
     updatedAt: summary.updatedAt,
-    latestMessagePreview: summary.latestMessagePreview,
-    nextMessageAt: summary.nextMessageAt,
     latestAttentionAt: summary.latestAttentionAt,
     nextAttentionAt: summary.nextAttentionAt,
   };
-}
-
-function projectPreview(chat: Chat): string {
-  const preview =
-    chat.latestMessagePreview == null
-      ? ""
-      : analyzeMarkdown(chat.latestMessagePreview).text;
-  if (chat.latestMessagePreview == null) return "Ready for the first note";
-  return preview || "Attachment message";
 }
 
 function projectAttentionState(
@@ -545,20 +518,29 @@ function ProjectForm({ chat, onCancel, onSubmit }: ProjectFormProps) {
             </p>
           )}
           <div className="dialog-actions">
-            <button
-              className="button button-quiet"
-              type="button"
-              onClick={onCancel}
-            >
-              Cancel
-            </button>
-            <button
-              className="button button-primary"
-              type="submit"
-              disabled={saving}
-            >
-              {saving ? "Saving…" : editing ? "Save changes" : "Create project"}
-            </button>
+            {!editing && (
+              <p className="field-help">More settings in Edit project.</p>
+            )}
+            <div className="dialog-action-buttons">
+              <button
+                className="button button-quiet"
+                type="button"
+                onClick={onCancel}
+              >
+                Cancel
+              </button>
+              <button
+                className="button button-primary"
+                type="submit"
+                disabled={saving}
+              >
+                {saving
+                  ? "Saving…"
+                  : editing
+                    ? "Save changes"
+                    : "Create project"}
+              </button>
+            </div>
           </div>
         </form>
       </section>
@@ -699,12 +681,13 @@ function ProjectEditWorkspace({
       >
         <div className="project-edit-actions">
           <button
-            className="button button-quiet"
+            className="settings-back-button"
             type="button"
+            aria-label="Back to project"
             onClick={onBack}
             disabled={saving || deleting || mutationPending}
           >
-            Back to project
+            <ArrowLeftIcon />
           </button>
           <button
             className="button button-primary"
@@ -845,10 +828,6 @@ function ProjectRail({
   const [now, setNow] = useState(() => Date.now());
   const boundaryCallback = useRef(onTemporalBoundary);
   const handledTemporalKey = useRef("");
-  const previews = useMemo(
-    () => new Map(chats.map((chat) => [chat.id, projectPreview(chat)])),
-    [chats],
-  );
   const pinned = chats.filter(
     (chat) => chat.archivedAt == null && chat.pinnedAt != null,
   );
@@ -857,16 +836,12 @@ function ProjectRail({
   );
   const archived = chats.filter((chat) => chat.archivedAt != null);
   const temporalKey = chats
-    .map(
-      (chat) =>
-        `${chat.id}:${chat.nextMessageAt ?? ""}:${chat.nextAttentionAt ?? ""}`,
-    )
+    .map((chat) => `${chat.id}:${chat.nextAttentionAt ?? ""}`)
     .join("\u0000");
   const schedulingNow = now;
-  const dueTemporalKey = chats.some((chat) =>
-    [chat.nextMessageAt, chat.nextAttentionAt].some(
-      (timestamp) => timestamp != null && timestamp <= schedulingNow,
-    ),
+  const dueTemporalKey = chats.some(
+    (chat) =>
+      chat.nextAttentionAt != null && chat.nextAttentionAt <= schedulingNow,
   )
     ? temporalKey
     : "";
@@ -875,7 +850,7 @@ function ProjectRail({
   const temporalBoundary = Math.min(
     nextMidnight.getTime(),
     ...chats
-      .flatMap((chat) => [chat.nextMessageAt, chat.nextAttentionAt])
+      .map((chat) => chat.nextAttentionAt)
       .filter(
         (timestamp): timestamp is number =>
           timestamp !== null &&
@@ -967,7 +942,7 @@ function ProjectRail({
                 >
                   <span className="project-item-copy">
                     <strong>{chat.title}</strong>
-                    <small>{error || previews.get(chat.id)}</small>
+                    {error && <small>{error}</small>}
                   </span>
                 </button>
                 <button
@@ -1065,7 +1040,6 @@ function ProjectRail({
             />
             <span className="brand-fallback">threadstr</span>
           </a>
-          <p className="brand-subtitle">Private project threads</p>
         </div>
         <button
           className="new-project-button"
@@ -1621,14 +1595,16 @@ function MessageLabels({ labels }: { labels: Label[] }) {
             <span
               className={`message-label ${iconOnly ? "message-label--icon-only" : ""}`}
               data-label={label}
-              aria-label={iconOnly ? LABEL_NAMES[label] : undefined}
-              title={iconOnly ? LABEL_NAMES[label] : undefined}
+              aria-label={iconOnly ? labelDisplayName(definition) : undefined}
+              title={iconOnly ? labelDisplayName(definition) : undefined}
               role="listitem"
               key={label}
             >
               <LabelGlyph label={label} />
               {!iconOnly && (
-                <span className="message-label-name">{definition.name}</span>
+                <span className="message-label-name">
+                  {labelDisplayName(definition)}
+                </span>
               )}
             </span>
           );
@@ -1648,7 +1624,9 @@ function MessageLabelPicker({
 }) {
   const definitions = useContext(ProjectLabelContext);
   const labelName = (id: Label) =>
-    definitions.find((item) => item.id === id)?.name ?? id;
+    labelDisplayName(
+      definitions.find((item) => item.id === id) ?? { id, name: id },
+    );
   const explainReadOnly = useContext(ExampleReadOnlyContext);
   const [open, setOpen] = useState(false);
   const [busyLabel, setBusyLabel] = useState<Label>();
@@ -2387,7 +2365,9 @@ function ChatWorkspace({
 }) {
   const definitions = projectLabels(detail);
   const labelName = (id: Label) =>
-    definitions.find((item) => item.id === id)?.name ?? id;
+    labelDisplayName(
+      definitions.find((item) => item.id === id) ?? { id, name: id },
+    );
   const explainReadOnly = useContext(ExampleReadOnlyContext);
   const historyRef = useRef<HTMLElement>(null);
   const historyKey = filterKey(historyFilter);
@@ -3137,9 +3117,6 @@ function ChatWorkspace({
                         onDraftSenderChange(event.target.value)
                       }
                     />
-                    <span className="composer-sender-hint" aria-hidden="true">
-                      Participant messages appear on the left
-                    </span>
                   </div>
                 )}
                 {timestampOpen && (
@@ -3209,9 +3186,7 @@ function ChatWorkspace({
                     data-composer-textarea
                     aria-label={editingNote ? "Edit message" : "Add a note"}
                     placeholder={
-                      editingNote
-                        ? "Edit this message…"
-                        : "Add a note to this project…"
+                      editingNote ? "Edit this message…" : "Write a note..."
                     }
                     value={draft}
                     maxLength={10_000}

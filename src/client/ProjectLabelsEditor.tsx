@@ -1,3 +1,4 @@
+import { labelDisplayName } from "./label-display.js";
 import { useId, type ReactNode } from "react";
 import {
   isEmptyLabelDraft,
@@ -69,6 +70,7 @@ export function ProjectLabelsEditor({
       >
         {labels.slice(2).map((label, offset) => {
           const index = offset + 2;
+          const displayName = labelDisplayName(label);
           const builtin = Boolean(label.id && isBuiltinLabel(label.id));
           const empty = isEmptyLabelDraft(label);
           const dragging = preview?.source === label.key;
@@ -109,7 +111,7 @@ export function ProjectLabelsEditor({
                     type="button"
                     className="project-label-drag-handle"
                     data-label-handle={label.key}
-                    aria-label={`Reorder ${label.name || "new label"}`}
+                    aria-label={`Reorder ${displayName || "new label"}`}
                     aria-describedby={sortingHelp}
                     aria-pressed={picked === label.key || dragging}
                     onPointerDown={(event) =>
@@ -134,7 +136,7 @@ export function ProjectLabelsEditor({
                         {glyph(label.id!)}
                       </span>
                       <span className="custom-label-name project-label-value">
-                        {label.name}
+                        {displayName}
                       </span>
                     </>
                   ) : (
@@ -177,7 +179,7 @@ export function ProjectLabelsEditor({
                         type="checkbox"
                         aria-label={
                           builtin
-                            ? label.name
+                            ? displayName
                             : `Enable ${label.name || `custom label ${number}`}`
                         }
                         checked={label.enabled}
@@ -246,11 +248,6 @@ export function ProjectLabelsEditor({
         Up to 5 custom labels, 8 characters per name, and one optional symbol or
         emoji. Turning a label off keeps it on existing messages.
       </p>
-      <p className="field-help">
-        Use × or clear both fields to remove a custom label and its message tags
-        when you save.
-      </p>
-      <p className="field-help">Drag rows to reorder.</p>
       <span id={sortingHelp} className="visually-hidden">
         Drag using the handle. Or select a handle, then its destination. Use ↑/↓
         or Home/End on a focused handle. Escape cancels.

@@ -75,12 +75,14 @@ function BackupFeedback({
 
 function ProjectChecklist({
   label,
+  hideLegend = false,
   projects,
   excluded,
   onChange,
   disabled,
 }: {
   label: string;
+  hideLegend?: boolean;
   projects: Array<
     Pick<Chat, "id" | "title" | "createdAt" | "pinnedAt" | "archivedAt"> &
       Partial<BackupProject>
@@ -92,7 +94,9 @@ function ProjectChecklist({
   const count = projects.filter((project) => !excluded.has(project.id)).length;
   return (
     <fieldset className="backup-checklist" disabled={disabled}>
-      <legend>{label}</legend>
+      <legend className={hideLegend ? "visually-hidden" : undefined}>
+        {label}
+      </legend>
       <div className="backup-selection-actions">
         <span>
           {count} of {projects.length} selected
@@ -307,6 +311,7 @@ export function BackupSettingsWorkspace({
         </div>
         <ProjectChecklist
           label="Projects to export"
+          hideLegend
           projects={projects}
           excluded={excludedExport}
           onChange={setExcludedExport}
@@ -359,7 +364,7 @@ export function BackupSettingsWorkspace({
         <div className="settings-panel-copy">
           <h2 id="backup-import-heading">Import projects</h2>
         </div>
-        <label className="field-label" htmlFor="database-import">
+        <label className="visually-hidden" htmlFor="database-import">
           Choose threadstr backup
         </label>
         <input

@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
@@ -384,4 +385,26 @@ it("keeps a taller validation row in place during a small off-center drag", () =
   pointer(handle, "pointermove", 20, 50);
   pointer(handle, "pointerup", 20, 50);
   expect(order()[0]).toBe("Todo");
+});
+
+it("displays Question while preserving its canonical saved definition", async () => {
+  const user = userEvent.setup();
+  render(<Editor />);
+  expect(screen.getByText("Question", { exact: true })).toBeVisible();
+  await user.click(screen.getByRole("checkbox", { name: "Question" }));
+  const handle = screen.getByRole("button", { name: "Reorder Question" });
+  handle.focus();
+  await user.keyboard("{Home}");
+  expect(
+    within(screen.getByRole("group", { name: "Project labels" })).getByRole(
+      "status",
+    ),
+  ).toHaveTextContent("Question moved to position 1.");
+  expect(saved().success).toBe(true);
+  expect(
+    saved().data?.labels.find((label) => label.id === "open-question"),
+  ).toMatchObject({
+    name: "Open question",
+    enabled: true,
+  });
 });

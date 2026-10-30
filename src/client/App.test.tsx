@@ -524,8 +524,6 @@ describe("personal project chat workspace", () => {
       updatedAt: 2,
       pinnedAt: null,
       archivedAt: null,
-      latestMessagePreview: null,
-      nextMessageAt: null,
       latestAttentionAt: null,
       nextAttentionAt: null,
     };
@@ -1310,7 +1308,7 @@ describe("personal project chat workspace", () => {
       expect(link).not.toHaveAttribute("target", "_blank");
   });
 
-  it("shows plain Markdown previews and automatically filters messages containing links", async () => {
+  it("omits sidebar message text and automatically filters messages containing links", async () => {
     const user = userEvent.setup();
     const chat = {
       id: "links",
@@ -1344,7 +1342,7 @@ describe("personal project chat workspace", () => {
     const project = await screen.findByRole("button", {
       name: "Open References",
     });
-    expect(within(project).getByText("Header bold text Guide")).toBeVisible();
+    expect(project).toHaveTextContent(/^References$/);
     expect(within(project).queryByRole("link")).toBeNull();
     await user.click(project);
     for (const link of document.querySelectorAll(".note-body a")) {
@@ -1808,7 +1806,7 @@ describe("personal project chat workspace", () => {
     expect(api.getChat).not.toHaveBeenCalled();
   });
 
-  it("groups pinned projects and shows message previews with current and older Attention states", async () => {
+  it("groups title-only pinned projects with current and older Attention states", async () => {
     const now = new Date(2026, 8, 4, 12).getTime();
     const dateNow = vi.spyOn(Date, "now").mockReturnValue(now);
     const shared = {
@@ -1816,8 +1814,6 @@ describe("personal project chat workspace", () => {
       enabledLabels: ["todo"] as ["todo"],
       createdAt: 1,
       archivedAt: null,
-      latestMessagePreview: null,
-      nextMessageAt: null,
       latestAttentionAt: null,
       nextAttentionAt: null,
     };
@@ -1830,7 +1826,6 @@ describe("personal project chat workspace", () => {
           updatedAt: 30,
           pinnedAt: null,
           archivedAt: null,
-          latestMessagePreview: "The latest project message",
           latestAttentionAt: now - 60_000,
         },
         {
@@ -1840,7 +1835,6 @@ describe("personal project chat workspace", () => {
           updatedAt: 10,
           pinnedAt: 20,
           archivedAt: null,
-          latestMessagePreview: "A pinned project stays fixed",
           latestAttentionAt: now - 86_400_000,
         },
       ]),
@@ -1848,9 +1842,11 @@ describe("personal project chat workspace", () => {
     const { container } = render(<App api={api} />);
 
     expect(
-      await screen.findByText("A pinned project stays fixed"),
-    ).toBeVisible();
-    expect(screen.getByText("The latest project message")).toBeVisible();
+      await screen.findByRole("button", { name: "Open Pinned" }),
+    ).toHaveTextContent(/^Pinned$/);
+    expect(
+      screen.getByRole("button", { name: "Open Recent" }),
+    ).toHaveTextContent(/^Recent$/);
     expect(
       screen.getByText("Pinned", { selector: ".rail-section-label span" }),
     ).toBeVisible();
@@ -1886,8 +1882,6 @@ describe("personal project chat workspace", () => {
         updatedAt: 2,
         pinnedAt: null,
         archivedAt: null,
-        latestMessagePreview: "Ready to pin",
-        nextMessageAt: null,
         latestAttentionAt: null,
         nextAttentionAt: null,
       };
@@ -1935,8 +1929,6 @@ describe("personal project chat workspace", () => {
       updatedAt: 2,
       pinnedAt: null,
       archivedAt: null,
-      latestMessagePreview: "Ready to pin",
-      nextMessageAt: null,
       latestAttentionAt: null,
       nextAttentionAt: null,
     };
@@ -1992,8 +1984,6 @@ describe("personal project chat workspace", () => {
       updatedAt: 2,
       pinnedAt: null,
       archivedAt: null,
-      latestMessagePreview: "Ready to pin",
-      nextMessageAt: null,
       latestAttentionAt: null,
       nextAttentionAt: null,
     };
@@ -2014,7 +2004,7 @@ describe("personal project chat workspace", () => {
     await waitFor(() => expect(pin).toHaveFocus());
   });
 
-  it("updates a deleted message preview after navigating to another project", async () => {
+  it("clears deleted message Attention after navigating to another project", async () => {
     const user = userEvent.setup();
     const deletion = deferred<void>();
     const now = Date.now();
@@ -2028,9 +2018,7 @@ describe("personal project chat workspace", () => {
       updatedAt: now - 1_000,
       pinnedAt: null,
       archivedAt: null,
-      latestMessagePreview: "Remove me",
-      nextMessageAt: null,
-      latestAttentionAt: null,
+      latestAttentionAt: now - 1_000,
       nextAttentionAt: null,
     };
     const beta = {
@@ -2038,7 +2026,6 @@ describe("personal project chat workspace", () => {
       id: "beta",
       title: "Beta",
       archivedAt: null,
-      latestMessagePreview: "Beta note",
     };
     const api = createApi({
       listChats: vi.fn().mockResolvedValue([alpha, beta]),
@@ -2062,7 +2049,7 @@ describe("personal project chat workspace", () => {
                     body: "Remove me",
                     sender: null,
                     createdAt: now - 1_000,
-                    labels: [],
+                    labels: ["attention" as const],
                   },
                 ],
               }
@@ -2087,11 +2074,11 @@ describe("personal project chat workspace", () => {
     await user.click(screen.getByRole("button", { name: "Open Beta" }));
 
     await act(async () => deletion.resolve());
-    expect(
-      within(screen.getByRole("button", { name: "Open Alpha" })).getByText(
-        "Keep me",
-      ),
-    ).toBeVisible();
+    const alphaButton = screen.getByRole("button", { name: "Open Alpha" });
+    expect(alphaButton).toHaveTextContent(/^Alpha$/);
+    expect(alphaButton.closest("li")).not.toHaveAttribute(
+      "data-attention-state",
+    );
   });
 
   it("updates inactive project Attention after navigating during a label change", async () => {
@@ -2108,8 +2095,6 @@ describe("personal project chat workspace", () => {
       updatedAt: now - 1_000,
       pinnedAt: null,
       archivedAt: null,
-      latestMessagePreview: "Needs attention",
-      nextMessageAt: null,
       latestAttentionAt: null,
       nextAttentionAt: null,
     };
@@ -2118,7 +2103,6 @@ describe("personal project chat workspace", () => {
       id: "beta",
       title: "Beta",
       archivedAt: null,
-      latestMessagePreview: "Beta note",
     };
     const api = createApi({
       listChats: vi.fn().mockResolvedValue([alpha, beta]),
@@ -2170,8 +2154,6 @@ describe("personal project chat workspace", () => {
       updatedAt: 2,
       pinnedAt: null,
       archivedAt: null,
-      latestMessagePreview: "Future alert",
-      nextMessageAt: null,
       latestAttentionAt: null,
       nextAttentionAt: now + 1_000,
     };
@@ -2195,7 +2177,49 @@ describe("personal project chat workspace", () => {
     }
   });
 
-  it("reveals a future message preview only when its timestamp arrives", async () => {
+  it.each(["midnight", "focus"])(
+    "refreshes Attention across %s",
+    async (boundary) => {
+      vi.useFakeTimers();
+      const now = new Date(2026, 8, 4, 23, 59, 59).getTime();
+      vi.setSystemTime(now);
+      const chat = {
+        id: "attention-boundary",
+        title: "Boundary",
+        accent: "ocean",
+        createdAt: 1,
+        updatedAt: now,
+        pinnedAt: null,
+        archivedAt: null,
+        latestAttentionAt: now,
+        nextAttentionAt: null,
+      };
+      const listChats = vi.fn().mockResolvedValue([chat]);
+      try {
+        render(<App api={createApi({ listChats })} />);
+        await act(async () => Promise.resolve());
+        const row = screen
+          .getByRole("button", { name: "Open Boundary" })
+          .closest("li");
+        expect(row).toHaveAttribute("data-attention-state", "today");
+        if (boundary === "midnight") {
+          await act(async () => vi.advanceTimersByTime(1_001));
+        } else {
+          vi.setSystemTime(now + 86_400_000);
+          await act(async () => {
+            fireEvent(window, new Event("focus"));
+          });
+        }
+        await act(async () => Promise.resolve());
+        expect(row).toHaveAttribute("data-attention-state", "earlier");
+        expect(listChats).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("does not refresh sidebar summaries for ordinary future messages", async () => {
     vi.useFakeTimers();
     const now = new Date(2026, 8, 4, 12).getTime();
     vi.setSystemTime(now);
@@ -2208,8 +2232,6 @@ describe("personal project chat workspace", () => {
       updatedAt: now + 1_000,
       pinnedAt: null,
       archivedAt: null,
-      latestMessagePreview: "Current update",
-      nextMessageAt: now + 1_000,
       latestAttentionAt: null,
       nextAttentionAt: null,
     };
@@ -2220,28 +2242,30 @@ describe("personal project chat workspace", () => {
         {
           ...chat,
           archivedAt: null,
-          latestMessagePreview: "Scheduled update",
-          nextMessageAt: null,
         },
       ]);
 
     try {
       render(<App api={createApi({ listChats })} />);
       await act(async () => Promise.resolve());
-      expect(screen.getByText("Current update")).toBeVisible();
+      expect(
+        screen.getByRole("button", { name: "Open Alpha" }),
+      ).toHaveTextContent(/^Alpha$/);
       expect(screen.queryByText("Scheduled update")).toBeNull();
 
       await act(async () => vi.advanceTimersByTime(1_001));
       await act(async () => Promise.resolve());
 
-      expect(screen.getByText("Scheduled update")).toBeVisible();
-      expect(listChats).toHaveBeenCalledTimes(2);
+      expect(
+        screen.getByRole("button", { name: "Open Alpha" }),
+      ).toHaveTextContent(/^Alpha$/);
+      expect(listChats).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("refreshes an overdue message preview when returning from Settings", async () => {
+  it("refreshes overdue Attention when returning from Settings", async () => {
     vi.useFakeTimers();
     const now = new Date(2026, 8, 4, 12).getTime();
     vi.setSystemTime(now);
@@ -2254,10 +2278,8 @@ describe("personal project chat workspace", () => {
       updatedAt: now + 1_000,
       pinnedAt: null,
       archivedAt: null,
-      latestMessagePreview: "Current update",
-      nextMessageAt: now + 1_000,
       latestAttentionAt: null,
-      nextAttentionAt: null,
+      nextAttentionAt: now + 1_000,
     };
     const listChats = vi
       .fn()
@@ -2266,8 +2288,8 @@ describe("personal project chat workspace", () => {
         {
           ...chat,
           archivedAt: null,
-          latestMessagePreview: "Scheduled update",
-          nextMessageAt: null,
+          latestAttentionAt: now + 1_000,
+          nextAttentionAt: null,
         },
       ]);
 
@@ -2279,7 +2301,9 @@ describe("personal project chat workspace", () => {
       fireEvent.click(screen.getByRole("button", { name: "Back to projects" }));
       await act(async () => Promise.resolve());
 
-      expect(screen.getByText("Scheduled update")).toBeVisible();
+      expect(
+        screen.getByRole("button", { name: "Open Alpha" }).closest("li"),
+      ).toHaveAttribute("data-attention-state", "today");
       expect(listChats).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
@@ -2543,7 +2567,7 @@ describe("personal project chat workspace", () => {
       within(message).getByRole("checkbox", { name: "Decision (inactive)" }),
     ).toBeChecked();
     expect(
-      within(message).queryByRole("checkbox", { name: "Open question" }),
+      within(message).queryByRole("checkbox", { name: "Question" }),
     ).toBeNull();
     await user.click(within(message).getByRole("checkbox", { name: "Pin" }));
 
@@ -2614,7 +2638,7 @@ describe("personal project chat workspace", () => {
       name: "Attention 1",
     });
     const questionFilter = within(filters).getByRole("button", {
-      name: "Open question 1",
+      name: "Question 1",
     });
     const decisionFilter = within(filters).getByRole("button", {
       name: "Decision 1",
@@ -4973,8 +4997,6 @@ describe("personal project chat workspace", () => {
       updatedAt: 2,
       pinnedAt: null,
       archivedAt: null,
-      latestMessagePreview: null,
-      nextMessageAt: null,
       latestAttentionAt: null,
       nextAttentionAt: null,
     };
@@ -5014,8 +5036,6 @@ describe("personal project chat workspace", () => {
       updatedAt: 2,
       pinnedAt: null,
       archivedAt: null,
-      latestMessagePreview: null,
-      nextMessageAt: null,
       latestAttentionAt: null,
       nextAttentionAt: null,
     };
@@ -5072,8 +5092,6 @@ describe("personal project chat workspace", () => {
       updatedAt: 3,
       pinnedAt: null,
       archivedAt: null,
-      latestMessagePreview: "Remove me",
-      nextMessageAt: null,
       latestAttentionAt: null,
       nextAttentionAt: null,
     };
@@ -5138,8 +5156,6 @@ describe("personal project chat workspace", () => {
       updatedAt: 2,
       pinnedAt: null,
       archivedAt: null,
-      latestMessagePreview: null,
-      nextMessageAt: null,
       latestAttentionAt: null,
       nextAttentionAt: null,
     };
@@ -5186,8 +5202,6 @@ describe("personal project chat workspace", () => {
       updatedAt: 2,
       pinnedAt: null,
       archivedAt: null,
-      latestMessagePreview: null,
-      nextMessageAt: null,
       latestAttentionAt: null,
       nextAttentionAt: null,
     };
@@ -5297,8 +5311,6 @@ describe("personal project chat workspace", () => {
       updatedAt: 2,
       pinnedAt: null,
       archivedAt: null,
-      latestMessagePreview: null,
-      nextMessageAt: null,
       latestAttentionAt: null,
       nextAttentionAt: null,
     };

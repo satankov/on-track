@@ -239,8 +239,16 @@
               id="cb-settings-form"
             >
               <div class="project-edit-actions">
-                <button class="button button-quiet" type="button" id="cb-reset">
-                  Reset specimen</button
+                <button
+                  class="settings-back-button"
+                  type="button"
+                  id="cb-reset"
+                  aria-label="Reset specimen"
+                  title="Reset specimen"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="m15 18-6-6 6-6" />
+                  </svg></button
                 ><button class="button button-primary" type="submit">
                   Preview saved state
                 </button>
@@ -329,7 +337,7 @@
                       <button
                         type="button"
                         class="project-label-drag-handle"
-                        aria-label="Reorder Open question"
+                        aria-label="Reorder Question"
                         aria-describedby="cb-sort-help"
                         aria-pressed="false"
                       >
@@ -343,12 +351,10 @@
                             >?</span
                           ></span
                         ><span class="custom-label-name project-label-value"
-                          >Open question</span
+                          >Question</span
                         ><label
                           class="project-label-option custom-label-enabled"
-                          ><input
-                            type="checkbox"
-                            aria-label="Enable Open question"
+                          ><input type="checkbox" aria-label="Enable Question"
                         /></label>
                       </div>
                       <span></span>
@@ -488,11 +494,6 @@
                   symbol or emoji. Turning a label off keeps it on existing
                   messages.
                 </p>
-                <p class="field-help">
-                  Clear both fields to remove a custom label and its message
-                  tags when you save.
-                </p>
-                <p class="field-help">Drag rows to reorder.</p>
                 <span class="visually-hidden" id="cb-sort-help"
                   >Drag using the handle. Or select a handle, then its
                   destination. Use ↑/↓ or Home/End on a focused handle. Escape
@@ -708,7 +709,7 @@
                     <div class="composer-input-row">
                       <textarea
                         aria-label="Demo message"
-                        placeholder="Add a note to this project…"
+                        placeholder="Write a note..."
                         id="cb-message"
                       ></textarea>
                     </div>
@@ -817,7 +818,7 @@
                   ><label class="message-label-choice"
                     ><input type="checkbox" /><span>Decision</span></label
                   ><label class="message-label-choice"
-                    ><input type="checkbox" /><span>Open question</span></label
+                    ><input type="checkbox" /><span>Question</span></label
                   >
                 </fieldset>
               </div>
@@ -1007,10 +1008,13 @@
             <div class="accent-options" id="cb-create-swatches"></div>
           </fieldset>
           <div class="dialog-actions">
-            <button class="button button-quiet" value="cancel">Cancel</button
-            ><button class="button button-primary" value="create">
-              Create project
-            </button>
+            <p class="field-help">More settings in Edit project.</p>
+            <div class="dialog-action-buttons">
+              <button class="button button-quiet" value="cancel">Cancel</button
+              ><button class="button button-primary" value="create">
+                Create project
+              </button>
+            </div>
           </div>
           <p class="field-help">Specimen only; no project will be created.</p>
         </form>

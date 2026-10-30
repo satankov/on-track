@@ -26,6 +26,12 @@ experimental because clean OS/platform and published-upgrade evidence is incompl
 
 ## Current objective
 
+The next release candidate includes the completed, locally verified UI trim in
+[plan 0033](plans/0033-release-candidate-ui-trim.md): title-only project rows with
+Attention indicators, “Question” display text, and simplified guidance/navigation.
+This work is unreleased; its release version is not yet assigned. Schema 9 and
+backup compatibility are unchanged.
+
 The published v0.1.1 release includes the completed flat UI and design cookbook
 slice in [plan 0029](plans/0029-flat-ui-and-design-contract.md), plus intersecting
 history filters, database-backed preferences and custom project labels in
@@ -224,11 +230,12 @@ remains a regression-protected alpha, not a dedicated design target.
   detected Markdown/GFM links. Returning to All restores the reading position;
   other filters open around their latest current and first future messages.
 - Apply permanent Pin and Attention labels plus project-enabled Todo, Decision,
-  Open question, Risk, and Milestone labels to messages, then filter history by
+  Question, Risk, and Milestone labels to messages, then filter history by
   active labels.
-- Scan a plain-text preview of each project's latest message up to the current
-  time and see whether an applied Attention label belongs to today or an earlier
-  message directly from the sidebar.
+- Scan project names and see whether an applied Attention label belongs to today
+  or an earlier message directly from the sidebar. Current source removes
+  last-message previews entirely; Attention still advances at future timestamps
+  and local midnight. See [plan 0033](plans/0033-release-candidate-ui-trim.md).
 - Open eligible managed files with the operating system's default association,
   or show their safe managed folder. Open uses an explicit document/media
   allowlist; other types remain accessible through Show in Folder.
