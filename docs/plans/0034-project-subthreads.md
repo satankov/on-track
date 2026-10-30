@@ -1,10 +1,9 @@
 # Project subthreads implementation plan
 
-Status: implemented and verified locally, 2026-10-30, following the user's
-explicit instruction to implement the approved subthreads design. Work is on `codex/project-subthreads`,
-based on `codex/next-release-candidate` (60217a5) with main's managed-server test
-stability fix carried forward. The user subsequently requested committing the
-complete change and integrating it into `codex/next-release-candidate`.
+Status: implemented, verified locally, and committed as `7eaba47` on 2026-10-30.
+Integrated into `codex/next-release-candidate` from `codex/project-subthreads`,
+preserving candidate `60217a5` and main's managed-server test stability fix.
+The feature is unreleased; no next release version has been assigned.
 
 ## Goal
 
@@ -42,9 +41,10 @@ mockup. Preserve candidate title-only rail and Question display. No dependencies
 ## Non-goals
 
 AI, copied history/context, cross-thread message publishing, deeper hierarchy,
-mobile redesign, release publication, commits, pushes, or changing source branches.
+mobile redesign, and release publication. Local commit and candidate integration
+were separately authorized and completed; remote push remains outside this delivery.
 
-## Proposed design
+## Implemented design
 
 Add nullable chats.project_id referencing the root with cascading deletion.
 Existing chats remain roots. A separate subthread_origins table records continued
@@ -109,11 +109,15 @@ Record exact outcomes at completion. Use only disposable databases.
 
 None blocking. Initial child settings clone root settings; later edits are
 independent. Root archive preserves child state. No history text is inherited.
+Accepted architecture and alternatives are recorded in
+[ADR-0014](../adr/0014-flat-project-subthreads.md).
 
 ## Authorization
 
 The user approved the visual design and explicitly requested implementation,
 including preservation of work on main and codex/next-release-candidate.
+The subsequent delivery instruction authorized committing the complete change
+and integrating it into the release-candidate branch.
 
 ## Completion evidence
 
@@ -151,13 +155,14 @@ The original visual mockup is preserved.
   indented children, and search ownership. Both title segments independently
   truncate while actions remain reachable. Cookbook specimen rendered too.
 
-One final coverage attempt encountered a timeout in an existing hidden-trigger
-backup-validation test. The focused retry passed nine checks and a complete
-coverage rerun passed without code changes. Existing Vite bootstrap-script and
-bundle-size warnings remain. Real-device/screen-reader qualification and a
-published upgrade are separate release gates; no publication is claimed.
+Existing Vite bootstrap-script and bundle-size warnings remain. Real-device,
+screen-reader, and published-upgrade qualification remain outside the local
+evidence above; existing follow-ups are linked from
+[the project tracker index](../PROJECT.md#roadmap-and-tracker). No new unresolved
+feature defect or required issue was identified at closeout.
 
-The delivery target is `codex/next-release-candidate`, using a feature commit
-from `codex/project-subthreads`. It preserves candidate 60217a5 and main
-a5d911a's managed-test stability fix. Main remains unchanged. No dependencies,
-remote pushes, pull requests or releases are part of this delivery.
+Commit `7eaba47` is on `codex/next-release-candidate` and preserves candidate
+`60217a5` plus main `a5d911a`'s managed-test stability fix. Main remains unchanged.
+No dependencies, remote pushes, pull requests or releases were added by this
+delivery. The approved mockup remains under `branding/threadstr/subthreads/`;
+the current UI contract is DESIGN.md and the production-CSS cookbook.

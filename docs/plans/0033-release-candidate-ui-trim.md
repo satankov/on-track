@@ -177,7 +177,9 @@ unspecified; the requested branch does not change release metadata.
 ## Approval
 
 The user approved Slice A on 2026-10-30. All 13 changes are implemented.
-No commit, push, version bump, or publication was performed.
+The slice was subsequently committed as `60217a5` and is preserved in the
+release candidate containing [plan 0034](0034-project-subthreads.md).
+No version bump or publication was performed for this slice.
 
 ## Completion evidence
 

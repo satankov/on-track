@@ -10,7 +10,9 @@ and the history controls, composer feedback, and managed uninstall in
 current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
 Published database and backup schema is 9. Unreleased project subthreads advance
 current source to schema 10; backup format remains 1. See
-[plan 0034](plans/0034-project-subthreads.md). The managed compatibility floor remains `0.0.7`.
+[ADR-0014](adr/0014-flat-project-subthreads.md) for the accepted ownership and
+provenance model and [plan 0034](plans/0034-project-subthreads.md) for delivery
+evidence. The managed compatibility floor remains `0.0.7`.
 The included flat UI/design-contract slice changes client UI, tests, and documentation
 only; see [plan 0029](plans/0029-flat-ui-and-design-contract.md). It changes no
 API, database, backup, dependency, or installation contract. The included
@@ -170,7 +172,8 @@ Uninstall retains ownership lock files on every platform. See [ADR-0012](adr/001
   filter and shares the send shortcut typography. Desktop filters span history
   and composer height independently of composer growth; overflowing lists scroll
   within the rail. Mobile keeps horizontal filters. All clears the selection. Filters intersect (AND)
-  with each other and search; counts remain whole-project counts. Ordinary refreshes preserve manual scrolling. Future messages stay in
+  with each other and search; counts cover the current conversation or, when Project
+  search is enabled, all conversations in that project. Ordinary refreshes preserve manual scrolling. Future messages stay in
   normal scrolling, including short histories that can show several future rows.
   Contextual history controls scroll to the actual beginning/end of the filtered
   timeline without changing that initial placement policy. An accepted send or
@@ -226,6 +229,11 @@ links are omitted until actual destinations are provided. The same utility block
 appears below project sections on mobile without replacing navigation or Settings.
 
 ## Data design and location
+
+`chats` stores both root projects (their Main conversation) and subthreads.
+Existing `chat_id` ownership, including the historically named `project_labels`
+table, is conversation-scoped. A project consists of a root and its direct children;
+it is the unit selected for backup transfer and whole-project search.
 
 The migrations create `chats`, `notes`, `note_attachments`,
 `project_labels`, `note_labels`, `subthread_origins`, singleton `workspace_preferences`, and single-row
@@ -290,8 +298,9 @@ midnight only. The visible timeline keeps its independent future boundary.
 Built-in `open-question` displays as “Question” through a client presentation
 helper while retaining its canonical schema-9 name in storage and save payloads;
 backup validation is unchanged. See
-[plan 0033](plans/0033-release-candidate-ui-trim.md). All child relations cascade
-with their owning project or message.
+[plan 0033](plans/0033-release-candidate-ui-trim.md). Owned content cascades with
+its conversation or message; provenance references use SET NULL so deleting a
+source does not delete a continuation.
 
 Default data directories:
 
@@ -343,8 +352,8 @@ both views atomically without duplicated synchronization branches. Dedicated
 idempotent pin routes patch only pin state; archive routes return only archive
 and pin state. The client excludes conflicting project mutations and invalidates
 stale reads at both request start and completion. The rail derives browser-local
-today/earlier Attention state and refreshes at the next future message or
-Attention time, local midnight, and browser focus.
+today/earlier Attention state and refreshes at the next future Attention time,
+local midnight, and browser focus.
 
 Settings exports all or selected projects to a versioned SQLite
 `.on-track-backup` container, including
@@ -467,8 +476,8 @@ message; `project-search-results.ts` builds these contextual results.
 `project-search.ts` reuses cached Markdown analysis for readable text and Links,
 then applies normalized literal substring AND matching across body, displayed
 sender, and filenames. It intersects existing filters and keeps chronological
-ordering. Parsed-text caches belong to the mounted workspace; the App owns a
-session-only last-query and composer-draft maps per conversation. Drafts include
+ordering within each conversation. Parsed-text caches belong to the mounted
+workspace; the App owns session-only last-query and composer-draft maps per conversation. Drafts include
 unsent files and edits; replacement import clears all cached work. Returning
 through Home resets filters to All and retains the All reading anchor. Typing updates that map without rendering
 the timeline until the debounced query commits. Deletion/replacement clears the
@@ -484,8 +493,12 @@ loaded, unvirtualized project, not an architecture for unbounded histories.
 
 ## Critical user journeys
 
-- Search the current project, combine with history filters, and open a highlighted
-  result in context without losing the query or composer draft.
+- Create an empty independent subthread or continue from a message, follow source
+  links, and branch again into a sibling while preserving independent settings
+  and session drafts.
+- Search the current conversation or enable Project to include Main and all
+  children, including archives; combine with history filters and open a result
+  in its owning conversation without losing the query or composer draft.
 - Empty state -> create project -> customize title/accent -> add multiline note.
 - Create/switch multiple projects and preserve project-specific histories.
 - Pin/unpin projects, preserve pin order across restart/backup, and scan project

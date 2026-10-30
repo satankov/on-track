@@ -29,7 +29,7 @@ experimental because clean OS/platform and published-upgrade evidence is incompl
 The next release candidate includes the completed, locally verified UI trim in
 [plan 0033](plans/0033-release-candidate-ui-trim.md): title-only project rows with
 Attention indicators, “Question” display text, and simplified guidance/navigation.
-This UI trim is preserved alongside the unreleased project-subthreads slice in
+This UI trim is preserved alongside the completed, unreleased project-subthreads slice in
 [plan 0034](plans/0034-project-subthreads.md). Current source uses schema 10;
 published v0.1.1 remains schema 9. Backup format remains 1, with schema 3–9
 bundles migrated in validated staging. The next release version is not assigned.
@@ -178,6 +178,9 @@ remains a regression-protected alpha, not a dedicated design target.
   state. Project selection reveals five indented children with Show all for the
   remainder. Each child has its own Edit and delete controls. Search's Project
   checkbox covers Main and every child from any conversation in the project.
+  [ADR-0014](adr/0014-flat-project-subthreads.md) records ownership, provenance,
+  and backup decisions. AI responses remain a distant product possibility with
+  no implementation scope or context-sharing contract yet.
 
 - [Multi-filters, durable preferences and custom labels](plans/0031-multi-filters-durable-preferences-custom-labels.md)
   add intersecting Cmd/Ctrl-selected history filters, database-backed theme,
@@ -191,7 +194,7 @@ remains a regression-protected alpha, not a dedicated design target.
 - Conversation keyword search filters loaded message text, participant names,
   and filenames locally. Its compact magnifier/input UI combines with history
   filters, highlights matches, shows counts, restores reading positions, and opens
-  matching messages in context. Last queries are remembered per project for the
+  matching messages in context. Last queries are remembered per conversation for the
   app session until cleared. Project scope includes Main and every child,
   including archives; query matching remains local. No search index is required. See
   [plan 0028](plans/0028-project-keyword-search.md).
