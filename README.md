@@ -14,6 +14,9 @@ where you left off. Use it for work projects, a side project, or your next trip.
 > **Early alpha.** Expect rough edges and keep backups. Avoid irreplaceable
 > information or make backups until stable release.
 
+Current release: **[v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1)**.
+See the [changelog](CHANGELOG.md) for changes and upgrade limitations.
+
 ## See it in action
 
 **A project’s notes and plans, together in one timeline.**
