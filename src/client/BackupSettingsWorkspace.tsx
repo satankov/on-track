@@ -10,8 +10,67 @@ import type {
 import { ImportOutcomeUnknownError } from "./api.js";
 
 export type ImportCompletion = ImportResult & { refreshWarning?: string };
+type BackupOperation = "export" | "preview" | "import";
 function message(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
+}
+
+function BackupFeedback({
+  operation,
+  active,
+  busy,
+  error,
+  status,
+  result,
+}: {
+  operation: BackupOperation;
+  active: boolean;
+  busy: boolean;
+  error: string;
+  status: string;
+  result?: ImportCompletion;
+}) {
+  const progress = {
+    export: "Preparing export…",
+    preview: "Checking backup…",
+    import: "Importing projects…",
+  }[operation];
+  return (
+    <div className="backup-feedback" aria-live="polite">
+      {active && (
+        <>
+          {(busy || status) && (
+            <p role="status" className="form-status">
+              {busy ? progress : status}
+            </p>
+          )}
+          {error && (
+            <p
+              id={`backup-${operation}-error`}
+              role="alert"
+              className="form-error"
+            >
+              {error}
+            </p>
+          )}
+          {operation === "import" && result?.renames.length ? (
+            <ul className="backup-renames">
+              {result.renames.map((rename, index) => (
+                <li key={index}>
+                  {rename.original} → {rename.renamed}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {operation === "import" && result?.refreshWarning && (
+            <p role="alert" className="form-error">
+              {result.refreshWarning}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
 
 function ProjectChecklist({
@@ -118,7 +177,9 @@ export function BackupSettingsWorkspace({
   const [file, setFile] = useState<File>();
   const [preview, setPreview] = useState<BackupPreview>();
   const [mode, setMode] = useState<ImportOptions["mode"]>("merge");
-  const [busy, setBusy] = useState<"export" | "preview" | "import">();
+  const [busy, setBusy] = useState<BackupOperation>();
+  const [feedbackFor, setFeedbackFor] = useState<BackupOperation>();
+  const [exportingAll, setExportingAll] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [result, setResult] = useState<ImportCompletion>();
@@ -148,6 +209,7 @@ export function BackupSettingsWorkspace({
     setConsumed(false);
     setError("");
     setStatus("");
+    setFeedbackFor("preview");
     if (!next) {
       setBusy(undefined);
       return;
@@ -169,6 +231,8 @@ export function BackupSettingsWorkspace({
   async function exportBackup(selection: ProjectSelection) {
     if (busy || committing.current) return;
     setBusy("export");
+    setFeedbackFor("export");
+    setExportingAll(selection === "all");
     setError("");
     setStatus("");
     try {
@@ -200,6 +264,7 @@ export function BackupSettingsWorkspace({
       return;
     committing.current = true;
     setBusy("import");
+    setFeedbackFor("import");
     setError("");
     setStatus("");
     try {
@@ -223,10 +288,10 @@ export function BackupSettingsWorkspace({
     }
   }
   const emptyBackup = preview?.projects.length === 0;
+  const feedbackProps = { error, status, result };
   return (
     <main className="workspace settings-workspace">
       <header className="settings-workspace-header">
-        <p className="eyebrow">Backups</p>
         <h1>Backup settings</h1>
       </header>
       <p className="backup-help">
@@ -239,7 +304,6 @@ export function BackupSettingsWorkspace({
       >
         <div className="settings-panel-copy">
           <h2 id="backup-export-heading">Export projects</h2>
-          <p>Create one restorable threadstr backup.</p>
         </div>
         <ProjectChecklist
           label="Projects to export"
@@ -253,19 +317,40 @@ export function BackupSettingsWorkspace({
             className="button button-primary"
             type="button"
             disabled={!!busy}
+            aria-busy={busy === "export" && exportingAll}
+            aria-describedby={
+              feedbackFor === "export" && error
+                ? "backup-export-error"
+                : undefined
+            }
             onClick={() => void exportBackup("all")}
           >
-            Export all
+            {busy === "export" && exportingAll ? "Exporting…" : "Export all"}
           </button>
           <button
             className="button button-quiet"
             type="button"
             disabled={!!busy || exportIds.length === 0}
+            aria-busy={busy === "export" && !exportingAll}
+            aria-describedby={
+              feedbackFor === "export" && error
+                ? "backup-export-error"
+                : undefined
+            }
             onClick={() => void exportBackup(exportIds)}
           >
-            Export selected ({exportIds.length})
+            {busy === "export" && !exportingAll
+              ? "Exporting selected"
+              : "Export selected"}{" "}
+            ({exportIds.length})
           </button>
         </div>
+        <BackupFeedback
+          operation="export"
+          active={feedbackFor === "export"}
+          busy={busy === "export"}
+          {...feedbackProps}
+        />
       </section>
       <section
         className="settings-panel backup-panel"
@@ -273,7 +358,6 @@ export function BackupSettingsWorkspace({
       >
         <div className="settings-panel-copy">
           <h2 id="backup-import-heading">Import projects</h2>
-          <p>Choose a backup to inspect its projects before importing.</p>
         </div>
         <label className="field-label" htmlFor="database-import">
           Choose threadstr backup
@@ -284,9 +368,16 @@ export function BackupSettingsWorkspace({
           type="file"
           accept=".on-track-backup,application/vnd.on-track.backup+sqlite"
           disabled={busy === "import" || busy === "export"}
-          aria-describedby={error ? "backup-error" : undefined}
+          aria-describedby={
+            feedbackFor === "preview" && error
+              ? "backup-preview-error"
+              : undefined
+          }
           onChange={(event) => void selectFile(event.target.files?.[0])}
         />
+        <p className="backup-help">
+          Inspect the backup's projects before importing.
+        </p>
         {file && !preview && !busy && (
           <button
             className="button button-quiet"
@@ -296,6 +387,12 @@ export function BackupSettingsWorkspace({
             Check backup again
           </button>
         )}
+        <BackupFeedback
+          operation="preview"
+          active={feedbackFor === "preview"}
+          busy={busy === "preview"}
+          {...feedbackProps}
+        />
         {preview && (
           <>
             <ProjectChecklist
@@ -345,12 +442,26 @@ export function BackupSettingsWorkspace({
                   (importIds.length === 0 && !emptyBackup)
                 }
                 onClick={() => void importBackup()}
+                aria-busy={busy === "import"}
+                aria-describedby={
+                  feedbackFor === "import" && error
+                    ? "backup-import-error"
+                    : undefined
+                }
               >
-                {mode === "merge"
-                  ? `Merge selected (${importIds.length})`
-                  : `Replace with selected (${importIds.length})`}
+                {busy === "import"
+                  ? "Importing projects…"
+                  : mode === "merge"
+                    ? `Merge selected (${importIds.length})`
+                    : `Replace with selected (${importIds.length})`}
               </button>
             </div>
+            <BackupFeedback
+              operation="import"
+              active={feedbackFor === "import"}
+              busy={busy === "import"}
+              {...feedbackProps}
+            />
             {unavailable && !busy && (
               <p className="backup-help">
                 Wait for the current project change to finish before importing.
@@ -359,42 +470,6 @@ export function BackupSettingsWorkspace({
           </>
         )}
       </section>
-      <div className="backup-feedback" aria-live="polite">
-        {busy ? (
-          <p role="status" className="form-status">
-            {busy === "preview"
-              ? "Checking backup…"
-              : busy === "import"
-                ? "Importing projects…"
-                : "Preparing export…"}
-          </p>
-        ) : (
-          status && (
-            <p role="status" className="form-status">
-              {status}
-            </p>
-          )
-        )}
-        {result?.renames.length ? (
-          <ul className="backup-renames">
-            {result.renames.map((rename, index) => (
-              <li key={index}>
-                {rename.original} → {rename.renamed}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {result?.refreshWarning && (
-          <p role="alert" className="form-error">
-            {result.refreshWarning}
-          </p>
-        )}
-      </div>
-      {error && (
-        <p id="backup-error" role="alert" className="form-error">
-          {error}
-        </p>
-      )}
     </main>
   );
 }

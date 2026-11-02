@@ -24,7 +24,10 @@ Reuse the existing timeline with an explicit read-only context. Reading,
 filtering, expansion, and copying text remain available; mutation and native file
 actions require a copy. Copies use ordinary project behavior and backups. Settings
 General can hide Examples using a default-on browser-local preference, matching
-the locality of Appearance preferences.
+the locality of Appearance preferences. This preference-storage decision is
+superseded by [ADR-0013](0013-durable-preferences-and-project-labels.md): current
+source stores both preferences in SQLite. The application-owned catalog and
+copy semantics remain unchanged.
 
 ## Alternatives
 

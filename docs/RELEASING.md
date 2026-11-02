@@ -179,7 +179,9 @@ usable after the corresponding assets are published.
 
 ## threadstr transition release gate
 
-Version 0.0.9 introduced threadstr and `thr`; the selected candidate is v0.1.0.
+Version 0.0.9 introduced threadstr and `thr`;
+[v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1) is the latest published release.
+Select a new unused version for the next candidate.
 Preserve the `on-track-vX.Y.Z.zip` asset pattern, repository URLs, bootstrap tokens,
 manifest protocol, and managed compatibility floor `0.0.7`. Published v0.0.8
 clients require these identities. See [compatibility](compatibility.md) and

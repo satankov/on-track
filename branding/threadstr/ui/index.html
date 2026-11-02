@@ -1,0 +1,1020 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>threadstr · UI cookbook</title>
+    <link rel="stylesheet" href="../../../src/client/styles.css" />
+    <link rel="stylesheet" href="cookbook.css" />
+    <script src="cookbook.js" defer></script>
+  </head>
+  <body class="cb-body">
+    <a class="cb-skip" href="#principles">Skip to cookbook</a>
+    <header class="cb-header">
+      <a href="../preview.html" aria-label="threadstr branding">
+        <img
+          class="brand-wordmark brand-wordmark--light"
+          src="../v1/wordmark/threadstr-wordmark-on-light.svg"
+          alt="threadstr"
+        />
+        <img
+          class="brand-wordmark brand-wordmark--dark"
+          src="../v1/wordmark/threadstr-wordmark-on-dark.svg"
+          alt="threadstr"
+        />
+        <span class="brand-fallback">threadstr</span>
+      </a>
+      <span class="cb-header-label"
+        >UI cookbook <span>01 / Flat workspace</span></span
+      >
+      <fieldset class="cb-theme-control">
+        <legend class="visually-hidden">Cookbook theme</legend>
+        <label><input type="radio" name="theme" value="light" />Light</label>
+        <label
+          ><input type="radio" name="theme" value="neutral" />Neutral</label
+        >
+        <label
+          ><input type="radio" name="theme" value="dark" checked />Dark</label
+        >
+      </fieldset>
+    </header>
+    <div class="cb-shell">
+      <nav class="cb-nav" aria-label="Cookbook sections">
+        <a href="#principles">01 &nbsp; Principles</a>
+        <a href="#color">02 &nbsp; Color</a>
+        <a href="#type">03 &nbsp; Typography</a>
+        <a href="#spacing">04 &nbsp; Space & shape</a>
+        <a href="#settings">05 &nbsp; Settings recipe</a>
+        <a href="#messages">06 &nbsp; Messages & fade</a>
+        <a href="#states">07 &nbsp; States & feedback</a>
+        <a href="#responsive">08 &nbsp; Responsive rules</a>
+        <a href="#guardrails">09 &nbsp; Agent checklist</a>
+        <a class="cb-contract" href="../../../DESIGN.md"
+          >Read the specification ↗</a
+        >
+      </nav>
+      <main class="cb-main">
+        <section id="principles" class="cb-section cb-intro">
+          <p class="cb-kicker">01 / The design contract</p>
+          <h1>Quiet surfaces.<br />Clear decisions.</h1>
+          <p class="cb-lead">
+            The working reference for every threadstr screen. Flat controls,
+            compact typography, deliberate space, and a restrained project
+            accent.
+          </p>
+          <p class="cb-meta">
+            Established 26 October 2026 · All three themes · Desktop first
+          </p>
+          <div class="cb-principles">
+            <article>
+              <b>Group with tone</b>
+              <p>One surface for related controls. No decorative outer card.</p>
+            </article>
+            <article>
+              <b>Keep only useful words</b>
+              <p>
+                Label above. Control below. Consequences and guidance
+                underneath.
+              </p>
+            </article>
+            <article>
+              <b>Make state explicit</b>
+              <p>
+                Check marks, focus, and clear error text survive visual
+                simplification.
+              </p>
+            </article>
+          </div>
+          <p class="cb-note">
+            This reference imports the actual app CSS. Its navigation and
+            editorial headings belong to the cookbook; component specimens below
+            use the production classes. Demo interactions stay on this page and
+            save nothing.
+          </p>
+        </section>
+
+        <section id="color" class="cb-section">
+          <p class="cb-kicker">02 / Color roles</p>
+          <h2>Choose a role, not a hex.</h2>
+          <p>
+            Switch the theme above. Every swatch and value is read from the live
+            stylesheet, including inherited tokens.
+          </p>
+          <div id="cb-colors" class="cb-colors"></div>
+          <h3>Project identity / action fill</h3>
+          <p>
+            The bright identity color is distinct from the darker action fill.
+            White checks and labels use the action fill.
+          </p>
+          <div id="cb-accents" class="cb-accent-grid"></div>
+          <details class="cb-details">
+            <summary>
+              Full palette: attachments, senders, status, code, overlays
+            </summary>
+            <div id="cb-all-tokens" class="cb-token-table"></div>
+          </details>
+        </section>
+
+        <section id="type" class="cb-section">
+          <p class="cb-kicker">03 / Typography</p>
+          <h2>One family. Specific roles.</h2>
+          <p>
+            <code>Inter → ui-sans-serif → system</code>. No remote font; Inter
+            is used only when available. Controls inherit the stack.
+          </p>
+          <div class="cb-type-specimens">
+            <div>
+              <span class="cb-metric">Settings title · 1.4rem / 650</span>
+              <div class="settings-workspace-header cb-type-title">
+                <h1>Appearance</h1>
+              </div>
+            </div>
+            <div>
+              <span class="cb-metric">Chat title · 1.12rem / 650</span>
+              <div class="chat-heading">
+                <h1>A winter weekend in Amsterdam</h1>
+              </div>
+            </div>
+            <div>
+              <span class="cb-metric">Message body · .95rem / 1.52</span>
+              <div class="note-body">
+                One main plan each day. Leave the afternoon open for a long
+                walk, good coffee, or a bookshop.
+              </div>
+            </div>
+            <div>
+              <span class="cb-metric">Field label · .78rem / 650</span>
+              <div class="project-settings-fields">
+                <span class="field-label">Project name</span>
+              </div>
+            </div>
+            <div>
+              <span class="cb-metric">Settings row · .84rem / 500</span>
+              <div class="project-label-option cb-type-row">
+                Collapse long messages by default
+              </div>
+            </div>
+            <div>
+              <span class="cb-metric">Help · .75rem / 1.5</span>
+              <p class="field-help">
+                Turning a label off keeps it on existing messages.
+              </p>
+            </div>
+            <div>
+              <span class="cb-metric">Metadata · .68rem / 700</span
+              ><time class="message-time">14:32</time>
+            </div>
+          </div>
+          <p class="cb-note">
+            Tiny toolbar and metadata sizes are compact exceptions. Never use
+            them for body copy or general instructions. Keep browser text
+            scaling intact.
+          </p>
+        </section>
+
+        <section id="spacing" class="cb-section">
+          <p class="cb-kicker">04 / Space & shape</p>
+          <h2>Keep a consistent rhythm.</h2>
+          <div class="cb-spacing" aria-label="Spacing scale">
+            <div><i style="width: 4px"></i><code>4</code></div>
+            <div><i style="width: 8px"></i><code>8</code></div>
+            <div><i style="width: 12px"></i><code>12</code></div>
+            <div><i style="width: 16px"></i><code>16</code></div>
+            <div><i style="width: 24px"></i><code>24</code></div>
+            <div><i style="width: 32px"></i><code>32</code></div>
+            <div><i style="width: 48px"></i><code>48 px</code></div>
+          </div>
+          <div
+            class="cb-layout-diagram"
+            aria-label="Desktop settings layout at 1440 pixels"
+          >
+            <div class="cb-layout-rail">Rail<br /><b>300</b></div>
+            <div class="cb-layout-left">Left<br /><b>120</b></div>
+            <div class="cb-layout-content">
+              Settings content<br /><b>840 max</b>
+            </div>
+            <div class="cb-layout-right">Right<br /><b>40 min</b></div>
+          </div>
+          <p class="cb-note">
+            Schematic, not to scale. At 1440px the content begins at x=420.
+            Desktop left margin is 3 × <code>clamp(20px, 3vw, 40px)</code>; the
+            right margin stays unchanged. At 760px and below both become 16px.
+          </p>
+          <div class="cb-shapes">
+            <div>
+              <i style="border-radius: 5px"></i><b>5px</b><span>Checkbox</span>
+            </div>
+            <div>
+              <i style="border-radius: 8px"></i><b>8px</b><span>Button</span>
+            </div>
+            <div>
+              <i style="border-radius: 12px"></i><b>12px</b
+              ><span>Group / composer</span>
+            </div>
+            <div>
+              <i style="border-radius: 16px"></i><b>16px</b><span>Dialog</span>
+            </div>
+            <div>
+              <i style="border-radius: 14px 14px 5px 14px"></i><b>14 / 5px</b
+              ><span>Own bubble</span>
+            </div>
+          </div>
+          <p class="cb-note">
+            Use the family's radius. Popups and rail buttons retain 9px;
+            attachment groups 10px. Do not round every wrapper or invent a new
+            size for each component.
+          </p>
+        </section>
+
+        <section id="settings" class="cb-section">
+          <p class="cb-kicker">05 / Settings recipe</p>
+          <h2>Heading → group → note.</h2>
+          <p>
+            One adjustable block per purpose. The same field and swatch styling
+            belongs in Edit and Create project.
+          </p>
+          <div class="cb-specimen settings-workspace" data-accent="ocean">
+            <form
+              class="project-settings-fields cb-demo-form"
+              id="cb-settings-form"
+            >
+              <div class="project-edit-actions">
+                <button class="button button-quiet" type="button" id="cb-reset">
+                  Reset specimen</button
+                ><button class="button button-primary" type="submit">
+                  Preview saved state
+                </button>
+              </div>
+              <p class="form-status" role="status" id="cb-save-status"></p>
+              <label class="field-label" for="cb-project-name"
+                >Project name</label
+              ><input
+                id="cb-project-name"
+                class="text-input"
+                value="A winter weekend"
+                maxlength="80"
+                required
+              />
+              <fieldset class="accent-fieldset">
+                <legend>Project accent</legend>
+                <div class="accent-options" id="cb-swatch-options"></div>
+              </fieldset>
+              <fieldset
+                class="project-label-fieldset"
+                aria-describedby="cb-label-help"
+              >
+                <legend>Project labels</legend>
+                <div class="project-label-options">
+                  <div class="project-label-edit-slot">
+                    <div class="project-label-edit-row">
+                      <button
+                        type="button"
+                        class="project-label-drag-handle"
+                        aria-label="Reorder Todo"
+                        aria-describedby="cb-sort-help"
+                        aria-pressed="false"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M5 8h14M5 16h14" />
+                        </svg>
+                      </button>
+                      <div class="project-label-edit-fields">
+                        <span class="custom-label-symbol project-label-value"
+                          ><span class="label-glyph" aria-hidden="true"
+                            >☑</span
+                          ></span
+                        ><span class="custom-label-name project-label-value"
+                          >Todo</span
+                        ><label
+                          class="project-label-option custom-label-enabled"
+                          ><input
+                            type="checkbox"
+                            aria-label="Enable Todo"
+                            checked
+                        /></label>
+                      </div>
+                      <span></span>
+                    </div>
+                  </div>
+                  <div class="project-label-edit-slot">
+                    <div class="project-label-edit-row">
+                      <button
+                        type="button"
+                        class="project-label-drag-handle"
+                        aria-label="Reorder Decision"
+                        aria-describedby="cb-sort-help"
+                        aria-pressed="false"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M5 8h14M5 16h14" />
+                        </svg>
+                      </button>
+                      <div class="project-label-edit-fields">
+                        <span class="custom-label-symbol project-label-value"
+                          ><span class="label-glyph" aria-hidden="true"
+                            >⚑</span
+                          ></span
+                        ><span class="custom-label-name project-label-value"
+                          >Decision</span
+                        ><label
+                          class="project-label-option custom-label-enabled"
+                          ><input type="checkbox" aria-label="Enable Decision"
+                        /></label>
+                      </div>
+                      <span></span>
+                    </div>
+                  </div>
+                  <div class="project-label-edit-slot">
+                    <div class="project-label-edit-row">
+                      <button
+                        type="button"
+                        class="project-label-drag-handle"
+                        aria-label="Reorder Open question"
+                        aria-describedby="cb-sort-help"
+                        aria-pressed="false"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M5 8h14M5 16h14" />
+                        </svg>
+                      </button>
+                      <div class="project-label-edit-fields">
+                        <span class="custom-label-symbol project-label-value"
+                          ><span class="label-glyph" aria-hidden="true"
+                            >?</span
+                          ></span
+                        ><span class="custom-label-name project-label-value"
+                          >Open question</span
+                        ><label
+                          class="project-label-option custom-label-enabled"
+                          ><input
+                            type="checkbox"
+                            aria-label="Enable Open question"
+                        /></label>
+                      </div>
+                      <span></span>
+                    </div>
+                  </div>
+                  <div class="project-label-edit-slot">
+                    <div class="project-label-edit-row">
+                      <button
+                        type="button"
+                        class="project-label-drag-handle"
+                        aria-label="Reorder Risk"
+                        aria-describedby="cb-sort-help"
+                        aria-pressed="false"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M5 8h14M5 16h14" />
+                        </svg>
+                      </button>
+                      <div class="project-label-edit-fields">
+                        <span class="custom-label-symbol project-label-value"
+                          ><span class="label-glyph" aria-hidden="true"
+                            >⚠️</span
+                          ></span
+                        ><span class="custom-label-name project-label-value"
+                          >Risk</span
+                        ><label
+                          class="project-label-option custom-label-enabled"
+                          ><input type="checkbox" aria-label="Enable Risk"
+                        /></label>
+                      </div>
+                      <span></span>
+                    </div>
+                  </div>
+                  <div class="project-label-edit-slot">
+                    <div class="project-label-edit-row">
+                      <button
+                        type="button"
+                        class="project-label-drag-handle"
+                        aria-label="Reorder Milestone"
+                        aria-describedby="cb-sort-help"
+                        aria-pressed="false"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M5 8h14M5 16h14" />
+                        </svg>
+                      </button>
+                      <div class="project-label-edit-fields">
+                        <span class="custom-label-symbol project-label-value"
+                          ><span class="label-glyph" aria-hidden="true"
+                            >🎖️</span
+                          ></span
+                        ><span class="custom-label-name project-label-value"
+                          >Milestone</span
+                        ><label
+                          class="project-label-option custom-label-enabled"
+                          ><input
+                            type="checkbox"
+                            aria-label="Enable Milestone"
+                            checked
+                        /></label>
+                      </div>
+                      <span></span>
+                    </div>
+                  </div>
+                  <div class="project-label-edit-slot">
+                    <div class="project-label-edit-row">
+                      <button
+                        type="button"
+                        class="project-label-drag-handle"
+                        aria-label="Reorder Review"
+                        aria-describedby="cb-sort-help"
+                        aria-pressed="false"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M5 8h14M5 16h14" />
+                        </svg>
+                      </button>
+                      <div class="project-label-edit-fields">
+                        <label class="custom-label-symbol"
+                          ><input
+                            class="text-input"
+                            aria-label="Review label symbol"
+                            placeholder="☆"
+                            value="✓" /></label
+                        ><label class="custom-label-name"
+                          ><input
+                            class="text-input"
+                            aria-label="Review label name"
+                            placeholder="Label name"
+                            value="Review" /></label
+                        ><label
+                          class="project-label-option custom-label-enabled"
+                          ><input
+                            type="checkbox"
+                            aria-label="Enable Review"
+                            checked
+                        /></label>
+                      </div>
+                      <div class="project-label-actions">
+                        <button
+                          type="button"
+                          class="button button-quiet"
+                          aria-label="Delete Review"
+                          title="Delete Review"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="project-label-edit-slot">
+                    <div
+                      class="project-label-edit-row project-label-edit-row--empty"
+                    >
+                      <span aria-hidden="true"></span>
+                      <div class="project-label-edit-fields">
+                        <label class="custom-label-symbol"
+                          ><input
+                            class="text-input"
+                            aria-label="New label symbol"
+                            placeholder="☆"
+                            value="" /></label
+                        ><label class="custom-label-name"
+                          ><input
+                            class="text-input"
+                            aria-label="New label name"
+                            placeholder="Label name"
+                            value="" /></label
+                        ><span aria-hidden="true"></span>
+                      </div>
+                      <span></span>
+                    </div>
+                  </div>
+                </div>
+                <p class="field-help" id="cb-label-help">
+                  Up to 5 custom labels, 8 characters per name, and one optional
+                  symbol or emoji. Turning a label off keeps it on existing
+                  messages.
+                </p>
+                <p class="field-help">
+                  Clear both fields to remove a custom label and its message
+                  tags when you save.
+                </p>
+                <p class="field-help">Drag rows to reorder.</p>
+                <span class="visually-hidden" id="cb-sort-help"
+                  >Drag using the handle. Or select a handle, then its
+                  destination. Use ↑/↓ or Home/End on a focused handle. Escape
+                  cancels.</span
+                >
+              </fieldset>
+              <fieldset
+                class="project-message-display-fieldset"
+                aria-describedby="cb-display-help"
+              >
+                <legend>Message display</legend>
+                <label class="project-message-display-option"
+                  ><span>Collapse long messages by default</span
+                  ><input type="checkbox" checked
+                /></label>
+                <p class="field-help" id="cb-display-help">
+                  You can still expand or collapse each message.
+                </p>
+              </fieldset>
+              <div class="project-lifecycle-actions">
+                <button
+                  class="button button-quiet"
+                  type="button"
+                  data-demo-action="Archive preserves all messages and files."
+                >
+                  Archive project
+                </button>
+                <p class="field-help">
+                  Archiving keeps all messages and files.
+                </p>
+                <button
+                  class="button button-danger"
+                  type="button"
+                  data-demo-action="The real app asks for confirmation before deleting. No data exists in this specimen."
+                >
+                  Delete project
+                </button>
+              </div>
+              <p id="cb-action-status" class="field-help" role="status"></p>
+            </form>
+          </div>
+          <div class="cb-comparison">
+            <article>
+              <b>Use this</b>
+              <p>
+                Label · one tonal group · a useful consequence below. Checkbox
+                on the right, with a visible check.
+              </p>
+            </article>
+            <article>
+              <b>Avoid this</b>
+              <p>
+                “This is the edit tab” · background card behind another card ·
+                bright borders · iPhone switches · Archive beside Delete.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="messages" class="cb-section">
+          <p class="cb-kicker">06 / Messages & composer</p>
+          <h2>Let the content lead.</h2>
+          <p>
+            Participants use neutral surfaces. Your own messages carry the
+            project accent. Labels stay quieter than the message.
+          </p>
+          <div class="cb-conversation" data-accent="ocean">
+            <div class="message-row message-row--participant">
+              <div class="message-stack">
+                <article class="message-bubble">
+                  <p class="message-sender" data-sender-color="iris">Maya</p>
+                  <div class="note-body">
+                    Leave time for a very long breakfast. That is the important
+                    part.
+                  </div>
+                  <div class="message-footer">
+                    <time class="message-time">09:41</time>
+                  </div>
+                </article>
+              </div>
+            </div>
+            <div class="message-row message-row--own">
+              <div class="message-stack">
+                <article class="message-bubble">
+                  <div class="note-body">
+                    One museum, a quiet base, and plenty of wandering. I saved
+                    the practical details below.
+                  </div>
+                  <div class="message-footer">
+                    <div
+                      class="message-labels"
+                      role="list"
+                      aria-label="Message labels"
+                    >
+                      <span
+                        class="message-label"
+                        role="listitem"
+                        data-label="todo"
+                        ><span
+                          class="label-glyph label-glyph--svg"
+                          aria-hidden="true"
+                          ><svg viewBox="0 0 24 24" focusable="false">
+                            <rect x="3" y="3" width="18" height="18" rx="4" />
+                            <path d="m7.5 12 3 3 6-7" /></svg></span
+                        ><span class="message-label-name">Todo</span></span
+                      >
+                      <span
+                        class="message-label"
+                        role="listitem"
+                        data-label="decision"
+                        ><span
+                          class="label-glyph label-glyph--svg"
+                          aria-hidden="true"
+                          ><svg viewBox="0 0 24 24" focusable="false">
+                            <path
+                              d="M6 3v18M6 7h8l3-3M6 15h8l3 3m-2-14 2-2 2 2m-4 14 2 2 2-2"
+                            /></svg></span
+                        ><span class="message-label-name">Decision</span></span
+                      >
+                    </div>
+                    <time class="message-time">09:42</time>
+                  </div>
+                </article>
+              </div>
+            </div>
+            <div class="message-row message-row--own">
+              <div class="message-stack">
+                <article class="message-bubble">
+                  <div
+                    class="message-body-viewport message-body-viewport--collapsed cb-collapse"
+                    id="cb-long-message"
+                  >
+                    <div class="note-body">
+                      <p>Thursday — art, then an open afternoon.</p>
+                      <p>
+                        Have the long breakfast. Visit the museum at our chosen
+                        booking time. Leave the afternoon free.
+                      </p>
+                      <p>
+                        Choose any extra stop over lunch. A bookshop, a café, or
+                        a nap are all perfectly acceptable outcomes.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    class="message-collapse-toggle"
+                    type="button"
+                    aria-expanded="false"
+                    aria-controls="cb-long-message"
+                    id="cb-expand"
+                  >
+                    Show more <span aria-hidden="true">⌄</span>
+                  </button>
+                  <div class="message-footer">
+                    <time class="message-time">09:43</time>
+                  </div>
+                </article>
+              </div>
+            </div>
+            <div class="message-row message-row--participant">
+              <div class="message-stack">
+                <article class="message-bubble">
+                  <p class="message-sender" data-sender-color="iris">Maya</p>
+                  <div class="note-body">
+                    <div
+                      class="message-table-scroll"
+                      role="region"
+                      aria-label="Scrollable table"
+                      tabindex="0"
+                    >
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Day</th>
+                            <th>Morning</th>
+                            <th>Lunch</th>
+                            <th>Afternoon</th>
+                            <th>Booking</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td>Thursday</td>
+                            <td>A very long breakfast</td>
+                            <td>A quiet canal-side café</td>
+                            <td>Museum, then a bookshop</td>
+                            <td>Confirm the museum time</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div class="message-footer">
+                    <time class="message-time">09:44</time>
+                  </div>
+                </article>
+              </div>
+            </div>
+            <div class="cb-composer-stage">
+              <div class="composer-wrap cb-composer-wrap">
+                <form class="composer" id="cb-composer">
+                  <div class="composer-timestamp-row">
+                    <label class="field-label" for="cb-timestamp"
+                      >Timestamp</label
+                    ><input
+                      class="text-input composer-timestamp-input"
+                      id="cb-timestamp"
+                      type="datetime-local"
+                      value="2026-12-16T09:45"
+                    />
+                  </div>
+                  <div class="composer-content">
+                    <div class="composer-input-row">
+                      <textarea
+                        aria-label="Demo message"
+                        placeholder="Add a note to this project…"
+                        id="cb-message"
+                      ></textarea>
+                    </div>
+                  </div>
+                  <div class="composer-bar">
+                    <span class="composer-shortcut"
+                      >Preview only · no project data</span
+                    >
+                    <div class="composer-actions">
+                      <button
+                        class="send-button"
+                        type="submit"
+                        disabled
+                        id="cb-send"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+            <p class="field-help" role="status" id="cb-send-status"></p>
+          </div>
+          <p class="cb-note">
+            The composer overlaps the last specimen slightly to expose the 32px
+            transparent-to-history fade. No black shadow strip. Show more fades
+            to its own bubble surface instead. Wide tables scroll inside their
+            bubble; focus the table region and use the arrow keys.
+          </p>
+        </section>
+
+        <section id="states" class="cb-section">
+          <p class="cb-kicker">07 / States & feedback</p>
+          <h2>Flat, with visible affordances.</h2>
+          <div class="cb-state-grid">
+            <article class="settings-workspace">
+              <h3>Rest / focus / disabled</h3>
+              <div class="cb-button-row">
+                <button
+                  class="button button-primary"
+                  type="button"
+                  id="cb-focus-demo"
+                >
+                  Focus the field</button
+                ><button class="button button-primary" disabled>Saving…</button>
+              </div>
+              <div class="project-settings-fields">
+                <label class="field-label" for="cb-focus-field"
+                  >Keyboard focus specimen</label
+                ><input
+                  class="text-input"
+                  id="cb-focus-field"
+                  placeholder="Tab here or use the button"
+                />
+              </div>
+              <p class="cb-note">
+                1px focus outline, 1px offset. A focused field may have a line;
+                an idle field stays flat.
+              </p>
+            </article>
+            <article class="settings-workspace">
+              <h3>Backup error / progress</h3>
+              <div class="backup-panel">
+                <div class="backup-actions">
+                  <button
+                    class="button button-primary"
+                    type="button"
+                    aria-describedby="cb-export-error"
+                    data-demo-action="The real app retries with the same project selection."
+                  >
+                    Export all
+                  </button>
+                </div>
+                <div class="backup-feedback">
+                  <p class="form-error" id="cb-export-error">
+                    The database could not be exported. Try again.
+                  </p>
+                </div>
+                <div class="backup-actions">
+                  <button
+                    class="button button-primary"
+                    type="button"
+                    aria-busy="true"
+                    disabled
+                  >
+                    Importing projects…
+                  </button>
+                </div>
+                <div class="backup-feedback">
+                  <p class="form-status">Importing projects…</p>
+                </div>
+              </div>
+              <p class="cb-note">
+                Place feedback beside its initiating action. Preserve edits
+                after a failed save. Critical color always has explicit text.
+              </p>
+            </article>
+            <article>
+              <h3>Floating label popup</h3>
+              <div class="message-label-popover cb-popover" data-accent="ocean">
+                <fieldset>
+                  <legend>Message labels</legend>
+                  <label class="message-label-choice"
+                    ><input type="checkbox" checked /><span>Todo</span></label
+                  ><label class="message-label-choice"
+                    ><input type="checkbox" /><span>Decision</span></label
+                  ><label class="message-label-choice"
+                    ><input type="checkbox" /><span>Open question</span></label
+                  >
+                </fieldset>
+              </div>
+              <p class="cb-note">
+                218px wide · 9px radius · no border. A restrained shadow is
+                reserved for this floating layer. Forced colors restores a
+                system-colored boundary.
+              </p>
+            </article>
+            <article>
+              <h3>Read-only / empty / destructive</h3>
+              <p class="cb-note">
+                Explain why a control is unavailable. Empty states give one
+                useful next action. Keep the archive preservation note and
+                delete confirmation. Backup plaintext/replacement warnings are
+                meaningful copy. The Create modal is centered in the full
+                viewport and uses one 54% overlay with 3px blur.
+              </p>
+              <button
+                class="button button-quiet"
+                type="button"
+                id="cb-dialog-open"
+              >
+                Preview Create dialog
+              </button>
+            </article>
+          </div>
+          <div class="cb-motion">
+            <b>Motion vocabulary</b><span>140ms hover</span
+            ><span>220ms arrival</span><span>720ms send pulse</span
+            ><span>180ms static reduced-motion feedback</span>
+          </div>
+          <p class="cb-note">
+            Use Tab to inspect focus and native radio/checkbox keyboard
+            behavior. OS reduced-motion and forced-colors settings are respected
+            by the imported app rules. Do not treat this specimen as proof of
+            the complete app workflow.
+          </p>
+        </section>
+
+        <section class="cb-section">
+          <h2>Filters combine without changing the rail.</h2>
+          <p>
+            Keep the fixed desktop width; the helper follows the final label.
+            Links and Pin are both pressed here.
+          </p>
+          <nav
+            class="history-filter cb-filter-sample"
+            aria-label="Sample history filters"
+            aria-describedby="cb-filter-help"
+          >
+            <div class="history-filter-inner">
+              <button
+                type="button"
+                class="history-filter-button"
+                aria-pressed="false"
+              >
+                <span class="history-filter-icon" aria-hidden="true">☷</span
+                ><span class="history-filter-label">All</span
+                ><span class="history-filter-count">12</span>
+              </button>
+              <button
+                type="button"
+                class="history-filter-button history-filter-button--active"
+                aria-pressed="true"
+              >
+                <span class="history-filter-icon" aria-hidden="true">↗</span
+                ><span class="history-filter-label">Links</span
+                ><span class="history-filter-count">6</span>
+              </button>
+              <button
+                type="button"
+                class="history-filter-button history-filter-button--active"
+                aria-pressed="true"
+              >
+                <span class="history-filter-icon" aria-hidden="true">⌖</span
+                ><span class="history-filter-label">Pin</span
+                ><span class="history-filter-count">4</span>
+              </button>
+              <button
+                type="button"
+                class="history-filter-button"
+                aria-pressed="false"
+              >
+                <span class="history-filter-icon" aria-hidden="true">✓</span
+                ><span class="history-filter-label">Review</span
+                ><span class="history-filter-count">2</span>
+              </button>
+            </div>
+            <p class="history-filter-help" id="cb-filter-help">
+              <kbd>⌘/Ctrl</kbd> + multiple
+            </p>
+          </nav>
+        </section>
+
+        <section id="responsive" class="cb-section">
+          <p class="cb-kicker">08 / Responsive rules</p>
+          <h2>Adapt the structure, preserve the language.</h2>
+          <div class="cb-responsive-grid">
+            <article>
+              <span class="cb-metric">Desktop / above 760px</span>
+              <h3>Room for the workspace</h3>
+              <p>
+                Persistent sidebar. 840px settings content. Triple left inset.
+                Top Back/Save actions. Vertical history filters.
+              </p>
+            </article>
+            <article>
+              <span class="cb-metric">Narrow / 760px and below</span>
+              <h3>One pane at a time</h3>
+              <p>
+                16px settings gutters. Horizontal settings navigation.
+                Single-column theme choices. Full-width input and reachable
+                toolbar.
+              </p>
+            </article>
+          </div>
+          <div class="cb-check-strip">
+            <span>1440 × 900</span><span>1024 × 768</span><span>390 × 844</span
+            ><span>320px reflow</span><span>200% zoom</span>
+          </div>
+          <p class="cb-note">
+            At ≤960px, message actions remain visible. Use 600px chat container
+            rules when the workspace itself is narrow. Keep long labels,
+            keyboard access, local table scrolling, and error messages usable.
+          </p>
+        </section>
+
+        <section id="guardrails" class="cb-section">
+          <p class="cb-kicker">09 / The next UI change</p>
+          <h2>Reuse before inventing.</h2>
+          <ol class="cb-checklist">
+            <li>
+              Read <a href="../../../DESIGN.md">DESIGN.md</a> and choose the
+              nearest existing component family.
+            </li>
+            <li>
+              Use its typography, spacing, semantic tokens, states, and
+              accessible markup.
+            </li>
+            <li>
+              Check all three themes, keyboard focus, long content, narrow
+              widths, and affected error states.
+            </li>
+            <li>
+              Update the specification and this specimen only when a shared rule
+              intentionally changes.
+            </li>
+          </ol>
+          <details class="cb-details">
+            <summary>Legacy CSS is not the default recipe</summary>
+            <p>
+              Generic <code>.text-input</code>, <code>.accent-option</code>,
+              <code>.button-quiet</code>, and <code>.button-danger</code> retain
+              some older borders. The current settings classes override them.
+              Use the scoped flat patterns; do not copy the first matching CSS
+              declaration or refactor unrelated legacy rules during another
+              task.
+            </p>
+          </details>
+          <p class="cb-note">
+            Sources: <a href="../../../src/client/styles.css">styles.css</a> ·
+            <a href="../../../src/client/App.tsx">App.tsx</a> ·
+            <a href="../../../src/client/theme.test.ts">theme contracts</a> ·
+            <a href="../v1/README.md">logo kit</a>. This page changes no
+            application preferences or project data.
+          </p>
+        </section>
+      </main>
+    </div>
+    <dialog
+      id="cb-create-dialog"
+      class="dialog-backdrop"
+      aria-labelledby="project-dialog-title"
+    >
+      <section class="project-dialog">
+        <h2 id="project-dialog-title">Create project</h2>
+        <form class="project-settings-fields" method="dialog">
+          <label class="field-label" for="cb-create-name">Project name</label
+          ><input
+            class="text-input"
+            id="cb-create-name"
+            value="A new notebook"
+          />
+          <fieldset class="accent-fieldset">
+            <legend>Project accent</legend>
+            <div class="accent-options" id="cb-create-swatches"></div>
+          </fieldset>
+          <div class="dialog-actions">
+            <button class="button button-quiet" value="cancel">Cancel</button
+            ><button class="button button-primary" value="create">
+              Create project
+            </button>
+          </div>
+          <p class="field-help">Specimen only; no project will be created.</p>
+        </form>
+      </section>
+    </dialog>
+  </body>
+</html>

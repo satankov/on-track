@@ -1,6 +1,7 @@
 # History controls, send feedback, and uninstall
 
 Status: Implementation complete and locally verified, including edit-save glow.
+Published in [v0.1.0](https://github.com/satankov/on-track/releases/tag/v0.1.0) on 2026-10-23.
 Dreaming closeout reconciled on 2026-10-22; remaining native and accessibility
 validation is tracked in issues #62 and #63.
 The interactive send mockup is a review artifact outside the repository.
@@ -255,8 +256,9 @@ with user approval during dreaming closeout on 2026-10-22:
   pending/error/save announcements with a real screen reader.
 
 These issues own acceptance criteria and status. Local tests do not establish
-native-platform or manual assistive-technology support. Existing attachment
-focus CI failures remain separately tracked in issue #61.
+native-platform or manual assistive-technology support. Issue #61's attachment
+focus fix later shipped in v0.1.0 with passing Linux CI; its pending tracker
+reconciliation is documented in [plan 0025](0025-security-audit-response.md#tracker-reconciliation).
 
 ## Preview verification (2026-10-21)
 

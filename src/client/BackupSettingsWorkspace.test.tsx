@@ -122,3 +122,66 @@ it("allows an originally empty backup but never treats cleared selection as empt
     digest: preview.digest,
   });
 });
+
+it("keeps export progress and retryable failure beside Export even with an import preview open", async () => {
+  const user = userEvent.setup();
+  const p = props();
+  let reject!: (error: Error) => void;
+  p.onExport.mockImplementationOnce(
+    () =>
+      new Promise((_, rejectPromise) => {
+        reject = rejectPromise;
+      }),
+  );
+  render(<BackupSettingsWorkspace {...p} />);
+  await user.upload(screen.getByLabelText("Choose threadstr backup"), file());
+  await screen.findByRole("group", { name: "Projects to import" });
+  const exports = within(
+    screen.getByRole("region", { name: "Export projects" }),
+  );
+  await user.click(exports.getByRole("button", { name: "Export all" }));
+  expect(exports.getByRole("status")).toHaveTextContent("Preparing export");
+  expect(exports.getByRole("button", { name: "Exporting…" })).toBeDisabled();
+  await act(async () => reject(new Error("Export failed. Try again.")));
+  expect(exports.getByRole("alert")).toHaveTextContent(
+    "Export failed. Try again.",
+  );
+  expect(screen.getByLabelText("Choose threadstr backup")).not.toHaveAttribute(
+    "aria-describedby",
+    "backup-error",
+  );
+  await user.click(exports.getByRole("button", { name: "Export all" }));
+  expect(exports.getByRole("status")).toHaveTextContent(
+    "Backup export is ready.",
+  );
+  expect(exports.queryByRole("alert")).toBeNull();
+  expect(
+    screen.getByRole("group", { name: "Projects to import" }),
+  ).toBeVisible();
+});
+
+it("places preview and import feedback beside their own controls", async () => {
+  const user = userEvent.setup();
+  const p = props();
+  p.onPreview.mockRejectedValueOnce(new Error("Invalid backup"));
+  p.onImport.mockResolvedValue({
+    importedCount: 2,
+    renames: [],
+    refreshWarning: "Imported, but refresh failed.",
+  });
+  render(<BackupSettingsWorkspace {...p} />);
+  const imports = within(
+    screen.getByRole("region", { name: "Import projects" }),
+  );
+  const input = screen.getByLabelText("Choose threadstr backup");
+  await user.upload(input, file());
+  expect(imports.getByRole("alert")).toHaveTextContent("Invalid backup");
+  expect(input).toHaveAccessibleDescription("Invalid backup");
+  await user.click(imports.getByRole("button", { name: "Check backup again" }));
+  expect(imports.getByRole("status")).toHaveTextContent("Backup checked.");
+  await user.click(imports.getByRole("button", { name: "Merge selected (2)" }));
+  expect(imports.getByRole("status")).toHaveTextContent("2 projects imported.");
+  expect(imports.getByRole("alert")).toHaveTextContent(
+    "Imported, but refresh failed.",
+  );
+});

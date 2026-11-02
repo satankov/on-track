@@ -16,6 +16,12 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { openDatabase } from "../db/database.js";
+import {
+  createV010Database,
+  readV010Rows,
+  V010_FILE,
+  V010_MIGRATION_MARKER,
+} from "../../test/released-v010.js";
 import { afterEach, expect, it } from "vitest";
 import {
   checkpointPath,
@@ -194,7 +200,7 @@ it("refuses checkpoint paths outside the owned directory and symbolic-link sidec
   expect(readFileSync(outside, "utf8")).toBe("preserve");
 });
 
-it("round-trips the actual released schema 6 through bundled schema 7 migration and recovery", async () => {
+it("round-trips the actual released schema 6 through bundled schema 9 migration and recovery", async () => {
   const directory = mkdtempSync(join(tmpdir(), "threadstr-schema-update-"));
   roots.push(directory);
   const migrationsFolder = join(directory, "old-migrations");
@@ -238,7 +244,7 @@ it("round-trips the actual released schema 6 through bundled schema 7 migration 
   connections.push(candidate);
   expect(
     candidate.prepare("SELECT schema_version FROM app_metadata").pluck().get(),
-  ).toBe(7);
+  ).toBe(9);
   expect(candidate.prepare("SELECT * FROM notes").get()).toEqual(beforeNote);
   candidate.close();
   restoreDatabaseCheckpoint({
@@ -257,3 +263,72 @@ it("round-trips the actual released schema 6 through bundled schema 7 migration 
     beforeAttachment,
   );
 });
+
+it.each([
+  "after_copy",
+  "after_sidecars_removed",
+  "after_database_replaced",
+] as const)(
+  "recovers v0.1.0 data repeatedly after schema-9 migration and restore interruption at %s",
+  async (point) => {
+    const directory = mkdtempSync(join(tmpdir(), "threadstr-v010-recovery-"));
+    roots.push(directory);
+    const released = createV010Database(directory, { missingAttachment: true });
+    connections.push(released.sqlite);
+    const before = readV010Rows(released.sqlite);
+    const checkpoint = await createDatabaseCheckpoint({
+      ...released,
+      transactionId: randomUUID(),
+      expectedSchemaVersion: 7,
+      expectedMigrationMarker: V010_MIGRATION_MARKER,
+    });
+    released.sqlite.close();
+    const candidate = openDatabase(released.databasePath);
+    connections.push(candidate);
+    expect(
+      candidate
+        .prepare("SELECT schema_version FROM app_metadata")
+        .pluck()
+        .get(),
+    ).toBe(9);
+    candidate.close();
+    const file = join(directory, V010_FILE.path);
+    writeFileSync(file, "Externally edited after checkpoint", { mode: 0o600 });
+    expect(() =>
+      restoreDatabaseCheckpoint({
+        ...released,
+        checkpoint,
+        failpoint(current) {
+          if (current === point) throw new Error("interrupted restore");
+        },
+      }),
+    ).toThrow("interrupted restore");
+    for (let attempt = 0; attempt < 2; attempt++)
+      restoreDatabaseCheckpoint({ ...released, checkpoint });
+    const restored = new Database(released.databasePath);
+    connections.push(restored);
+    expect(readV010Rows(restored)).toEqual(before);
+    expect(
+      restored.prepare("SELECT schema_version FROM app_metadata").pluck().get(),
+    ).toBe(7);
+    expect(
+      restored
+        .prepare("SELECT max(created_at) FROM __drizzle_migrations")
+        .pluck()
+        .get(),
+    ).toBe(V010_MIGRATION_MARKER);
+    expect(
+      restored
+        .prepare(
+          "SELECT label FROM chat_enabled_labels WHERE chat_id='release-archive'",
+        )
+        .pluck()
+        .all(),
+    ).toEqual(["risk"]);
+    expect(restored.pragma("integrity_check", { simple: true })).toBe("ok");
+    expect(restored.pragma("foreign_key_check")).toEqual([]);
+    expect(readFileSync(file, "utf8")).toBe(
+      "Externally edited after checkpoint",
+    );
+  },
+);

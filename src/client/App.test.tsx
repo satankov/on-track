@@ -1,3 +1,8 @@
+import { defaultProjectLabels } from "../domain/labels.js";
+import {
+  DEFAULT_PREFERENCES,
+  mergePreferences,
+} from "../domain/preferences.js";
 // @vitest-environment jsdom
 
 import {
@@ -26,7 +31,22 @@ function deferred<T>() {
 }
 
 function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
+  let preferences = structuredClone(DEFAULT_PREFERENCES);
   return {
+    getPreferences: vi.fn(async () => preferences),
+    initializePreferences: vi.fn(
+      async (input) =>
+        (preferences = preferences.initialized
+          ? preferences
+          : { ...mergePreferences(preferences, input), initialized: true }),
+    ),
+    updatePreferences: vi.fn(
+      async (input) =>
+        (preferences = {
+          ...mergePreferences(preferences, input),
+          initialized: true,
+        }),
+    ),
     homeInfo: vi
       .fn()
       .mockResolvedValue({ version: "0.0.8", installation: "manual" }),
@@ -584,26 +604,27 @@ describe("personal project chat workspace", () => {
       createdAt: 1,
       updatedAt: 2,
     };
-    render(
-      <App
-        api={createApi({
-          listChats: vi.fn().mockResolvedValue([project]),
-          getChat: vi.fn().mockResolvedValue(project),
-        })}
-      />,
-    );
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([project]),
+      getChat: vi.fn().mockResolvedValue(project),
+    });
+    render(<App api={api} />);
     await user.click(
       await screen.findByRole("button", { name: "Open My trip" }),
     );
     await user.click(screen.getByRole("button", { name: "Files 2" }));
-    localStorage.setItem("on-track-show-examples", "false");
-    act(() =>
-      window.dispatchEvent(
-        new StorageEvent("storage", {
-          key: "on-track-show-examples",
-          newValue: "false",
+    vi.mocked(api.getPreferences).mockResolvedValue({
+      ...DEFAULT_PREFERENCES,
+      initialized: true,
+      showExamples: false,
+    });
+    fireEvent(window, new Event("focus"));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", {
+          name: "Open example 🇳🇱 Trip to Amsterdam",
         }),
-      ),
+      ).toBeNull(),
     );
     expect(screen.getByRole("button", { name: "Files 2" })).toHaveAttribute(
       "aria-pressed",
@@ -655,7 +676,7 @@ describe("personal project chat workspace", () => {
     expect(
       screen.queryByRole("button", { name: "Examples" }),
     ).not.toBeInTheDocument();
-    expect(localStorage.getItem("on-track-show-examples")).toBe("false");
+    expect(localStorage.getItem("on-track-show-examples")).toBeNull();
     localStorage.clear();
   });
 
@@ -1360,6 +1381,342 @@ describe("personal project chat workspace", () => {
     expect(screen.getAllByRole("article")).toHaveLength(1);
   });
 
+  it("keeps the editor's original revision after another tab changes definitions", async () => {
+    const chat = {
+      id: "stale",
+      title: "Stale",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+      labelDefinitions: defaultProjectLabels(),
+      labelConfigurationRevision: 0,
+      notes: [],
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue(chat),
+      updateChat: vi
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            "Labels changed in another tab. Reopen this project before saving.",
+          ),
+        ),
+    });
+    const user = userEvent.setup();
+    render(<App api={api} />);
+    await user.click(await screen.findByRole("button", { name: "Open Stale" }));
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Label name 1" }),
+      "Review",
+    );
+    api.getChat = vi
+      .fn()
+      .mockResolvedValue({ ...chat, labelConfigurationRevision: 1 });
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(api.updateChat).toHaveBeenCalledWith(
+      "stale",
+      expect.objectContaining({
+        labelConfiguration: expect.objectContaining({ revision: 0 }),
+      }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("another tab");
+    expect(screen.getByRole("textbox", { name: "Label name 1" })).toHaveValue(
+      "Review",
+    );
+  });
+
+  it("removes externally disabled filters while retaining the rest of the combination", async () => {
+    const chat = {
+      id: "disabled",
+      title: "Disabled",
+      accent: "ocean" as const,
+      createdAt: 1,
+      updatedAt: 1,
+      labelDefinitions: defaultProjectLabels(),
+      notes: [
+        {
+          id: "n",
+          chatId: "disabled",
+          body: "https://example.com",
+          createdAt: 1,
+          labels: ["todo" as const],
+        },
+      ],
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue(chat),
+    });
+    render(<App api={api} />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open Disabled" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Links 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Todo 1" }), {
+      ctrlKey: true,
+    });
+    api.getChat = vi.fn().mockResolvedValue({
+      ...chat,
+      labelDefinitions: defaultProjectLabels([]),
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(screen.queryByRole("button", { name: "Todo 1" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Links 1" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+  });
+
+  it("reorders and disables a saved custom label while discarding only an unsaved draft", async () => {
+    const custom = {
+      id: "custom-00000000-0000-4000-8000-000000000001" as const,
+      name: "Review",
+      symbol: null,
+      enabled: true,
+      position: 7,
+      builtin: false,
+    };
+    const chat = {
+      id: "ordered",
+      title: "Ordered",
+      accent: "ocean",
+      createdAt: 1,
+      updatedAt: 1,
+      labelDefinitions: [...defaultProjectLabels(), custom],
+      labelConfigurationRevision: 1,
+      notes: [],
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue(chat),
+      updateChat: vi.fn().mockResolvedValue(chat),
+    });
+    const user = userEvent.setup();
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Ordered" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.queryByRole("button", { name: "Discard Review" })).toBeNull();
+    screen.getByRole("button", { name: "Reorder Review" }).focus();
+    await user.keyboard("{ArrowUp}");
+    expect(
+      within(screen.getByRole("group", { name: "Project labels" })).getByRole(
+        "status",
+      ),
+    ).toHaveTextContent("Review moved to position 5");
+    await user.keyboard("{ArrowDown}");
+    await user.click(screen.getByRole("checkbox", { name: "Enable Review" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Label name 2" }),
+      "Temp",
+    );
+    await user.click(screen.getByRole("button", { name: "Discard Temp" }));
+    expect(screen.getByRole("textbox", { name: "Label name 2" })).toHaveValue(
+      "",
+    );
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(api.updateChat).toHaveBeenCalledWith(
+        "ordered",
+        expect.objectContaining({
+          labelConfiguration: {
+            revision: 1,
+            labels: [
+              ...defaultProjectLabels(),
+              { ...custom, enabled: false },
+            ].map(({ id, name, symbol, enabled }) => ({
+              id,
+              name,
+              symbol,
+              enabled,
+            })),
+          },
+        }),
+      ),
+    );
+  });
+
+  it("creates custom labels directly from the trailing empty row and saves no placeholder", async () => {
+    const chat = {
+      id: "inline",
+      title: "Inline",
+      accent: "ocean",
+      createdAt: 1,
+      updatedAt: 1,
+      notes: [],
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue(chat),
+      updateChat: vi.fn().mockResolvedValue(chat),
+    });
+    const user = userEvent.setup();
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Inline" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const first = screen.getByRole("textbox", { name: "Label name 1" });
+    expect(screen.queryByRole("button", { name: "Add label" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Reorder new label" }),
+    ).toBeNull();
+    await user.type(first, "Review");
+    expect(first).toHaveFocus();
+    expect(first).toHaveValue("Review");
+    expect(
+      screen.getByRole("button", { name: "Reorder Review" }),
+    ).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Label name 2" })).toHaveValue(
+      "",
+    );
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(api.updateChat).toHaveBeenCalled());
+    const configuration = vi.mocked(api.updateChat).mock.calls[0][1]
+      .labelConfiguration!;
+    expect(configuration.labels).toHaveLength(8);
+    expect(configuration.labels.at(-1)).toMatchObject({
+      name: "Review",
+      enabled: true,
+    });
+  });
+
+  it("edits short custom labels without changing built-in names", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "custom",
+      title: "Custom",
+      accent: "ocean",
+      enabledLabels: ["todo", "milestone"],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      updateChat: vi.fn().mockResolvedValue(chat),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Custom" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const name = screen.getByRole("textbox", { name: "Label name 1" });
+    await user.type(name, "123456789");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(api.updateChat).not.toHaveBeenCalled();
+    for (const alert of await screen.findAllByRole("alert"))
+      expect(alert).toHaveTextContent("1–8");
+    await user.clear(name);
+    await user.type(name, "Review");
+    await user.type(
+      screen.getByRole("textbox", { name: "Label symbol 1" }),
+      "✓",
+    );
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(api.updateChat).toHaveBeenCalledWith(
+        "custom",
+        expect.objectContaining({
+          labelConfiguration: expect.objectContaining({
+            revision: 0,
+            labels: expect.arrayContaining([
+              expect.objectContaining({
+                name: "Review",
+                symbol: "✓",
+                enabled: true,
+              }),
+            ]),
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("loads database preferences after browser storage is cleared and saves field-scoped changes", async () => {
+    localStorage.clear();
+    const api = createApi({
+      getPreferences: vi.fn().mockResolvedValue({
+        ...DEFAULT_PREFERENCES,
+        initialized: true,
+        theme: "dark",
+        showExamples: false,
+      }),
+    });
+    render(<App api={api} />);
+    await waitFor(() =>
+      expect(document.documentElement).toHaveAttribute("data-theme", "dark"),
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.click(screen.getByRole("button", { name: /Appearance/ }));
+    await user.click(screen.getByRole("radio", { name: /Neutral/ }));
+    await waitFor(() =>
+      expect(api.updatePreferences).toHaveBeenCalledWith({ theme: "neutral" }),
+    );
+    expect(localStorage.getItem("on-track-theme")).toBeNull();
+  });
+
+  it("combines filters with platform modifiers and displays a compact hint without a checkbox", async () => {
+    const chat = {
+      id: "combined",
+      title: "Combined",
+      accent: "ocean",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const notes = [
+      { id: "both", body: "Pinned https://example.com", labels: ["pin"] },
+      { id: "link", body: "Other https://example.org", labels: [] },
+      { id: "pin", body: "Pinned plain", labels: ["pin"] },
+    ].map((note) => ({ ...note, chatId: chat.id, createdAt: 1 }));
+    render(
+      <App
+        api={createApi({
+          listChats: vi.fn().mockResolvedValue([chat]),
+          getChat: vi.fn().mockResolvedValue({ ...chat, notes }),
+        })}
+      />,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open Combined" }),
+    );
+    const links = await screen.findByRole("button", { name: "Links 2" });
+    const pin = screen.getByRole("button", { name: "Pin 2" });
+    fireEvent.click(links);
+    const mac = /Mac|iPhone|iPad|iPod/i.test(
+      navigator.platform || navigator.userAgent,
+    );
+    fireEvent.click(pin, { metaKey: mac, ctrlKey: !mac });
+    expect(links).toHaveAttribute("aria-pressed", "true");
+    expect(pin).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    expect(screen.queryByText("Pinned plain")).toBeNull();
+    expect(
+      screen.queryByRole("checkbox", { name: "Select multiple" }),
+    ).toBeNull();
+    expect(
+      screen.getByText(/multiple/, { selector: ".history-filter-help" }),
+    ).toHaveTextContent("⌘/Ctrl + multiple");
+    fireEvent.click(pin, { metaKey: mac, ctrlKey: !mac });
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+    fireEvent.click(links, { metaKey: mac, ctrlKey: !mac });
+    expect(screen.getByRole("button", { name: "All 3" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getAllByRole("article")).toHaveLength(3);
+  });
+
   it("offers an empty Links filter without adding a message label", async () => {
     const user = userEvent.setup();
     const chat = {
@@ -1994,10 +2351,17 @@ describe("personal project chat workspace", () => {
       await screen.findByRole("button", { name: "Open Discovery" }),
     );
     await user.click(await screen.findByRole("button", { name: "Edit" }));
-    expect(screen.getByRole("heading", { name: "Edit project" })).toBeVisible();
+    expect(screen.getByRole("main", { name: "Edit project" })).toBeVisible();
     expect(
       screen.queryByRole("dialog", { name: "Customize project" }),
     ).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Edit project" })).toBeNull();
+    expect(screen.queryByText(/Change project settings/)).toBeNull();
+    expect(
+      screen.getByRole("group", { name: "Project labels" }),
+    ).toHaveAccessibleDescription(
+      "Up to 5 custom labels, 8 characters per name, and one optional symbol or emoji. Turning a label off keeps it on existing messages.",
+    );
     const name = screen.getByLabelText("Project name");
     await user.clear(name);
     await user.type(name, "Research");
@@ -2012,9 +2376,49 @@ describe("personal project chat workspace", () => {
     expect(api.updateChat).toHaveBeenCalledWith("chat-1", {
       title: "Research",
       accent: "iris",
-      enabledLabels: ["todo", "milestone"],
+      labelConfiguration: expect.objectContaining({ revision: 0 }),
       collapseLongMessages: false,
     });
+    expect(
+      await screen.findByRole("heading", { name: "Research" }),
+    ).toBeVisible();
+  });
+
+  it("shows save failures beside the top actions and preserves edits for retry", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Discovery",
+      accent: "moss" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      updateChat: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Database busy"))
+        .mockResolvedValue({ ...chat, title: "Research" }),
+    });
+    render(<App api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open Discovery" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const name = screen.getByLabelText("Project name");
+    await user.clear(name);
+    await user.type(name, "Research");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Database busy");
+    expect(
+      alert.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(name).toHaveValue("Research");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     expect(
       await screen.findByRole("heading", { name: "Research" }),
     ).toBeVisible();
@@ -2055,7 +2459,11 @@ describe("personal project chat workspace", () => {
     expect(api.updateChat).toHaveBeenCalledWith("chat-1", {
       title: "Discovery",
       accent: "moss",
-      enabledLabels: ["todo", "decision", "milestone"],
+      labelConfiguration: expect.objectContaining({
+        labels: expect.arrayContaining([
+          expect.objectContaining({ id: "decision", enabled: true }),
+        ]),
+      }),
       collapseLongMessages: true,
     });
   });
@@ -2767,13 +3175,13 @@ describe("personal project chat workspace", () => {
 
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(api.deleteChat).not.toHaveBeenCalled();
-    expect(screen.getByRole("heading", { name: "Edit project" })).toBeVisible();
+    expect(screen.getByRole("main", { name: "Edit project" })).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Delete project" }));
 
     expect(api.deleteChat).toHaveBeenCalledWith("chat-1");
     expect(await screen.findByRole("alert")).toHaveTextContent("Delete failed");
-    expect(screen.getByRole("heading", { name: "Edit project" })).toBeVisible();
+    expect(screen.getByRole("main", { name: "Edit project" })).toBeVisible();
   });
 
   it("keeps a failed draft, then saves multiline text with Cmd/Ctrl+Enter", async () => {
@@ -3428,7 +3836,7 @@ describe("personal project chat workspace", () => {
       expect(document.documentElement).toHaveAttribute("data-theme", "neutral");
       expect(document.documentElement.style.colorScheme).toBe("dark");
       expect(themeColor).toHaveAttribute("content", "#30343a");
-      expect(localStorage.getItem("on-track-theme")).toBe("neutral");
+      expect(localStorage.getItem("on-track-theme")).toBeNull();
       expect(screen.getByText("Selected", { selector: "small" })).toBeVisible();
 
       await user.click(screen.getByRole("button", { name: /Backups/ }));
