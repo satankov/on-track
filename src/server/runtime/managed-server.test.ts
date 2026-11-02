@@ -3,6 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { afterEach, expect, it } from "vitest";
+// Load the server graph before the per-test timeout starts on cold CI workers.
+import { buildApp } from "../app.js";
+import { openDatabase } from "../db/database.js";
+import { MaintenanceGate } from "../database-transfer/maintenance-gate.js";
 import { parseManagedLaunch, readInstance } from "./managed-server.js";
 const directories: string[] = [];
 afterEach(() => {
@@ -37,10 +41,6 @@ it("treats missing instance metadata as stopped without touching the database", 
 });
 
 it("rejects project bodies before parsing while frozen but keeps health available", async () => {
-  const { buildApp } = await import("../app.js");
-  const { openDatabase } = await import("../db/database.js");
-  const { MaintenanceGate } =
-    await import("../database-transfer/maintenance-gate.js");
   const directory = mkdtempSync(join(tmpdir(), "threadstr-frozen-"));
   directories.push(directory);
   const gate = new MaintenanceGate();

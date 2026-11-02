@@ -1,8 +1,8 @@
 # threadstr compatibility identifiers
 
 Version 0.0.9 introduced **threadstr** and **thr** as the primary CLI command.
-It remains the latest published release; v0.1.0 is the selected unpublished
-candidate. The repository and existing published releases retain their real
+[v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1) is the latest
+published release. The repository and existing published releases retain their real
 names and URLs.
 
 ## Commands and installation
