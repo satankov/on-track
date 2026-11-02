@@ -7,6 +7,7 @@ derived from concept D and finalized through the c/O density study.
 - [Visual preview](preview.html) / [preview image](preview.png)
 - [Exploration history and references](explorations/README.md)
 - [Verification evidence](VALIDATION.md)
+- [UI cookbook](ui/index.html) / [technical design contract](../../DESIGN.md)
 
 The archive contains 18 retained concept boards and five saved prompt documents.
 It preserves the early comparison with trackstr, the progressively more

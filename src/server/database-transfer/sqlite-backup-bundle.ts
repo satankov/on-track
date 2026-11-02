@@ -1,3 +1,14 @@
+import {
+  labelConfigurationSchema,
+  labelNameKey,
+  isBuiltinLabel,
+} from "../../domain/labels.js";
+import type { ProjectLabelRow } from "../db/project-labels.js";
+import { readPreferences, writePreferences } from "../db/preferences.js";
+import {
+  DEFAULT_PREFERENCES,
+  type WorkspacePreferences,
+} from "../../domain/preferences.js";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
@@ -51,13 +62,15 @@ import {
 
 export const SQL_ON_TRACK_BACKUP_APPLICATION_ID = 0x4f545242;
 export const SQL_ON_TRACK_BACKUP_FORMAT_VERSION = 1;
-export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 7;
+export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 9;
 const LEGACY_SCHEMA_MIGRATIONS: Readonly<
   Record<number, { migrationAt: number; migrationCount: number }>
 > = {
   3: { migrationAt: 1_788_356_400_000, migrationCount: 4 },
   4: { migrationAt: 1_788_516_961_034, migrationCount: 5 },
   5: { migrationAt: 1_788_523_044_823, migrationCount: 6 },
+  8: { migrationAt: 1793269343386, migrationCount: 9 },
+  7: { migrationAt: 1789027200000, migrationCount: 8 },
   6: { migrationAt: 1_788_566_400_000, migrationCount: 7 },
 };
 const SUPPORTED_SQL_ON_TRACK_BACKUP_SCHEMA_VERSIONS = new Set([
@@ -99,6 +112,7 @@ export interface CreateSqliteBackupBundleOptions {
 }
 
 export interface PrepareSqliteBackupBundleOptions {
+  destinationPreferences?: WorkspacePreferences;
   selection?: ProjectSelection;
   bundlePath: string;
   workspace: SqliteBackupPreparationWorkspace;
@@ -180,7 +194,8 @@ interface SchemaDescriptor {
   columns: Record<string, ColumnDescription[]>;
   foreignKeys: Record<string, ForeignKeyDescription[]>;
   indexes: Record<string, IndexDescription[]>;
-  definitions: Record<string, string>;
+  definitions: Record<string, string | null>;
+  owningTables: Record<string, string>;
   migrationTimestamps: number[];
 }
 
@@ -191,6 +206,7 @@ const SQLITE_MAGIC = Buffer.from("SQLite format 3\0", "binary");
 const BUNDLE_SCHEMA_OBJECTS = [
   "_on_track_bundle:table",
   "_on_track_bundle_files:table",
+  "sqlite_autoindex__on_track_bundle_files_1:index",
 ] as const;
 
 const BUNDLE_TABLE_COLUMNS: Readonly<Record<string, ColumnDescription[]>> = {
@@ -251,8 +267,17 @@ export async function createSqliteBackupBundle(
     await options.sourceDatabase.backup(options.destinationPath);
     chmodSync(options.destinationPath, 0o600);
     bundle = new Database(options.destinationPath);
+    bundle.pragma("trusted_schema = OFF");
     bundle.pragma("foreign_keys = ON");
     bundle.pragma("journal_mode = DELETE");
+    // Check the snapshot before a DELETE can invoke an imported trigger.
+    validateExactSchema(bundle, trustedActiveSchemaDescriptor());
+    if (!options.selection || options.selection === "all") {
+      writePreferences(bundle, {
+        ...readPreferences(bundle),
+        initialized: true,
+      });
+    } else bundle.prepare("DELETE FROM workspace_preferences").run();
     pruneProjects(bundle, options.selection ?? "all");
     bundle.exec("VACUUM");
     validateActiveDatabase(bundle, limits);
@@ -563,8 +588,13 @@ export function prepareSqliteBackupBundle(
       limits,
     );
     candidate = new Database(candidateDatabasePath);
+    candidate.pragma("trusted_schema = OFF");
     candidate.pragma("foreign_keys = ON");
     candidate.pragma("journal_mode = DELETE");
+    const sourcePreferences =
+      copiedManifest.schemaVersion >= 8
+        ? readPreferences(candidate)
+        : undefined;
     pruneProjects(candidate, options.selection ?? "all");
     const retained = candidate
       .prepare(
@@ -649,6 +679,12 @@ export function prepareSqliteBackupBundle(
     if (copiedManifest.schemaVersion !== SQL_ON_TRACK_BACKUP_SCHEMA_VERSION) {
       applyBundledMigrations(candidate);
     }
+    writePreferences(candidate, {
+      ...(sourcePreferences?.initialized
+        ? sourcePreferences
+        : (options.destinationPreferences ?? DEFAULT_PREFERENCES)),
+      initialized: true,
+    });
     candidate.exec("VACUUM");
     candidate.close();
     candidate = undefined;
@@ -860,6 +896,18 @@ function validateApplicationData(
   limits: SqliteBackupBundleLimits,
   schemaVersion: number,
 ): void {
+  if (schemaVersion >= 8) {
+    const rows = database
+      .prepare("SELECT id FROM workspace_preferences")
+      .all() as { id: unknown }[];
+    if (rows.length > 1 || rows.some((row) => row.id !== 1))
+      throw validationError("Workspace preferences are invalid.");
+    try {
+      readPreferences(database);
+    } catch {
+      throw validationError("Workspace preferences are invalid.");
+    }
+  }
   const chats = database
     .prepare(
       `SELECT id, title, accent, created_at, updated_at${schemaVersion >= 4 ? ", pinned_at" : ""}${schemaVersion >= 5 ? ", collapse_long_messages" : ""}${schemaVersion >= 7 ? ", archived_at" : ""}
@@ -980,7 +1028,46 @@ function validateApplicationData(
       "A message exceeds the attachments per message limit.",
     );
   }
-  validateLabelData(database);
+  if (schemaVersion >= 9) validateProjectLabelData(database);
+  else validateLabelData(database);
+}
+
+function validateProjectLabelData(database: Database.Database): void {
+  const projects = database
+    .prepare("SELECT id, label_configuration_revision FROM chats")
+    .all() as { id: string; label_configuration_revision: unknown }[];
+  const statement = database.prepare(
+    "SELECT * FROM project_labels WHERE chat_id=? ORDER BY position",
+  );
+  for (const project of projects) {
+    requireNonnegativeSafeInteger(
+      project.label_configuration_revision,
+      "label configuration revision",
+    );
+    const rows = statement.all(project.id) as ProjectLabelRow[];
+    const valid = labelConfigurationSchema.safeParse({
+      revision: 0,
+      labels: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        symbol: row.symbol,
+        enabled: row.enabled === 1,
+      })),
+    });
+    if (
+      !valid.success ||
+      rows.some(
+        (row, i) =>
+          row.position !== i ||
+          ![0, 1].includes(row.enabled) ||
+          ![0, 1].includes(row.builtin) ||
+          Boolean(row.builtin) !== isBuiltinLabel(row.id) ||
+          row.name !== valid.data.labels[i]!.name ||
+          row.name_key !== labelNameKey(row.name),
+      )
+    )
+      throw validationError("Project label metadata is invalid.");
+  }
 }
 
 function validateLabelData(database: Database.Database): void {
@@ -1116,7 +1203,17 @@ function bundleSchemaDescriptor(schemaVersion: number): SchemaDescriptor {
     columns: { ...active.columns, ...BUNDLE_TABLE_COLUMNS },
     foreignKeys: { ...active.foreignKeys, ...BUNDLE_FOREIGN_KEYS },
     indexes: { ...active.indexes, ...BUNDLE_INDEXES },
-    definitions: { ...active.definitions, ...BUNDLE_TABLE_DEFINITIONS },
+    definitions: {
+      ...active.definitions,
+      ...BUNDLE_TABLE_DEFINITIONS,
+      sqlite_autoindex__on_track_bundle_files_1: null,
+    },
+    owningTables: {
+      ...active.owningTables,
+      _on_track_bundle: "_on_track_bundle",
+      _on_track_bundle_files: "_on_track_bundle_files",
+      sqlite_autoindex__on_track_bundle_files_1: "_on_track_bundle_files",
+    },
     migrationTimestamps: active.migrationTimestamps,
   };
 }
@@ -1149,7 +1246,6 @@ function schemaObjects(database: Database.Database): string[] {
     .prepare(
       `SELECT name || ':' || type
        FROM sqlite_schema
-       WHERE name NOT LIKE 'sqlite_%'
        ORDER BY name`,
     )
     .pluck()
@@ -1160,8 +1256,7 @@ function schemaObjectCount(database: Database.Database): number {
   return database
     .prepare(
       `SELECT count(*)
-       FROM sqlite_schema
-       WHERE name NOT LIKE 'sqlite_%'`,
+       FROM sqlite_schema`,
     )
     .pluck()
     .get() as number;
@@ -1181,17 +1276,14 @@ function describeSchema(
   const columns: Record<string, ColumnDescription[]> = {};
   const foreignKeys: Record<string, ForeignKeyDescription[]> = {};
   const indexes: Record<string, IndexDescription[]> = {};
+  const rows = database
+    .prepare("SELECT name, tbl_name, sql FROM sqlite_schema ORDER BY name")
+    .all() as Array<{ name: string; tbl_name: string; sql: string | null }>;
   const definitions = Object.fromEntries(
-    (
-      database
-        .prepare(
-          `SELECT name, sql
-           FROM sqlite_schema
-           WHERE name NOT LIKE 'sqlite_%'
-           ORDER BY name`,
-        )
-        .all() as Array<{ name: string; sql: string }>
-    ).map((row) => [row.name, row.sql]),
+    rows.map((row) => [row.name, row.sql]),
+  );
+  const owningTables = Object.fromEntries(
+    rows.map((row) => [row.name, row.tbl_name]),
   );
 
   for (const object of objects) {
@@ -1267,6 +1359,7 @@ function describeSchema(
     foreignKeys,
     indexes,
     definitions,
+    owningTables,
     migrationTimestamps,
   };
 }
@@ -1286,6 +1379,15 @@ function validateExactSchema(
     throw validationError("The migration metadata is not exactly allowed.");
   }
   const actual = describeSchema(database, objects);
+  if (
+    Object.entries(allowed.owningTables).some(
+      ([name, table]) => actual.owningTables[name] !== table,
+    )
+  ) {
+    throw validationError(
+      "The SQLite schema object ownership is not exactly allowed.",
+    );
+  }
   if (
     JSON.stringify(actual.migrationTimestamps) !==
     JSON.stringify(allowed.migrationTimestamps)
@@ -1315,7 +1417,7 @@ function validateExactSchema(
 
   for (const [object, expected] of Object.entries(allowed.definitions)) {
     if (
-      normalizeSchemaSql(actual.definitions[object] ?? "") !==
+      normalizeSchemaSql(actual.definitions[object]) !==
       normalizeSchemaSql(expected)
     ) {
       throw validationError(`The definition for ${object} is not allowed.`);
@@ -1577,7 +1679,8 @@ function index(
   return { name, unique, origin, columns };
 }
 
-function normalizeSchemaSql(sql: string): string {
+function normalizeSchemaSql(sql: string | null): string | null {
+  if (sql === null) return null;
   return sql
     .toLowerCase()
     .replace(/["`[\]\s;]/g, "")

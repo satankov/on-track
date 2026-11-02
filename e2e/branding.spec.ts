@@ -3,12 +3,12 @@ import { expect, test } from "./fixtures.js";
 for (const theme of ["light", "neutral", "dark"] as const) {
   test(`threadstr identity preserves ${theme} preferences and responsive navigation`, async ({
     page,
+    request,
     localApp,
   }, testInfo) => {
-    await page.addInitScript((savedTheme) => {
-      localStorage.setItem("on-track-theme", savedTheme);
-      localStorage.setItem("on-track-show-examples", "false");
-    }, theme);
+    await request.patch(`${localApp.url}/api/preferences`, {
+      data: { theme, showExamples: false },
+    });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(localApp.url);
     await expect(page).toHaveTitle("threadstr");

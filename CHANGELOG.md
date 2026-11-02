@@ -6,6 +6,94 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-29
+
+### Added
+
+- Combine history filters with Command/Control selection on desktop or taps on
+  touch devices. Selected filters intersect with each other and project search.
+- Store theme, Examples visibility, and sidebar disclosure preferences in the
+  local database so they survive cleared browser storage. Full backups include
+  these preferences; selected-project backups and merge imports preserve the
+  destination workspace's preferences.
+- Configure up to five custom labels per project, with short names, optional
+  symbols, enablement, drag ordering, and explicit Save-based removal. Removing
+  a label clears its assignments without deleting messages.
+
+### Changed
+
+- Refresh the workspace with a consistent flat visual design, compact controls,
+  and project-label editing. Desktop filter height stays independent of composer
+  growth.
+- Advance the database schema from 7 to 9 for preferences and project labels.
+  Legacy backups remain importable; backup format 1, existing data paths, the
+  `ontrack` alias, and managed compatibility floor `0.0.7` remain unchanged.
+
+### Security
+
+- Update Zod to 4.6.7 to reject oversized bounded collections before allocating
+  per-element validation errors, with regression coverage for labels,
+  attachments, and backup selection.
+- Update `@fastify/static` to 10.1.7, including the case-folded path guard fix,
+  and Vitest/coverage to 4.1.12 for the upstream mock-registration fixes.
+
+### Known limitations
+
+- This remains a plaintext alpha: databases, attachments, checkpoints, and
+  exported backups are not encrypted. Export a backup before upgrading; older
+  releases cannot reopen a schema-9 database after activation commits.
+- Managed installation remains experimental. Clean-machine installation,
+  published-candidate upgrades, and remaining native-platform and
+  assistive-technology checks still require evidence. Local automated checks
+  do not establish those guarantees.
+
+## [0.1.0] - 2026-10-22
+
+### Added
+
+- Current-project keyword search matches message text, participant names, and
+  filenames, combines with history filters, highlights matches, and opens results
+  in context. Queries stay in memory for the app session; no search service or
+  database change is required.
+- Contextual beginning/end buttons navigate the current project history, with
+  keyboard focus and reduced-motion support.
+- Sending or saving an edited message gives the composer a brief project-accent
+  glow. New messages enter gently after saving. Enter remains a newline;
+  Cmd/Ctrl+Enter submits.
+- `thr uninstall` removes the managed app and private dependencies while keeping
+  projects. Explicit `--delete-data` also removes project data after confirmation.
+  Unrecognized files and external exports remain; Windows cleanup reports its
+  eventual result separately after the launcher exits.
+
+### Fixed
+
+- Delayed mobile project navigation no longer steals focus from a message or
+  attachment control reached before navigation finishes.
+
+### Security
+
+- Enforce loopback Host and exact Origin checks independently of encoded URL
+  spelling, reject cross-origin API Fetch Metadata, and preserve development
+  proxy compatibility. Backup export now requires JSON POST for all selections;
+  GET export is no longer supported.
+- Reject unexpected SQLite schema objects, including reserved-name objects,
+  before imported candidates or export snapshots can execute their triggers.
+- Limit native attachment Open to explicit document/media formats. Other files
+  remain accessible through Show in Folder without changing stored data.
+- Apply compatible security updates to the server and development dependencies.
+
+### Known limitations
+
+- This remains a plaintext alpha. Back up important projects; local databases,
+  attachments, and exported backups are not encrypted.
+- Managed installation remains experimental. Clean-machine installation,
+  published upgrades, and native Windows/Linux validation remain incomplete.
+- Native uninstall and assistive-technology validation remain tracked in issues
+  #62 and #63. The Linux/mobile-WebKit attachment focus failure in issue #61
+  remains unresolved by local macOS passes.
+- Database and backup schema remain 7; the managed compatibility floor remains
+  `0.0.7`. Existing data paths, backup formats, and the `ontrack` alias are retained.
+
 ## [0.0.9] - 2026-09-16
 
 ### Added

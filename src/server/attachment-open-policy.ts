@@ -1,95 +1,35 @@
 import { extname } from "node:path";
 
-const BLOCKED_EXTENSIONS = new Set([
-  ".app",
-  ".application",
-  ".appimage",
-  ".appref-ms",
-  ".appx",
-  ".appxbundle",
-  ".au3",
-  ".apk",
-  ".bat",
-  ".cmd",
-  ".command",
-  ".com",
-  ".cpl",
-  ".crx",
-  ".desktop",
-  ".deb",
-  ".dll",
-  ".dmg",
-  ".exe",
-  ".gadget",
-  ".hta",
-  ".inf",
-  ".ins",
-  ".iso",
-  ".jar",
-  ".jnlp",
-  ".js",
-  ".jse",
-  ".lnk",
-  ".msc",
-  ".msi",
-  ".msp",
-  ".msix",
-  ".msixbundle",
-  ".mst",
-  ".msh",
-  ".msh1",
-  ".msh1xml",
-  ".msh2",
-  ".msh2xml",
-  ".mshxml",
-  ".pif",
-  ".pkg",
-  ".ps1",
-  ".ps1xml",
-  ".ps2",
-  ".ps2xml",
-  ".psd1",
-  ".psm1",
-  ".psc1",
-  ".psc2",
-  ".py",
-  ".pyc",
-  ".pyo",
-  ".pyw",
-  ".pyz",
-  ".pyzw",
-  ".rb",
-  ".reg",
-  ".rpm",
-  ".scf",
-  ".scr",
-  ".sh",
-  ".run",
-  ".sct",
-  ".settingcontent-ms",
-  ".shb",
-  ".shs",
-  ".vb",
-  ".vbe",
-  ".vbs",
-  ".url",
-  ".webloc",
-  ".website",
-  ".workflow",
-  ".ws",
-  ".wsc",
-  ".wsf",
-  ".wsh",
-  ".xnk",
-  ".xpi",
+// This bounds native dispatch; it does not validate file contents or sandbox viewers.
+const ALLOWED_EXTENSIONS = new Set([
+  ".txt",
+  ".md",
+  ".csv",
+  ".pdf",
+  ".docx",
+  ".xlsx",
+  ".pptx",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".tif",
+  ".tiff",
+  ".heic",
+  ".mp3",
+  ".wav",
+  ".m4a",
+  ".ogg",
+  ".flac",
+  ".mp4",
+  ".mov",
+  ".webm",
 ]);
 
-function isBlockedFilename(filename: string): boolean {
-  const normalized = filename.trimEnd().toLocaleLowerCase("en-US");
-  return (
-    BLOCKED_EXTENSIONS.has(normalized) ||
-    BLOCKED_EXTENSIONS.has(extname(normalized))
-  );
+function isAllowedFilename(filename: string): boolean {
+  return ALLOWED_EXTENSIONS.has(extname(filename).toLowerCase());
 }
 
 export function attachmentOpenPolicy(input: {
@@ -99,8 +39,8 @@ export function attachmentOpenPolicy(input: {
   platform: NodeJS.Platform;
 }): "available" | "blocked" {
   if (
-    isBlockedFilename(input.displayFilename) ||
-    isBlockedFilename(input.managedFilename)
+    !isAllowedFilename(input.displayFilename) ||
+    !isAllowedFilename(input.managedFilename)
   ) {
     return "blocked";
   }

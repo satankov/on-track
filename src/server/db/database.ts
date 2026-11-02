@@ -5,9 +5,9 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
-const CURRENT_SCHEMA_VERSION = 7;
+const CURRENT_SCHEMA_VERSION = 9;
 // Keep in sync with the newest `when` value in drizzle/meta/_journal.json.
-export const LATEST_BUNDLED_MIGRATION_AT = 1_789_027_200_000;
+export const LATEST_BUNDLED_MIGRATION_AT = 1793269712711;
 
 export function applyBundledMigrations(sqlite: Database.Database): void {
   migrate(drizzle(sqlite), {
@@ -26,6 +26,10 @@ export function openDatabase(filename: string): Database.Database {
   sqlite.pragma("busy_timeout = 5000");
 
   try {
+    sqlite.pragma("trusted_schema = OFF");
+    if (sqlite.pragma("trusted_schema", { simple: true }) !== 0) {
+      throw new Error("SQLite trusted-schema protection is unavailable");
+    }
     const attachmentColumns = sqlite
       .prepare("SELECT name FROM pragma_table_info('note_attachments')")
       .pluck()

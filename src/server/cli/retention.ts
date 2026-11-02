@@ -18,13 +18,13 @@ import {
   writeJsonFile,
 } from "./state.js";
 
-const ledgerSchema = z.strictObject({
+export const ledgerSchema = z.strictObject({
   protocol: z.literal(1),
   releases: z.array(releaseIdSchema).max(1000),
   runtimes: z.array(runtimeIdSchema).max(1000),
   checkpoints: z.array(updateIdSchema).max(1000),
 });
-const completedSchema = z.strictObject({
+export const completedSchema = z.strictObject({
   protocol: z.literal(1),
   transactionId: updateIdSchema,
   previous: updateReleaseSchema,

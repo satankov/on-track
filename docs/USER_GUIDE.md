@@ -43,8 +43,21 @@ keeping any custom data path unchanged. On PowerShell, use `npm.cmd` in place of
   browser session. First visits open near current work and the first future
   message; future messages remain accessible through normal scrolling.
 - Pin important projects above the activity-sorted project list, and independently
-  collapse Pinned and Projects during the current browser session.
-- Customize each project's title and accent.
+  collapse Pinned, Projects, Archive, and Examples. Their state is saved in the database.
+- Choose **Edit** to change a project's name, accent, labels, and message display.
+  Color swatches show the selected accent with a check; label checkboxes on the
+  right enable or disable labels. Add up to **5 custom labels** per project, each
+  with a name of **1–8 characters** and an optional symbol or emoji. Type directly
+  in the empty last row; a new empty row appears as you enter data, until all five
+  custom slots are used. Name/symbol errors appear while typing. Use the × to
+  the right of a custom label's checkbox, or clear both fields, to remove it on
+  Save, including its tags on messages;
+  the messages remain. Cleared rows collapse into one empty row.
+  Drag the two-line handle to move the whole row and reorder optional labels.
+  You can also select a handle and then its destination, or use arrow keys while
+  the handle is focused. Built-in names and symbols remain fixed;
+  turning a label off preserves existing message assignments. Choose **Save changes**
+  to apply these settings.
 - Add multiline Markdown notes with a compact, selection-aware formatting strip
   for bold, italic, links, quotes, lists, checklists, code, and GFM tables. The
   add/edit input grows to eight lines before scrolling internally.
@@ -62,14 +75,22 @@ keeping any custom data path unchanged. On PowerShell, use `npm.cmd` in place of
   or earlier Attention status directly in the project sidebar.
 - Attach local files to notes, filter messages with files, open eligible files
   through the operating system's default association, and show them in their
-  managed folder. Executable and launcher-like files are blocked from Open.
+  managed folder. Open supports a limited set of common document, text, raster
+  image, audio, and video formats. Other files, including archives, launchers,
+  and legacy or macro-enabled Office formats, remain accessible through Show in
+  Folder. An allowed format does not guarantee safe file contents.
 - Filter messages containing Markdown/GFM links with the automatic Links filter
-  after Files, without applying a label.
+  after Files, without applying a label. Hold **⌘** on macOS or **Ctrl** on
+  Windows/Linux while clicking filters to combine them; messages must match
+  **every selected filter**. Touch taps toggle filters directly; keyboard users
+  can hold the modifier while pressing Enter/Space. **All** clears the selection.
 - Export selected projects or all projects to one `.on-track-backup` bundle.
 - Preview backup projects, then import selected projects by merging independent
   copies or replacing the whole database.
 - Keep project data after closing and restarting the application. Reading
-  positions and sidebar collapse state reset when the browser reloads.
+  positions and filter/search selections remain session-only. Theme, Examples
+  visibility, and sidebar collapse state survive browser-data clearing and restart.
+  Existing browser preferences move into the database once when upgrading.
 - Use the main flow at desktop and mobile browser widths.
 - Run without accounts, telemetry, or an internet connection after installation.
 
@@ -142,7 +163,7 @@ Explicit project selections allow up to 10,000 projects and 1 MiB of options.
 A merge can grow the workspace beyond one bundle's limits; use selective export
 for smaller project sets.
 
-The current checkout uses schema 7 and accepts schema-7 and schema-6 backups plus
+The current checkout uses schema 9 and accepts schema-9, schema-8, schema-7 and schema-6 backups plus
 strictly validated schema-5, schema-4 development, and v0.0.4/schema-3 backups; it
 does not restore v0.0.3/schema-2 bundles. Older
 supported databases migrate during startup. You can isolate evaluation data
@@ -172,8 +193,11 @@ your browser normally and visits that website.
 
 This is an early plaintext alpha. Do not use it for confidential, NDA-bound, or
 irreplaceable information yet. Keep your own backups. Encryption and device sync
-are not currently available. Browser preferences such as theme and example
-visibility stay in that browser; they are not included in project backups.
+are not currently available. Preferences belong to the local database and are
+shared by browsers using it. Full backups include them; selected-project exports
+omit them. Replacing from a full backup restores its preferences. Replacing from
+a selected-project or older backup keeps your current preferences, as does merging
+projects. Custom label definitions and assignments travel with their projects.
 
 ## Further reading
 
@@ -192,3 +216,42 @@ visibility stay in that browser; they are not included in project backups.
 - [Node 22/24 runtime decision](adr/0007-node-22-and-24-runtime-support.md)
 - [Managed CLI delivery decision](adr/0008-managed-install-and-cli.md)
 - [Security policy](../SECURITY.md)
+
+## Navigate long histories and send notes
+
+Use the magnifier beside Edit to search the open project. Type words or fragments;
+every term must occur in the same message, in any order. Search includes readable
+Markdown text, participant names, and attachment filenames, including missing
+files. It excludes attachment contents, hidden link destinations, and unsaved
+drafts. Capitalization is ignored; accents remain significant. For example,
+`hotel budg` finds `Hotel budget`, and `cat` also finds `vacation`. Quotes and
+punctuation are literal, with no special operators or typo correction.
+
+Search combines with Files, Links, or the selected label filter and retains
+chronological order, including future messages. Full text is searched even when
+a long message is collapsed; use Show more to read it. Matching text is highlighted,
+and the number inside the search field counts messages in the current filter.
+The return-arrow beside a result opens that message among its neighbors. The
+cross inside the input clears the query and restores your position; the magnifier
+or Escape closes search. Each project's last query is remembered during this app
+session, including after opening a result in history or switching projects.
+Clearing the input forgets it; reloading the app resets all queries. Search stays
+local and does not create a persistent search history.
+
+The arrow controls at the history edge jump to the beginning or end of the
+current filtered history. Each appears only when there is more content in that
+direction. The end includes future-dated messages. Existing reading positions
+are retained when switching projects or returning to All.
+
+Click Add or press Cmd/Ctrl+Enter to send. Enter still adds a newline. The composer
+gives one brief glow in the project color when a valid send or edit save starts.
+New notes appear with a small entrance animation after saving. Errors keep the draft. System
+reduced-motion settings replace this with a brief static border and no movement.
+
+## Uninstall threadstr (next release)
+
+`thr uninstall` removes the managed application and its private dependencies,
+keeping projects. `thr uninstall --delete-data` also deletes projects and managed
+attachments after showing the paths and asking for confirmation. Export a backup
+first if needed. See the [complete uninstall instructions](install/README.md#uninstall-next-release)
+for retained files, manual installations, interrupted cleanup, and Windows receipts.

@@ -45,9 +45,10 @@ must not accept a browser-supplied path or shell command.
   bounded wait. macOS uses `/usr/bin/open`; Windows uses fixed PowerShell for
   Open and Explorer for reveal; Linux uses `/usr/bin/xdg-open` and opens the
   containing directory for reveal.
-- Open is denied for known executable, installer, script, shortcut,
-  application, and desktop-launcher names and for executable POSIX files. Show
-  in Folder is authorized independently.
+- Open requires allowlisted document/media suffixes on both the display and
+  managed filename and is denied for executable POSIX files. Show in Folder is
+  authorized independently. This supersedes the initial denylist after security
+  review found handler-executed formats outside it; see plan 0025.
 - No production dependency or native packaging layer is introduced.
 
 ## Alternatives considered
@@ -74,8 +75,9 @@ must not accept a browser-supplied path or shell command.
   than one transaction. Crashes and cleanup failures may leave unreferenced
   files that later maintenance can reclaim conservatively.
 - Managed attachments and backup bundles remain plaintext. Quarantine and
-  Windows zone metadata are not preserved by managed copies, and macro-capable
-  documents remain content-level risks.
+  Windows zone metadata are not preserved by managed copies. Legacy and
+  macro-enabled Office extensions are excluded from Open, but allowed documents
+  and the user's external applications still carry content-level risks.
 - Pathname-based launch and cleanup retain a small same-user time-of-check/time-
   of-use window. Owner-only directories, canonical resolution, no-follow reads,
   and the one-trusted-local-user model reduce but do not eliminate it.

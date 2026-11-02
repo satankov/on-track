@@ -14,24 +14,22 @@ where you left off. Use it for work projects, a side project, or your next trip.
 > **Early alpha.** Expect rough edges and keep backups. Avoid irreplaceable
 > information or make backups until stable release.
 
-## See it in action
+Current release: **[v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1)**.
+See the [changelog](CHANGELOG.md) for changes and upgrade limitations.
 
-<details>
-<summary><strong>Expand screenshots — Trip to Amsterdam</strong></summary>
+## See it in action
 
 **A project’s notes and plans, together in one timeline.**
 
-![Amsterdam project with Markdown notes, a checklist, and project filters](docs/screenshots/amsterdam-overview.png)
+![A personal workspace with pinned projects, Amsterdam trip notes, decisions, and a checklist in the light theme](docs/screenshots/amsterdam-overview.png)
 
 **Keep related files beside the conversation.**
 
-![Amsterdam packing list, booking notes, and an attributed attachment in the dark theme](docs/screenshots/amsterdam-files.png)
+![Amsterdam arrival notes, Maya's saved places, and a packing list kept beside their messages in the dark theme](docs/screenshots/amsterdam-files.png)
 
 **Filter the timeline to focus on what needs doing.**
 
-![Amsterdam plans filtered by Todo in the neutral theme](docs/screenshots/amsterdam-todos.png)
-
-</details>
+![Amsterdam checklists and upcoming tasks filtered by Todo in the neutral theme](docs/screenshots/amsterdam-todos.png)
 
 ## What you can do
 
@@ -46,12 +44,15 @@ where you left off. Use it for work projects, a side project, or your next trip.
 - **Define actors.** Even though this is a personal threads, you can display
   information as if it were sent by someone else (a friend or your boss).
 
-## Quick start
+## Ultra Quick start
 
-> **Release transition:** downloads currently install
-> [On Track v0.0.8](https://github.com/satankov/on-track/releases/tag/v0.0.8).
-> Use `ontrack` in place of `thr` below until the first threadstr release is
-> published. The screenshots show features in the upcoming release.
+Prompt your AI agent:
+
+```
+Install this tool https://github.com/satankov/on-track
+```
+
+## Quick start
 
 **macOS / Linux** — run in Terminal:
 
@@ -75,13 +76,14 @@ Managed installation is experimental. See the detailed guides for
 
 After managed setup, open a new terminal:
 
-| Command      | What it does                                    |
-| ------------ | ----------------------------------------------- |
-| `thr run`    | Start threadstr and open your browser           |
-| `thr stop`   | Stop the local server; your projects stay saved |
-| `thr status` | Show the server status and local address        |
-| `thr logs`   | Show recent diagnostics                         |
-| `thr update` | Install the latest stable release and restart   |
+| Command         | What it does                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------- |
+| `thr run`       | Start threadstr and open your browser                                                             |
+| `thr stop`      | Stop the local server; your projects stay saved                                                   |
+| `thr status`    | Show the server status and local address                                                          |
+| `thr logs`      | Show recent diagnostics                                                                           |
+| `thr uninstall` | Remove app and dependencies, keep projects. Delete all (even files) `thr uninstall --delete-data` |
+| `thr update`    | Install the latest stable release and restart                                                     |
 
 Closing the browser does not stop the server. After a reboot, run `thr run`
 again. Before updating, save drafts and export a backup; refresh browser tabs

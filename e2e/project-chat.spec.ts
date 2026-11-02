@@ -31,6 +31,138 @@ type AttachmentRow = {
   modifiedAt: number;
 };
 
+test("navigates history boundaries and paints accepted sends without changing shortcuts", async ({
+  page,
+  request,
+  localApp,
+}, testInfo) => {
+  const chat = await createProject(request, localApp.url, {
+    title: "Navigation and send",
+    accent: "coral",
+  });
+  for (let i = 0; i < 20; i++)
+    await addNote(
+      request,
+      localApp.url,
+      chat.id,
+      `History message ${i}\nA concrete decision worth keeping.`,
+      Date.now() - 100000 + i,
+    );
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: "Open Navigation and send" }).click();
+  const history = page.locator(".history");
+  await expect(
+    page.getByRole("button", { name: "Scroll to beginning" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Scroll to beginning" }).click();
+  await expect
+    .poll(() => history.evaluate((el) => el.scrollTop))
+    .toBeLessThan(25);
+  await expect(
+    page.getByRole("button", { name: "Scroll to beginning" }),
+  ).toHaveCount(0);
+  const down = page.getByRole("button", { name: "Scroll to end" });
+  await down.focus();
+  await down.press("Enter");
+  await expect
+    .poll(() =>
+      history.evaluate(
+        (el) => el.scrollHeight - el.clientHeight - el.scrollTop,
+      ),
+    )
+    .toBeLessThan(25);
+  await expect(history).toBeFocused();
+  const textarea = page.getByLabel("Add a note");
+  await textarea.fill("A new note");
+  await textarea.press("Enter");
+  await expect(textarea).toHaveValue("A new note\n");
+  await page.evaluate(() => {
+    const events: string[] = [];
+    (window as unknown as { sendAnimations: string[] }).sendAnimations = events;
+    document.addEventListener("animationstart", (event) =>
+      events.push((event as AnimationEvent).animationName),
+    );
+  });
+  await textarea.press("Control+Enter");
+  await expect(textarea).toHaveValue("");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { sendAnimations: string[] }).sendAnimations,
+      ),
+    )
+    .toEqual(expect.arrayContaining(["composer-send-glow", "message-arrive"]));
+  // Hold the real keyframe at its peak for theme/viewport visual review.
+  for (const theme of ["light", "neutral", "dark"]) {
+    await page.evaluate((value) => {
+      document.documentElement.dataset.theme = value;
+    }, theme);
+    await textarea.fill(`A thought captured in ${theme}`);
+    await page.getByRole("button", { name: /Add note/ }).click();
+    await expect(textarea).toHaveValue("");
+    await page.locator(".composer").evaluate((element) => {
+      for (const animation of element.getAnimations()) {
+        animation.pause();
+        animation.currentTime = 130;
+      }
+    });
+    await page.screenshot({
+      path: testInfo.outputPath(`send-glow-${theme}.png`),
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  }
+  const edited = page
+    .locator(".history [data-note-id]")
+    .filter({ hasText: "A thought captured in dark" });
+  await edited
+    .getByRole("button", { name: "Edit message", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Edit message" })
+    .fill("A revised thought");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(textarea).toHaveValue("");
+  await expect(page.locator(".composer")).toHaveAttribute(
+    "data-send-feedback",
+    "",
+  );
+  expect(
+    await page
+      .locator(".composer")
+      .evaluate((element) =>
+        element
+          .getAnimations()
+          .some(
+            (animation) =>
+              animation instanceof CSSAnimation &&
+              animation.animationName === "composer-send-glow",
+          ),
+      ),
+  ).toBe(true);
+  await expect(edited).toHaveCount(0);
+  await expect(page.locator(".history .message-row--arriving")).toHaveCount(0);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await textarea.fill("Reduced motion note");
+  await page.getByRole("button", { name: /Add note/ }).click();
+  await expect(textarea).toHaveValue("");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { sendAnimations: string[] }).sendAnimations,
+      ),
+    )
+    .toContain("composer-send-static");
+  await page.screenshot({
+    path: testInfo.outputPath("history-navigation-send.png"),
+  });
+});
+
 function viewportName(testName: string): string {
   return testName.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
 }
@@ -234,7 +366,8 @@ test("pins projects and scans previews with Attention status", async ({
     accent: "coral",
   });
   const current = await createProject(request, localApp.url, {
-    title: `Current alert ${suffix}`,
+    // An unpinned project may also contain a section name in its title.
+    title: `Pinned discussion ${suffix}`,
     accent: "ocean",
   });
   const earlier = await createProject(request, localApp.url, {
@@ -279,8 +412,9 @@ test("pins projects and scans previews with Attention status", async ({
   ).toBe(true);
 
   await page.goto(localApp.url);
-  const pinnedSection = page.locator(".project-section", {
-    hasText: "Pinned",
+  const pinnedSection = page.getByRole("region", {
+    name: "Pinned",
+    exact: true,
   });
   await expect(pinnedSection).toContainText(pinned.title);
   await expect(
@@ -329,7 +463,7 @@ test("pins projects and scans previews with Attention status", async ({
   await currentPin.click();
   await expect(currentPin).toHaveAttribute("aria-pressed", "false");
   await expect(
-    page.locator(".project-section", { hasText: "Projects" }),
+    page.getByRole("region", { name: "Projects", exact: true }),
   ).toContainText(current.title);
 
   await localApp.restart();
@@ -678,7 +812,7 @@ test("uses compact desktop chrome and an auto-growing composer", async ({
   expect(geometry.composer.height).toBeLessThanOrEqual(116);
   expect(geometry.history.height).toBeGreaterThanOrEqual(628);
   expect(geometry.filters.top).toBeCloseTo(geometry.history.top, 0);
-  expect(geometry.filters.bottom).toBeCloseTo(geometry.history.bottom, 0);
+  expect(geometry.filters.bottom).toBeCloseTo(geometry.composer.bottom, 0);
   expect(geometry.filters.right).toBeLessThanOrEqual(geometry.history.left + 1);
 
   const composer = page.getByLabel("Add a note");

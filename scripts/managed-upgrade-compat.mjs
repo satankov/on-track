@@ -194,7 +194,17 @@ async function inspect(source, database) {
     await query(
       source,
       database,
-      `console.log(JSON.stringify(Object.fromEntries(['app_metadata','chats','notes','note_attachments','chat_enabled_labels','note_labels'].map(name => [name,db.prepare('SELECT * FROM '+name+' ORDER BY 1').all()]))));`,
+      `const schema = db.prepare('SELECT schema_version FROM app_metadata').pluck().get();
+       console.log(JSON.stringify({
+         app_metadata: db.prepare('SELECT * FROM app_metadata ORDER BY id').all(),
+         chats: db.prepare('SELECT id,title,accent,created_at,updated_at,pinned_at,collapse_long_messages,archived_at FROM chats ORDER BY id').all(),
+         notes: db.prepare('SELECT * FROM notes ORDER BY id').all(),
+         note_attachments: db.prepare('SELECT * FROM note_attachments ORDER BY id').all(),
+         chat_enabled_labels: db.prepare(schema >= 9
+           ? "SELECT chat_id,id AS label FROM project_labels WHERE builtin=1 AND enabled=1 AND id NOT IN ('pin','attention') ORDER BY chat_id,id"
+           : 'SELECT chat_id,label FROM chat_enabled_labels ORDER BY chat_id,label').all(),
+         note_labels: db.prepare('SELECT note_id,label FROM note_labels ORDER BY note_id,label').all()
+       }));`,
     ),
   );
 }
@@ -357,8 +367,9 @@ try {
   const zip = join(base, `on-track-v${candidateVersion}.zip`);
   createFixtureArchive(candidate, zip);
   const zipBytes = readFileSync(zip);
+  const candidateDescription = describeRuntime(candidate);
   const candidateManifest = createManagedManifest({
-    description: describeRuntime(candidate),
+    description: candidateDescription,
     commit: "f".repeat(40),
     minimumVersion: "0.0.7",
     sourceBytes: zipBytes,
@@ -460,6 +471,14 @@ try {
       await (await request(url, "/api/database/export")).arrayBuffer(),
     );
     const original = await inspect(oldSource, dbPath);
+    assert.deepEqual(original.app_metadata, [{ id: 1, schema_version: 7 }]);
+    // Schema metadata must advance; every released user-data field must survive.
+    const migratedOriginal = {
+      ...original,
+      app_metadata: [
+        { id: 1, schema_version: candidateDescription.schemaVersion },
+      ],
+    };
     const installBytes = readFileSync(join(root, "install.json"));
     const oldLauncher = readFileSync(launcher(root, "ontrack"));
     const dispatcher = readFileSync(join(root, "bin/command.mjs"));
@@ -543,7 +562,7 @@ try {
       );
       await command(root, name, ["run", "--no-open"]);
     }
-    assert.deepEqual(await inspect(oldSource, dbPath), original);
+    assert.deepEqual(await inspect(oldSource, dbPath), migratedOriginal);
     assert.equal(readFileSync(attachment, "utf8"), "Keep bytes");
     await assert.rejects(
       run(node, [join(oldSource, "dist/server/server/main.js")], {
@@ -576,7 +595,7 @@ try {
         },
       ),
     });
-    assert.deepEqual(logical(restored), logical(original));
+    assert.deepEqual(logical(restored), logical(migratedOriginal));
     assert.equal(
       readFileSync(
         join(data, restored.note_attachments[0].storage_path),

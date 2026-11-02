@@ -15,20 +15,39 @@ recovery parts of that promise.
 
 ## Current phase
 
-Version 0.0.8 is the latest published plaintext alpha release under Apache
-License 2.0. It fixes the macOS Bash installer and HTTP 415 updater defects in
-v0.0.7, the first managed-compatible release (floor `0.0.7`). Managed installation
-remains experimental; clean OS/platform and published-upgrade evidence is incomplete.
+[Version 0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1) is the
+latest published plaintext alpha release under Apache License 2.0. It includes
+the flat UI, intersecting history filters, database-backed preferences, custom
+project labels, and dependency security fixes, alongside the existing history
+controls, composer feedback, managed uninstall, and project search.
+threadstr and the primary `thr` CLI retain the `ontrack` compatibility alias.
+The managed compatibility floor remains `0.0.7`; installation remains
+experimental because clean OS/platform and published-upgrade evidence is incomplete.
 
 ## Current objective
 
-Prepare **v0.0.9** with the **threadstr** identity, primary **thr** CLI,
-built-in Examples, Home release checks, and navigation polish. The published v0.0.8 still
-uses On Track and `ontrack`; current source introduces the new identity while
-preserving the old command as a compatibility alias, existing data and update
-contracts. See [plan 0023](plans/0023-threadstr-rebrand.md),
-[ADR-0010](adr/0010-threadstr-identity-and-cli-transition.md), and
+The published v0.1.1 release includes the completed flat UI and design cookbook
+slice in [plan 0029](plans/0029-flat-ui-and-design-contract.md), plus intersecting
+history filters, database-backed preferences and custom project labels in
+[plan 0031](plans/0031-multi-filters-durable-preferences-custom-labels.md).
+Current source and the published release use schema 9. Its canonical
+standards are [DESIGN.md](../DESIGN.md), with an interactive reference under
+[branding/threadstr/ui](../branding/threadstr/ui/README.md). The Zod dependency
+fix for issue #72 and the static-serving and paired Vitest updates are published
+in v0.1.1; verification and tracker evidence are recorded in
+[plan 0025](plans/0025-security-audit-response.md#pre-release-security-maintenance-slice-a-2026-10-29). Security phases 1–4 remain implemented;
+optional Phase 5 remains deferred. Identity and compatibility decisions remain
+in [ADR-0010](adr/0010-threadstr-identity-and-cli-transition.md) and
 [compatibility guidance](compatibility.md).
+
+Local qualification of v0.1.0/schema-7 upgrades, selected backup replacement
+and merge, and schema-9 update recovery is recorded in
+[plan 0032](plans/0032-release-upgrade-and-recovery-qualification.md).
+The [v0.1.1 release workflow](https://github.com/satankov/on-track/actions/runs/40955814178)
+passed full verification on Linux Node 22.16.0 and 24 and managed lifecycle/update
+checks on Linux x64, Windows x64, and macOS arm64/x64. Clean-machine installation,
+real desktop behavior, accessibility, and live published-upgrade evidence remain
+separate validation requirements.
 
 Complete installation/platform and upgrade validation, retain the manual Node
 matrix and plaintext warnings, and record remaining evidence limits. Mobile
@@ -143,6 +162,29 @@ remains a regression-protected alpha, not a dedicated design target.
 
 ## Current capabilities
 
+- [Multi-filters, durable preferences and custom labels](plans/0031-multi-filters-durable-preferences-custom-labels.md)
+  add intersecting Cmd/Ctrl-selected history filters, database-backed theme,
+  Examples visibility and rail disclosures, and up to five custom labels per
+  project with eight-character names, optional glyphs, drag ordering, enablement
+  and Save-based removal. Cleared/deleted definitions remove only their message
+  tags; messages remain. Desktop filter height is independent of composer growth.
+  Current source uses schema 9; full backups include preferences and all exports
+  preserve project definitions and assignments.
+
+- Current-project keyword search filters loaded message text, participant names,
+  and filenames locally. Its compact magnifier/input UI combines with history
+  filters, highlights matches, shows counts, restores reading positions, and opens
+  matching messages in context. Last queries are remembered per project for the
+  app session until cleared.
+  No search service, index, or schema change is required. See
+  [plan 0028](plans/0028-project-keyword-search.md).
+
+- Current source adds contextual beginning/end history controls, a short accent
+  response when sending or saving an edited note, and managed uninstall with separate opt-in data
+  deletion. See [plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md)
+  and [uninstall guidance](install/README.md#uninstall-next-release). Keyboard
+  shortcuts, database schema, and backup format are unchanged.
+
 - Home preserves project-first navigation and adds explicit GitHub release checks,
   compatible managed/manual update instructions, and curated guide/source links.
   The reserved bug-report block is a noninteractive coming-soon placeholder.
@@ -152,12 +194,12 @@ remains a regression-protected alpha, not a dedicated design target.
 - Built-in Examples contains one read-only 🇳🇱 Trip to Amsterdam notebook. Users
   explore its filters and create independent editable projects; originals update
   with the app and stay out of backups. General settings can hide Examples using
-  a browser-local preference. See [plan 0022](plans/0022-built-in-examples.md).
+  a database preference. See [plan 0022](plans/0022-built-in-examples.md).
 
 - Create and switch between personal project chats, return Home through the
   threadstr brand, and retain reading positions during the current browser session.
 - Independently collapse the Pinned, Projects, Archive, and Examples sidebar sections;
-  browser-local preferences retain their state across reloads.
+  database preferences retain their state across reloads and cleared browser storage.
   Pinned, Projects, and Archive headers remain visible when empty.
 - Pin and unpin projects in a stable sidebar section without changing their
   message-activity timestamps.
@@ -188,14 +230,14 @@ remains a regression-protected alpha, not a dedicated design target.
   time and see whether an applied Attention label belongs to today or an earlier
   message directly from the sidebar.
 - Open eligible managed files with the operating system's default association,
-  or show their safe managed folder; risky executable/launcher types are blocked
-  from Open.
+  or show their safe managed folder. Open uses an explicit document/media
+  allowlist; other types remain accessible through Show in Folder.
 - Copy, edit, timestamp-adjust, and delete notes.
 - Export all or selected projects to a versioned `.on-track-backup` bundle with
   their messages and attachments. Preview and select imported projects, then
   merge independent copies with conflict renaming or replace the whole database.
 - Choose Light, Neutral, or Dark appearance from large previews in Settings;
-  the browser-local preference applies immediately and persists across reloads.
+  the database preference applies immediately and survives browser-data clearing.
 - Persist state across browser and server restarts.
 - Use a responsive, accessible browser interface served from a local process.
 
@@ -209,8 +251,8 @@ remains a regression-protected alpha, not a dedicated design target.
    application.
 3. Design the encryption threat model, unlock and recovery experience, encrypted
    database/sidecar/attachment handling, and plaintext migration.
-4. Evaluate richer label workflows only after observing the fixed built-in
-   vocabulary in planning, decision, risk, and milestone use.
+4. Evaluate further label workflows after observing the built-in and bounded
+   custom labels in planning, decision, risk, and milestone use.
 5. Evaluate native desktop packaging once the storage and key lifecycle are
    credible.
 
@@ -225,7 +267,7 @@ options without pretending those choices are solved.
 
 ## Non-goals for current plaintext alpha
 
-Collaboration, accounts, user-created label definitions, search, encryption,
+Collaboration, accounts, cross-project or semantic search, encryption,
 NDA-safe claims, native installers, mobile apps, peer-to-peer sync, public
 hosting, analytics, and telemetry.
 
@@ -255,15 +297,25 @@ The public repository and release are:
 - [v0.0.6 release](https://github.com/satankov/on-track/releases/tag/v0.0.6)
 - [Issues](https://github.com/satankov/on-track/issues)
 
-GitHub is the backlog and ownership tracker. The Fastify advisory is tracked by
-open [PR #26](https://github.com/satankov/on-track/pull/26); it supersedes closed
-PR #18. Native-action smoke tests are tracked in
+GitHub is the backlog and ownership tracker. The current security audit response
+and dependency remediation are recorded in [plan 0025](plans/0025-security-audit-response.md).
+Native-action smoke tests are tracked in
 [issue #32](https://github.com/satankov/on-track/issues/32), filesystem drag/drop
 validation in [issue #33](https://github.com/satankov/on-track/issues/33), and
 managed installation/upgrade validation in
 [issue #34](https://github.com/satankov/on-track/issues/34).
-[v0.0.8](https://github.com/satankov/on-track/releases/tag/v0.0.8) is the latest published release;
-v0.0.9 is the selected candidate; see the [release procedure](RELEASING.md).
+[Issue #61](https://github.com/satankov/on-track/issues/61) is closed: v0.1.0
+introduced the mobile focus fix and regression test, and the v0.1.1 release
+workflow passed the attachment-safety browser test on Linux Node 22.16.0 and 24.
+[Issue #72](https://github.com/satankov/on-track/issues/72) is closed with the
+patched Zod pin and bounded-validation coverage published in v0.1.1.
+Native uninstall validation is tracked in
+[issue #62](https://github.com/satankov/on-track/issues/62); history/composer
+assistive-technology validation is tracked in
+[issue #63](https://github.com/satankov/on-track/issues/63).
+[v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1) is the latest
+published release and includes the design and plan 0031 feature slices; see the
+[release procedure](RELEASING.md).
 Broader product priorities above remain strategy until scoped. Durable decisions
 live in `docs/adr/`; significant work lives in `docs/plans/`.
 
@@ -285,9 +337,12 @@ live in `docs/adr/`; significant work lives in `docs/plans/`.
   database checkpoints remain plaintext, need free disk space, and are not
   independent backups of attachment files. Existing pre-protocol source releases
   must be stopped and upgraded manually before explicit adoption.
-- The configured production audit passes its high-severity gate but currently
-  reports a moderate Fastify advisory. The available fixed version is outside
-  the exact declared dependency and requires explicit upgrade verification.
+- Dependency advisories require ongoing review and compatible updates. A clean
+  audit is a point-in-time check, not a guarantee that every dependency is safe.
+  Plan 0025 records the Zod, static-serving and Vitest patches, plus the deferred
+  multipart advisory: its affected `saveRequestFiles()` API is unused, while
+  application uploads use `request.parts()` and owned staging. Reassess that
+  exposure before adopting another multipart API.
 - v0.0.4 deliberately does not restore v0.0.3/schema-2 backup bundles. Live
   v0.0.3 databases still migrate at startup, and this compatibility break is
   acceptable only under the current no-user alpha assumption.
@@ -296,6 +351,10 @@ live in `docs/adr/`; significant work lives in `docs/plans/`.
   Linux desktop integration remains unverified.
 - Browser file-drop regressions pass, but actual Finder-origin dragging and
   cancellation remain manually unverified; this is separate from native Open.
+- Managed uninstall is locally verified on disposable macOS/Node 22 fixtures;
+  native Windows/Linux and Node 24 dispatcher cleanup still require evidence.
+  It preserves unknown files and small ownership locks; only explicit
+  `--delete-data` removes project content. See ADR-0012 and plan 0027.
 - Loopback HTTP narrows exposure but is still a trust boundary requiring Host,
   Origin, content-security, and input-validation controls.
 

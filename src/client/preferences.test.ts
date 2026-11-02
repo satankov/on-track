@@ -1,83 +1,51 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import {
-  readCollapsedSections,
-  persistCollapsedSections,
+  readLegacyPreferences,
+  clearLegacyPreferences,
   COLLAPSED_SECTIONS_KEY,
-  readShowExamples,
-  persistShowExamples,
   SHOW_EXAMPLES_KEY,
 } from "./preferences.js";
 afterEach(() => {
   vi.restoreAllMocks();
   localStorage.clear();
 });
-it("defaults on and persists a validated visibility preference", () => {
-  expect(readShowExamples()).toBe(true);
-  localStorage.setItem(SHOW_EXAMPLES_KEY, "invalid");
-  expect(readShowExamples()).toBe(true);
-  expect(persistShowExamples(false)).toBe(true);
-  expect(readShowExamples()).toBe(false);
-  expect(persistShowExamples(true)).toBe(true);
-  expect(readShowExamples()).toBe(true);
-});
-it("remains usable when browser storage is blocked", () => {
-  vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-    throw new Error("blocked");
-  });
-  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-    throw new Error("blocked");
-  });
-  expect(readShowExamples()).toBe(true);
-  expect(persistShowExamples(false)).toBe(false);
-});
-
-it("validates stored section flags and round-trips independent choices", () => {
-  expect(readCollapsedSections()).toEqual({
-    Pinned: false,
-    Projects: false,
-    Archive: false,
-    Examples: false,
-  });
+it("imports only present, valid legacy values and preserves unrelated storage", () => {
+  expect(readLegacyPreferences()).toEqual({});
+  localStorage.setItem("on-track-theme", "dark");
+  localStorage.setItem(SHOW_EXAMPLES_KEY, "false");
   localStorage.setItem(
     COLLAPSED_SECTIONS_KEY,
-    '{"Pinned":true,"Projects":"true","Archive":1,"Examples":false}',
+    '{"Pinned":true,"Projects":"true","Examples":false}',
   );
-  expect(readCollapsedSections()).toEqual({
-    Pinned: true,
-    Projects: false,
-    Archive: false,
-    Examples: false,
+  localStorage.setItem("unrelated", "keep");
+  expect(readLegacyPreferences()).toEqual({
+    theme: "dark",
+    showExamples: false,
+    collapsedSections: { Pinned: true, Examples: false },
   });
-  const choices = {
-    Pinned: true,
-    Projects: false,
-    Archive: true,
-    Examples: true,
-  };
-  persistCollapsedSections(choices);
-  expect(readCollapsedSections()).toEqual(choices);
+  clearLegacyPreferences();
+  expect(readLegacyPreferences()).toEqual({});
+  expect(localStorage.getItem("unrelated")).toBe("keep");
 });
 it.each(["bad json", "null", "42", "[]"])(
-  "defaults disclosures safely for %s",
+  "ignores invalid legacy data: %s",
   (value) => {
+    localStorage.setItem("on-track-theme", "invalid");
+    localStorage.setItem(SHOW_EXAMPLES_KEY, "invalid");
     localStorage.setItem(COLLAPSED_SECTIONS_KEY, value);
-    expect(Object.values(readCollapsedSections())).toEqual([
-      false,
-      false,
-      false,
-      false,
-    ]);
+    expect(readLegacyPreferences()).toEqual({});
   },
 );
-it("keeps disclosures usable with blocked storage", () => {
+it("tolerates blocked reads and cleanup without writing browser settings", () => {
   vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
     throw new Error("blocked");
   });
-  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+  vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
     throw new Error("blocked");
   });
-  const defaults = readCollapsedSections();
-  expect(Object.values(defaults)).toEqual([false, false, false, false]);
-  expect(() => persistCollapsedSections(defaults)).not.toThrow();
+  const write = vi.spyOn(Storage.prototype, "setItem");
+  expect(readLegacyPreferences()).toEqual({});
+  expect(clearLegacyPreferences).not.toThrow();
+  expect(write).not.toHaveBeenCalled();
 });

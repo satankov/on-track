@@ -3,6 +3,8 @@ import {
   index,
   integer,
   primaryKey,
+  foreignKey,
+  unique,
   sqliteTable,
   text,
 } from "drizzle-orm/sqlite-core";
@@ -28,6 +30,9 @@ export const chats = sqliteTable(
   {
     id: text("id").primaryKey(),
     title: text("title").notNull(),
+    labelConfigurationRevision: integer("label_configuration_revision")
+      .notNull()
+      .default(0),
     accent: text("accent").notNull(),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
@@ -40,6 +45,10 @@ export const chats = sqliteTable(
       .default(true),
   },
   (table) => [
+    check(
+      "chats_label_revision",
+      sql`${table.labelConfigurationRevision} >= 0 AND ${table.labelConfigurationRevision} <= 9007199254740991`,
+    ),
     check(
       "chats_title_length",
       sql`length(trim(${table.title})) BETWEEN 1 AND 80`,
@@ -78,6 +87,7 @@ export const notes = sqliteTable(
       "notes_sender_length",
       sql`${table.sender} IS NULL OR (${table.sender} = trim(${table.sender}, ' ' || char(9) || char(10) || char(11) || char(12) || char(13) || char(160) || char(5760) || char(8192) || char(8193) || char(8194) || char(8195) || char(8196) || char(8197) || char(8198) || char(8199) || char(8200) || char(8201) || char(8202) || char(8232) || char(8233) || char(8239) || char(8287) || char(12288) || char(65279)) AND length(${table.sender}) BETWEEN 1 AND 80)`,
     ),
+    unique("notes_project_identity").on(table.id, table.chatId),
     index("notes_chat_history_idx").on(table.chatId, table.createdAt, table.id),
   ],
 );
@@ -125,36 +135,79 @@ export const noteAttachments = sqliteTable(
   ],
 );
 
-export const chatEnabledLabels = sqliteTable(
-  "chat_enabled_labels",
+export const projectLabels = sqliteTable(
+  "project_labels",
   {
     chatId: text("chat_id")
       .notNull()
       .references(() => chats.id, { onDelete: "cascade" }),
-    label: text("label").notNull(),
+    id: text("id").notNull(),
+    name: text("name").notNull(),
+    nameKey: text("name_key").notNull(),
+    symbol: text("symbol"),
+    enabled: integer("enabled").notNull(),
+    position: integer("position").notNull(),
+    builtin: integer("builtin").notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.chatId, table.label] }),
+    primaryKey({ columns: [table.chatId, table.id] }),
+    unique("project_labels_name").on(table.chatId, table.nameKey),
+    unique("project_labels_position").on(table.chatId, table.position),
     check(
-      "chat_enabled_labels_label_allowed",
-      sql`${table.label} IN ('todo', 'decision', 'open-question', 'risk', 'milestone')`,
+      "project_labels_bounds",
+      sql`length(${table.name}) BETWEEN 1 AND 256 AND length(${table.nameKey}) BETWEEN 1 AND 256 AND (${table.symbol} IS NULL OR length(${table.symbol}) BETWEEN 1 AND 64) AND ${table.enabled} IN (0,1) AND ${table.builtin} IN (0,1) AND ${table.position} >= 0 AND ${table.position} <= 9007199254740991`,
+    ),
+    check(
+      "project_labels_kind",
+      sql`(${table.builtin} = 1 AND ${table.id} IN ('pin','attention','todo','decision','open-question','risk','milestone')) OR (${table.builtin} = 0 AND length(${table.id}) = 43 AND substr(${table.id},1,7) = 'custom-')`,
+    ),
+    check(
+      "project_labels_permanent",
+      sql`(${table.id} NOT IN ('pin','attention')) OR (${table.enabled} = 1 AND ((${table.id} = 'pin' AND ${table.position} = 0) OR (${table.id} = 'attention' AND ${table.position} = 1)))`,
     ),
   ],
 );
-
 export const noteLabels = sqliteTable(
   "note_labels",
   {
-    noteId: text("note_id")
-      .notNull()
-      .references(() => notes.id, { onDelete: "cascade" }),
+    noteId: text("note_id").notNull(),
+    chatId: text("chat_id").notNull(),
     label: text("label").notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.noteId, table.label] }),
+    foreignKey({
+      columns: [table.noteId, table.chatId],
+      foreignColumns: [notes.id, notes.chatId],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.chatId, table.label],
+      foreignColumns: [projectLabels.chatId, projectLabels.id],
+    }).onDelete("cascade"),
+  ],
+);
+
+export const workspacePreferences = sqliteTable(
+  "workspace_preferences",
+  {
+    id: integer("id").primaryKey(),
+    theme: text("theme").notNull().default("light"),
+    showExamples: integer("show_examples").notNull().default(1),
+    collapsedPinned: integer("collapsed_pinned").notNull().default(0),
+    collapsedProjects: integer("collapsed_projects").notNull().default(0),
+    collapsedArchive: integer("collapsed_archive").notNull().default(0),
+    collapsedExamples: integer("collapsed_examples").notNull().default(0),
+    initialized: integer("initialized").notNull().default(0),
+  },
+  (table) => [
+    check("workspace_preferences_single_row", sql`${table.id} = 1`),
     check(
-      "note_labels_label_allowed",
-      sql`${table.label} IN ('pin', 'attention', 'todo', 'decision', 'open-question', 'risk', 'milestone')`,
+      "workspace_preferences_theme",
+      sql`${table.theme} IN ('light', 'neutral', 'dark')`,
+    ),
+    check(
+      "workspace_preferences_booleans",
+      sql`${table.showExamples} IN (0,1) AND ${table.collapsedPinned} IN (0,1) AND ${table.collapsedProjects} IN (0,1) AND ${table.collapsedArchive} IN (0,1) AND ${table.collapsedExamples} IN (0,1) AND ${table.initialized} IN (0,1)`,
     ),
   ],
 );

@@ -26,6 +26,8 @@ import { recoverManagedUpdate } from "./update.js";
 import { defaultInstallRoot, openLocalBrowser } from "./platform.js";
 import { installManaged } from "./install.js";
 import { updateFromRelease } from "./distribution.js";
+import { uninstallManaged } from "./uninstall.js";
+import { assertUninstallIdle } from "./uninstall-plan.js";
 
 const HELP = `threadstr — private project notes in your browser
 
@@ -35,6 +37,8 @@ const HELP = `threadstr — private project notes in your browser
   thr logs                    Show recent diagnostics
   thr update [vX.Y.Z] [--yes] [--no-open]
                                 Install a published release and restart
+  thr uninstall [--delete-data] [--yes]
+                                Remove managed app; keep projects unless requested
   thr --help                  Show this help
 
 Compatibility: ontrack remains a supported alias throughout 0.x and until
@@ -80,6 +84,25 @@ async function confirmUpdate(): Promise<boolean> {
     prompt.close();
   }
 }
+async function confirmUninstall(): Promise<boolean> {
+  if (!process.stdin.isTTY)
+    throw new Error(
+      "Noninteractive uninstall requires --yes. Removing projects also requires --delete-data.",
+    );
+  const prompt = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    return /^y(es)?$/i.test(
+      (
+        await prompt.question("Uninstall the items listed above? [y/N] ")
+      ).trim(),
+    );
+  } finally {
+    prompt.close();
+  }
+}
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   const args = parseArguments(argv);
   if (args.command === "help" || args.command === "--help") {
@@ -97,6 +120,15 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
         defaultInstallRoot(),
     ),
   );
+  if (args.command === "uninstall") {
+    await uninstallManaged(root, {
+      deleteData: Boolean(args.options["delete-data"]),
+      confirm: args.options.yes ? async () => true : confirmUninstall,
+      progress: (message) => console.log(printable(message)),
+    });
+    return;
+  }
+  assertUninstallIdle(root);
   if (args.command === "install") {
     await installManaged(root, args.options);
     return;
@@ -173,6 +205,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     filename: ".on-track-install-owner.sqlite",
   });
   try {
+    assertUninstallIdle(canonicalRoot);
     if (args.command === "update") {
       await updateFromRelease(canonicalRoot, args.version, {
         confirm: args.options.yes ? async () => true : confirmUpdate,

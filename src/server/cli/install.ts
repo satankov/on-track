@@ -39,6 +39,7 @@ import {
   type ActiveRelease,
 } from "./state.js";
 import { activatePrepared, recoverManagedUpdate } from "./update.js";
+import { assertUninstallIdle } from "./uninstall-plan.js";
 
 export function copyPublishedSource(
   manifest: ManagedReleaseManifest,
@@ -98,6 +99,7 @@ export async function installManaged(
   root: string,
   options: Record<string, string | boolean>,
 ): Promise<void> {
+  assertUninstallIdle(root);
   currentManagedPlatform();
   for (const name of ["release-dir", "runtime-dir", "manifest"])
     if (typeof options[name] !== "string" || !isAbsolute(String(options[name])))
@@ -136,6 +138,7 @@ export async function installManaged(
     filename: ".on-track-install-owner.sqlite",
   });
   try {
+    assertUninstallIdle(root);
     const selection: ActiveRelease = {
       protocol: 1,
       releaseId: description.releaseId,

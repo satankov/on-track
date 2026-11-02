@@ -1,3 +1,4 @@
+import { readPreferences } from "../db/preferences.js";
 import type Database from "better-sqlite3";
 import rateLimit from "@fastify/rate-limit";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
@@ -105,10 +106,9 @@ export async function registerDatabaseTransferRoutes(
   }
   async function exportBackup(request: FastifyRequest, reply: FastifyReply) {
     if (!available(reply)) return;
-    const selection: ProjectSelection =
-      request.method === "GET"
-        ? "all"
-        : exportOptionsSchema.parse(request.body).selection;
+    const selection: ProjectSelection = exportOptionsSchema.parse(
+      request.body,
+    ).selection;
     const directory = mkdtempSync(
       join(options.dataDirectory!, ".on-track-export-"),
     );
@@ -141,7 +141,7 @@ export async function registerDatabaseTransferRoutes(
     }
   }
   app.route({
-    method: ["GET", "POST"],
+    method: "POST",
     url: "/api/database/export",
     bodyLimit: 1024 * 1024,
     config: config("export", 3),
@@ -238,6 +238,10 @@ export async function registerDatabaseTransferRoutes(
           bundlePath: staged!.filePath,
           workspace,
           selection: input?.selection ?? "all",
+          destinationPreferences:
+            mode === "replace"
+              ? readPreferences(options.database())
+              : undefined,
         });
         if (mode === "merge") {
           try {

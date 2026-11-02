@@ -214,11 +214,11 @@ describe("browser API client", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/chats/project%2Fone", {
       method: "DELETE",
     });
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
-      "/api/database/export",
-      undefined,
-    );
+    expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/database/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selection: "all" }),
+    });
     expect(await exported.text()).toBe("SQLite format 3");
   });
 

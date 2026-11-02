@@ -1,16 +1,14 @@
 # Install threadstr on Windows
 
-> **Next-release guidance:** this branch prepares threadstr and `thr`. The latest
-> published release is still [On Track v0.0.8](https://github.com/satankov/on-track/releases/tag/v0.0.8),
-> whose installer provides `ontrack`. Until the next release is published, the
-> `latest` downloads below install v0.0.8; use its
-> [installation guide](https://github.com/satankov/on-track/tree/v0.0.8/docs/install)
-> and `ontrack` commands. v0.0.9 is the selected candidate and is not yet published.
+> **Release guidance:** the latest published release is
+> [threadstr v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1),
+> with `thr` and the `ontrack` compatibility alias. The `latest` downloads include
+> the uninstall commands below, available since v0.1.0.
 
 ## Quick setup — one command
 
-> **Experimental managed installation:** end-user installation and OS validation are
-> deferred to the next release. The command requires published installer files
+> **Experimental managed installation:** end-user installation and OS validation
+> remain incomplete. The command requires published installer files
 > from v0.0.7 or later. [Manual setup](#manual-setup) remains available.
 
 Open PowerShell in a folder you own and paste this line:
@@ -123,3 +121,13 @@ For startup, download, or update problems, see [troubleshooting](README.md#if-so
 
 The retained legacy data and runtime names are deliberate; see
 [compatibility guidance](../compatibility.md).
+
+## Uninstall (next release)
+
+Run `thr uninstall` to remove the managed app and private Node/npm dependencies
+while keeping your projects. Run `thr uninstall --delete-data` to also delete
+projects and attachments after reviewing the printed paths and confirming.
+Export a backup first if you need to keep that data.
+
+See [uninstall and manual removal](README.md#uninstall-next-release) for retained
+files, recovery, noninteractive options, and the Windows completion receipt.

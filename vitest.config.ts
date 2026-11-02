@@ -5,6 +5,8 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: "node",
+    // Local skills and marketing assets may contain tests for other runners.
+    include: ["src/**/*.test.{ts,tsx}", "scripts/**/*.test.{ts,mjs}"],
     exclude: ["e2e/**", "node_modules/**", "dist/**"],
     globals: true,
     // Shared CI runners must not overlap fsync-heavy SQLite/restore suites with

@@ -1,3 +1,19 @@
+import {
+  CONFIGURABLE_LABELS,
+  MAX_CUSTOM_LABELS,
+  labelConfigurationSchema,
+  configurableLabelSchema,
+} from "./labels.js";
+export {
+  PERMANENT_LABELS,
+  CONFIGURABLE_LABELS,
+  LABELS,
+  DEFAULT_ENABLED_LABELS,
+  labelSchema,
+  configurableLabelSchema,
+  type Label,
+  type ConfigurableLabel,
+} from "./labels.js";
 import { z } from "zod";
 
 export const ACCENTS = [
@@ -9,31 +25,15 @@ export const ACCENTS = [
   "slate",
 ] as const;
 
-export const PERMANENT_LABELS = ["pin", "attention"] as const;
-export const CONFIGURABLE_LABELS = [
-  "todo",
-  "decision",
-  "open-question",
-  "risk",
-  "milestone",
-] as const;
-export const LABELS = [...PERMANENT_LABELS, ...CONFIGURABLE_LABELS] as const;
-export const DEFAULT_ENABLED_LABELS: ConfigurableLabel[] = [
-  "todo",
-  "milestone",
-];
-
 export const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 export const MAX_ATTACHMENTS_PER_MESSAGE = 10;
 export const MAX_SENDER_NAME_LENGTH = 80;
 
 const titleSchema = z.string().trim().min(1).max(80);
 const accentSchema = z.enum(ACCENTS);
-export const labelSchema = z.enum(LABELS);
-export const configurableLabelSchema = z.enum(CONFIGURABLE_LABELS);
 export const enabledLabelsSchema = z
   .array(configurableLabelSchema)
-  .max(CONFIGURABLE_LABELS.length)
+  .max(CONFIGURABLE_LABELS.length + MAX_CUSTOM_LABELS)
   .refine((labels) => new Set(labels).size === labels.length, {
     message: "Labels must be unique",
   });
@@ -54,13 +54,23 @@ export const updateChatInputSchema = z
     title: titleSchema.optional(),
     accent: accentSchema.optional(),
     enabledLabels: enabledLabelsSchema.optional(),
+    labelConfiguration: labelConfigurationSchema.optional(),
     collapseLongMessages: z.boolean().optional(),
   })
+  .refine(
+    (value) =>
+      value.enabledLabels === undefined ||
+      value.labelConfiguration === undefined,
+    {
+      message: "Provide either enabled labels or label configuration, not both",
+    },
+  )
   .refine(
     (value) =>
       value.title !== undefined ||
       value.accent !== undefined ||
       value.enabledLabels !== undefined ||
+      value.labelConfiguration !== undefined ||
       value.collapseLongMessages !== undefined,
     { message: "Provide a title, accent, label, or message display setting" },
   );
@@ -102,8 +112,6 @@ export const updateNoteInputSchema = z
   );
 
 export type Accent = (typeof ACCENTS)[number];
-export type Label = (typeof LABELS)[number];
-export type ConfigurableLabel = (typeof CONFIGURABLE_LABELS)[number];
 export type CreateChatInput = z.infer<typeof createChatInputSchema>;
 export type UpdateChatInput = z.infer<typeof updateChatInputSchema>;
 export type CreateNoteInput = z.infer<typeof createNoteInputSchema>;

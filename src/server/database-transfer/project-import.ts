@@ -1,3 +1,4 @@
+import { isBuiltinLabel, type Label } from "../../domain/labels.js";
 import { randomUUID, createHash } from "node:crypto";
 import { createReadStream, utimesSync } from "node:fs";
 import Database from "better-sqlite3";
@@ -113,6 +114,12 @@ export function mergePreparedProjects(options: {
   const attachmentIds = new Map(
     records.attachments.map((row) => [row.id, fresh()]),
   );
+  const labelIds = new Map(
+    records.labelDefinitions.map((row) => [
+      JSON.stringify([row.chat_id, row.id]),
+      isBuiltinLabel(row.id) ? row.id : (`custom-${randomUUID()}` as Label),
+    ]),
+  );
   const result: ImportResult = {
     importedCount: records.projects.length,
     renames: records.projects
@@ -164,13 +171,16 @@ export function mergePreparedProjects(options: {
         chat_id: projectIds.get(row.chat_id)!,
       })),
       attachments,
-      enabledLabels: records.enabledLabels.map((row) => ({
+      labelDefinitions: records.labelDefinitions.map((row) => ({
         ...row,
         chat_id: projectIds.get(row.chat_id)!,
+        id: labelIds.get(JSON.stringify([row.chat_id, row.id]))!,
       })),
       noteLabels: records.noteLabels.map((row) => ({
         ...row,
         note_id: noteIds.get(row.note_id)!,
+        chat_id: projectIds.get(row.chat_id)!,
+        label: labelIds.get(JSON.stringify([row.chat_id, row.label]))!,
       })),
     });
     committed = true;

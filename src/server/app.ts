@@ -1,3 +1,8 @@
+import {
+  LabelConfigurationConflictError,
+  InvalidLabelConfigurationError,
+} from "./db/project-labels.js";
+import { registerPreferenceRoutes } from "./preferences-routes.js";
 import { createHomeService, type HomeService } from "./home/service.js";
 import { registerHomeRoutes } from "./home/routes.js";
 import { registerExampleRoutes } from "./examples/routes.js";
@@ -62,7 +67,6 @@ interface BuildAppOptions {
 }
 
 const LOOPBACK_HOST = /^(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/i;
-const LOOPBACK_ORIGIN = /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/i;
 const NATIVE_ACTION_RATE_LIMIT_WINDOW_MS = 60_000;
 const MULTIPART_BODY_LIMIT_BYTES = 128 * 1024 * 1024;
 
@@ -240,8 +244,6 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       .header("X-Content-Type-Options", "nosniff")
       .header("X-Frame-Options", "DENY");
 
-    if (!request.url.startsWith("/api/")) return;
-
     if (!request.headers.host || !LOOPBACK_HOST.test(request.headers.host)) {
       return reply.code(421).send({
         code: "invalid_host",
@@ -250,24 +252,46 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     }
 
     const origin = request.headers.origin;
-    if (origin && !LOOPBACK_ORIGIN.test(origin)) {
+    if (origin !== undefined && origin !== `http://${request.headers.host}`) {
       return reply.code(403).send({
         code: "invalid_origin",
         message: "Request origin is not allowed.",
       });
     }
-    if (request.url.split("?")[0] !== "/api/health") {
+    // Route identity is decoded by the router; the raw URL is not a boundary.
+    const route = request.routeOptions.url;
+    if (!route?.startsWith("/api/")) return;
+    const site = request.headers["sec-fetch-site"];
+    if (site !== undefined && site !== "same-origin" && site !== "none") {
+      return reply.code(403).send({
+        code: "invalid_origin",
+        message: "Request origin is not allowed.",
+      });
+    }
+    if (route !== "/api/health") {
       requestLeases.set(request, maintenanceGate.enterRequest());
     }
   });
 
+  registerPreferenceRoutes(app, () => database);
+
   app.setErrorHandler((error, _request, reply) => {
-    if (error instanceof ZodError || error instanceof InvalidInputError) {
+    if (
+      error instanceof ZodError ||
+      error instanceof InvalidInputError ||
+      error instanceof InvalidLabelConfigurationError
+    ) {
       return reply.code(400).send({
         code: "invalid_input",
         message: "Please check the submitted values.",
       });
     }
+    if (error instanceof LabelConfigurationConflictError)
+      return reply.code(409).send({
+        code: "label_conflict",
+        message:
+          "Project labels changed in another window. Reload the project before saving.",
+      });
     if (error instanceof ArchivedProjectPinError) {
       return reply
         .code(409)

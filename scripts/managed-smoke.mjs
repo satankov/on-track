@@ -15,6 +15,7 @@ import {
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import Database from "better-sqlite3";
@@ -342,6 +343,70 @@ try {
     );
   }
   completed = true;
+  if (process.argv.includes("--uninstall")) {
+    async function removeManaged(deleteData) {
+      const interpreter = managedPaths(root, readActiveRelease(root)).node;
+      // Managed installers use Node 24. Node 22 exercises the supported source
+      // CLI directly; the Node 24 CI leg also covers the dispatcher parent.
+      const dispatch = process.versions.node.startsWith("24.");
+      const entry = dispatch
+        ? join(root, "bin/command.mjs")
+        : managedPaths(root, readActiveRelease(root)).cli;
+      const result = await command(
+        interpreter,
+        [
+          entry,
+          "uninstall",
+          "--yes",
+          ...(deleteData ? ["--delete-data"] : []),
+          ...(!dispatch ? ["--root", root] : []),
+        ],
+        { cwd: base },
+      );
+      if (process.platform === "win32") {
+        const receipt = result.stdout.match(
+          /Completion or failure will be written to:\s*\r?\n([^\r\n]+)/,
+        )?.[1];
+        assert(receipt, result.stdout);
+        const deadline = Date.now() + 90_000;
+        while (!existsSync(receipt) && Date.now() < deadline) await delay(100);
+        assert(existsSync(receipt), "Cleanup receipt was not produced.");
+        assert.match(readFileSync(receipt, "utf8"), /^Uninstall complete/);
+      }
+      assert(!existsSync(join(root, "install.json")), result.stdout);
+      assert(!existsSync(join(root, "releases", initial.releaseId)));
+      assert(!existsSync(join(root, "runtimes", runtimeId)));
+      assert(
+        existsSync(join(repository, "node_modules")),
+        "Cleanup followed a fixture dependency link.",
+      );
+    }
+    step(
+      `uninstall running app through ${process.versions.node.startsWith("24.") ? "dispatcher" : "source CLI"} and retain project data`,
+    );
+    await removeManaged(false);
+    assert.deepEqual(inspectDatabase(), original);
+    assert.equal(readFileSync(attachment, "utf8"), "Keep bytes");
+    mkdirSync(root, { recursive: true, mode: 0o700 });
+    copyRelease(baseline.version);
+    mkdirSync(dirname(privateNode), { recursive: true, mode: 0o700 });
+    copyFileSync(process.execPath, privateNode);
+    prepareCommands(root, privateNode);
+    writeInstallState(root, {
+      protocol: 1,
+      dataDirectory,
+      port: await freePort(),
+    });
+    selectActiveRelease(root, initial);
+    const backup = join(dataDirectory, "user-export.on-track-backup");
+    writeFileSync(backup, "user backup");
+    step("explicitly purge project data while preserving exported files");
+    await removeManaged(true);
+    assert(!existsSync(databasePath));
+    assert(!existsSync(attachment));
+    assert.equal(readFileSync(backup, "utf8"), "user backup");
+    step("managed uninstall retention and purge passed");
+  }
   step(
     "prepared installation, background lifecycle, duplicate/manual ownership, and persistence passed",
   );

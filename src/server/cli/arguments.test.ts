@@ -1,5 +1,12 @@
 import { expect, it } from "vitest";
 import { parseArguments } from "./arguments.js";
+it("requires a separate destructive flag when uninstalling data", () => {
+  expect(parseArguments(["uninstall", "--yes"]).options).toEqual({ yes: true });
+  expect(
+    parseArguments(["uninstall", "--yes", "--delete-data"]).options,
+  ).toEqual({ yes: true, "delete-data": true });
+  expect(() => parseArguments(["run", "--delete-data"])).toThrow();
+});
 it("accepts the documented lifecycle commands and explicit release", () => {
   expect(parseArguments(["update", "v0.0.9", "--yes"])).toEqual({
     command: "update",

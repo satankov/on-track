@@ -2,10 +2,20 @@
 
 ## Status
 
-The published baseline is v0.0.8 (On Track), which fixes the initial managed
-installer/updater defects. Current source prepares threadstr and the primary
-`thr` CLI for the selected v0.0.9 candidate. Database and
-backup schema remain 7. The managed compatibility floor remains `0.0.7`.
+The published baseline is [v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1),
+with the primary `thr` CLI. It includes the security hardening and dependency
+patches recorded in [plan 0025](plans/0025-security-audit-response.md)
+and the history controls, composer feedback, and managed uninstall in
+[plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md), plus
+current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
+Published database and backup schema is 9, matching current source; backup format
+remains 1. The managed compatibility floor remains `0.0.7`.
+The included flat UI/design-contract slice changes client UI, tests, and documentation
+only; see [plan 0029](plans/0029-flat-ui-and-design-contract.md). It changes no
+API, database, backup, dependency, or installation contract. The included
+[preferences and labels slice](plans/0031-multi-filters-durable-preferences-custom-labels.md)
+adds multi-filters, database preferences (schema 8), and custom labels (schema 9);
+see [ADR-0013](adr/0013-durable-preferences-and-project-labels.md).
 
 Core boundaries are recorded in [ADR-0001](adr/0001-localhost-typescript-sqlite.md),
 encryption limits in [ADR-0002](adr/0002-defer-at-rest-encryption.md), source
@@ -42,6 +52,9 @@ Local browser -> loopback Fastify server -> application service -> repository ->
 
 ## Technology decisions
 
+- [DESIGN.md](../DESIGN.md) defines the UI contract; the
+  [visual cookbook](../branding/threadstr/ui/index.html) imports the application
+  stylesheet for specimens. Exact color values remain in `src/client/styles.css`.
 - React 19 and Vite 8 provide the TypeScript browser UI and production bundle.
 - Fastify 5 serves the static bundle and local API on IPv4 loopback.
 - `@fastify/rate-limit` limits local database transfer and native-file routes
@@ -107,10 +120,18 @@ validated OS support remains contingent on the deferred platform evidence.
 
 ## Components and dependency direction
 
+Managed uninstall (`thr uninstall`, optionally `--delete-data`) previews exact
+targets, serializes against managed mutations, authenticates shutdown, and removes
+only recorded app artifacts and explicitly selected data. A validated private
+removal record supports retry; unknown files and staging remain. Windows defers
+runtime removal to an external PowerShell helper with a completion receipt.
+Uninstall retains ownership lock files on every platform. See [ADR-0012](adr/0012-managed-uninstall.md) and
+[uninstall guidance](install/README.md#uninstall-next-release). No schema changes.
+
 - `src/client`: React workspace, styles, and typed API client. It never imports
   server or database modules. A closed Light/Neutral/Dark theme preference is
-  validated in the client and stored in browser-local storage; a same-origin
-  bootstrap script applies it before React mounts to avoid a theme flash. The
+  validated at the API boundary and stored in SQLite; a same-origin, no-store
+  `/api/preferences/bootstrap.js` applies it before React mounts to avoid a theme flash. The
   visible message timeline schedules its next future timestamp and renders one
   silent accessible boundary without moving the message rows when time advances.
   Rendered Markdown bodies measure their natural height and expose an accessible
@@ -126,17 +147,33 @@ validated OS support remains contingent on the deferred platform evidence.
   a chat is active. A Markdown analysis helper reuses unified/remark-parse and GFM
   to derive inert sidebar text and automatic Links filtering, using the renderer's
   URL policy without fetching destinations. Reading anchors live in the app
-  session. Sidebar disclosure state persists in browser-local storage alongside
-  Appearance and Show examples, outside project data and backups. External message links
+  session. Sidebar disclosure state, Appearance, and Show examples persist in
+  the database singleton `workspace_preferences`. Partial writes are serialized;
+  failed fields remain retryable, focus refreshes are ordered, and import pauses
+  pending writes. Valid legacy browser values initialize an uninitialized database
+  once, with atomic first-writer precedence; browser keys are removed only after
+  success. An initialized database always wins. External message links
   open in a new tab with opener/referrer isolation. Returning to a chat restores
   its message anchor and viewport offset; a first visit positions
   near the current/future boundary. Returning to All restores its isolated anchor;
-  each different Files, Links, or label filter opens at its own current/first-future
-  boundary. Ordinary refreshes preserve manual scrolling. Future messages stay in
+  each canonical combination of Files, Links, and label filters opens at its own
+  current/first-future boundary. Command-click on Apple platforms or Control-click
+  elsewhere toggles selection; touch taps toggle directly and modifier-assisted
+  keyboard activation follows the same rule. A compact hint follows the last
+  filter and shares the send shortcut typography. Desktop filters span history
+  and composer height independently of composer growth; overflowing lists scroll
+  within the rail. Mobile keeps horizontal filters. All clears the selection. Filters intersect (AND)
+  with each other and search; counts remain whole-project counts. Ordinary refreshes preserve manual scrolling. Future messages stay in
   normal scrolling, including short histories that can show several future rows.
+  Contextual history controls scroll to the actual beginning/end of the filtered
+  timeline without changing that initial placement policy. An accepted send or
+  edit-save attempt paints the project-accent composer glow; only a successfully
+  created visible note receives a one-shot entrance. The glow survives leaving
+  edit mode. Neither effect is replayed by history restoration.
+  Both navigation and feedback respect reduced motion.
   A pure sender helper maps a normalized sender name deterministically onto a closed set of theme-safe color
   roles; only the sender text, not a color value, crosses the API boundary.
-- `src/domain`: shared data contracts, closed built-in label vocabularies, and
+- `src/domain`: shared data contracts, immutable built-in labels, bounded custom definitions, and
   validation rules with no UI or persistence dependency.
 - `src/server/app.ts`: Fastify transport, boundary controls, safe error mapping,
   and route wiring.
@@ -184,8 +221,22 @@ appears below project sections on mobile without replacing navigation or Setting
 ## Data design and location
 
 The migrations create `chats`, `notes`, `note_attachments`,
-`chat_enabled_labels`, `note_labels`, and single-row `app_metadata` tables.
-Foreign keys and checks enforce ownership, closed label vocabularies,
+`project_labels`, `note_labels`, singleton `workspace_preferences`, and single-row
+`app_metadata` tables. Migration 9 replaces `chat_enabled_labels` with seven
+built-in definitions per project, preserving disabled assignments. Up to five
+custom definitions have server-generated stable UUID identities, names of 1–8
+grapheme clusters and an optional single-grapheme symbol. Definitions are ordered,
+uniquely named per project, and soft-disabled. Pin and Attention remain first
+and enabled; built-in names/symbols cannot change. A project revision rejects
+stale definition edits; scoped composite foreign keys prevent cross-project
+assignments. The editor keeps one empty custom row for immediate entry and
+validates limits while typing. Fully cleared custom rows are omitted from Save;
+the project transaction removes omitted custom definitions and cascades only
+their note-label assignments. Built-ins cannot be omitted. Pointer Events move
+whole rows over stable layout slots, using the row center and final pointer
+coordinates, with keyboard and tap-to-place alternatives. Every filled custom row
+also exposes removal beside its checkbox; removal remains a draft until Save.
+Dragging changes only the local draft until Save. Foreign keys and checks enforce ownership,
 length/accent rules, unique repository-owned attachment paths, and nonnegative
 last-known byte sizes and modification times. Composite primary keys prevent
 duplicate label settings and assignments. Indexed `(chat_id, created_at, id)`
@@ -243,10 +294,12 @@ after external edits and preserve missing, unreadable, or unsafe rows as
 recoverable DTO states. DTOs also expose server-derived Open/Show capability
 states. Scoped POST routes resolve IDs to canonical managed targets and dispatch
 eligible files through fixed, shell-free macOS, Windows, or Linux commands.
-Known executable, installer, script, shortcut, application, and desktop-launcher
-types—and executable POSIX files—cannot be opened from threadstr; safe folder
-reveal remains independent. Browser focus refreshes attachment metadata after a
-user returns from an external application. Attachment bytes are not exposed by a
+Open requires both display and managed filename suffixes to be in a small
+document/media allowlist; executable POSIX files remain blocked. Unknown types,
+launchers, archives, and legacy/macro-enabled Office files retain Show in Folder
+only. Allowed suffixes do not guarantee safe contents or default applications.
+Folder reveal remains independent. Browser focus refreshes attachment metadata
+after a user returns from an external application. Attachment bytes are not exposed by a
 browser download route.
 
 All browser note creation and editing uses the same bounded multipart contract,
@@ -261,21 +314,28 @@ Attention time, local midnight, and browser focus.
 
 Settings exports all or selected projects to a versioned SQLite
 `.on-track-backup` container, including
-project label configuration and message assignments. An online snapshot
+project label configuration and message assignments. Full exports include initialized
+workspace preferences; selected-project exports omit the preference row. Replacement
+adopts included preferences, otherwise retains destination preferences; merge always
+retains destination preferences. An online snapshot
 temporarily gains reserved payload tables containing every readable
 managed file plus size, time, and SHA-256 metadata; strict canonical-schema,
 integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
 fresh managed paths, removes bundle payload tables, and compacts the current-
-schema candidate. Exact schema-6, schema-5, schema-4 development, and schema-3 v0.0.4
-bundles are accepted through fixed legacy descriptors and migrated to schema 7
+schema candidate. Exact schema-8, schema-7, schema-6, schema-5, schema-4 development,
+and schema-3 v0.0.4 bundles are accepted through fixed legacy descriptors and migrated to schema 9
 only after copying into the staging workspace; older notes receive a null sender
 and all older projects receive null archive state.
 It then uses the maintenance gate and
 restore journal to replace live state. Exact active-schema expectations come
 from a trusted in-memory database built with checked-in migrations; imported SQL
-never defines its own validation baseline.
+never defines its own validation baseline. Complete schema inventories include
+implicit indexes and owning tables; no `sqlite_` name prefix is exempt. Exact
+validation precedes candidate mutation and export pruning. Writable live,
+candidate, and export connections set `trusted_schema=OFF` as defense in depth;
+exact schema validation is still required to reject ordinary SQL triggers.
 Selective export prunes the private snapshot before reading attachments and
 compacts it to remove excluded content from free pages. Selection never mutates
 the source. Import preview streams and fully validates a private upload, returning
@@ -285,7 +345,7 @@ options and repeats validation; excluded payloads cannot bypass validation.
 Selection is applied only to the validated candidate, before file extraction.
 
 `database-transfer/routes.ts` owns transfer transport; `project-import.ts` prepares
-fresh identities, conflict titles, and managed files; `db/project-import.ts`
+fresh project, note, custom-label and attachment identities, conflict titles, and managed files; `db/project-import.ts`
 inserts explicit project/note/label/attachment records in one transaction.
 Replace activates the selected candidate through the existing journal. Merge
 uses the exclusive maintenance gate, publishes and flushes only imported files,
@@ -298,8 +358,10 @@ cleanup is performed. Connection loss after commit remains an ambiguous result,
 so the client does not retry automatically. Successful commits with failed UI
 refreshes remain explicitly identified as completed imports.
 
-GET/all and POST/selected export share three attempts per minute per process;
-legacy PUT/replace and multipart POST imports share two. Preview has a separate
+Export uses JSON POST with an explicit all/selected choice and three attempts per
+minute per process; GET export is no longer supported, so navigation cannot
+generate a backup. The bundled client uses POST for both choices.
+Legacy PUT/replace and multipart POST imports share two. Preview has a separate
 two-attempt budget, and only one upload/validation import request runs at a time.
 Client previews are serialized. Bundle limits remain 2 GiB, 10,000 attachments,
 100 MiB per file, and 1 GiB total file bytes; explicit project lists are capped at
@@ -324,14 +386,17 @@ shared timeline has an explicit read-only capability context; edit, label, nativ
 file actions, and composition require an editable copy. The header copy action
 replaces Edit. The same composer markup is disabled through a fieldset, with its
 read-only notice inside and an 800 ms glow on each blocked interaction. General's Show examples
-preference defaults on and is browser-local, like Appearance. Hiding affects
+preference defaults on and is database-backed, like Appearance. Hiding affects
 example selection only. Originals are replaced with app updates; copies remain
 ordinary user data. See [ADR-0009](adr/0009-application-owned-examples.md).
 
 ## Trust and security boundaries
 
-- API requests require a loopback Host; cross-origin browser requests are
-  rejected by Origin checks and no permissive CORS is enabled.
+- All requests require a loopback Host and exact same-origin matching when
+  Origin is supplied. API routes also reject supplied Fetch Metadata from other
+  origins, including same-site requests. Guards and maintenance admission do not
+  depend on raw URL spelling; intended headerless local clients remain supported.
+  Vite preserves the browser-facing Host when proxying API requests.
 - Native-file POST routes additionally require exact same-origin Origin and
   Fetch Metadata headers, an empty JSON object, and a shared ten-action-per-minute
   process limit. Requests and responses carry IDs only, never local paths.
@@ -355,8 +420,29 @@ forgotten credentials, recovery, and cleanup of plaintext artifacts. Backup
 integrity, import conflict handling, recovery UX, and restore failure modes must
 be hardened before production-readiness claims.
 
+## Project keyword search
+
+Project keyword search runs entirely in the loaded `ChatDetail` in the client.
+`project-search.ts` reuses cached Markdown analysis for readable text and Links,
+then applies normalized literal substring AND matching across body, displayed
+sender, and filenames. It intersects existing filters and keeps chronological
+ordering. Parsed-text caches belong to the mounted workspace; the App owns a
+session-only last-query map per project. Typing updates that map without rendering
+the timeline until the debounced query commits. Deletion/replacement clears the
+relevant memory. A rehype transform highlights rendered text nodes (including
+across inline formatting), preserving link attributes and skipping raw HTML;
+Unicode match offsets map back to original graphemes. No raw HTML is injected;
+no search query, index, or history enters an API, URL, persistent browser storage,
+SQLite, or backups. The memory-only history-position hook isolates search anchors
+from ordinary All/filter navigation. Search results reuse original message
+rendering and actions; the context action restores All and focuses the original
+message. Search introduces no persistent data. This is linear search over a fully
+loaded, unvirtualized project, not an architecture for unbounded histories.
+
 ## Critical user journeys
 
+- Search the current project, combine with history filters, and open a highlighted
+  result in context without losing the query or composer draft.
 - Empty state -> create project -> customize title/accent -> add multiline note.
 - Create/switch multiple projects and preserve project-specific histories.
 - Pin/unpin projects, preserve pin order across restart/backup, and scan latest
@@ -376,14 +462,16 @@ be hardened before production-readiness claims.
   focus when timestamps arrive.
 - Export and restore a versioned backup bundle through Settings with validation.
 - Choose Light, Neutral, or Dark from accessible preview radios in Appearance,
-  reload without a theme flash, and keep project data and backups independent
-  from the browser-local preference.
+  reload without a theme flash, and retain preferences through cleared browser
+  storage, fresh profiles, restart, and full-backup replacement.
 - Attach a local file to a message, edit message attachments, filter the project
   history to messages with attached files, and use separate eligible Open and
   Show in Folder actions.
-- Enable project labels, apply several labels to one message, filter by active
-  labels, deactivate a label without deleting assignments, and reopen the
-  persisted state after restart.
+- Add, rename, order and toggle up to five custom project labels with immediate
+  limit feedback; apply several labels to one message, combine filters,
+  deactivate a label without deleting assignments, or remove a custom definition
+  and its tags while preserving messages. Reopen the persisted state after
+  restart or backup import.
 - Stop and restart the server against the same isolated data directory and
   recover all state.
 - Complete the flow at desktop and mobile widths with keyboard/focus behavior and
@@ -405,7 +493,11 @@ be hardened before production-readiness claims.
 - `npm run release:check`: version, license, required-file, tag, and tracked-data
   contract.
 - `npm run verify`: authoritative aggregate local/release gate.
+- `npm run test:managed-uninstall`: disposable real-process retention/purge smoke;
+  Node 24 exercises the dispatcher, while Node 22 uses the source CLI directly.
 
+Vitest discovery is scoped to application tests under `src/` and maintainer tests
+under `scripts/`, excluding unrelated local tooling and demo suites.
 Vitest runs test files sequentially when `CI` is set to reduce competing SQLite,
 durable filesystem, and native permission-check work on shared runners. Local
 runs retain file parallelism; explicit concurrency inside tests and existing
@@ -414,7 +506,8 @@ test/subprocess deadlines are unchanged. Reproduce CI scheduling locally with
 
 GitHub Actions repeats full Linux verification on Node 22.16 and 24, exercises
 native SQLite dependency installation/tests for both runtimes on Linux and
-macOS and for Node 24 on Windows, performs dependency review and CodeQL analysis,
+macOS and for Node 24 on Windows, includes disposable managed-uninstall smoke in
+that native matrix, performs dependency review and CodeQL analysis,
 and publishes only a matching tag whose commit is already on `main`. Unit tests
 cover every native command shape; current manual dispatch
 evidence is limited to one user-reported macOS host, with Windows and Linux

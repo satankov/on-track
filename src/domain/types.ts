@@ -1,8 +1,11 @@
+import type { ProjectLabel } from "./labels.js";
 import type { Accent, ConfigurableLabel, Label } from "./validation.js";
 
 export const MAX_PROJECT_PREVIEW_SOURCE_LENGTH = 512;
 
 export interface Chat {
+  labelDefinitions?: ProjectLabel[];
+  labelConfigurationRevision?: number;
   id: string;
   title: string;
   accent: Accent;

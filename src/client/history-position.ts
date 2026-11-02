@@ -73,9 +73,17 @@ export function useHistoryPosition(
   filter: string,
   positions: Map<string, ReadingPosition>,
   startAtBeginning = false,
-): (nextFilter: string) => void {
+  searchKey = "",
+): (
+  nextFilter: string,
+  nextSearchKey?: string,
+  target?: ReadingPosition,
+) => void {
+  const searchPositions = useRef(new Map<string, ReadingPosition>());
+  const pendingTarget = useRef<ReadingPosition | undefined>(undefined);
   const active = useRef<{
     filter: string;
+    searchKey: string;
     save: () => void;
     pause: () => void;
   } | null>(null);
@@ -89,27 +97,45 @@ export function useHistoryPosition(
   useLayoutEffect(() => {
     const history = historyRef.current;
     if (!history) return;
+    const leavingSearch = Boolean(active.current?.searchKey) && !searchKey;
     let initialized = false;
     const save = () => {
-      if (!initialized || filter !== "all") return;
+      if (!initialized || filter !== "all" || searchKey) return;
       const position = captureReadingPosition(history);
       if (position) positions.set(projectId, position);
     };
     // Child layout effects first settle collapsed Markdown heights. Restore once
     // per actual filter transition, without reacting to edits or clock ticks.
     const frame = requestAnimationFrame(() => {
-      if (startAtBeginning && filter === "all" && !positions.has(projectId))
+      const target = pendingTarget.current;
+      pendingTarget.current = undefined;
+      if (target) {
+        restoreReadingPosition(history, target);
+        const row = messageRows(history).find(
+          (row) => row.dataset.noteId === target.noteId,
+        );
+        (row ?? history).focus({ preventScroll: true });
+      } else if (searchKey) history.scrollTop = 0;
+      else if (leavingSearch && searchPositions.current.has(filter))
+        restoreReadingPosition(history, searchPositions.current.get(filter));
+      else if (
+        startAtBeginning &&
+        filter === "all" &&
+        !positions.has(projectId)
+      )
         history.scrollTop = 0;
       else
         restoreReadingPosition(
           history,
           filter === "all" ? positions.get(projectId) : undefined,
         );
+      if (!searchKey) searchPositions.current.clear();
       initialized = true;
       save();
     });
     active.current = {
       filter,
+      searchKey,
       save,
       pause: () => {
         initialized = false;
@@ -122,10 +148,22 @@ export function useHistoryPosition(
       cancelAnimationFrame(frame);
       history.removeEventListener("scroll", save);
     };
-  }, [historyRef, projectId, positions, filter, startAtBeginning]);
+  }, [historyRef, projectId, positions, filter, startAtBeginning, searchKey]);
 
-  return (nextFilter) => {
-    if (!active.current || active.current.filter === nextFilter) return;
+  return (nextFilter, nextSearchKey = searchKey, target) => {
+    if (!active.current) return;
+    if (
+      active.current.filter === nextFilter &&
+      active.current.searchKey === nextSearchKey &&
+      !target
+    )
+      return;
+    if (!active.current.searchKey && nextSearchKey && historyRef.current) {
+      const position = captureReadingPosition(historyRef.current);
+      if (position)
+        searchPositions.current.set(active.current.filter, position);
+    }
+    pendingTarget.current = target;
     // Capture All while its rows still exist. Scroll events caused by replacing
     // them must not overwrite that anchor before the next restoration frame.
     active.current.save();
