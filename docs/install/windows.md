@@ -1,15 +1,14 @@
 # Install threadstr on Windows
 
 > **Release guidance:** the latest published release is
-> [threadstr v0.0.9](https://github.com/satankov/on-track/releases/tag/v0.0.9),
-> with `thr` and the `ontrack` compatibility alias. The selected v0.1.0 candidate
-> is not yet published. Until publication, `latest` downloads install v0.0.9;
-> the uninstall commands below require v0.1.0.
+> [threadstr v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1),
+> with `thr` and the `ontrack` compatibility alias. The `latest` downloads include
+> the uninstall commands below, available since v0.1.0.
 
 ## Quick setup — one command
 
-> **Experimental managed installation:** end-user installation and OS validation are
-> deferred to the next release. The command requires published installer files
+> **Experimental managed installation:** end-user installation and OS validation
+> remain incomplete. The command requires published installer files
 > from v0.0.7 or later. [Manual setup](#manual-setup) remains available.
 
 Open PowerShell in a folder you own and paste this line:
