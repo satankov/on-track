@@ -136,8 +136,8 @@ test("searches locally with a compact field, restores reading positions and open
     "12px",
   );
   await draft.focus();
-  await expect(page.locator(".composer")).toHaveCSS("outline-width", "0px");
-  await expect(page.locator(".composer")).toHaveCSS("border-top-width", "1px");
+  await expect(page.locator(".composer")).toHaveCSS("outline-width", "1px");
+  await expect(page.locator(".composer")).toHaveCSS("border-top-width", "0px");
   await search.focus();
   if (testInfo.project.name === "mobile-webkit") {
     const contextBox = await page

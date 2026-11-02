@@ -1,7 +1,9 @@
 # Security audit response and implementation plan
 
 Status: Phases 1–4 approved, implemented, and locally verified on 2026-10-21.
-Optional Phase 5 remains deferred. The release OS/Node matrix remains outstanding.
+Optional Phase 5 remains deferred. The release OS/Node matrix was outstanding
+at that local verification checkpoint. Phases 1–4 shipped in v0.1.0 on 2026-10-23;
+this record does not independently establish release-matrix results.
 Reviewed 2026-10-21 against `ff7e5c4` (package version 0.0.9), the same commit
 named by the external 2026-09-25 audit. Existing unrelated changes to
 `.gitignore` and `.prettierignore` were left untouched.
@@ -334,8 +336,8 @@ and the other rejected or deferred audit proposals are accepted scope exclusions
 Platform/native validation remains tracked in [issue #32](https://github.com/satankov/on-track/issues/32)
 and installation/upgrade validation in [issue #34](https://github.com/satankov/on-track/issues/34).
 Their v0.0.9 target labels predate the now-published release; unfinished acceptance
-criteria still apply. Run the configured CI OS/Node matrix on the security release
-candidate before release; local macOS verification does not replace that gate.
+criteria still apply. Run the configured CI OS/Node matrix on each future release
+candidate; local macOS verification does not replace that gate.
 
 Draft follow-up, pending tracker authorization: **Evaluate optional disabled-TLS
 and Markdown-image safeguards**. Acceptance criteria:
@@ -411,3 +413,234 @@ actions use a fake adapter. Linux/Windows and exact Node 22.16/24 release-matrix
 runs were not performed here and remain required before release; local success
 does not substitute for those checks. Existing compromised databases are not
 automatically repaired, and allowed document contents are not sandboxed.
+
+## Current dependency follow-up (2026-10-27)
+
+The successful audit above is historical. A fresh `npm run security:check` on
+2026-10-27 fails with one high-severity finding in pinned Zod 4.5.4:
+[GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5), memory
+exhaustion while validating oversized constrained collections. The audit reports
+affected versions `<4.6.6` and suggests 4.6.7 outside the current exact pin.
+This was the pre-remediation result; the completed fix and reachability review
+are below. The flat UI/design documentation slice itself did not change dependencies.
+
+Tracked with user authorization in [issue #72](https://github.com/satankov/on-track/issues/72),
+created on 2026-10-27. The issue owns remediation status and acceptance criteria;
+the initial scope is recorded below.
+
+**Initial acceptance criteria:**
+
+- Assess which application schema paths can reach the oversized-collection
+  behavior and document impact or existing bounds.
+- Select a compatible patched Zod version after API, maintenance, license,
+  engine, and security checks; update the exact pin and lockfile together.
+  Do not use a broad forced audit upgrade.
+- Run schema/request/import validation tests and the repository verification
+  gate; add a focused regression only where the application behavior warrants it.
+- Confirm a fresh production audit has no high-severity findings and record
+  exact results and any remaining platform limitations before release.
+
+### Issue #72 remediation (2026-10-27)
+
+The local fix upgrades the exact Zod pin and lockfile from 4.5.4 to 4.6.7;
+no other resolved package changes. The maintained upstream package remains MIT,
+adds no runtime dependencies or install hooks, and declares no new Node engine
+restriction. The lockfile integrity matches npm's published metadata. The
+[upstream fix](https://github.com/colinhacks/zod/pull/6652) rejects oversized
+bounded collections before walking their elements; unbounded arrays are unchanged.
+The application continues using the same Zod v4 API and schemas.
+
+Reachability review:
+
+- Project label, retained-attachment, and service attachment arrays use `.max()`.
+  Project export/import selection caps at 10,000 IDs. With 4.5.4, malformed
+  oversized input still allocated one validation error per element before the
+  length error. Same-origin/Host guards and upload limits restrict access and
+  request size, but do not substitute for early collection rejection.
+- The server's general body cap is 128 MiB; export JSON has a 1 MiB cap.
+  Multipart attachments additionally have count and per-file limits. Import
+  selection uses the same bounded schema; backup file validation remains a
+  separate database/bundle boundary. Error handlers return generic messages.
+- Home's release list has a 100-entry cap and a 2 MiB response cap. Its nested
+  release-assets array is unbounded at the schema level and remains protected
+  by the fetched-byte cap, not by this patch. No claim of constant-space parsing
+  for unbounded arrays or arbitrarily large JSON is made.
+- Managed retention and uninstall metadata use bounded arrays; metadata reads
+  are capped at 256 KiB. Update journals are capped at 32 KiB. These local
+  storage boundaries remain unchanged.
+
+Regression evidence: `npm test -- src/domain/bounded-validation.test.ts` failed
+all three cases on 4.5.4: labels and retained IDs each allocated 257 issues, and
+backup selection allocated 10,003 nested issues. On 4.6.7 these become one size
+issue per bounded array (two branch issues for the selection union). The test
+uses modest fixtures, not an actual memory-exhaustion attack. The focused domain,
+request-security, chat-service, project-import, and Home suite passed 112 tests;
+the initial sandboxed import run could not bind localhost and was rerun successfully
+with the required execution permissions.
+
+The optional all-dependency audit at that checkpoint reported three moderate development-tool
+entries (`vitest`, `@vitest/coverage-v8`, `@vitest/mocker`) for
+[manual mock registration](https://github.com/advisories/GHSA-qxg6-89mg-rqv8) and
+[Windows redirect traversal](https://github.com/advisories/GHSA-xp26-3454-mjgp).
+They are outside issue #72 and the production audit: this repository runs Vitest
+in Node/jsdom and configures neither browser mode nor the affected mocker Vite
+plugins. Keep that exposure assessment with future test-tooling upgrades; this
+slice does not claim an all-dependency audit with zero findings.
+
+Final local verification on macOS arm64 / Node 22.18.0:
+
+- `npm run verify`: PASS (exit 0). Includes release contract, build, both
+  typechecks, lint, formatting, coverage, migration tests, browser E2E,
+  production audit, and managed lifecycle/update/uninstall smoke tests.
+- Coverage suite: 79 files, 1,037 passed / 9 skips; statements 90.91%, branches
+  85.07%, functions 93.41%, lines 92.03%. Migration suite: 23 passed.
+- Desktop Chromium/mobile WebKit: 66 passed / 6 intentional viewport skips.
+  The first aggregate attempt stopped with two browser-server startup failures
+  when a compiled module was temporarily absent. Its cause was not established;
+  the complete rerun passed without test or production-code changes.
+- `npm run security:check`: zero production vulnerabilities. `npm ls --depth=0`
+  and `git diff --check` pass. Independent read-only review found no actionable
+  defect. The existing >500kB client-chunk warning remains.
+
+Issue #72 is fixed in source, but has not yet been published or closed on GitHub. The completed design cycle and this follow-up are ready for a
+new chat. This is local verification, not a fresh Linux/Windows/Node 24 release
+matrix or a claim that the existing native/accessibility tracker items are closed.
+
+## Pre-release security maintenance: Slice A (2026-10-29)
+
+Status: approved, implemented and locally verified after review of all 13 open
+dependency PRs and seven issues. Baseline `462c391` on `release/v0.1.1`.
+Committing the reviewed local changes was subsequently approved. Pushing,
+remote comments/closures, merging and publication remain outside this slice.
+The existing README edit is outside its scope.
+
+### Scope and acceptance
+
+Retain the Zod 4.6.7 fix and bounded-validation regressions from `735cd2b`.
+Apply the version proposed by [PR #68](https://github.com/satankov/on-track/pull/68)
+(`@fastify/static` 10.1.3 to 10.1.7), and update `vitest` and
+`@vitest/coverage-v8` together from 4.1.11 to 4.1.12. PR #60's broad development
+group does not include this Vitest fix and remains deferred. Preserve exact
+pins, supported Node versions, unrelated lockfile resolutions, security
+boundaries, and the existing database/backup contracts. No new direct dependency,
+application feature, migration, runtime-policy change, or release version is
+introduced.
+
+Registry metadata identifies all three packages as MIT. Static declares no new
+Node engine constraint; Vitest retains `^20.0.0 || ^22.0.0 || >=24.0.0` and Vite
+6/7/8 compatibility. The paired coverage package requires Vitest 4.1.12. These
+packages add no install lifecycle hooks. Upstream Vitest's
+[4.1.12 release](https://github.com/vitest-dev/vitest/releases/tag/v4.1.12)
+backports the manual/redirect mock hardening.
+
+Static requires `content-disposition` 3.0.0 instead of 2.0.1. Its MIT package
+has no runtime dependencies; its Node `>=22` floor and ESM distribution remain
+within the supported runtime contract. The reviewed lockfile changes only these
+two runtime packages and nine Vitest-family packages, plus root requirements.
+The existing compatible Chai 6.2.2 resolution is retained.
+
+npm 11.5.2 crashed while exploring optional peers (`edgesOut` on a null parent).
+The lockfile was resolved in a disposable manifest/lock copy using npm 11.9.0,
+which includes [the upstream parent guard](https://github.com/npm/cli/pull/8448).
+No global npm update, new project toolchain pin, `--force`, or `--legacy-peer-deps`
+was used. Only the reviewed lockfile was copied back; clean installation with
+the original npm 11.5.2 passed without peer errors.
+
+Acceptance requires a narrowly reviewed lockfile diff, clean installation and
+peer resolution, focused boundary regressions, the full `CI=true npm run verify`
+gate, and fresh full/production audits. Reuse the existing request-security,
+bounded-validation, startup, and desktop/mobile browser tests: the affected
+upstream configurations are unused, so this slice does not invent an application
+exploit or a failing regression for an unreachable path. The full audit before
+the update exited 1 with three moderate package entries for two Vitest
+advisories. Final-revision remote/platform qualification remains release work.
+
+### Exposure assessment
+
+- **Static serving:**
+  [GHSA-r799-r9gc-m956](https://github.com/fastify/fastify-static/security/advisories/GHSA-r799-r9gc-m956)
+  affects versions below 10.1.4 and bypasses path-sensitive route guards or
+  `allowedPath` rules on case-insensitive filesystems. `local-server.ts` serves
+  only `dist/client`, with `wildcard: false` and no `allowedPath`. User databases
+  and attachment sidecars are outside that root. No protected-file exposure was
+  demonstrated; the compatible patch removes the affected dependency version.
+- **Vitest:**
+  [GHSA-qxg6-89mg-rqv8](https://github.com/vitest-dev/vitest/security/advisories/GHSA-qxg6-89mg-rqv8)
+  and [GHSA-xp26-3454-mjgp](https://github.com/vitest-dev/vitest/security/advisories/GHSA-xp26-3454-mjgp)
+  concern the public mocker/interceptor Vite plugins. This repository uses
+  Node/jsdom tests and configures neither affected plugin. The paired 4.1.12
+  update also resolves the transitive mocker version; no override or forced
+  peer installation is used.
+- **Deferred multipart major update:**
+  [PR #71](https://github.com/satankov/on-track/pull/71) includes the fix for
+  [GHSA-62qx-hpj5-j6hc](https://github.com/fastify/fastify-multipart/security/advisories/GHSA-62qx-hpj5-j6hc).
+  Its affected range includes the retained 9.3.0, but its aborted-upload leak
+  requires `request.saveRequestFiles()`. No application call uses that API.
+  Note uploads use `request.parts()` in `app.ts`; backup uploads use
+  `request.parts()` in `database-transfer/routes.ts` and application-owned staging
+  cleanup. Defer the major upgrade with this reachability assessment, not a claim
+  that 9.3.0 is patched. Reassess if multipart APIs change; independently qualify
+  upload limits, cancellation, partial-file cleanup and backup staging before
+  upgrading. The initial production audit reported zero findings despite these
+  upstream static/multipart advisories, so an audit response alone does not
+  establish absence of known affected dependencies.
+
+### Tracker reconciliation
+
+These are prepared dispositions, not remote changes:
+
+- **Issue #61:** ready for evidence-backed closure. Commit `f42a822` (published
+  in v0.1.0 via PR #64) changes `focusMobileBackButton` to preserve focus moved
+  while navigation frames are pending. `App.test.tsx` covers both the retained
+  attachment focus and ordinary Back focus. The original E2E focus assertion and
+  keyboard Reveal receipt remain intact. On `6bb41be`, both
+  [Linux Node 22.16](https://github.com/satankov/on-track/actions/runs/39938524534/job/120363939740)
+  and [Linux Node 24](https://github.com/satankov/on-track/actions/runs/39938524534/job/120363939916)
+  passed full verification on 2026-10-23, including the named mobile-WebKit
+  attachment-safety test. This provides a code correction, regression coverage,
+  and remote evidence, rather than an unexplained successful retry. The published
+  changelog's original limitation remains historical; current indexes are corrected.
+- **PR #58:** close as superseded only after main contains `735cd2b` or equivalent
+  Zod 4.6.7 plus bounded-validation coverage. The local fix is more complete than
+  the version-only proposal. Its Windows `windowsSearchConfig` timeout remains
+  separate installer/uninstall evidence for #34/#62, not a Zod failure.
+- **Issue #72:** retain the existing source fix; close only after integration and
+  final-revision verification evidence is linked. State explicitly whether it
+  is fixed on main or published. This local slice does not establish either.
+- **PR #68:** the selected version is applied locally. After this batch reaches
+  main with required checks passing, close the version-only PR as superseded.
+
+Other dependency PRs remain deferred. Issues #32/#33/#34/#62/#63 retain their
+native installation, desktop dispatch, real filesystem-drag and accessibility
+acceptance criteria. No historical platform-validation exception is extended.
+
+### Local verification
+
+Verified on macOS arm64 / Node 22.18.0 / npm 11.5.2:
+
+- `npm ci`: PASS; clean installation of 597 packages with no peer errors.
+  `npm ls --depth=0`: PASS, with the selected exact versions.
+- `npm test -- src/domain/bounded-validation.test.ts src/server/request-security.test.ts src/server/local-server.test.ts`:
+  PASS, 23 tests before and after the dependency patches. The pre-update full
+  audit's three moderate entries are resolved without changing application
+  behavior or adding tests that only mirror unused upstream APIs.
+- `CI=true npm run verify`: PASS (exit 0), including release contract, production
+  build, both typechecks, lint, formatting, coverage, migrations, desktop/mobile
+  browser tests, production audit, and prepared lifecycle/update/uninstall smokes.
+- Coverage: 83 files; 1,112 passed, 9 platform skips. Statements 91.08%, branches
+  85.54%, functions 93.01%, lines 92.21%. Migration suite: 27 passed.
+- Browser suite: 82 passed, 16 intentional viewport skips, including the existing
+  attachment keyboard/focus safety test. These are macOS Chromium/WebKit results,
+  not new Linux/Windows evidence.
+- `npm audit --json` and `npm audit --omit=dev --json`: both exit 0 with zero
+  findings. The separately assessed multipart advisory remains deferred despite
+  the audit response.
+- `git diff --check` and changed-file formatting: PASS. Independent review found
+  no code, dependency or data-safety defect; its PR #68 disposition wording was
+  corrected. The pre-existing README edit is byte-for-byte unchanged.
+
+The existing client bundle-size and non-module preference-bootstrap build
+warnings remain. Final-revision Linux/Windows/Node 24 CI, managed platform
+qualification, actual published upgrades, and manual native/accessibility checks
+remain release work. This local result does not close remote trackers or qualify
+the entire release.

@@ -1,3 +1,10 @@
+import {
+  readProjectLabels,
+  saveProjectLabels,
+  seedProjectLabels,
+  InvalidLabelConfigurationError,
+} from "./project-labels.js";
+import type { LabelConfiguration, ProjectLabel } from "../../domain/labels.js";
 import type Database from "better-sqlite3";
 
 import type {
@@ -10,9 +17,6 @@ import type {
 } from "../../domain/types.js";
 import { MAX_PROJECT_PREVIEW_SOURCE_LENGTH } from "../../domain/types.js";
 import {
-  CONFIGURABLE_LABELS,
-  DEFAULT_ENABLED_LABELS,
-  LABELS,
   PERMANENT_LABELS,
   type Accent,
   type ConfigurableLabel,
@@ -28,6 +32,7 @@ interface ChatRow {
   archived_at: number | null;
   pinned_at: number | null;
   collapse_long_messages: 0 | 1;
+  label_configuration_revision: number;
 }
 
 interface ChatSidebarSummary {
@@ -58,7 +63,7 @@ interface NoteAttachmentRow {
 
 function toChat(
   row: ChatRow,
-  enabledLabels: ConfigurableLabel[] = [],
+  definitions: ProjectLabel[] = [],
   summary: ChatSidebarSummary = {
     latestMessagePreview: null,
     nextMessageAt: null,
@@ -70,7 +75,14 @@ function toChat(
     id: row.id,
     title: row.title,
     accent: row.accent,
-    enabledLabels,
+    enabledLabels: definitions
+      .filter(
+        (label) =>
+          label.enabled && !PERMANENT_LABELS.includes(label.id as never),
+      )
+      .map((label) => label.id as ConfigurableLabel),
+    labelDefinitions: definitions,
+    labelConfigurationRevision: row.label_configuration_revision,
     collapseLongMessages: row.collapse_long_messages === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -145,12 +157,7 @@ export class SqliteChatRepository {
            VALUES (@id, @title, @accent, @now, @now)`,
         )
         .run(input);
-      const insertLabel = this.database.prepare(
-        `INSERT INTO chat_enabled_labels (chat_id, label) VALUES (?, ?)`,
-      );
-      for (const label of DEFAULT_ENABLED_LABELS) {
-        insertLabel.run(input.id, label);
-      }
+      seedProjectLabels(this.database, input.id);
     });
     create();
 
@@ -169,7 +176,7 @@ export class SqliteChatRepository {
                   id ASC`,
       )
       .all() as ChatRow[];
-    const labelsByChat = this.listEnabledLabelsForChats(
+    const labelsByChat = this.listDefinitionsForChats(
       rows.map((row) => row.id),
     );
     const summariesByChat = this.listSidebarSummariesForChats(
@@ -188,7 +195,7 @@ export class SqliteChatRepository {
     if (!row) return undefined;
     return toChat(
       row,
-      this.listEnabledLabels(id),
+      readProjectLabels(this.database, id),
       this.listSidebarSummariesForChats([id], now).get(id),
     );
   }
@@ -199,6 +206,7 @@ export class SqliteChatRepository {
       title?: string;
       accent?: Accent;
       enabledLabels?: ConfigurableLabel[];
+      labelConfiguration?: LabelConfiguration;
       collapseLongMessages?: boolean;
       now: number;
     },
@@ -213,7 +221,7 @@ export class SqliteChatRepository {
                  @collapseLongMessages,
                  collapse_long_messages
                ),
-               updated_at = @now
+               updated_at = CASE WHEN (@title IS NOT NULL AND @title != title) OR (@accent IS NOT NULL AND @accent != accent) OR (@collapseLongMessages IS NOT NULL AND @collapseLongMessages != collapse_long_messages) THEN @now ELSE updated_at END
            WHERE id = @id`,
         )
         .run({
@@ -227,14 +235,29 @@ export class SqliteChatRepository {
           now: input.now,
         });
       if (result.changes === 0) return false;
+      if (input.labelConfiguration !== undefined)
+        saveProjectLabels(this.database, id, input.labelConfiguration);
       if (input.enabledLabels !== undefined) {
-        this.database
-          .prepare("DELETE FROM chat_enabled_labels WHERE chat_id = ?")
-          .run(id);
-        const insertLabel = this.database.prepare(
-          "INSERT INTO chat_enabled_labels (chat_id, label) VALUES (?, ?)",
-        );
-        for (const label of input.enabledLabels) insertLabel.run(id, label);
+        const definitions = readProjectLabels(this.database, id);
+        if (
+          input.enabledLabels.some(
+            (label) =>
+              !definitions.some((definition) => definition.id === label),
+          )
+        )
+          throw new InvalidLabelConfigurationError();
+        saveProjectLabels(this.database, id, {
+          revision: this.getChat(id)!.labelConfigurationRevision!,
+          labels: definitions.map((label) => ({
+            id: label.id,
+            name: label.name,
+            symbol: label.symbol,
+            enabled: label.builtin
+              ? PERMANENT_LABELS.includes(label.id as never) ||
+                input.enabledLabels!.includes(label.id as ConfigurableLabel)
+              : label.enabled,
+          })),
+        });
       }
       return true;
     });
@@ -553,10 +576,10 @@ export class SqliteChatRepository {
         .get(noteId, chatId);
       if (!noteExists) return undefined;
 
-      if (applied && !PERMANENT_LABELS.includes(label as never)) {
+      if (applied) {
         const enabled = this.database
           .prepare(
-            "SELECT 1 FROM chat_enabled_labels WHERE chat_id = ? AND label = ?",
+            "SELECT 1 FROM project_labels WHERE chat_id = ? AND id = ? AND enabled = 1",
           )
           .pluck()
           .get(chatId, label);
@@ -566,9 +589,9 @@ export class SqliteChatRepository {
       if (applied) {
         this.database
           .prepare(
-            "INSERT OR IGNORE INTO note_labels (note_id, label) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO note_labels (note_id, chat_id, label) VALUES (?, ?, ?)",
           )
-          .run(noteId, label);
+          .run(noteId, chatId, label);
       } else {
         this.database
           .prepare("DELETE FROM note_labels WHERE note_id = ? AND label = ?")
@@ -661,10 +684,6 @@ export class SqliteChatRepository {
     return rows.map(toStoredAttachment);
   }
 
-  private listEnabledLabels(chatId: string): ConfigurableLabel[] {
-    return this.listEnabledLabelsForChats([chatId]).get(chatId) ?? [];
-  }
-
   private listSidebarSummariesForChats(
     chatIds: string[],
     now: number,
@@ -747,28 +766,12 @@ export class SqliteChatRepository {
     return result;
   }
 
-  private listEnabledLabelsForChats(
+  private listDefinitionsForChats(
     chatIds: string[],
-  ): Map<string, ConfigurableLabel[]> {
-    const result = new Map<string, ConfigurableLabel[]>();
-    if (chatIds.length === 0) return result;
-    const placeholders = chatIds.map(() => "?").join(", ");
-    const rows = this.database
-      .prepare(
-        `SELECT chat_id, label FROM chat_enabled_labels
-         WHERE chat_id IN (${placeholders})`,
-      )
-      .all(...chatIds) as Array<{ chat_id: string; label: ConfigurableLabel }>;
-    for (const chatId of chatIds) {
-      const selected = new Set(
-        rows.filter((row) => row.chat_id === chatId).map((row) => row.label),
-      );
-      result.set(
-        chatId,
-        CONFIGURABLE_LABELS.filter((label) => selected.has(label)),
-      );
-    }
-    return result;
+  ): Map<string, ProjectLabel[]> {
+    return new Map(
+      chatIds.map((id) => [id, readProjectLabels(this.database, id)]),
+    );
   }
 
   private listNoteLabels(noteId: string): Label[] {
@@ -781,18 +784,15 @@ export class SqliteChatRepository {
     const placeholders = noteIds.map(() => "?").join(", ");
     const rows = this.database
       .prepare(
-        `SELECT note_id, label FROM note_labels
-         WHERE note_id IN (${placeholders})`,
+        `SELECT n.note_id, n.label FROM note_labels n JOIN project_labels p ON p.chat_id=n.chat_id AND p.id=n.label
+         WHERE n.note_id IN (${placeholders}) ORDER BY p.position`,
       )
       .all(...noteIds) as Array<{ note_id: string; label: Label }>;
     for (const noteId of noteIds) {
       const selected = new Set(
         rows.filter((row) => row.note_id === noteId).map((row) => row.label),
       );
-      result.set(
-        noteId,
-        LABELS.filter((label) => selected.has(label)),
-      );
+      result.set(noteId, [...selected]);
     }
     return result;
   }

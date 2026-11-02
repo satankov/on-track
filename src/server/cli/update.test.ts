@@ -15,6 +15,15 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDatabaseCheckpoint } from "../runtime/database-checkpoint.js";
+import { LATEST_BUNDLED_MIGRATION_AT, openDatabase } from "../db/database.js";
+import { DEFAULT_PREFERENCES } from "../../domain/preferences.js";
+import { readPreferences, writePreferences } from "../db/preferences.js";
+import { insertProjectLabel } from "../db/project-labels.js";
+import {
+  createV010Database,
+  readV010Rows,
+  V010_FILE,
+} from "../../test/released-v010.js";
 import { acquireInstanceOwner } from "../runtime/instance-owner.js";
 import {
   UpdateJournalStore,
@@ -58,7 +67,7 @@ vi.mock("../runtime/control-server.js", () => ({
 
 const roots: string[] = [];
 const owners: Array<ReturnType<typeof acquireInstanceOwner>> = [];
-function fixture() {
+function fixture(releasedSchema = false) {
   const base = realpathSync(
     mkdtempSync(join(tmpdir(), "threadstr-cli-update-")),
   );
@@ -70,10 +79,13 @@ function fixture() {
   writeInstallState(root, { protocol: 1, dataDirectory, port: 4197 });
   const previous: ActiveRelease = {
     protocol: 1,
-    releaseId: "v0.0.8",
+    releaseId: releasedSchema ? "v0.1.0" : "v0.0.8",
     runtimeId: "node-v24.14.0-darwin-arm64",
   };
-  const candidate: ActiveRelease = { ...previous, releaseId: "v0.0.9" };
+  const candidate: ActiveRelease = {
+    ...previous,
+    releaseId: releasedSchema ? "v99.0.0" : "v0.0.9",
+  };
   for (const selection of [previous, candidate]) {
     const release = join(root, "releases", selection.releaseId);
     mkdirSync(join(release, "src/server/db"), { recursive: true });
@@ -85,21 +97,32 @@ function fixture() {
     );
     writeFileSync(
       join(release, "src/server/db/database.ts"),
-      `const CURRENT_SCHEMA_VERSION = ${old ? 7 : 8};`,
+      `const CURRENT_SCHEMA_VERSION = ${old ? 7 : releasedSchema ? 9 : 8};`,
     );
     writeFileSync(
       join(release, "drizzle/meta/_journal.json"),
       JSON.stringify({
-        entries: [{ when: old ? 1789027200000 : 1789027200001 }],
+        entries: [
+          {
+            when: old
+              ? 1789027200000
+              : releasedSchema
+                ? LATEST_BUNDLED_MIGRATION_AT
+                : 1789027200001,
+          },
+        ],
       }),
     );
   }
   selectActiveRelease(root, previous);
   const databasePath = join(dataDirectory, "on-track.sqlite");
-  const sqlite = new Database(databasePath);
-  sqlite.exec(
-    "CREATE TABLE app_metadata(id INTEGER PRIMARY KEY, schema_version INTEGER); INSERT INTO app_metadata VALUES(1, 7); CREATE TABLE __drizzle_migrations(created_at INTEGER); INSERT INTO __drizzle_migrations VALUES(1789027200000); CREATE TABLE notes(body TEXT); INSERT INTO notes VALUES('original note')",
-  );
+  const sqlite = releasedSchema
+    ? createV010Database(dataDirectory, { missingAttachment: true }).sqlite
+    : new Database(databasePath);
+  if (!releasedSchema)
+    sqlite.exec(
+      "CREATE TABLE app_metadata(id INTEGER PRIMARY KEY, schema_version INTEGER); INSERT INTO app_metadata VALUES(1, 7); CREATE TABLE __drizzle_migrations(created_at INTEGER); INSERT INTO __drizzle_migrations VALUES(1789027200000); CREATE TABLE notes(body TEXT); INSERT INTO notes VALUES('original note')",
+    );
   sqlite.close();
   chmodSync(databasePath, 0o600);
   const store = new UpdateJournalStore(dataDirectory);
@@ -138,10 +161,14 @@ async function pending(
     }),
   );
   f.store.markCandidateStarted(f.intent.transactionId);
-  const candidate = new Database(f.databasePath);
-  candidate.exec(
-    "ALTER TABLE notes ADD COLUMN label TEXT; UPDATE app_metadata SET schema_version = 8; INSERT INTO __drizzle_migrations VALUES(1789027200001)",
-  );
+  const realMigration = f.intent.candidate.schemaVersion === 9;
+  const candidate = realMigration
+    ? openDatabase(f.databasePath)
+    : new Database(f.databasePath);
+  if (!realMigration)
+    candidate.exec(
+      "ALTER TABLE notes ADD COLUMN label TEXT; UPDATE app_metadata SET schema_version = 8; INSERT INTO __drizzle_migrations VALUES(1789027200001)",
+    );
   candidate.close();
   selectActiveRelease(f.root, f.candidate);
   if (state === "committed") f.store.commit(f.intent.transactionId);
@@ -203,6 +230,107 @@ it("reconciles a stopped committed update without erasing later notes", async ()
     JSON.parse(readFileSync(join(f.root, "last-update.json"), "utf8")),
   ).toMatchObject({ transactionId: f.intent.transactionId });
 });
+
+it.each(["candidate_started", "committed"] as const)(
+  "recovers a real v0.1.0-to-schema-9 update at %s without crossing the durable commit boundary",
+  async (state) => {
+    const f = fixture(true);
+    const old = new Database(f.databasePath);
+    const before = readV010Rows(old);
+    old.close();
+    await pending(f, state);
+    const file = join(f.dataDirectory, V010_FILE.path);
+    writeFileSync(file, "External edit during update", { mode: 0o600 });
+    const preferences = {
+      ...DEFAULT_PREFERENCES,
+      initialized: true,
+      theme: "dark" as const,
+    };
+    const customId = `custom-${randomUUID()}` as const;
+    if (state === "committed") {
+      const candidate = openDatabase(f.databasePath);
+      try {
+        candidate
+          .prepare(
+            "INSERT INTO notes(id,chat_id,body,created_at) VALUES('postcommit','release-archive','Saved after activation',100)",
+          )
+          .run();
+        writePreferences(candidate, preferences);
+        insertProjectLabel(candidate, "release-archive", {
+          id: customId,
+          name: "Review",
+          symbol: null,
+          builtin: false,
+          enabled: true,
+          position: 7,
+        });
+        candidate
+          .prepare(
+            "INSERT INTO note_labels(note_id,chat_id,label) VALUES('postcommit','release-archive',?)",
+          )
+          .run(customId);
+      } finally {
+        candidate.close();
+      }
+      // The selection write may lag the committed journal after a crash.
+      selectActiveRelease(f.root, f.previous);
+    }
+    await expect(recoverManagedUpdate(f.root)).resolves.toBe(
+      state === "committed" ? "committed" : "previous",
+    );
+    expect(readActiveRelease(f.root)).toEqual(
+      state === "committed" ? f.candidate : f.previous,
+    );
+    expect(f.store.read()).toBeUndefined();
+    await expect(recoverManagedUpdate(f.root)).resolves.toBe("none");
+    const recovered = new Database(f.databasePath);
+    try {
+      expect(
+        recovered
+          .prepare("SELECT schema_version FROM app_metadata")
+          .pluck()
+          .get(),
+      ).toBe(state === "committed" ? 9 : 7);
+      if (state === "committed") {
+        expect(
+          recovered
+            .prepare("SELECT body FROM notes WHERE id='postcommit'")
+            .pluck()
+            .get(),
+        ).toBe("Saved after activation");
+        expect(readPreferences(recovered)).toEqual(preferences);
+        expect(
+          recovered
+            .prepare("SELECT label FROM note_labels WHERE note_id='postcommit'")
+            .pluck()
+            .get(),
+        ).toBe(customId);
+        expect(
+          recovered
+            .prepare("SELECT name FROM project_labels WHERE id=?")
+            .pluck()
+            .get(customId),
+        ).toBe("Review");
+        expect(readV010Rows(recovered).attachments).toEqual(before.attachments);
+      } else {
+        expect(readV010Rows(recovered)).toEqual(before);
+        expect(
+          recovered
+            .prepare(
+              "SELECT label FROM chat_enabled_labels WHERE chat_id='release-archive'",
+            )
+            .pluck()
+            .all(),
+        ).toEqual(["risk"]);
+      }
+      expect(recovered.pragma("integrity_check", { simple: true })).toBe("ok");
+      expect(recovered.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      recovered.close();
+    }
+    expect(readFileSync(file, "utf8")).toBe("External edit during update");
+  },
+);
 
 it("recovers intent without a checkpoint and never opens or alters the untouched live database", async () => {
   const f = fixture();

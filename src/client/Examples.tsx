@@ -93,28 +93,24 @@ export function GeneralSettingsWorkspace({
   return (
     <main className="workspace settings-workspace">
       <header className="settings-workspace-header">
-        <p className="eyebrow">Personalization</p>
         <h1>General</h1>
       </header>
       <section
         className="settings-panel general-settings-panel"
-        aria-labelledby="general-workspace"
+        aria-label="Workspace"
       >
-        <div className="settings-panel-copy">
-          <h2 id="general-workspace">Workspace</h2>
-        </div>
         <label className="examples-preference">
+          <strong>Show examples</strong>
           <input
             type="checkbox"
             checked={showExamples}
             onChange={(e) => onChange(e.target.checked)}
             aria-describedby="examples-preference-description"
           />
-          <strong>Show examples</strong>
         </label>
-        <p id="examples-preference-description">
-          Display read-only example projects in the sidebar. Saved in this
-          browser.
+        <p id="examples-preference-description" className="field-help">
+          Display read-only example projects in the sidebar. Saved in your local
+          database.
         </p>
         {warning && <p role="status">{warning}</p>}
       </section>

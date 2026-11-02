@@ -86,7 +86,28 @@ async function startServer(
   throw new Error(`Timed out waiting for the local server:\n${output}`);
 }
 
-export const test = base.extend<Record<string, never>, WorkerFixtures>({
+export const test = base.extend<{ resetPreferences: void }, WorkerFixtures>({
+  resetPreferences: [
+    async ({ request, localApp }, use) => {
+      // Each test previously received fresh browser-local preferences. Keep the
+      // same isolation now that preferences belong to the worker's database.
+      const response = await request.patch(`${localApp.url}/api/preferences`, {
+        data: {
+          theme: "light",
+          showExamples: true,
+          collapsedSections: {
+            Pinned: false,
+            Projects: false,
+            Archive: false,
+            Examples: false,
+          },
+        },
+      });
+      expect(response.ok()).toBe(true);
+      await use();
+    },
+    { auto: true },
+  ],
   localApp: [
     async ({ browserName }, use, workerInfo) => {
       void browserName;

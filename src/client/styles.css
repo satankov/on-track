@@ -304,7 +304,7 @@ select:focus {
   display: grid;
   place-items: center;
   padding: 0;
-  border: 1px solid var(--line-strong);
+  border: 0;
   border-radius: 9px;
   color: var(--ink);
   background: var(--control);
@@ -587,7 +587,7 @@ button.rail-section-label {
   height: 38px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--line-strong);
+  border: 0;
   border-radius: 9px;
   background: var(--control);
   color: var(--muted);
@@ -828,7 +828,7 @@ button.rail-section-label {
   grid-template-areas:
     "header header"
     "filters history"
-    "composer composer";
+    "filters composer";
 }
 .chat-header {
   grid-area: header;
@@ -857,7 +857,7 @@ button.rail-section-label {
     "header header"
     "filters search"
     "filters history"
-    "composer composer";
+    "filters composer";
 }
 .project-search {
   grid-area: search;
@@ -1005,13 +1005,17 @@ button.rail-section-label {
   height: 16px;
 }
 .history-filter {
+  display: flex;
+  flex-direction: column;
   grid-area: filters;
   min-height: 0;
   padding: 12px 8px;
   background: var(--history);
 }
 .history-filter-inner {
-  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  flex: 0 1 auto;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1121,7 +1125,7 @@ button.rail-section-label {
 }
 .history-navigation {
   grid-area: history;
-  z-index: 2;
+  z-index: 4;
   align-self: end;
   justify-self: end;
   display: flex;
@@ -1135,12 +1139,10 @@ button.rail-section-label {
   width: 44px;
   height: 44px;
   padding: 10px;
-  border: 1px solid var(--line-strong);
+  border: 0;
   border-radius: 50%;
   background: var(--control);
   color: var(--ink);
-  box-shadow: 0 2px 8px
-    color-mix(in srgb, var(--shadow-overlay) 10%, transparent);
   cursor: pointer;
 }
 .history-navigation button:hover {
@@ -1298,8 +1300,14 @@ button.rail-section-label {
   border-left: 3px solid color-mix(in srgb, var(--accent) 45%, var(--line));
   color: var(--muted);
 }
+.message-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
 .note-body table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 0.92rem;
 }
@@ -1412,6 +1420,7 @@ button.rail-section-label {
   width: fit-content;
   max-width: min(760px, 82%);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   justify-items: end;
 }
 .message-row--participant .message-stack {
@@ -1433,7 +1442,7 @@ button.rail-section-label {
 }
 .message-row--participant .message-bubble {
   --message-surface: var(--paper);
-  border: 1px solid var(--line-strong);
+  border: 0;
   border-radius: 14px 14px 14px 5px;
 }
 .message-row:focus-visible .message-bubble {
@@ -1535,7 +1544,7 @@ button.rail-section-label {
   z-index: 12;
   width: 218px;
   padding: 10px;
-  border: 1px solid var(--line-strong);
+  border: 0;
   border-radius: 9px;
   color: var(--ink);
   background: var(--paper);
@@ -1714,8 +1723,10 @@ button.rail-section-label {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.attachment-status--warning {
-  color: var(--attachment-warning) !important;
+.attachment-copy .attachment-status--warning {
+  color: var(--attachment-warning);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .attachment-actions {
   display: flex;
@@ -1792,7 +1803,8 @@ button.rail-section-label {
   align-items: center;
   gap: 3px;
   padding: 1px 6px;
-  border: 1px solid color-mix(in srgb, var(--message-muted) 34%, transparent);
+  border: 0;
+  background: color-mix(in srgb, var(--message-muted) 10%, transparent);
   border-radius: 999px;
   color: var(--message-muted);
   font-size: 0.65rem;
@@ -1800,6 +1812,7 @@ button.rail-section-label {
   line-height: 1.2;
 }
 .message-label--icon-only {
+  background: transparent;
   width: 20px;
   min-height: 20px;
   justify-content: center;
@@ -1831,14 +1844,14 @@ button.rail-section-label {
   font-weight: 700;
 }
 .settings-workspace {
+  --settings-gutter: clamp(20px, 3vw, 40px);
+  --settings-left-gutter: calc(3 * var(--settings-gutter));
+  --settings-content-width: 840px;
   overflow-y: auto;
   background: var(--history);
 }
 .settings-workspace-header {
-  min-height: 76px;
-  padding: 18px clamp(24px, 5vw, 72px) 14px;
-  border-bottom: 1px solid var(--line);
-  background: var(--paper);
+  padding: 28px var(--settings-gutter) 0 var(--settings-left-gutter);
 }
 .settings-workspace-header h1,
 .settings-panel h2 {
@@ -1848,28 +1861,33 @@ button.rail-section-label {
   letter-spacing: -0.02em;
 }
 .settings-workspace-header h1 {
-  font-size: clamp(1.7rem, 3vw, 2.45rem);
+  font-size: 1.4rem;
 }
 .settings-panel {
-  max-width: 900px;
-  margin: 24px clamp(24px, 5vw, 72px);
-  overflow: hidden;
+  max-width: var(--settings-content-width);
+  margin: 24px var(--settings-gutter) 24px var(--settings-left-gutter);
   border: 0;
-  border-radius: 10px;
-  background: var(--paper);
+  background: transparent;
 }
 .settings-panel-copy {
-  padding: 22px 24px;
-  border-bottom: 1px solid var(--line);
+  padding: 0;
 }
 .settings-panel-copy h2 {
-  font-size: 1.35rem;
+  font-size: 0.9rem;
+  color: var(--muted);
 }
 .settings-panel-copy p {
   max-width: 660px;
   margin: 8px 0 0;
   color: var(--muted);
   line-height: 1.55;
+}
+.settings-workspace .button-quiet {
+  border: 0;
+  background: var(--paper);
+}
+.settings-workspace .button-quiet:hover {
+  background: var(--selection);
 }
 .settings-control-group {
   display: grid;
@@ -1904,12 +1922,9 @@ button.rail-section-label {
   padding: 0 24px 20px;
 }
 
-.appearance-panel {
-  max-width: 980px;
-}
 .theme-fieldset {
   margin: 0;
-  padding: 22px 24px 26px;
+  padding: 0;
   border: 0;
 }
 .theme-fieldset legend {
@@ -1919,7 +1934,7 @@ button.rail-section-label {
 }
 .theme-options {
   display: grid;
-  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: 14px;
 }
 .theme-option {
@@ -1935,10 +1950,10 @@ button.rail-section-label {
   min-width: 0;
   overflow: hidden;
   display: block;
-  border: 1px solid var(--control-border);
-  border-radius: 10px;
+  border: 0;
+  border-radius: 12px;
   color: var(--ink);
-  background: var(--control);
+  background: var(--paper);
   cursor: pointer;
 }
 .theme-option[data-preview-theme="neutral"] {
@@ -1962,11 +1977,7 @@ button.rail-section-label {
   --preview-accent: #6db9d4;
 }
 .theme-option:hover {
-  border-color: var(--focus);
-}
-.theme-option:has(input:checked) {
-  border-color: var(--focus);
-  box-shadow: inset 0 0 0 2px var(--focus);
+  background: var(--selection);
 }
 .theme-option:has(input:focus-visible) {
   outline: 1px solid var(--focus);
@@ -1983,7 +1994,6 @@ button.rail-section-label {
   display: grid;
   grid-template-columns: 30% minmax(0, 1fr);
   overflow: hidden;
-  border-bottom: 1px solid var(--line-strong);
   background: var(--preview-canvas);
 }
 .theme-preview-rail {
@@ -2038,7 +2048,7 @@ button.rail-section-label {
   position: absolute;
   inset: auto 8% 8%;
   height: 13%;
-  border: 1px solid var(--preview-line);
+  border: 0;
   border-radius: 5px;
   background: var(--preview-field);
 }
@@ -2059,13 +2069,13 @@ button.rail-section-label {
   position: absolute;
   right: 12px;
   bottom: 16px;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
-  border-radius: 50%;
+  border-radius: 5px;
   color: var(--on-action);
-  background: var(--focus);
+  background: var(--button-primary);
   opacity: 0;
 }
 .theme-option:has(input:checked) .theme-option-check {
@@ -2082,13 +2092,20 @@ button.rail-section-label {
 }
 
 .composer-wrap {
+  position: relative;
   grid-area: composer;
   min-height: 0;
   overflow: visible;
   z-index: 3;
   padding: 8px clamp(20px, 5vw, 72px) 10px;
-  padding-left: calc(var(--history-filter-width) + clamp(20px, 5vw, 72px));
   background: var(--history);
+}
+.composer-wrap::before {
+  content: "";
+  position: absolute;
+  inset: -32px 0 100% 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--history));
 }
 .composer {
   position: relative;
@@ -2098,7 +2115,7 @@ button.rail-section-label {
   max-width: var(--chat-column-width);
   margin: auto;
   overflow: hidden;
-  border: 1px solid var(--line-strong);
+  border: 0;
   border-radius: 12px;
   background: var(--field);
 }
@@ -2156,7 +2173,8 @@ button.rail-section-label {
   align-items: end;
 }
 .composer--file-drag {
-  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
 }
 .composer-drop-target {
   position: absolute;
@@ -2253,7 +2271,9 @@ button.rail-section-label {
   stroke-linejoin: round;
   stroke-width: 2.4;
 }
-.visually-hidden-file {
+/* Empty live regions stay accessible before their first announcement. */
+.visually-hidden-file,
+.backup-feedback:empty {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -2278,8 +2298,7 @@ button.rail-section-label {
   color: var(--placeholder);
 }
 .composer:focus-within {
-  border-color: var(--focus);
-  outline: 0;
+  outline: 1px solid var(--focus);
   outline-offset: 1px;
 }
 .composer-bar {
@@ -2299,9 +2318,12 @@ button.rail-section-label {
   gap: 6px;
   margin-left: auto;
 }
-.composer-shortcut {
+.composer-shortcut,
+.history-filter-help {
   color: var(--muted);
   font-size: 0.64rem;
+  font-weight: 400;
+  line-height: normal;
   white-space: nowrap;
 }
 .composer-tools {
@@ -2450,7 +2472,7 @@ kbd {
   width: min(240px, 100%);
   min-width: 0;
   height: 34px;
-  margin-left: auto;
+  margin-left: 0;
   padding: 0 9px;
   border-color: var(--line-strong);
   border-radius: 7px;
@@ -2602,38 +2624,37 @@ kbd {
   inset: 0;
   width: 100%;
   height: 100%;
+  max-width: none;
+  max-height: none;
   display: grid;
   place-items: center;
   margin: 0;
   padding: 20px;
   border: 0;
-  background: color-mix(in srgb, var(--overlay) 54%, transparent);
-  backdrop-filter: blur(3px);
+  background: transparent;
 }
 .dialog-backdrop::backdrop {
   background: color-mix(in srgb, var(--overlay) 54%, transparent);
   backdrop-filter: blur(3px);
 }
 .project-dialog {
-  width: min(100%, 520px);
+  width: min(100%, 560px);
   max-height: calc(100dvh - 40px);
   overflow-y: auto;
-  padding: clamp(26px, 5vw, 44px);
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  background: var(--paper);
-  box-shadow: 0 30px 90px
-    color-mix(in srgb, var(--shadow-overlay) 34%, transparent);
+  padding: clamp(20px, 4vw, 32px);
+  border: 0;
+  border-radius: 16px;
+  background: var(--history);
+  box-shadow: 0 20px 60px
+    color-mix(in srgb, var(--shadow-overlay) 22%, transparent);
 }
 .project-dialog h2 {
-  margin: 0;
-  font-size: 2.4rem;
-  line-height: 1;
+  margin: 0 0 24px;
+  font-size: 1.4rem;
+  line-height: 1.3;
 }
-.dialog-copy {
-  margin: 14px 0 28px;
-  color: var(--muted);
-  line-height: 1.55;
+.project-dialog .button-quiet {
+  border: 0;
 }
 .field-label,
 .accent-fieldset legend {
@@ -2702,19 +2723,87 @@ kbd {
   display: grid;
   gap: 12px;
 }
-.project-edit-form {
-  padding: 22px 24px 24px;
+.project-edit-workspace {
+  display: block;
+  height: 100%;
 }
-.project-label-fieldset {
+.project-edit-form {
+  width: min(
+    calc(
+      var(--settings-content-width) + var(--settings-left-gutter) +
+        var(--settings-gutter)
+    ),
+    100%
+  );
+  margin: 0;
+  padding: 24px var(--settings-gutter) 32px var(--settings-left-gutter);
+}
+.project-settings-fields .field-label,
+.project-settings-fields legend {
+  margin: 0 0 8px;
+  padding: 0 4px;
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: var(--muted);
+}
+.project-settings-fields .text-input {
+  height: 50px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--paper);
+}
+.project-settings-fields fieldset {
+  min-width: 0;
   margin: 24px 0 0;
   padding: 0;
   border: 0;
 }
-.project-label-fieldset legend,
-.project-message-display-fieldset legend {
-  margin-bottom: 6px;
-  font-size: 0.75rem;
-  font-weight: 750;
+.project-settings-fields .accent-options {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: var(--paper);
+}
+.project-settings-fields .accent-option {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 1 44px;
+  min-width: 32px;
+  min-height: 44px;
+  padding: 4px;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: none;
+}
+.project-settings-fields .accent-option:has(input:checked) {
+  box-shadow: none;
+}
+.project-settings-fields .accent-option:hover {
+  background: var(--selection);
+}
+.project-settings-fields .accent-swatch {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  background: var(--accent-action);
+  color: var(--on-action);
+}
+.project-settings-fields .accent-swatch svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  visibility: hidden;
+}
+.project-settings-fields .accent-option:has(input:checked) svg {
+  visibility: visible;
 }
 .field-help {
   max-width: 620px;
@@ -2723,84 +2812,141 @@ kbd {
   font-size: 0.75rem;
   line-height: 1.5;
 }
+.project-settings-fields .field-help {
+  margin: 8px 4px 0;
+}
 .project-label-options {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 4px 0;
+  border-radius: 12px;
+  background: var(--paper);
 }
-.project-label-option {
-  min-height: 42px;
+.project-label-option,
+.project-message-display-option {
+  min-height: 48px;
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  gap: 12px;
+  padding: 10px 14px;
   cursor: pointer;
-  font-size: 0.76rem;
-  font-weight: 650;
+  font-size: 0.84rem;
+  font-weight: 500;
 }
-.project-label-option:has(input:checked) {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 7%, var(--paper));
+.project-label-option:hover,
+.project-message-display-option:hover {
+  background: var(--selection);
 }
-.project-label-option input {
-  width: 16px;
-  height: 16px;
+.project-label-option > .label-glyph,
+.project-label-option > .label-glyph svg {
+  width: 18px;
+  height: 18px;
+  flex-basis: 18px;
+}
+.project-label-option input,
+.project-message-display-option input,
+.examples-preference input,
+.backup-project-row input {
+  appearance: none;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
   margin: 0;
-  accent-color: var(--accent);
+  border: 1.5px solid var(--muted);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--on-action);
+  cursor: pointer;
 }
-.project-label-option:has(input:focus-visible) {
-  outline: 1px solid var(--focus);
-  outline-offset: 1px;
+.project-label-option input:checked,
+.project-message-display-option input:checked,
+.examples-preference input:checked,
+.backup-project-row input:checked {
+  border-color: var(--accent-action, var(--ocean-action));
+  background: var(--accent-action, var(--ocean-action));
 }
-.project-label-option > .label-glyph {
+.project-label-option input:checked::after,
+.project-message-display-option input:checked::after,
+.examples-preference input:checked::after,
+.backup-project-row input:checked::after {
+  content: "";
+  width: 6px;
+  height: 11px;
+  margin-top: -3px;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.project-label-option input,
+.project-message-display-option input,
+.examples-preference input {
   margin-left: auto;
 }
-.project-message-display-fieldset {
-  margin: 24px 0 0;
-  padding: 0;
-  border: 0;
-}
 .project-message-display-option {
-  min-height: 42px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.76rem;
-  font-weight: 650;
-}
-.project-message-display-option:has(input:checked) {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 7%, var(--paper));
-}
-.project-message-display-option input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--accent);
-}
-.project-message-display-option:has(input:focus-visible) {
-  outline: 1px solid var(--focus);
-  outline-offset: 1px;
+  border-radius: 12px;
+  background: var(--paper);
 }
 .project-lifecycle-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
+  margin-top: 32px;
+}
+.project-lifecycle-actions .field-help {
+  margin: 0 4px 16px;
+}
+.project-lifecycle-actions .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding-inline: 4px;
+}
+.project-lifecycle-actions .button:hover {
+  background: var(--selection);
+}
+.project-lifecycle-actions svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .project-edit-actions {
   display: flex;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 24px;
+  margin: 0 0 28px;
 }
-.project-edit-actions > span {
-  flex: 1;
+.project-edit-actions .button-quiet {
+  border: 0;
+  background: transparent;
+}
+@media (forced-colors: active) {
+  .project-settings-fields .text-input,
+  .project-settings-fields .accent-swatch,
+  .project-label-option input,
+  .project-message-display-option input,
+  .examples-preference input,
+  .backup-project-row input {
+    border: 1px solid ButtonText;
+  }
+  .project-label-option input:checked,
+  .project-message-display-option input:checked,
+  .examples-preference input:checked,
+  .backup-project-row input:checked {
+    background: Highlight;
+    color: HighlightText;
+    border-color: Highlight;
+    forced-color-adjust: none;
+  }
 }
 .file-input {
   width: 100%;
@@ -2929,6 +3075,16 @@ kbd {
   .composer-wrap {
     padding: 0 12px 12px;
   }
+  .composer-wrap::before {
+    left: 0;
+  }
+  .composer {
+    /* Reserve the header, two filter rows, and history padding at 200% reflow. */
+    max-height: min(60dvh, calc(100dvh - 260px));
+  }
+  .workspace-chat--search .composer {
+    max-height: min(60dvh, calc(100dvh - 300px));
+  }
   .composer textarea {
     min-height: 76px;
   }
@@ -3013,11 +3169,17 @@ kbd {
     grid-template-columns: minmax(0, 1fr);
   }
   .project-edit-actions {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    flex-wrap: nowrap;
   }
-  .project-edit-actions > span {
-    display: none;
+  .project-edit-actions .button {
+    padding-inline: 10px;
+  }
+  .project-edit-workspace {
+    height: 100%;
+  }
+  .settings-workspace {
+    --settings-gutter: 16px;
+    --settings-left-gutter: var(--settings-gutter);
   }
   .theme-options {
     grid-template-columns: minmax(0, 1fr);
@@ -3116,7 +3278,8 @@ kbd {
   }
 
   .message-bubble,
-  .attachment-list {
+  .attachment-list,
+  .message-label-popover {
     border: 1px solid CanvasText;
   }
 
@@ -3134,7 +3297,8 @@ kbd {
     border-block-start-color: CanvasText;
   }
 
-  .message-body-viewport--collapsed::after {
+  .message-body-viewport--collapsed::after,
+  .composer-wrap::before {
     display: none;
   }
 
@@ -3160,26 +3324,29 @@ kbd {
 .backup-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 18px;
-  padding-bottom: 24px;
+  gap: 14px;
+  padding-bottom: 16px;
 }
-.backup-panel > :not(.settings-panel-copy) {
+.backup-panel > * {
   min-width: 0;
-  margin-inline: 24px;
 }
-.backup-panel > .file-input {
-  width: calc(100% - 48px);
+.backup-panel .file-input {
+  border: 0;
+  border-radius: 12px;
+  padding: 14px;
+  background: var(--paper);
 }
-.settings-workspace > .backup-help,
-.settings-workspace > .backup-feedback,
-.settings-workspace > #backup-error {
-  max-width: 900px;
-  margin: 18px clamp(24px, 5vw, 72px);
+.backup-panel .backup-help {
+  margin: 0 4px;
+}
+.settings-workspace > .backup-help {
+  max-width: var(--settings-content-width);
+  margin: 18px var(--settings-gutter) 18px var(--settings-left-gutter);
 }
 .backup-help {
   color: var(--muted);
-  font-size: 0.875rem;
-  line-height: 1.6;
+  font-size: 0.75rem;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 .backup-checklist,
@@ -3190,9 +3357,13 @@ kbd {
   border: 0;
 }
 .backup-checklist legend,
-.backup-modes legend {
+.backup-modes legend,
+.backup-panel > .field-label {
+  font-size: 0.78rem;
   font-weight: 650;
-  margin-bottom: 10px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  padding-inline: 4px;
 }
 .backup-selection-actions,
 .backup-actions {
@@ -3212,8 +3383,10 @@ kbd {
 .backup-project-list {
   max-height: 280px;
   overflow: auto;
-  border-block: 1px solid var(--line);
-  padding: 4px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--paper);
+  padding: 4px 12px;
 }
 .backup-project-row {
   display: flex;
@@ -3232,14 +3405,14 @@ kbd {
   overflow-wrap: anywhere;
 }
 .backup-project-row strong {
-  font-size: 0.875rem;
+  font-size: 0.84rem;
+  font-weight: 500;
 }
 .backup-project-row small {
   margin-top: 4px;
   font-size: 0.75rem;
   color: var(--muted);
 }
-.backup-project-row input,
 .backup-modes input {
   width: 18px;
   height: 18px;
@@ -3248,17 +3421,26 @@ kbd {
   accent-color: var(--ocean-action);
 }
 .backup-modes > label {
+  font-size: 0.84rem;
+  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 44px;
+  min-height: 48px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--paper);
   cursor: pointer;
 }
-.backup-modes .backup-help {
-  margin: 0 0 12px 30px;
+.backup-panel .backup-modes .backup-help {
+  margin: 8px 4px 16px;
 }
 .backup-feedback {
   overflow-wrap: anywhere;
+}
+.backup-feedback .form-error,
+.backup-feedback .form-status {
+  margin: 0;
 }
 .backup-renames {
   font-size: 0.875rem;
@@ -3322,11 +3504,7 @@ kbd {
   min-height: 44px;
   cursor: pointer;
 }
-.examples-preference input {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--ink);
-}
+
 .examples-load-error {
   padding: 8px 12px;
   font-size: 12px;
@@ -3359,9 +3537,18 @@ kbd {
     white-space: normal;
   }
 }
-.general-settings-panel > .examples-preference,
-.general-settings-panel > p {
-  margin-inline: 24px;
+.general-settings-panel .examples-preference {
+  min-height: 50px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--paper);
+  font-size: 0.84rem;
+}
+.general-settings-panel .examples-preference strong {
+  font-weight: 500;
+}
+.general-settings-panel .field-help {
+  margin: 8px 4px 0;
 }
 
 /* Home utilities retain the project-first hierarchy. */
@@ -3450,7 +3637,8 @@ kbd {
   border-color: var(--line-strong);
 }
 .home-utilities .home-small {
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
   color: var(--muted);
   margin: 10px 0 0;
 }
@@ -3555,5 +3743,158 @@ kbd {
     display: inline-flex;
     align-items: center;
     min-height: 44px;
+  }
+}
+
+.history-filter-help {
+  flex: 0 0 auto;
+  margin: 8px 0 0;
+  padding: 0 4px;
+}
+.history-filter-button {
+  flex-shrink: 0;
+}
+@media (max-width: 760px) {
+  .history-filter-inner {
+    flex: 0 0 auto;
+  }
+}
+
+/* Stable slots preserve hit-testing while their rows follow the pointer. */
+.project-label-edit-slot {
+  min-width: 0;
+}
+.project-label-edit-slot--dragging {
+  background: var(--selection);
+}
+.project-label-edit-row {
+  display: grid;
+  position: relative;
+  grid-template-columns: 36px minmax(0, 1fr) 36px;
+  min-height: 48px;
+  padding-block: 2px;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+}
+.project-label-options--dragging .project-label-edit-row {
+  background: var(--paper);
+}
+.project-label-edit-fields {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+.project-label-drag-handle {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 44px;
+  padding: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.project-label-drag-handle svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.project-label-drag-handle:hover {
+  color: var(--ink);
+  background: var(--selection);
+}
+.project-label-drag-handle[aria-pressed="true"] {
+  cursor: grabbing;
+  color: var(--ink);
+}
+.project-label-drag-handle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.project-label-edit-row--picked {
+  background: var(--selection);
+}
+.project-label-edit-row--moving {
+  z-index: 2;
+  cursor: grabbing;
+  outline: 1px solid var(--focus);
+  outline-offset: -1px;
+  user-select: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .project-label-options--dragging
+    .project-label-edit-row:not(.project-label-edit-row--moving) {
+    transition: transform 140ms ease;
+  }
+}
+.project-label-actions .button {
+  width: 36px;
+  min-height: 44px;
+  padding: 4px;
+}
+.project-edit-form .project-label-actions .button {
+  color: var(--muted);
+  background: transparent;
+}
+.project-edit-form .project-label-actions .button:hover {
+  color: var(--ink);
+  background: var(--selection);
+}
+.custom-label-symbol,
+.custom-label-name {
+  min-width: 0;
+  margin: 0;
+}
+.project-label-value,
+.project-settings-fields .project-label-edit-fields .text-input {
+  height: 44px;
+  min-height: 44px;
+  width: 100%;
+  padding: 8px;
+  font-size: 0.84rem;
+  font-weight: 500;
+  line-height: 1.5;
+  background: transparent;
+}
+.project-label-value {
+  display: flex;
+  align-items: center;
+}
+.project-label-value.custom-label-symbol {
+  justify-content: center;
+}
+.project-label-value .label-glyph,
+.project-label-value .label-glyph svg {
+  width: 18px;
+  height: 18px;
+  flex-basis: 18px;
+}
+.project-settings-fields .custom-label-symbol .text-input {
+  text-align: center;
+}
+.project-label-edit-fields > .custom-label-enabled {
+  min-height: 44px;
+  height: 44px;
+  padding: 11px;
+}
+.custom-label-error {
+  grid-column: 2 / -1;
+  margin: 0;
+  padding: 0 8px 4px;
+}
+@media (max-width: 480px) {
+  .project-label-edit-row,
+  .project-label-edit-fields {
+    gap: 4px;
   }
 }

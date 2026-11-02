@@ -71,9 +71,11 @@ test("archive settings and sidebar restoration preserve projects across restart 
     const box = await restoreSettings.boundingBox();
     expect(box!.x).toBeGreaterThanOrEqual(0);
     expect(box!.x + box!.width).toBeLessThanOrEqual(1440);
-    const panel = await page.locator(".settings-panel").boundingBox();
+    const panel = await page.locator(".project-edit-form").boundingBox();
     for (const action of await page
-      .locator(".project-edit-actions button")
+      .locator(
+        ".project-edit-actions button, .project-lifecycle-actions button",
+      )
       .all()) {
       const actionBox = await action.boundingBox();
       expect(actionBox!.x + actionBox!.width).toBeLessThanOrEqual(

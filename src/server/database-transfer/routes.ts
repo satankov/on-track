@@ -1,3 +1,4 @@
+import { readPreferences } from "../db/preferences.js";
 import type Database from "better-sqlite3";
 import rateLimit from "@fastify/rate-limit";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
@@ -237,6 +238,10 @@ export async function registerDatabaseTransferRoutes(
           bundlePath: staged!.filePath,
           workspace,
           selection: input?.selection ?? "all",
+          destinationPreferences:
+            mode === "replace"
+              ? readPreferences(options.database())
+              : undefined,
         });
         if (mode === "merge") {
           try {
