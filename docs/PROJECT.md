@@ -32,7 +32,10 @@ Attention indicators, “Question” display text, and simplified guidance/navig
 This UI trim is preserved alongside the completed, unreleased project-subthreads slice in
 [plan 0034](plans/0034-project-subthreads.md). Current source uses schema 11;
 published v0.1.1 remains schema 9. Backup format remains 1, with schema 3–10
-bundles migrated in validated staging. The next release target is v0.2.0 on `release/v0.2.0`; it is not published.
+bundles migrated in validated staging. The v0.2.0 candidate is prepared on
+`release/v0.2.0`; it is not published. Release scope, verification, dependency
+disposition, and remaining gates are recorded in
+[plan 0035](plans/0035-v0.2.0-release-preparation.md).
 
 The candidate also includes compact project/subthread rows, full-width child
 hover states, a shared Attention/pin slot, count-free group headers, and centered

@@ -9,7 +9,8 @@ and the history controls, composer feedback, and managed uninstall in
 [plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md), plus
 current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
 Published database and backup schema is 9. Unreleased project subthreads advance
-current source to schema 11; backup format remains 1. See
+the v0.2.0 candidate to schema 11; backup format remains 1. Release preparation
+and verification are tracked in [plan 0035](plans/0035-v0.2.0-release-preparation.md). See
 [ADR-0014](adr/0014-flat-project-subthreads.md) for the accepted ownership and
 provenance model and [plan 0034](plans/0034-project-subthreads.md) for delivery
 evidence. The managed compatibility floor remains `0.0.7`.

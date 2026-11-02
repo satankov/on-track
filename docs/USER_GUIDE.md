@@ -8,8 +8,10 @@ limits live here. For managed installation and CLI commands, use the
 [macOS](install/macos.md), [Linux](install/linux.md), and
 [Windows](install/windows.md).
 
-This guide describes the current development version. Published v0.0.8 still
-uses On Track and `ontrack`; see the [release transition](install/README.md#transition-from-on-track).
+This guide describes the v0.2.0 candidate, including subthreads and project-wide
+search. The latest published release is
+[v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1).
+The primary command is `thr`; `ontrack` remains a compatibility alias.
 
 ## Try the Amsterdam example
 
@@ -65,14 +67,14 @@ keeping any custom data path unchanged. On PowerShell, use `npm.cmd` in place of
   messages use neutral bubbles on the left with a stable colored sender name and
   retain the same labels, filters, files, and message actions as your own notes.
 - Apply permanent Pin and Attention labels plus project-enabled Todo, Decision,
-  Open question, Risk, and Milestone labels, then filter history by label.
+  Question, Risk, and Milestone labels, then filter history by label.
 - Expand and collapse long Markdown notes, with a persisted per-project default
   configured from Edit project.
 - Copy, edit, timestamp-adjust, and delete notes.
 - Schedule future-dated messages and see where the history crosses into the
   future through a silent full-width fade that clears as timestamps arrive.
-- Scan plain-text previews of the latest message up to the current time and current
-  or earlier Attention status directly in the project sidebar.
+- Scan compact project and subthread titles with today's or earlier Attention
+  status in the sidebar. Rows do not display message previews.
 - Attach local files to notes, filter messages with files, open eligible files
   through the operating system's default association, and show them in their
   managed folder. Open supports a limited set of common document, text, raster
@@ -99,6 +101,27 @@ Windows and Linux native-action smoke verification, encryption, native
 installers, and peer-to-peer iPhone sync are roadmap work. Open delegates to an
 installed default application; threadstr does not provide embedded PowerPoint or
 document editing.
+
+## Project subthreads
+
+Each project is its **Main** conversation. Create a named subthread for a side
+topic, or choose **Continue in subthread** on a message to keep a link to that
+point. Both start empty: existing messages and files stay in their original
+conversation. Continuing from a subthread creates a sibling in the same project,
+not another nesting level.
+
+Select a project to reveal its subthreads in the sidebar. The first five are
+shown initially; **Show all** reveals the rest. Children share the project's
+accent. Labels and message-display settings are copied at creation and then
+edited independently; pin and archive state also belong to each conversation.
+Unsent text, files, edits, and reading positions are retained per conversation
+during the app session. Reloading loses unsaved drafts.
+
+Follow a continuation's source link to return to its branch point. If the source
+message is deleted, its continuation marker stays at that date without retaining
+the deleted text. Deleting a source conversation makes its backlink unavailable
+but preserves sibling subthreads. Deleting a root project removes Main, all its
+subthreads, and their managed attachments; export a backup first when needed.
 
 ## Markdown assistance
 
@@ -147,6 +170,9 @@ ever tracked. Use the Settings button at the bottom of the sidebar to export or
 import a versioned backup bundle. Export and import lists select all projects by
 default, including pinned and archived projects. **Export all** always includes
 every project; **Export selected** includes only checked projects and their files.
+Each selection includes Main and all of that project's subthreads, including
+archives, with combined message/file counts. Subthreads cannot be selected
+separately. Export and import preserve continuation links and source positions.
 
 Import first previews the backup. **Merge DB** (the default) adds selected projects
 as independent copies, preserving existing projects. Names that exactly match an
@@ -163,10 +189,11 @@ Explicit project selections allow up to 10,000 projects and 1 MiB of options.
 A merge can grow the workspace beyond one bundle's limits; use selective export
 for smaller project sets.
 
-The current checkout uses schema 9 and accepts schema-9, schema-8, schema-7 and schema-6 backups plus
-strictly validated schema-5, schema-4 development, and v0.0.4/schema-3 backups; it
-does not restore v0.0.3/schema-2 bundles. Older
-supported databases migrate during startup. You can isolate evaluation data
+The v0.2.0 candidate uses schema 11 and backup format 1. It accepts current
+backups and strictly validated schema 3–10 bundles, migrating older backups in
+staging. It does not restore v0.0.3/schema-2 bundles. Supported older databases
+migrate during startup; older app versions cannot reopen a schema-11 database.
+Export a backup before upgrading. You can isolate evaluation data
 with an absolute disposable path:
 
 ```sh
@@ -219,7 +246,9 @@ projects. Custom label definitions and assignments travel with their projects.
 
 ## Navigate long histories and send notes
 
-Use the magnifier beside Edit to search the open project. Type words or fragments;
+Use the magnifier beside Edit to search the open conversation. Enable **Project**
+to include Main and every subthread, including archives. Project results identify
+their conversation and open the matching message there. Type words or fragments;
 every term must occur in the same message, in any order. Search includes readable
 Markdown text, participant names, and attachment filenames, including missing
 files. It excludes attachment contents, hidden link destinations, and unsaved
@@ -227,14 +256,14 @@ drafts. Capitalization is ignored; accents remain significant. For example,
 `hotel budg` finds `Hotel budget`, and `cat` also finds `vacation`. Quotes and
 punctuation are literal, with no special operators or typo correction.
 
-Search combines with Files, Links, or the selected label filter and retains
-chronological order, including future messages. Full text is searched even when
+Search combines with Files, Links, or selected label filters and retains
+chronological order within each conversation, including future messages. Full text is searched even when
 a long message is collapsed; use Show more to read it. Matching text is highlighted,
 and the number inside the search field counts messages in the current filter.
 The return-arrow beside a result opens that message among its neighbors. The
 cross inside the input clears the query and restores your position; the magnifier
-or Escape closes search. Each project's last query is remembered during this app
-session, including after opening a result in history or switching projects.
+or Escape closes search. Each conversation's last query is remembered during this app
+session, including after opening a result in history or switching conversations.
 Clearing the input forgets it; reloading the app resets all queries. Search stays
 local and does not create a persistent search history.
 
@@ -248,7 +277,7 @@ gives one brief glow in the project color when a valid send or edit save starts.
 New notes appear with a small entrance animation after saving. Errors keep the draft. System
 reduced-motion settings replace this with a brief static border and no movement.
 
-## Uninstall threadstr (next release)
+## Uninstall threadstr
 
 `thr uninstall` removes the managed application and its private dependencies,
 keeping projects. `thr uninstall --delete-data` also deletes projects and managed

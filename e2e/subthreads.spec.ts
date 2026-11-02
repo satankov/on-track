@@ -304,6 +304,9 @@ test("shows five flat children and searches the complete project from a continue
   request,
   localApp,
 }, testInfo) => {
+  // The worker shares a server across tests; isolate this backup round trip
+  // from transfer rate limits consumed by earlier journeys.
+  await localApp.restart();
   const rootTitle =
     "Website redesign with a very long project title for the next launch milestone";
   const childTitle =
