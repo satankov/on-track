@@ -20,7 +20,8 @@ Node/npm instructions.
 Both methods run the same local browser application and keep projects separate
 from application code. Neither starts automatically after a reboot.
 
-**Experimental installer:** v0.0.8 has published installer assets;
+**Experimental installer:** [v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1)
+is the current release and includes published installer assets;
 installation/OS validation is ongoing. Releases showing only **Source code (zip)**,
 **Source code (tar.gz)**, and an attestation are source-only; use manual setup
 with their ZIP archive. Older releases do not gain installer files automatically.
