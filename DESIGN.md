@@ -328,8 +328,9 @@ visible. The root consumes at most 40% of available title space and short names
 remain adjacent. Use the same branch glyph in New subthread and message actions.
 
 Centered muted date-style markers show Independent subthread, Subthread from a
-linked source, or Continued in a linked child. Never quote the source. Deleted
-sources receive explicit fallback text. Links retain visible keyboard focus.
+linked source, or Continued in a linked child. Never quote the source. Deleting a source message leaves its continuation link
+at the same date and history position; the child’s source link focuses that marker.
+Deleted source conversations receive explicit fallback text. Links retain visible keyboard focus.
 
 Message action order: Change labels, Continue in subthread, Copy message, Edit
 message, Delete message. Reuse compact icon controls and reserve 160px beside

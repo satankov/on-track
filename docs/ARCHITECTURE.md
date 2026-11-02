@@ -9,7 +9,7 @@ and the history controls, composer feedback, and managed uninstall in
 [plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md), plus
 current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
 Published database and backup schema is 9. Unreleased project subthreads advance
-current source to schema 10; backup format remains 1. See
+current source to schema 11; backup format remains 1. See
 [ADR-0014](adr/0014-flat-project-subthreads.md) for the accepted ownership and
 provenance model and [plan 0034](plans/0034-project-subthreads.md) for delivery
 evidence. The managed compatibility floor remains `0.0.7`.
@@ -272,7 +272,14 @@ child resolves the same root, keeping hierarchy flat. `subthread_origins` record
 continued conversations; independent children have no origin row. Nullable
 source-chat and source-note foreign keys retain the conversation link after a
 message disappears and preserve continued identity after source deletion.
-Origin markers and backlinks are derived metadata, not notes or copied history.
+Schema 11 retains the source timestamp and an opaque ordering key independently
+of the nullable note reference. Deletion captures the latest source date before
+removing the note; history renders a standalone continuation marker at that date,
+and the subthread backlink focuses it. These anchors survive restart, export and
+merge without retaining deleted message content. Migration backfills existing
+live sources; previously deleted schema-10 sources have no recoverable date and
+keep the conversation-only fallback. Origin markers and backlinks are derived
+metadata, not notes or copied history.
 
 Children receive root labels and message-display settings at creation, with fresh
 custom-label identities; subsequent edits are independent. Effective accent is
@@ -367,8 +374,8 @@ integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
 fresh managed paths, removes bundle payload tables, and compacts the current-
-schema candidate. Exact schema-9, schema-8, schema-7, schema-6, schema-5, schema-4 development,
-and schema-3 v0.0.4 bundles are accepted through fixed legacy descriptors and migrated to schema 10
+schema candidate. Exact schema-10, schema-9, schema-8, schema-7, schema-6, schema-5, schema-4 development,
+and schema-3 v0.0.4 bundles are accepted through fixed legacy descriptors and migrated to schema 11
 only after copying into the staging workspace; older notes receive a null sender
 and all older projects receive null archive state.
 It then uses the maintenance gate and

@@ -355,10 +355,10 @@ function messageDateKey(timestamp: number): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function groupNotesByDay(
-  notes: Note[],
-): { key: string; label: string; notes: Note[] }[] {
-  return notes.reduce<{ key: string; label: string; notes: Note[] }[]>(
+function groupNotesByDay<T extends { createdAt: number }>(
+  notes: T[],
+): { key: string; label: string; notes: T[] }[] {
+  return notes.reduce<{ key: string; label: string; notes: T[] }[]>(
     (groups, note) => {
       const key = messageDateKey(note.createdAt);
       const current = groups.at(-1);
@@ -2283,11 +2283,17 @@ function MessageGroups({
   onOpenInHistory,
   onContinue,
   subthreads = [],
+  showDetachedContinuations = true,
   onNavigate,
 }: {
   onContinue?: (note: Note) => void;
   subthreads?: Chat[];
-  onNavigate?: (chatId: string, noteId?: string) => void;
+  showDetachedContinuations?: boolean;
+  onNavigate?: (
+    chatId: string,
+    noteId?: string,
+    fallback?: ReadingPosition,
+  ) => void;
   notes: Note[];
   searchTerms: string[];
   futureStartId?: string;
@@ -2305,9 +2311,38 @@ function MessageGroups({
   onSetNoteLabel: (note: Note, label: Label, applied: boolean) => Promise<void>;
   onOpenInHistory?: (note: Note) => void;
 }) {
+  type Continuation = {
+    id: string;
+    createdAt: number;
+    positionId: string;
+    continuation: Chat;
+  };
+  const entries: (Note | Continuation)[] = [...notes];
+  if (showDetachedContinuations) {
+    for (const child of subthreads) {
+      if (
+        child.origin?.sourceNoteId == null &&
+        child.origin?.sourceNoteCreatedAt != null
+      ) {
+        entries.push({
+          id: `continuation:${child.id}`,
+          createdAt: child.origin.sourceNoteCreatedAt,
+          positionId: child.origin.sourceNotePositionId ?? child.id,
+          continuation: child,
+        });
+      }
+    }
+  }
+  entries.sort((a, b) => {
+    const aKey = "continuation" in a ? a.positionId : a.id;
+    const bKey = "continuation" in b ? b.positionId : b.id;
+    return (
+      a.createdAt - b.createdAt || (aKey < bKey ? -1 : aKey > bKey ? 1 : 0)
+    );
+  });
   return (
     <div className="message-groups">
-      {groupNotesByDay(notes).map((group) => {
+      {groupNotesByDay(entries).map((group) => {
         const futureStartIndex = group.notes.findIndex(
           (note) => note.id === futureStartId,
         );
@@ -2334,6 +2369,25 @@ function MessageGroups({
               }}
             >
               {group.notes.map((note, noteIndex) => {
+                if ("continuation" in note)
+                  return (
+                    <li
+                      key={note.id}
+                      className="thread-origin thread-continuation"
+                      data-note-id={note.id}
+                      data-created-at={note.createdAt}
+                      tabIndex={-1}
+                      style={{ gridRow: noteIndex + 1, gridColumn: "1 / -1" }}
+                    >
+                      Continued in{" "}
+                      <button
+                        type="button"
+                        onClick={() => onNavigate?.(note.continuation.id)}
+                      >
+                        {note.continuation.title}
+                      </button>
+                    </li>
+                  );
                 const copied = copiedNoteId === note.id;
                 const participant = Boolean(note.sender);
                 return (
@@ -2534,7 +2588,11 @@ function ChatWorkspace({
   chats?: Chat[];
   projectApi?: Pick<ApiClient, "getProject">;
   onNewSubthread?: (sourceNoteId?: string) => void;
-  onNavigate?: (chatId: string, noteId?: string) => void;
+  onNavigate?: (
+    chatId: string,
+    noteId?: string,
+    fallback?: ReadingPosition,
+  ) => void;
   navigationTarget?: ReadingPosition;
   sendFeedback?: SendFeedback;
   readingPositions: Map<string, ReadingPosition>;
@@ -3242,6 +3300,13 @@ function ChatWorkspace({
                       onNavigate?.(
                         source.id,
                         detail.origin?.sourceNoteId ?? undefined,
+                        detail.origin?.sourceNoteCreatedAt != null
+                          ? {
+                              noteId: `continuation:${detail.id}`,
+                              createdAt: detail.origin.sourceNoteCreatedAt,
+                              offset: 16,
+                            }
+                          : undefined,
                       )
                     }
                   >
@@ -3299,7 +3364,13 @@ function ChatWorkspace({
             <div className="no-notes">
               <p>Search across this project’s conversations.</p>
             </div>
-          ) : detail.notes.length === 0 ? (
+          ) : detail.notes.length === 0 &&
+            !chats.some(
+              (chat) =>
+                chat.origin?.sourceChatId === detail.id &&
+                chat.origin.sourceNoteId == null &&
+                chat.origin.sourceNoteCreatedAt != null,
+            ) ? (
             <>
               <div className="no-notes">
                 <p className="eyebrow">The thread starts here</p>
@@ -3338,6 +3409,9 @@ function ChatWorkspace({
             </div>
           ) : (
             <MessageGroups
+              showDetachedContinuations={
+                !searchQuery.key && historyFilter.length === 0
+              }
               subthreads={chats.filter(
                 (chat) => chat.origin?.sourceChatId === detail.id,
               )}
@@ -4158,7 +4232,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setEditingNote(saved?.editing);
     setEditingAttachmentIds(saved?.attachmentIds ?? []);
   }
-  async function selectChat(id: string, noteId?: string) {
+  async function selectChat(
+    id: string,
+    noteId?: string,
+    fallback?: ReadingPosition,
+  ) {
     if (savingNote || copyInProgress.current) return;
     rememberConversation();
     pendingSelection.current = "project";
@@ -4177,9 +4255,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         : undefined;
       const target = targetNote
         ? { noteId: targetNote.id, createdAt: targetNote.createdAt, offset: 16 }
-        : undefined;
+        : fallback;
       setNavigationTarget(target);
-      if (noteId) {
+      if (noteId || fallback) {
         setNavigationRevision((value) => value + 1);
         if (target)
           setReadingPositions((current) => new Map(current).set(id, target));
@@ -4202,7 +4280,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         };
       });
       restoreConversation(id);
-      if (noteId) setHistoryFilter([]);
+      if (noteId || fallback) setHistoryFilter([]);
       focusMobileBackButton();
     } catch (caught) {
       if (request !== selectionRequest.current) return;
@@ -4447,7 +4525,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         .filter((chat) => !deletedIds.has(chat.id))
         .map((chat) =>
           chat.origin?.sourceChatId && deletedIds.has(chat.origin.sourceChatId)
-            ? { ...chat, origin: { sourceChatId: null, sourceNoteId: null } }
+            ? {
+                ...chat,
+                origin: {
+                  ...chat.origin,
+                  sourceChatId: null,
+                  sourceNoteId: null,
+                },
+              }
             : chat,
         ),
       active:
@@ -4457,7 +4542,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
               deletedIds.has(current.active.origin.sourceChatId)
             ? {
                 ...current.active,
-                origin: { sourceChatId: null, sourceNoteId: null },
+                origin: {
+                  ...current.active.origin,
+                  sourceChatId: null,
+                  sourceNoteId: null,
+                },
               }
             : current.active,
     }));
@@ -4728,13 +4817,26 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       );
       next.chats = next.chats.map((chat) =>
         chat.origin?.sourceNoteId === note.id
-          ? { ...chat, origin: { ...chat.origin, sourceNoteId: null } }
+          ? {
+              ...chat,
+              origin: {
+                ...chat.origin,
+                sourceNoteId: null,
+                sourceNoteCreatedAt: note.createdAt,
+                sourceNotePositionId: note.id,
+              },
+            }
           : chat,
       );
       if (next.active?.origin?.sourceNoteId === note.id) {
         next.active = {
           ...next.active,
-          origin: { ...next.active.origin, sourceNoteId: null },
+          origin: {
+            ...next.active.origin,
+            sourceNoteId: null,
+            sourceNoteCreatedAt: note.createdAt,
+            sourceNotePositionId: note.id,
+          },
         };
       }
       return next;
@@ -5120,7 +5222,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           onNewSubthread={(sourceNoteId) =>
             setSubthreadSource({ chatId: active.id, sourceNoteId })
           }
-          onNavigate={(id, noteId) => void selectChat(id, noteId)}
+          onNavigate={(id, noteId, fallback) =>
+            void selectChat(id, noteId, fallback)
+          }
           navigationTarget={navigationTarget}
           sendFeedback={
             sendFeedback?.projectId === active.id ? sendFeedback : undefined

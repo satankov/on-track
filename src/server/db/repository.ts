@@ -30,6 +30,8 @@ interface ChatRow {
   origin_id: string | null;
   source_chat_id: string | null;
   source_note_id: string | null;
+  source_note_created_at: number | null;
+  source_note_position_id: string | null;
   id: string;
   title: string;
   accent: Accent;
@@ -84,6 +86,8 @@ function toChat(
         : {
             sourceChatId: row.source_chat_id,
             sourceNoteId: row.source_note_id,
+            sourceNoteCreatedAt: row.source_note_created_at,
+            sourceNotePositionId: row.source_note_position_id,
           },
     enabledLabels: definitions
       .filter(
@@ -158,9 +162,11 @@ export class InvalidSubthreadError extends Error {
 }
 
 const CHAT_SELECT = `SELECT chats.*, COALESCE(root.accent, chats.accent) AS effective_accent,
-  origin.chat_id AS origin_id, origin.source_chat_id, origin.source_note_id
+  origin.chat_id AS origin_id, origin.source_chat_id, origin.source_note_id,
+  COALESCE(source_note.created_at, origin.source_note_created_at) AS source_note_created_at, origin.source_note_position_id
   FROM chats LEFT JOIN chats AS root ON root.id = chats.project_id
-  LEFT JOIN subthread_origins AS origin ON origin.chat_id = chats.id`;
+  LEFT JOIN subthread_origins AS origin ON origin.chat_id = chats.id
+  LEFT JOIN notes AS source_note ON source_note.id = origin.source_note_id`;
 
 export class SqliteChatRepository {
   constructor(private readonly database: Database.Database) {}
@@ -224,7 +230,7 @@ export class SqliteChatRepository {
       if (input.sourceNoteId !== undefined)
         this.database
           .prepare(
-            "INSERT INTO subthread_origins (chat_id, source_chat_id, source_note_id) VALUES (?, ?, ?)",
+            "INSERT INTO subthread_origins (chat_id, source_chat_id, source_note_id, source_note_created_at, source_note_position_id) SELECT ?, ?, id, created_at, id FROM notes WHERE id = ?",
           )
           .run(input.id, sourceId, input.sourceNoteId);
       return this.getChat(input.id, input.now)!;
@@ -632,6 +638,15 @@ export class SqliteChatRepository {
       const storagePaths = this.listStoredAttachments(noteId).map(
         (attachment) => attachment.storagePath,
       );
+      // Capture the latest source date before the FK clears its live reference.
+      this.database
+        .prepare(
+          `UPDATE subthread_origins SET
+        source_note_created_at = (SELECT created_at FROM notes WHERE id = ? AND chat_id = ?),
+        source_note_position_id = ?
+        WHERE source_note_id = ? AND source_chat_id = ?`,
+        )
+        .run(noteId, chatId, noteId, noteId, chatId);
       const result = this.database
         .prepare("DELETE FROM notes WHERE id = ? AND chat_id = ?")
         .run(noteId, chatId);

@@ -108,6 +108,8 @@ export const subthreadOrigins = sqliteTable(
       .primaryKey()
       .notNull()
       .references(() => chats.id, { onDelete: "cascade" }),
+    sourceNoteCreatedAt: integer("source_note_created_at"),
+    sourceNotePositionId: text("source_note_position_id"),
     sourceChatId: text("source_chat_id").references(() => chats.id, {
       onDelete: "set null",
     }),

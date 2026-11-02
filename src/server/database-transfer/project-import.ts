@@ -180,6 +180,7 @@ export function mergePreparedProjects(options: {
         id: labelIds.get(JSON.stringify([row.chat_id, row.id]))!,
       })),
       origins: records.origins.map((row) => ({
+        ...row,
         chat_id: projectIds.get(row.chat_id)!,
         source_chat_id:
           row.source_chat_id === null

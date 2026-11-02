@@ -169,3 +169,30 @@ Commit `7eaba47` is on `codex/next-release-candidate` and preserves candidate
 No dependencies, remote pushes, pull requests or releases were added by this
 delivery. The approved mockup remains under `branding/threadstr/subthreads/`;
 the current UI contract is DESIGN.md and the production-CSS cookbook.
+
+## Source-message deletion follow-up — 2026-11-02
+
+The user reported that deleting a source message also removed its continuation
+link from history. Continuation links now remain at the deleted message's date
+and position, and the child’s source link focuses the surviving history marker.
+Markers also remain when the source conversation has no messages left. They are
+navigation metadata, excluded from message search/filter results and message
+counts; deleted message text is not retained.
+
+Schema 11 stores the source timestamp and an opaque ordering key independently
+of the nullable source-note foreign key. Deletion captures the latest date,
+including timestamp edits. Schema-10 live sources are backfilled during migration;
+previously deleted sources have no recoverable date and retain the conversation-only
+fallback. Backup format stays 1; schemas 3–10 migrate in validated staging. Selected
+and complete backup replacement/merge preserve both live and detached origins.
+The accepted model is amended in ADR-0014.
+
+Validation: the source-position regression failed before the fix. Migration,
+restart, invalid-anchor import rejection, and selected/full replace/merge tests
+cover durable behavior. Build, typecheck, lint, formatting, release-contract and
+diff checks passed. The affected browser suites (`subthreads`, `project-chat`,
+`project-search`) passed 49 tests with 9 intentional platform skips, including
+exact-date ordering, deletion of the last messages, reload and backlink focus.
+
+Final `CI=true npm run test:coverage`: 86 files, 1,161 passed and 9 skipped;
+statements 90.63%, branches 85.03%, functions 91.71%, lines 91.84%.

@@ -228,6 +228,8 @@ test("creates empty subthreads, follows origins and keeps sibling settings and d
   expect(variants.origin).toEqual({
     sourceChatId: navigation.id,
     sourceNoteId: navigation.notes[0].id,
+    sourceNoteCreatedAt: navigation.notes[0].createdAt,
+    sourceNotePositionId: navigation.notes[0].id,
   });
 
   await page.getByRole("button", { name: "Edit", exact: true }).click();
@@ -508,6 +510,98 @@ test("shows five flat children and searches the complete project from a continue
   expect(preserved.find((chat) => chat.id === continued.id)?.origin).toEqual({
     sourceChatId: first.id,
     sourceNoteId: firstNote.id,
+    sourceNoteCreatedAt: firstNote.createdAt,
+    sourceNotePositionId: firstNote.id,
   });
   expect(preserved.some((chat) => chat.id === unrelated.id)).toBe(false);
+});
+
+test("keeps continuation links at a deleted source date and navigates back after reload", async ({
+  page,
+  request,
+  localApp,
+}) => {
+  const root = await createProject(request, localApp.url, "History anchors");
+  const date = new Date(2024, 2, 10, 12).getTime();
+  const notes: Note[] = [];
+  for (const [body, createdAt] of [
+    ["Before", date - 86400000],
+    ["Source to delete", date],
+    ["After", date + 86400000],
+  ] as const) {
+    const response = await request.post(
+      `${localApp.url}/api/chats/${root.id}/notes`,
+      { multipart: { body, createdAt: String(createdAt) } },
+    );
+    expect(response.ok()).toBe(true);
+    notes.push(await response.json());
+  }
+  const child = await createSubthread(
+    request,
+    localApp.url,
+    root.id,
+    "Persistent topic",
+    notes[1].id,
+  );
+  await page.goto(localApp.url);
+  await page
+    .getByRole("button", { name: "Open History anchors", exact: true })
+    .click();
+  page.on("dialog", (dialog) => dialog.accept());
+  const source = page.locator(`[data-note-id="${notes[1].id}"]`);
+  await source.hover();
+  await source
+    .getByRole("button", { name: "Delete message", exact: true })
+    .click();
+  const marker = page.locator(`[data-note-id="continuation:${child.id}"]`);
+  await expect(marker).toContainText("Continued in Persistent topic");
+  await expect(source).toHaveCount(0);
+  await expect(marker).toHaveAttribute("data-created-at", String(date));
+  await expect(page.locator(".message-day")).toHaveCount(3);
+  expect(
+    await page
+      .locator(".history [data-note-id]")
+      .evaluateAll((rows) =>
+        rows.map((row) => (row as HTMLElement).dataset.noteId),
+      ),
+  ).toEqual([notes[0].id, `continuation:${child.id}`, notes[2].id]);
+  await marker
+    .getByRole("button", { name: "Persistent topic", exact: true })
+    .click();
+  await page
+    .locator(".thread-origin")
+    .getByRole("button", { name: "History anchors", exact: true })
+    .click();
+  await expect(marker).toBeFocused();
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Open History anchors", exact: true })
+    .click();
+  await expect(marker).toBeVisible();
+  // A source-only history still contains the marker after all messages are gone.
+  for (const note of [notes[0], notes[2]]) {
+    expect(
+      (
+        await request.delete(
+          `${localApp.url}/api/chats/${root.id}/notes/${note.id}`,
+        )
+      ).ok(),
+    ).toBe(true);
+  }
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Open History anchors", exact: true })
+    .click();
+  await expect(marker).toBeVisible();
+  await expect(
+    page.getByText("What is worth remembering?", { exact: true }),
+  ).toHaveCount(0);
+  await marker
+    .getByRole("button", { name: "Persistent topic", exact: true })
+    .click();
+  await page
+    .locator(".thread-origin")
+    .getByRole("button", { name: "History anchors", exact: true })
+    .click();
+  await expect(marker).toBeFocused();
 });

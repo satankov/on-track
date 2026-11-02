@@ -62,13 +62,14 @@ import {
 
 export const SQL_ON_TRACK_BACKUP_APPLICATION_ID = 0x4f545242;
 export const SQL_ON_TRACK_BACKUP_FORMAT_VERSION = 1;
-export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 10;
+export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 11;
 const LEGACY_SCHEMA_MIGRATIONS: Readonly<
   Record<number, { migrationAt: number; migrationCount: number }>
 > = {
   3: { migrationAt: 1_788_356_400_000, migrationCount: 4 },
   4: { migrationAt: 1_788_516_961_034, migrationCount: 5 },
   5: { migrationAt: 1_788_523_044_823, migrationCount: 6 },
+  10: { migrationAt: 1793364000000, migrationCount: 11 },
   9: { migrationAt: 1793269712711, migrationCount: 10 },
   8: { migrationAt: 1793269343386, migrationCount: 9 },
   7: { migrationAt: 1789027200000, migrationCount: 8 },
@@ -1038,6 +1039,32 @@ function validateApplicationData(
     );
   }
   if (schemaVersion >= 10) validateSubthreadData(database);
+  if (schemaVersion >= 11) {
+    const origins = database
+      .prepare(
+        "SELECT source_note_created_at, source_note_position_id FROM subthread_origins",
+      )
+      .all() as Array<{
+      source_note_created_at: unknown;
+      source_note_position_id: unknown;
+    }>;
+    for (const origin of origins) {
+      if (origin.source_note_created_at !== null) {
+        requireNonnegativeSafeInteger(
+          origin.source_note_created_at,
+          "subthread source time",
+        );
+        if (
+          typeof origin.source_note_position_id !== "string" ||
+          origin.source_note_position_id.length === 0 ||
+          origin.source_note_position_id.length > 200
+        )
+          throw validationError("Subthread history anchor is invalid.");
+      } else if (origin.source_note_position_id !== null) {
+        throw validationError("Subthread history anchor is invalid.");
+      }
+    }
+  }
   if (schemaVersion >= 9) validateProjectLabelData(database);
   else validateLabelData(database);
 }

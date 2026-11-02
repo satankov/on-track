@@ -203,7 +203,7 @@ it.each(["replace", "merge"] as const)(
       try {
         expect(
           db.prepare("SELECT schema_version FROM app_metadata").pluck().get(),
-        ).toBe(10);
+        ).toBe(11);
         const paths = db
           .prepare("SELECT storage_path FROM note_attachments")
           .pluck()
@@ -905,6 +905,10 @@ it.each([
         payload: { title: "Experiment", sourceNoteId: childNote.id },
       })
     ).json();
+    await app.inject({
+      method: "DELETE",
+      url: `/api/chats/${root.id}/notes/${rootNote.id}`,
+    });
     await app.inject({ method: "PUT", url: `/api/chats/${child.id}/archive` });
     const exported = await app.inject({
       method: "POST",
@@ -926,7 +930,7 @@ it.each([
       preview.projects.find(
         (project: { id: string }) => project.id === root.id,
       ),
-    ).toMatchObject({ messageCount: 2, attachmentCount: 1 });
+    ).toMatchObject({ messageCount: 1, attachmentCount: 1 });
     expect(
       preview.projects.some(
         (project: { id: string }) =>
@@ -971,9 +975,12 @@ it.each([
       projectId: newRoot.id,
       origin: {
         sourceChatId: newRoot.id,
-        sourceNoteId: copiedMain.notes[0].id,
+        sourceNoteId: null,
+        sourceNoteCreatedAt: rootNote.createdAt,
+        sourceNotePositionId: rootNote.id,
       },
     });
+    expect(copiedMain.notes).toEqual([]);
     expect(copiedChild.archivedAt).not.toBeNull();
     expect(copiedChild.notes[0].attachments).toHaveLength(1);
     expect(copiedSibling).toMatchObject({

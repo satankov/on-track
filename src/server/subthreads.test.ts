@@ -150,7 +150,7 @@ describe("project subthreads", () => {
       sender: "Maya",
     });
     database.exec(
-      "DROP TABLE subthread_origins; DROP INDEX chats_project_idx; ALTER TABLE chats DROP COLUMN project_id; DELETE FROM __drizzle_migrations WHERE created_at=1793364000000; UPDATE app_metadata SET schema_version=9;",
+      "DROP TABLE subthread_origins; DROP INDEX chats_project_idx; ALTER TABLE chats DROP COLUMN project_id; DELETE FROM __drizzle_migrations WHERE created_at>=1793364000000; UPDATE app_metadata SET schema_version=9;",
     );
     database.close();
     database = openDatabase(join(directory, "app.sqlite"));
@@ -190,6 +190,68 @@ describe("project subthreads", () => {
     expect(service.listChats()).toHaveLength(2);
   });
 
+  it("migrates schema-10 live anchors without inventing dates for deleted legacy sources", () => {
+    const root = service.createChat({ title: "Legacy", accent: "ocean" });
+    const note = service.appendNote(root.id, {
+      body: "Old source",
+      createdAt: 123,
+    });
+    const live = service.createSubthread(root.id, {
+      title: "Live",
+      sourceNoteId: note.id,
+    });
+    const deletedNote = service.appendNote(root.id, { body: "Deleted source" });
+    const deleted = service.createSubthread(root.id, {
+      title: "Deleted",
+      sourceNoteId: deletedNote.id,
+    });
+    service.deleteNote(root.id, deletedNote.id);
+    database.exec(`ALTER TABLE subthread_origins DROP COLUMN source_note_created_at;
+      ALTER TABLE subthread_origins DROP COLUMN source_note_position_id;
+      DELETE FROM __drizzle_migrations WHERE created_at > 1793364000000;
+      UPDATE app_metadata SET schema_version=10;`);
+    database.close();
+    database = openDatabase(join(directory, "app.sqlite"));
+    const repository = new SqliteChatRepository(database);
+    expect(repository.getChat(live.id)?.origin).toMatchObject({
+      sourceNoteCreatedAt: 123,
+      sourceNotePositionId: note.id,
+    });
+    expect(repository.getChat(deleted.id)?.origin).toMatchObject({
+      sourceNoteCreatedAt: null,
+      sourceNotePositionId: null,
+    });
+  });
+
+  it("retains the source history position through timestamp edits, deletion and restart", () => {
+    const root = service.createChat({ title: "Dates", accent: "ocean" });
+    const note = service.appendNote(root.id, {
+      body: "Original",
+      createdAt: 100,
+    });
+    const child = service.createSubthread(root.id, {
+      title: "Side topic",
+      sourceNoteId: note.id,
+    });
+    service.updateNote(root.id, note.id, { body: "Edited", createdAt: 200 });
+    service.deleteNote(root.id, note.id);
+    const expected = {
+      sourceChatId: root.id,
+      sourceNoteId: null,
+      sourceNoteCreatedAt: 200,
+      sourceNotePositionId: note.id,
+    };
+    expect(service.getChat(child.id).origin).toEqual(expected);
+    database.close();
+    database = openDatabase(join(directory, "app.sqlite"));
+    expect(
+      new SqliteChatRepository(database).getChat(child.id)?.origin,
+    ).toEqual(expected);
+    expect(database.prepare("SELECT count(*) FROM notes").pluck().get()).toBe(
+      0,
+    );
+  });
+
   it("preserves continued identity after deleting sources and keeps sibling forks", () => {
     const root = service.createChat({ title: "Website", accent: "ocean" });
     const source = service.createSubthread(root.id, { title: "Source" });
@@ -199,12 +261,12 @@ describe("project subthreads", () => {
       sourceNoteId: note.id,
     });
     service.deleteNote(source.id, note.id);
-    expect(service.getChat(child.id).origin).toEqual({
+    expect(service.getChat(child.id).origin).toMatchObject({
       sourceChatId: source.id,
       sourceNoteId: null,
     });
     service.deleteChat(source.id);
-    expect(service.getChat(child.id).origin).toEqual({
+    expect(service.getChat(child.id).origin).toMatchObject({
       sourceChatId: null,
       sourceNoteId: null,
     });

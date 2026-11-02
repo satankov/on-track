@@ -38,6 +38,8 @@ export interface ImportedRecords {
     chat_id: string;
     source_chat_id: string | null;
     source_note_id: string | null;
+    source_note_created_at: number | null;
+    source_note_position_id: string | null;
   }>;
   noteLabels: Array<{ note_id: string; chat_id: string; label: string }>;
 }
@@ -65,7 +67,7 @@ export function readImportedRecords(
       .all() as ProjectLabelRow[],
     origins: source
       .prepare(
-        "SELECT chat_id,source_chat_id,source_note_id FROM subthread_origins",
+        "SELECT chat_id,source_chat_id,source_note_id,source_note_created_at,source_note_position_id FROM subthread_origins",
       )
       .all() as ImportedRecords["origins"],
     noteLabels: source
@@ -93,7 +95,7 @@ export function insertImportedRecords(
     "INSERT INTO note_labels (note_id,chat_id,label) VALUES (@note_id,@chat_id,@label)",
   );
   const origin = database.prepare(
-    "INSERT INTO subthread_origins(chat_id,source_chat_id,source_note_id) VALUES(@chat_id,@source_chat_id,@source_note_id)",
+    "INSERT INTO subthread_origins(chat_id,source_chat_id,source_note_id,source_note_created_at,source_note_position_id) VALUES(@chat_id,@source_chat_id,@source_note_id,@source_note_created_at,@source_note_position_id)",
   );
   database.transaction(() => {
     for (const row of [...records.projects].sort(

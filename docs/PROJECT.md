@@ -30,8 +30,8 @@ The next release candidate includes the completed, locally verified UI trim in
 [plan 0033](plans/0033-release-candidate-ui-trim.md): title-only project rows with
 Attention indicators, “Question” display text, and simplified guidance/navigation.
 This UI trim is preserved alongside the completed, unreleased project-subthreads slice in
-[plan 0034](plans/0034-project-subthreads.md). Current source uses schema 10;
-published v0.1.1 remains schema 9. Backup format remains 1, with schema 3–9
+[plan 0034](plans/0034-project-subthreads.md). Current source uses schema 11;
+published v0.1.1 remains schema 9. Backup format remains 1, with schema 3–10
 bundles migrated in validated staging. The next release target is v0.2.0 on `release/v0.2.0`; it is not published.
 
 The candidate also includes compact project/subthread rows, full-width child
@@ -43,7 +43,7 @@ The published v0.1.1 release includes the completed flat UI and design cookbook
 slice in [plan 0029](plans/0029-flat-ui-and-design-contract.md), plus intersecting
 history filters, database-backed preferences and custom project labels in
 [plan 0031](plans/0031-multi-filters-durable-preferences-custom-labels.md).
-The published release uses schema 9; current source advances to schema 10. Its canonical
+The published release uses schema 9; current source advances to schema 11. Its canonical
 standards are [DESIGN.md](../DESIGN.md), with an interactive reference under
 [branding/threadstr/ui](../branding/threadstr/ui/README.md). The Zod dependency
 fix for issue #72 and the static-serving and paired Vitest updates are published
@@ -178,7 +178,8 @@ remains a regression-protected alpha, not a dedicated design target.
 - [Project subthreads](plans/0034-project-subthreads.md) keep the project as its
   main conversation and add one flat level of independently named conversations.
   Independent subthreads and continuations start empty; continuations retain
-  source links without copying messages. Children inherit the root accent
+  source links without copying messages. Deleting a source message retains its
+  continuation links at the source date and keeps return navigation anchored there. Children inherit the root accent
   dynamically and own their labels, message-display setting, pin and archive
   state. Project selection reveals five indented children with Show all for the
   remainder. Each child has its own Edit and delete controls. Search's Project

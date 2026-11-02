@@ -79,3 +79,15 @@ attachment cleanup, client race and desktop browser tests cover these contracts.
 [Plan 0034](../plans/0034-project-subthreads.md#completion-evidence) owns the exact
 verification results and qualification limits. [DESIGN.md](../../DESIGN.md#project-subthreads)
 owns the approved desktop interaction and visual contract.
+
+## Amendment — persistent source positions, 2026-11-02
+
+The user requires continuation links to remain at the source message's position
+when that message is deleted, and return links to navigate to that position.
+Schema 11 adds a retained source date and opaque ordering key. Deletion captures
+the latest date before the source reference is cleared. The source timeline then
+renders a standalone link at that date; no message body is preserved. Backups and
+merge retain the anchor metadata. Live schema-10 sources are backfilled on upgrade;
+previously deleted sources retain the conversation-only fallback because their
+dates are no longer available. Source-conversation deletion still makes the source
+unavailable, and deleting a subthread removes its continuation marker.

@@ -5,7 +5,13 @@ export interface Chat {
   /** Null for Main; children always reference a root project. */
   projectId?: string | null;
   /** Present for continued subthreads even when their source is deleted. */
-  origin?: { sourceChatId: string | null; sourceNoteId: string | null } | null;
+  origin?: {
+    sourceChatId: string | null;
+    sourceNoteId: string | null;
+    /** Retained history anchor; null for already-deleted legacy sources. */
+    sourceNoteCreatedAt?: number | null;
+    sourceNotePositionId?: string | null;
+  } | null;
   labelDefinitions?: ProjectLabel[];
   labelConfigurationRevision?: number;
   id: string;
