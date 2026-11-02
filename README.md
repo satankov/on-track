@@ -16,6 +16,9 @@ where you left off. Use it for work projects, a side project, or your next trip.
 
 Current release: **[v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1)**.
 See the [changelog](CHANGELOG.md) for changes and upgrade limitations.
+This checkout prepares **v0.2.0**, adding project subthreads, project-wide search,
+and a compact sidebar. The candidate is not yet published; the installation
+commands below still select the latest published release.
 
 ## See it in action
 

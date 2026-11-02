@@ -75,6 +75,107 @@ describe("local project-chat API", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it("creates scoped subthreads and reads the same whole project from every conversation", async () => {
+    const rootResponse = await app.inject({
+      method: "POST",
+      url: "/api/chats",
+      payload: { title: "Website", accent: "ocean" },
+    });
+    const root = rootResponse.json();
+    expect(root).toMatchObject({ projectId: null, origin: null });
+    const firstResponse = await app.inject({
+      method: "POST",
+      url: `/api/chats/${root.id}/subthreads`,
+      payload: { title: "Navigation" },
+    });
+    expect(firstResponse.statusCode).toBe(201);
+    const first = firstResponse.json();
+    const note = (
+      await app.inject({
+        method: "POST",
+        url: `/api/chats/${first.id}/notes`,
+        payload: noteForm({ body: "Origin text" }),
+      })
+    ).json();
+    const secondResponse = await app.inject({
+      method: "POST",
+      url: `/api/chats/${first.id}/subthreads`,
+      payload: { title: "Review", sourceNoteId: note.id },
+    });
+    expect(secondResponse.statusCode).toBe(201);
+    const second = secondResponse.json();
+    expect(second).toMatchObject({
+      projectId: root.id,
+      origin: { sourceChatId: first.id, sourceNoteId: note.id },
+    });
+    const detail = (
+      await app.inject({ url: `/api/chats/${second.id}` })
+    ).json();
+    expect(detail.notes).toEqual([]);
+    const unrelated = (
+      await app.inject({
+        method: "POST",
+        url: "/api/chats",
+        payload: { title: "Unrelated", accent: "iris" },
+      })
+    ).json();
+    await app.inject({ method: "PUT", url: `/api/chats/${first.id}/archive` });
+    const project = (
+      await app.inject({ url: `/api/chats/${second.id}/project` })
+    ).json();
+    expect(project.map((chat: { id: string }) => chat.id).sort()).toEqual(
+      [root.id, first.id, second.id].sort(),
+    );
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: `/api/chats/${second.id}`,
+          payload: { accent: "coral" },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: `/api/chats/${unrelated.id}/subthreads`,
+          payload: { title: "Wrong source", sourceNoteId: note.id },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: `/api/chats/${root.id}/subthreads`,
+          payload: { title: " ", sourceNoteId: note.id },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: `/api/chats/${root.id}/subthreads`,
+          payload: { title: "Bad", projectId: unrelated.id },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (await app.inject({ url: "/api/chats/missing/project" })).statusCode,
+    ).toBe(404);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/chats/missing/subthreads",
+          payload: { title: "Missing" },
+        })
+      ).statusCode,
+    ).toBe(404);
+  });
+
   it("creates five short custom labels, preserves assignments on rename/disable, and rejects stale edits", async () => {
     const created = (
       await app.inject({
@@ -1708,7 +1809,7 @@ describe("local project-chat API", () => {
     const otherPath = join(directory, "other.sqlite");
     const otherDatabase = openDatabase(otherPath);
     otherDatabase.exec(
-      "DROP TABLE note_labels; DROP TABLE note_attachments; DROP TABLE project_labels; DROP TABLE notes; DROP TABLE chats;",
+      "DROP TABLE subthread_origins; DROP TABLE note_labels; DROP TABLE note_attachments; DROP TABLE project_labels; DROP TABLE notes; DROP TABLE chats;",
     );
     otherDatabase.close();
 

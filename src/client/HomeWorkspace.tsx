@@ -25,7 +25,7 @@ export function HomeWorkspace({
     choose: {
       eyebrow: null,
       heading: "Choose a project to continue.",
-      copy: "Select a project from the list or start new thread.",
+      copy: null,
     },
     error: {
       eyebrow: "Projects unavailable",
@@ -70,7 +70,7 @@ export function HomeWorkspace({
               content.heading
             )}
           </h1>
-          <p>{content.copy}</p>
+          {content.copy && <p>{content.copy}</p>}
           {state === "empty" && (
             <button
               className="button button-primary"

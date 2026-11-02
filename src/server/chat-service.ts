@@ -13,6 +13,7 @@ import {
   MAX_ATTACHMENTS_PER_MESSAGE,
   MAX_ATTACHMENT_BYTES,
   createChatInputSchema,
+  createSubthreadInputSchema,
   updateChatInputSchema,
   labelSchema,
   senderSchema,
@@ -195,6 +196,23 @@ export class ChatService {
       ...values,
       now: this.clock(),
     });
+  }
+
+  createSubthread(sourceId: string, input: unknown): Chat {
+    const values = createSubthreadInputSchema.parse(input);
+    const chat = this.repository.createSubthread(sourceId, {
+      ...values,
+      id: this.idFactory(),
+      now: this.clock(),
+    });
+    if (!chat) throw new ProjectNotFoundError();
+    return chat;
+  }
+
+  getProject(id: string): ChatDetail[] {
+    const chats = this.repository.listProjectChats(id, this.clock());
+    if (!chats) throw new ProjectNotFoundError();
+    return chats.map((chat) => this.getChat(chat.id));
   }
 
   updateChat(id: string, input: unknown): Chat {

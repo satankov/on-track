@@ -62,6 +62,143 @@ describe("SQLite backup bundle", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it.each([
+    "UPDATE subthread_origins SET source_note_created_at=-1, source_note_position_id='note-a'",
+    "UPDATE subthread_origins SET source_note_created_at=1.5, source_note_position_id='note-a'",
+    "UPDATE subthread_origins SET source_note_created_at=1, source_note_position_id=NULL",
+    "UPDATE subthread_origins SET source_note_created_at=NULL, source_note_position_id='note-a'",
+    "UPDATE chats SET project_id='child' WHERE id='child'",
+    "UPDATE chats SET project_id='child' WHERE id='sibling'",
+    "INSERT INTO subthread_origins(chat_id,source_chat_id,source_note_id) VALUES('chat-a',NULL,NULL)",
+    "UPDATE subthread_origins SET source_chat_id='other' WHERE chat_id='child'",
+    "UPDATE subthread_origins SET source_note_id='other-note' WHERE chat_id='child'",
+    "UPDATE subthread_origins SET source_chat_id=NULL WHERE chat_id='child'",
+  ])(
+    "rejects invalid subthread graphs before selective import: %s",
+    async (mutation) => {
+      sourceDatabase.exec(`
+      INSERT INTO chats(id,title,accent,created_at,updated_at,project_id) VALUES
+        ('child','Child','ocean',2,2,'chat-a'), ('sibling','Sibling','ocean',3,3,'chat-a'),
+        ('other','Other','moss',1,1,NULL);
+      INSERT INTO notes(id,chat_id,body,created_at) VALUES('other-note','other','Unrelated note',1);
+      INSERT INTO subthread_origins(chat_id,source_chat_id,source_note_id) VALUES('child','chat-a','note-a');
+    `);
+      for (const id of ["child", "sibling", "other"])
+        seedProjectLabels(sourceDatabase, id);
+      const bundlePath = join(directory, "invalid-subthread.on-track-backup");
+      await createSqliteBackupBundle({
+        sourceDatabase,
+        destinationPath: bundlePath,
+        attachmentStore: { read: vi.fn() },
+      });
+      mutateBundle(bundlePath, (bundle) => {
+        bundle.pragma("ignore_check_constraints = ON");
+        bundle.exec(mutation);
+      });
+      expect(() =>
+        prepareSqliteBackupBundle({
+          bundlePath,
+          workspace: createRestoreWorkspace(directory, "invalid-subthread"),
+          selection: ["other"],
+        }),
+      ).toThrow();
+      expect(
+        sourceDatabase
+          .prepare("SELECT project_id FROM chats WHERE id='child'")
+          .pluck()
+          .get(),
+      ).toBe("chat-a");
+    },
+  );
+
+  it("migrates schema-10 backup provenance into persistent history anchors", async () => {
+    sourceDatabase.exec(`INSERT INTO chats(id,title,accent,created_at,updated_at,project_id) VALUES('child','Child','ocean',2,2,'chat-a');
+      INSERT INTO subthread_origins(chat_id,source_chat_id,source_note_id) VALUES('child','chat-a','note-a');`);
+    seedProjectLabels(sourceDatabase, "child");
+    const bundlePath = join(directory, "schema-10.on-track-backup");
+    await createSqliteBackupBundle({
+      sourceDatabase,
+      destinationPath: bundlePath,
+      attachmentStore: { read: vi.fn() },
+    });
+    mutateBundle(bundlePath, (legacy) =>
+      legacy.exec(`
+      ALTER TABLE subthread_origins DROP COLUMN source_note_created_at;
+      ALTER TABLE subthread_origins DROP COLUMN source_note_position_id;
+      DELETE FROM __drizzle_migrations WHERE created_at > 1793364000000;
+      UPDATE app_metadata SET schema_version=10;
+      UPDATE _on_track_bundle SET schema_version=10;`),
+    );
+    expect(validateSqliteBackupBundle(bundlePath).schemaVersion).toBe(10);
+    const prepared = prepareSqliteBackupBundle({
+      bundlePath,
+      workspace: createRestoreWorkspace(directory, "schema-10"),
+      selection: ["chat-a"],
+    });
+    const candidate = new Database(prepared.candidateDatabasePath, {
+      readonly: true,
+    });
+    try {
+      expect(
+        candidate
+          .prepare(
+            "SELECT source_note_created_at,source_note_position_id FROM subthread_origins",
+          )
+          .get(),
+      ).toEqual({
+        source_note_created_at: 1,
+        source_note_position_id: "note-a",
+      });
+    } finally {
+      candidate.close();
+    }
+  });
+
+  it("migrates a schema-9 backup into root conversations without changing message content", async () => {
+    const bundlePath = join(directory, "schema-9.on-track-backup");
+    await createSqliteBackupBundle({
+      sourceDatabase,
+      destinationPath: bundlePath,
+      attachmentStore: { read: vi.fn() },
+    });
+    mutateBundle(bundlePath, (legacy) => {
+      legacy.exec(`DROP TABLE subthread_origins; DROP INDEX chats_project_idx;
+        ALTER TABLE chats DROP COLUMN project_id;
+        DELETE FROM __drizzle_migrations WHERE created_at > 1793269712711;
+        UPDATE app_metadata SET schema_version=9;
+        UPDATE _on_track_bundle SET schema_version=9;`);
+    });
+    expect(validateSqliteBackupBundle(bundlePath).schemaVersion).toBe(9);
+    const prepared = prepareSqliteBackupBundle({
+      bundlePath,
+      workspace: createRestoreWorkspace(directory, "schema-9"),
+      selection: ["chat-a"],
+    });
+    const candidate = new Database(prepared.candidateDatabasePath, {
+      readonly: true,
+    });
+    try {
+      expect(
+        candidate.prepare("SELECT id,project_id FROM chats").all(),
+      ).toEqual([{ id: "chat-a", project_id: null }]);
+      expect(candidate.prepare("SELECT body FROM notes").pluck().get()).toBe(
+        "Plan",
+      );
+      expect(
+        candidate.prepare("SELECT * FROM subthread_origins").all(),
+      ).toEqual([]);
+      expect(
+        candidate
+          .prepare("SELECT schema_version FROM app_metadata")
+          .pluck()
+          .get(),
+      ).toBe(11);
+      expect(candidate.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      candidate.close();
+    }
+  });
+
   it.each([-1, 1.5, "bad", 9007199254740992, "pinned"])(
     "rejects malformed archive state %s",
     async (value) => {
@@ -115,7 +252,7 @@ describe("SQLite backup bundle", () => {
       mutateBundle(bundlePath, (legacy) => {
         const preferenceMigration = legacy
           .prepare(
-            "SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1 OFFSET 1",
+            "SELECT hash, created_at FROM __drizzle_migrations WHERE created_at = 1793269343386",
           )
           .get() as { hash: string; created_at: number };
         rewindToSchema7(legacy);
@@ -159,7 +296,7 @@ describe("SQLite backup bundle", () => {
             .prepare("SELECT schema_version FROM app_metadata")
             .pluck()
             .get(),
-        ).toBe(9);
+        ).toBe(11);
       } finally {
         candidate.close();
       }
@@ -243,7 +380,7 @@ describe("SQLite backup bundle", () => {
     );
     expect(manifest).toEqual({
       formatVersion: 1,
-      schemaVersion: 9,
+      schemaVersion: 11,
       createdAt: 1_725_000_100_000,
       attachmentCount: 1,
       totalBytes: 12,
@@ -1290,7 +1427,7 @@ describe("SQLite backup bundle", () => {
     });
 
     expect(validateSqliteBackupBundle(bundlePath)).toMatchObject({
-      schemaVersion: 9,
+      schemaVersion: 11,
     });
     const prepared = prepareSqliteBackupBundle({
       bundlePath,
@@ -1428,7 +1565,7 @@ describe("SQLite backup bundle", () => {
     });
 
     expect(validateSqliteBackupBundle(bundlePath)).toMatchObject({
-      schemaVersion: 9,
+      schemaVersion: 11,
     });
     const prepared = prepareSqliteBackupBundle({
       bundlePath,
@@ -1513,7 +1650,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(9);
+      ).toBe(11);
       expect(
         candidate
           .prepare("SELECT sender FROM notes WHERE id = 'note-a'")
@@ -1567,7 +1704,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(9);
+      ).toBe(11);
       expect(
         candidate
           .prepare(
@@ -1688,7 +1825,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(9);
+      ).toBe(11);
       expect(
         candidate
           .prepare("SELECT pinned_at FROM chats WHERE id = 'chat-a'")

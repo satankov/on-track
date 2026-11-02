@@ -292,12 +292,6 @@ select:focus {
   }
 }
 
-.brand-subtitle {
-  margin: 3px 0 0;
-  color: var(--muted);
-  font-size: 0.72rem;
-}
-
 .new-project-button {
   width: 38px;
   height: 38px;
@@ -394,7 +388,7 @@ button.rail-section-label {
 
 .project-row {
   position: relative;
-  min-height: 58px;
+  min-height: 40px;
   border-radius: 8px;
 }
 .project-row:hover {
@@ -415,10 +409,10 @@ button.rail-section-label {
 
 .project-item {
   width: 100%;
-  min-height: 58px;
+  min-height: 40px;
   display: flex;
   align-items: center;
-  padding: 9px 46px 9px 10px;
+  padding: 6px 46px 6px 10px;
   border: 0;
   border-radius: 8px;
   color: var(--ink);
@@ -452,9 +446,10 @@ button.rail-section-label {
 .project-pin-button {
   position: absolute;
   z-index: 2;
-  inset: 0 0 auto auto;
+  inset: 50% 0 auto auto;
+  transform: translateY(-50%);
   width: 44px;
-  height: 44px;
+  height: 40px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -485,7 +480,6 @@ button.rail-section-label {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 2;
-  transform: translateY(-3px);
 }
 .project-pin-button[aria-pressed="true"] svg {
   fill: color-mix(in srgb, currentColor 20%, transparent);
@@ -508,8 +502,13 @@ button.rail-section-label {
 .project-attention-dot {
   position: absolute;
   z-index: 2;
-  right: 18px;
-  bottom: 13px;
+  right: 22px;
+  top: 50%;
+  transform: translate(50%, -50%);
+}
+.project-row:hover .project-attention-dot,
+.project-row:focus-within .project-attention-dot {
+  opacity: 0;
 }
 
 .visually-hidden {
@@ -2425,8 +2424,7 @@ kbd {
   color: var(--ink);
   background: color-mix(in srgb, var(--accent) 8%, var(--paper));
 }
-.composer-sender-or,
-.composer-sender-hint {
+.composer-sender-or {
   flex: 0 0 auto;
   color: var(--muted);
   font-size: 0.66rem;
@@ -2442,11 +2440,6 @@ kbd {
   background: var(--control);
   font-size: 0.72rem;
   font-weight: 650;
-}
-.composer-sender-hint {
-  margin-left: auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .composer-timestamp-row {
   min-width: 0;
@@ -2715,9 +2708,21 @@ kbd {
 }
 .dialog-actions {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 26px;
+}
+.project-settings-fields .dialog-actions .field-help {
+  flex: 1 1 160px;
+  margin: 0;
+}
+.dialog-action-buttons {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  margin-left: auto;
 }
 .settings-actions {
   display: grid;
@@ -2925,9 +2930,8 @@ kbd {
   gap: 8px;
   margin: 0 0 28px;
 }
-.project-edit-actions .button-quiet {
-  border: 0;
-  background: transparent;
+.project-edit-actions .settings-back-button {
+  margin-left: 0;
 }
 @media (forced-colors: active) {
   .project-settings-fields .text-input,
@@ -3104,9 +3108,6 @@ kbd {
   .composer-sender-row {
     gap: 6px;
     padding-inline: 7px;
-  }
-  .composer-sender-hint {
-    display: none;
   }
   .text-input.composer-sender-input {
     flex: 1 1 auto;
@@ -3314,8 +3315,23 @@ kbd {
   }
 }
 
-@media (pointer: coarse) {
+@media (pointer: coarse), (hover: none), (max-width: 760px) {
+  .project-row,
+  .project-item {
+    min-height: 44px;
+  }
   .project-pin-button {
+    height: 44px;
+    opacity: 1;
+  }
+  .project-row[data-attention-state="today"] .project-item,
+  .project-row[data-attention-state="earlier"] .project-item {
+    padding-right: 64px;
+  }
+  .project-row .project-attention-dot,
+  .project-row:hover .project-attention-dot,
+  .project-row:focus-within .project-attention-dot {
+    right: 54px;
     opacity: 1;
   }
 }
@@ -3750,6 +3766,7 @@ kbd {
   flex: 0 0 auto;
   margin: 8px 0 0;
   padding: 0 4px;
+  text-align: center;
 }
 .history-filter-button {
   flex-shrink: 0;
@@ -3896,5 +3913,174 @@ kbd {
   .project-label-edit-row,
   .project-label-edit-fields {
     gap: 4px;
+  }
+}
+
+/* Flat project subthreads reuse the rail, date markers and icon controls. */
+.project-row--subthread .project-item {
+  padding-left: 34px;
+}
+.project-row--subthread .project-item-copy strong {
+  font-weight: 400;
+}
+.subthread-disclosure-row {
+  margin-left: 24px;
+  list-style: none;
+}
+.subthread-disclosure {
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.subthread-disclosure:hover {
+  color: var(--ink);
+  background: var(--selection);
+}
+.chat-heading .subthread-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: 100%;
+}
+.subthread-parent-title {
+  flex: 0 1 auto;
+  max-width: 40%;
+  min-width: 0;
+  text-align: left;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  letter-spacing: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.subthread-parent-title:hover {
+  color: var(--ink);
+}
+.subthread-title-separator {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.conversation-title {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subthread-heading .conversation-title {
+  flex: 1 1 60%;
+}
+.thread-origin {
+  max-width: var(--chat-column-width);
+  margin: 0 auto 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.thread-origin button {
+  padding: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.thread-origin button:hover {
+  color: var(--ink);
+  background: var(--selection);
+}
+.message-row:has(.thread-continuation) {
+  flex-wrap: wrap;
+}
+.thread-continuation {
+  flex: 0 0 100%;
+  margin: 8px 0 0;
+}
+.project-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.project-search-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.project-search-scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 44px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.project-search-scope input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--button-primary);
+}
+.project-search-results {
+  max-width: var(--chat-column-width);
+  margin: 0 auto;
+}
+.project-search-results > section + section {
+  margin-top: 24px;
+}
+.project-search-result {
+  margin: 8px 0;
+}
+.project-search-result-context {
+  gap: 12px;
+  overflow-wrap: anywhere;
+}
+.project-search-result-body {
+  margin: 0;
+}
+.project-search-result-file {
+  margin: 8px 0 0;
+  color: var(--message-muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.project-search-result-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  color: var(--message-muted);
+  font-size: 0.72rem;
+}
+.project-search-result-footer .message-history-button {
+  position: static;
+  transform: none;
+  margin-left: auto;
+}
+@media (min-width: 961px) {
+  .workspace-chat:not(.workspace-example) .message-stack {
+    max-width: min(760px, 82%, calc(100% - 160px));
+  }
+}
+@media (forced-colors: active) {
+  .thread-origin button,
+  .subthread-parent-title {
+    color: LinkText;
   }
 }

@@ -1,3 +1,4 @@
+import { labelDisplayName } from "./label-display.js";
 import {
   useEffect,
   useRef,
@@ -77,7 +78,9 @@ export function useLabelReordering(
     const [label] = next.splice(from, 1);
     next.splice(to, 0, label!);
     onChange(next);
-    setStatus(`${label!.name || "New label"} moved to position ${to - 1}.`);
+    setStatus(
+      `${labelDisplayName(label!) || "New label"} moved to position ${to - 1}.`,
+    );
     focusHandle(key);
   }
   function cancel() {
@@ -222,7 +225,7 @@ export function useLabelReordering(
       setStatus(
         picked === key
           ? "Reordering cancelled."
-          : `${labels.find((label) => label.key === key)?.name || "New label"} selected. Choose a handle at the new position.`,
+          : `${labelDisplayName(labels.find((label) => label.key === key) ?? { name: "New label" }) || "New label"} selected. Choose a handle at the new position.`,
       );
     }
   }

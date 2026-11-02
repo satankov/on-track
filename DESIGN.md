@@ -107,7 +107,7 @@ technical values. Use the approved SVG for the logo; preserve the existing
 The small metadata/caption roles are existing compact UI exceptions, not sizes
 for new body text, instructions, or ordinary controls. Use the nearest role;
 do not invent intermediate font sizes. Keep sentence case except established
-rail/toolbar captions. Long message text wraps; rail previews and chat titles
+rail/toolbar captions. Long message text wraps; project names and chat titles
 may truncate with ellipsis. Preserve full accessible names.
 
 Large Home/empty-state headings and the mobile chat title (1.65rem) are existing
@@ -226,6 +226,17 @@ may be smaller; verify target size/spacing and do not shrink them further.
 
 ## Components
 
+### Project rail
+
+User-project rows show the title and existing pin/restore and Attention controls.
+No message preview or empty-message placeholder is rendered. Rows have a 40px
+minimum height (44px on narrow/touch layouts), with vertically centered titles.
+Attention and pin/restore share a centered right-hand slot; hovering or focusing
+the row replaces the dot with the action. Narrow/touch layouts keep the action
+visible and place Attention beside it. Preserve visible mutation errors and
+accessible Attention descriptions. The wordmark has no subtitle.
+Section headers show their name and disclosure chevron, without item counts.
+
 ### Settings and Edit project
 
 Use **heading → one adjustable group → useful note below**. Reuse
@@ -234,7 +245,8 @@ and `.field-help`. Outer panels are transparent. No title echo, eyebrow, or
 introductory sentence explaining that this is the settings screen.
 
 - Edit has an accessible main landmark named Edit project, no visible duplicate
-  title. Back to project and Save changes are first in DOM and at the top.
+  title. The Settings-style back arrow (accessible name “Back to project”) and
+  Save changes are first in DOM and at the top. The arrow stays left aligned.
 - Project accent: one horizontal swatch strip, native radios, visible check on
   selected swatch. Color names remain accessible, not printed beside every dot.
 - Project labels: one column, icon then name then right-aligned square checkbox.
@@ -259,8 +271,10 @@ introductory sentence explaining that this is the settings screen.
   into one blank, including saved labels; Save removes their definitions and
   message tags. Retyping before Save retains the current row's identity.
   Custom names allow eight grapheme characters and one optional glyph; field
-  errors appear while typing. Use the concise “Drag rows to reorder.” note,
-  with keyboard/tap details in the handle's accessible description.
+  errors appear while typing. Keep the concise limits/disablement note,
+  with keyboard/tap reordering details in the handle's accessible description.
+  Display the built-in `open-question` label as “Question”; its stored canonical
+  name remains unchanged for backup compatibility.
 - General uses the same row/checkbox. Backups keep left-side selection checkboxes
   because these are bulk selection lists, not setting switches.
 - Archive and Delete stay in one column, separated by the archive preservation
@@ -270,6 +284,9 @@ introductory sentence explaining that this is the settings screen.
   the fold while its initiating button is at the top.
 - Create project reuses the same field/swatch treatment in a real modal dialog.
   Keep its accessible title, Cancel/Create actions, Escape and focus restoration.
+  Place “More settings in Edit project.” in the action footer using `.field-help`,
+  vertically aligned with Cancel/Create. Keep the buttons together and right
+  aligned; wrap the hint above them when narrow.
   Let `showModal()` establish initial focus and remember the opener; do not move
   focus into the form before opening the native modal.
 - Appearance uses native radio previews, a check, and Selected text. Selection
@@ -295,6 +312,33 @@ scoped shared family. Focus must remain visible after decorative borders are
 removed. Placeholders supplement real labels. Validation uses `role="alert"`
 and associated fields where applicable; success/status uses polite announcements.
 
+### Project subthreads
+
+The project row is Main, with no project-level chevron. Clicking it opens Main
+and reveals children; clicking the already-open Main collapses children without
+closing Main. Child text and Show all indent 24px; child titles use normal (400)
+weight. Child hover/selection backgrounds span the same full width as Main.
+Show five active children, pins first, keeping the selected child visible;
+Show all expands in place. Preserve
+candidate title-only rows and Attention indicators.
+
+Child headers contain a muted clickable root, slash, and child title. Both titles
+have min-width:0, single-line overflow and independent ellipsis; actions stay
+visible. The root consumes at most 40% of available title space and short names
+remain adjacent. Use the same branch glyph in New subthread and message actions.
+
+Centered muted date-style markers show Independent subthread, Subthread from a
+linked source, or Continued in a linked child. Never quote the source. Deleting a source message leaves its continuation link
+at the same date and history position; the child’s source link focuses that marker.
+Deleted source conversations receive explicit fallback text. Links retain visible keyboard focus.
+
+Message action order: Change labels, Continue in subthread, Copy message, Edit
+message, Delete message. Reuse compact icon controls and reserve 160px beside
+desktop bubbles for five actions. Keep focus/touch visibility and existing narrow
+layout behavior. Creation asks for a name only. Child Edit has all settings except
+accent, plus archive/delete. Search uses a native Project checkbox for whole-project
+scope, including archived conversations. These new layout decisions target desktop.
+
 ### History filters
 
 Preserve the existing filter width and button geometry. Labels use the existing
@@ -303,7 +347,7 @@ sidebar. On desktop its grid area spans both history and composer rows down to
 the viewport bottom; composer growth cannot shorten the rail. Composer padding
 and fade start in the right grid column. The filter list scrolls only when its
 contents exceed that available height; its natural height puts the
-quiet `⌘/Ctrl + multiple` hint immediately below the final label, without a
+centered, quiet `⌘/Ctrl + multiple` hint immediately below the final label, without a
 checkbox or bottom anchoring. The hint shares the send shortcut's 0.64rem size,
 normal line height, 400 weight, inherited font and muted color. Each selected button is pressed; All represents
 the empty selection. Mobile retains horizontal filters with the hint underneath.
@@ -336,7 +380,8 @@ whole project even when the selected filters intersect.
   a decorative card imply that a blocked native action is available.
   Wrap explanations instead of ellipsizing them. The visible file-picker button
   is the composer's attachment Tab stop; its hidden file input is not a second one.
-- Search stays within the current project with a quiet compact field, counts,
+- Search defaults to the current conversation; Project includes Main and all
+  children. Reuse the quiet compact field, counts,
   clear action, no-results feedback, and the existing highlight color pair.
 - Hover-only message actions must also appear on focus and touch layouts. Keep
   state markers and counts readable without hover.

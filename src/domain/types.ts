@@ -1,9 +1,17 @@
 import type { ProjectLabel } from "./labels.js";
 import type { Accent, ConfigurableLabel, Label } from "./validation.js";
 
-export const MAX_PROJECT_PREVIEW_SOURCE_LENGTH = 512;
-
 export interface Chat {
+  /** Null for Main; children always reference a root project. */
+  projectId?: string | null;
+  /** Present for continued subthreads even when their source is deleted. */
+  origin?: {
+    sourceChatId: string | null;
+    sourceNoteId: string | null;
+    /** Retained history anchor; null for already-deleted legacy sources. */
+    sourceNoteCreatedAt?: number | null;
+    sourceNotePositionId?: string | null;
+  } | null;
   labelDefinitions?: ProjectLabel[];
   labelConfigurationRevision?: number;
   id: string;
@@ -15,8 +23,6 @@ export interface Chat {
   updatedAt: number;
   archivedAt: number | null;
   pinnedAt: number | null;
-  latestMessagePreview: string | null;
-  nextMessageAt: number | null;
   latestAttentionAt: number | null;
   nextAttentionAt: number | null;
 }

@@ -5,9 +5,9 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
-const CURRENT_SCHEMA_VERSION = 9;
+const CURRENT_SCHEMA_VERSION = 11;
 // Keep in sync with the newest `when` value in drizzle/meta/_journal.json.
-export const LATEST_BUNDLED_MIGRATION_AT = 1793269712711;
+export const LATEST_BUNDLED_MIGRATION_AT = 1793608243633;
 
 export function applyBundledMigrations(sqlite: Database.Database): void {
   migrate(drizzle(sqlite), {

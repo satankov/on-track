@@ -138,9 +138,10 @@ test("archive settings and sidebar restoration preserve projects across restart 
   await page.getByRole("button", { name: "Projects", exact: true }).click();
   await restoreRow.focus();
   await restoreRow.press("Enter");
+  await expect(restoreRow).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Archive", exact: true }),
-  ).toContainText("00");
+  ).toHaveText("Archive");
   await expect(
     page.getByRole("button", { name: "Projects", exact: true }),
   ).toBeFocused();

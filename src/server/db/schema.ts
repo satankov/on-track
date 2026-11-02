@@ -1,5 +1,6 @@
 import {
   check,
+  type AnySQLiteColumn,
   index,
   integer,
   primaryKey,
@@ -30,6 +31,9 @@ export const chats = sqliteTable(
   {
     id: text("id").primaryKey(),
     title: text("title").notNull(),
+    projectId: text("project_id").references((): AnySQLiteColumn => chats.id, {
+      onDelete: "cascade",
+    }),
     labelConfigurationRevision: integer("label_configuration_revision")
       .notNull()
       .default(0),
@@ -66,6 +70,11 @@ export const chats = sqliteTable(
       "chats_archive_valid",
       sql`${table.archivedAt} IS NULL OR (typeof(${table.archivedAt}) = 'integer' AND ${table.archivedAt} >= 0 AND ${table.archivedAt} <= 9007199254740991 AND ${table.pinnedAt} IS NULL)`,
     ),
+    check(
+      "chats_project_not_self",
+      sql`${table.projectId} IS NULL OR ${table.projectId} != ${table.id}`,
+    ),
+    index("chats_project_idx").on(table.projectId),
     index("chats_activity_idx").on(table.updatedAt, table.id),
   ],
 );
@@ -89,6 +98,32 @@ export const notes = sqliteTable(
     ),
     unique("notes_project_identity").on(table.id, table.chatId),
     index("notes_chat_history_idx").on(table.chatId, table.createdAt, table.id),
+  ],
+);
+
+export const subthreadOrigins = sqliteTable(
+  "subthread_origins",
+  {
+    chatId: text("chat_id")
+      .primaryKey()
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    sourceNoteCreatedAt: integer("source_note_created_at"),
+    sourceNotePositionId: text("source_note_position_id"),
+    sourceChatId: text("source_chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    sourceNoteId: text("source_note_id").references(() => notes.id, {
+      onDelete: "set null",
+    }),
+  },
+  (table) => [
+    check(
+      "subthread_origin_not_self",
+      sql`${table.sourceChatId} IS NULL OR ${table.sourceChatId} != ${table.chatId}`,
+    ),
+    index("subthread_origins_source_chat_idx").on(table.sourceChatId),
+    index("subthread_origins_source_note_idx").on(table.sourceNoteId),
   ],
 );
 

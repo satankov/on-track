@@ -61,6 +61,11 @@ remain separate desktop evidence.
 
 ## Prepare a version
 
+The current candidate is **v0.2.0** on `release/v0.2.0`; see
+[plan 0035](plans/0035-v0.2.0-release-preparation.md). v0.1.1 remains the latest
+published release. Open the candidate PR for CI, then wait for required checks
+and maintainer confirmation before merging or tagging it.
+
 1. Start a release branch from current `main` and choose an unused stable
    `X.Y.Z`. In the commands below, set `release_version` to that chosen value.
    Never reuse a published version or invent a managed compatibility floor.
@@ -181,7 +186,7 @@ usable after the corresponding assets are published.
 
 Version 0.0.9 introduced threadstr and `thr`;
 [v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1) is the latest published release.
-Select a new unused version for the next candidate.
+The next candidate is v0.2.0; preparation does not publish it.
 Preserve the `on-track-vX.Y.Z.zip` asset pattern, repository URLs, bootstrap tokens,
 manifest protocol, and managed compatibility floor `0.0.7`. Published v0.0.8
 clients require these identities. See [compatibility](compatibility.md) and

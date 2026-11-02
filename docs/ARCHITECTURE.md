@@ -8,8 +8,12 @@ patches recorded in [plan 0025](plans/0025-security-audit-response.md)
 and the history controls, composer feedback, and managed uninstall in
 [plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md), plus
 current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
-Published database and backup schema is 9, matching current source; backup format
-remains 1. The managed compatibility floor remains `0.0.7`.
+Published database and backup schema is 9. Unreleased project subthreads advance
+the v0.2.0 candidate to schema 11; backup format remains 1. Release preparation
+and verification are tracked in [plan 0035](plans/0035-v0.2.0-release-preparation.md). See
+[ADR-0014](adr/0014-flat-project-subthreads.md) for the accepted ownership and
+provenance model and [plan 0034](plans/0034-project-subthreads.md) for delivery
+evidence. The managed compatibility floor remains `0.0.7`.
 The included flat UI/design-contract slice changes client UI, tests, and documentation
 only; see [plan 0029](plans/0029-flat-ui-and-design-contract.md). It changes no
 API, database, backup, dependency, or installation contract. The included
@@ -28,6 +32,12 @@ managed delivery in [ADR-0008](adr/0008-managed-install-and-cli.md).
 transition; [compatibility guidance](compatibility.md) inventories retained
 storage, environment, protocol, and distribution names. Platform validation
 remains incomplete; see [plan 0021](plans/0021-managed-install-and-cli.md).
+
+Current source also includes the unreleased
+[UI trim](plans/0033-release-candidate-ui-trim.md). It removes derived preview
+fields and queries from project summaries while retaining Attention scheduling;
+the “Question” label change is presentation-only. No database or backup migration
+is required.
 
 ## System context
 
@@ -145,8 +155,8 @@ Uninstall retains ownership lock files on every platform. See [ADR-0012](adr/001
   file drops into the composer reuse the picker pending-file and multipart save
   flow; window-level file-drop guards prevent accidental browser navigation while
   a chat is active. A Markdown analysis helper reuses unified/remark-parse and GFM
-  to derive inert sidebar text and automatic Links filtering, using the renderer's
-  URL policy without fetching destinations. Reading anchors live in the app
+  to derive readable keyword-search text and automatic Links filtering, using
+  the renderer's URL policy without fetching destinations. Reading anchors live in the app
   session. Sidebar disclosure state, Appearance, and Show examples persist in
   the database singleton `workspace_preferences`. Partial writes are serialized;
   failed fields remain retryable, focus refreshes are ordered, and import pauses
@@ -163,7 +173,8 @@ Uninstall retains ownership lock files on every platform. See [ADR-0012](adr/001
   filter and shares the send shortcut typography. Desktop filters span history
   and composer height independently of composer growth; overflowing lists scroll
   within the rail. Mobile keeps horizontal filters. All clears the selection. Filters intersect (AND)
-  with each other and search; counts remain whole-project counts. Ordinary refreshes preserve manual scrolling. Future messages stay in
+  with each other and search; counts cover the current conversation or, when Project
+  search is enabled, all conversations in that project. Ordinary refreshes preserve manual scrolling. Future messages stay in
   normal scrolling, including short histories that can show several future rows.
   Contextual history controls scroll to the actual beginning/end of the filtered
   timeline without changing that initial placement policy. An accepted send or
@@ -220,8 +231,13 @@ appears below project sections on mobile without replacing navigation or Setting
 
 ## Data design and location
 
+`chats` stores both root projects (their Main conversation) and subthreads.
+Existing `chat_id` ownership, including the historically named `project_labels`
+table, is conversation-scoped. A project consists of a root and its direct children;
+it is the unit selected for backup transfer and whole-project search.
+
 The migrations create `chats`, `notes`, `note_attachments`,
-`project_labels`, `note_labels`, singleton `workspace_preferences`, and single-row
+`project_labels`, `note_labels`, `subthread_origins`, singleton `workspace_preferences`, and single-row
 `app_metadata` tables. Migration 9 replaces `chat_enabled_labels` with seven
 built-in definitions per project, preserving disabled assignments. Up to five
 custom definitions have server-generated stable UUID identities, names of 1–8
@@ -251,13 +267,48 @@ activity. Nullable `archived_at` stores archive time; its check enforces a
 nonnegative safe integer and excludes simultaneous pin state. Archive writes
 clear the pin atomically without changing activity; restore returns to Projects.
 Archive is ordered by archive time descending and ID, and remains fully editable.
+Schema 10 adds nullable `chats.project_id`, referencing the root conversation
+with cascading deletion. Existing conversations remain roots. Creating from a
+child resolves the same root, keeping hierarchy flat. `subthread_origins` records
+continued conversations; independent children have no origin row. Nullable
+source-chat and source-note foreign keys retain the conversation link after a
+message disappears and preserve continued identity after source deletion.
+Schema 11 retains the source timestamp and an opaque ordering key independently
+of the nullable note reference. Deletion captures the latest source date before
+removing the note; history renders a standalone continuation marker at that date,
+and the subthread backlink focuses it. These anchors survive restart, export and
+merge without retaining deleted message content. Migration backfills existing
+live sources; previously deleted schema-10 sources have no recoverable date and
+keep the conversation-only fallback. Origin markers and backlinks are derived
+metadata, not notes or copied history.
+
+Children receive root labels and message-display settings at creation, with fresh
+custom-label identities; subsequent edits are independent. Effective accent is
+projected from the root on reads, and child accent writes are rejected. Root-only
+parenting, source-note ownership and project provenance are validated at write
+and import boundaries. Archiving a root moves its group into Archive, preserving
+individual child states. Root deletion gathers every descendant's managed file
+paths before cascading deletion; deleting one child preserves sibling forks.
+
+`POST /api/chats/:id/subthreads` creates an empty child from a title and optional
+source-note ID transactionally. `GET /api/chats/:id/project` resolves any
+conversation to its root and returns Main and all children, including archives,
+through the existing detail/attachment-read path. Existing scoped note and chat
+mutations serve both roots and children.
+
 Each project also stores a checked integer boolean controlling whether
 long messages start collapsed; new and migrated projects default to enabled.
-Sidebar reads batch the latest bounded message preview at or before the service
-clock, the nearest future message timestamp, and the nearest past/future
-Attention timestamps across all projects, then order pinned projects by pin time
-and other projects by activity. All child relations cascade with their owning
-project or message.
+Sidebar reads batch the nearest past/future Attention timestamps across all
+projects, then order pinned projects by pin time and other projects by activity.
+Current source removes the derived last-message preview and ordinary future
+message timestamp fields and queries; sidebar timers track Attention and local
+midnight only. The visible timeline keeps its independent future boundary.
+Built-in `open-question` displays as “Question” through a client presentation
+helper while retaining its canonical schema-9 name in storage and save payloads;
+backup validation is unchanged. See
+[plan 0033](plans/0033-release-candidate-ui-trim.md). Owned content cascades with
+its conversation or message; provenance references use SET NULL so deleting a
+source does not delete a continuation.
 
 Default data directories:
 
@@ -309,8 +360,8 @@ both views atomically without duplicated synchronization branches. Dedicated
 idempotent pin routes patch only pin state; archive routes return only archive
 and pin state. The client excludes conflicting project mutations and invalidates
 stale reads at both request start and completion. The rail derives browser-local
-today/earlier Attention state and refreshes at the next future message or
-Attention time, local midnight, and browser focus.
+today/earlier Attention state and refreshes at the next future Attention time,
+local midnight, and browser focus.
 
 Settings exports all or selected projects to a versioned SQLite
 `.on-track-backup` container, including
@@ -324,8 +375,8 @@ integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
 fresh managed paths, removes bundle payload tables, and compacts the current-
-schema candidate. Exact schema-8, schema-7, schema-6, schema-5, schema-4 development,
-and schema-3 v0.0.4 bundles are accepted through fixed legacy descriptors and migrated to schema 9
+schema candidate. Exact schema-10, schema-9, schema-8, schema-7, schema-6, schema-5, schema-4 development,
+and schema-3 v0.0.4 bundles are accepted through fixed legacy descriptors and migrated to schema 11
 only after copying into the staging workspace; older notes receive a null sender
 and all older projects receive null archive state.
 It then uses the maintenance gate and
@@ -338,7 +389,11 @@ candidate, and export connections set `trusted_schema=OFF` as defense in depth;
 exact schema validation is still required to reject ordinary SQL triggers.
 Selective export prunes the private snapshot before reading attachments and
 compacts it to remove excluded content from free pages. Selection never mutates
-the source. Import preview streams and fully validates a private upload, returning
+the source. Selection lists roots with aggregated message/file counts; selecting
+a root includes its complete child closure. Graph validation rejects nested,
+orphaned and cross-project origins before pruning or activation. Merge remaps
+root, child, note and origin identities together, inserting origins after notes.
+Full and selected exports preserve these relationships. Import preview streams and fully validates a private upload, returning
 project summaries and an incremental SHA-256 digest, then disposes of staging.
 Final import reuploads the file with bounded multipart mode/selection/digest
 options and repeats validation; excluded payloads cannot bypass validation.
@@ -422,31 +477,40 @@ be hardened before production-readiness claims.
 
 ## Project keyword search
 
-Project keyword search runs entirely in the loaded `ChatDetail` in the client.
+Search defaults to the loaded conversation. Project scope loads the root and all
+children, including archives, through the project read endpoint. Matching remains
+client-side. Results identify their owning conversation and open its exact
+message; `project-search-results.ts` builds these contextual results.
 `project-search.ts` reuses cached Markdown analysis for readable text and Links,
 then applies normalized literal substring AND matching across body, displayed
 sender, and filenames. It intersects existing filters and keeps chronological
-ordering. Parsed-text caches belong to the mounted workspace; the App owns a
-session-only last-query map per project. Typing updates that map without rendering
+ordering within each conversation. Parsed-text caches belong to the mounted
+workspace; the App owns session-only last-query and composer-draft maps per conversation. Drafts include
+unsent files and edits; replacement import clears all cached work. Returning
+through Home resets filters to All and retains the All reading anchor. Typing updates that map without rendering
 the timeline until the debounced query commits. Deletion/replacement clears the
 relevant memory. A rehype transform highlights rendered text nodes (including
 across inline formatting), preserving link attributes and skipping raw HTML;
 Unicode match offsets map back to original graphemes. No raw HTML is injected;
 no search query, index, or history enters an API, URL, persistent browser storage,
 SQLite, or backups. The memory-only history-position hook isolates search anchors
-from ordinary All/filter navigation. Search results reuse original message
-rendering and actions; the context action restores All and focuses the original
-message. Search introduces no persistent data. This is linear search over a fully
+from ordinary All/filter navigation. Current-conversation results reuse original message rendering and actions;
+project-scope results open the owning conversation before mutation. The context
+action restores All and focuses the original message. Search introduces no persistent data. This is linear search over a fully
 loaded, unvirtualized project, not an architecture for unbounded histories.
 
 ## Critical user journeys
 
-- Search the current project, combine with history filters, and open a highlighted
-  result in context without losing the query or composer draft.
+- Create an empty independent subthread or continue from a message, follow source
+  links, and branch again into a sibling while preserving independent settings
+  and session drafts.
+- Search the current conversation or enable Project to include Main and all
+  children, including archives; combine with history filters and open a result
+  in its owning conversation without losing the query or composer draft.
 - Empty state -> create project -> customize title/accent -> add multiline note.
 - Create/switch multiple projects and preserve project-specific histories.
-- Pin/unpin projects, preserve pin order across restart/backup, and scan latest
-  message and current/earlier Attention status in the project rail.
+- Pin/unpin projects, preserve pin order across restart/backup, and scan project
+  titles and current/earlier Attention status in the project rail.
 - Expand and collapse one long message without affecting its neighbors, change
   the project default, and preserve that default through restart and backup.
 - Copy, edit, timestamp-adjust, and delete notes while preserving deterministic

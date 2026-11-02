@@ -6,6 +6,51 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-02
+
+### Added
+
+- Create empty subthreads within a project, or continue from a message with a
+  link back to its source. Subthreads stay one level deep and have independent
+  labels, message-display settings, pins, archives, and session drafts.
+- Search Main and all subthreads, including archived conversations, with the
+  Project option. Open results in their own conversation while retaining the
+  search query and unsaved draft during the app session.
+- Preserve continuation links at the source message's date after that message
+  is deleted, including return navigation, restart, backup, and import.
+
+### Changed
+
+- Simplify the sidebar to compact title-only project and subthread rows, with
+  Attention indicators, a shared Attention/pin slot, full-width child hover
+  states, and count-free section headings. Remove last-message previews.
+- Display the built-in Open question label as Question without changing its
+  stored identity, and simplify workspace guidance and filter shortcuts.
+- Update the paired React packages, rate limiting, Drizzle ORM, development
+  tooling, and pinned checkout, setup-node, and CodeQL actions. Keep the
+  supported Node 22.16+/24 platform matrix.
+- Advance the database and backup schema from 9 to 11. Project backup selection
+  includes Main and every subthread; merge imports preserve their relationships
+  with fresh identities. Validated schema 3–10 backups migrate in staging.
+  Backup format 1, data paths, the `ontrack` alias, and the managed compatibility
+  floor `0.0.7` remain unchanged.
+
+### Known limitations
+
+- This remains a plaintext alpha: databases, attachments, checkpoints, and
+  exported backups are not encrypted. Export a backup before upgrading; older
+  releases cannot reopen a schema-11 database after activation commits.
+- Managed installation remains experimental. Clean-machine installation,
+  live published upgrades, native-platform behavior, and assistive-technology
+  checks still require evidence. Automated checks do not establish those guarantees.
+- Previously deleted sources in a schema-10 development database have no
+  recoverable timestamp; their continuation links retain a conversation-only
+  fallback. Deleting the source conversation makes its backlink unavailable.
+- Moderate glob/minimatch dependency advisories remain; the reviewed application
+  path does not expose their documented attack inputs. The audit has no
+  high/critical findings; remediation and exposure details are tracked in
+  [the release plan](docs/plans/0035-v0.2.0-release-preparation.md#dependency-audit-follow-up).
+
 ## [0.1.1] - 2026-10-29
 
 ### Added

@@ -2,8 +2,8 @@
 
 Version 0.0.9 introduced **threadstr** and **thr** as the primary CLI command.
 [v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1) is the latest
-published release. The repository and existing published releases retain their real
-names and URLs.
+published release; this checkout prepares v0.2.0. The repository and existing
+published releases retain their real names and URLs.
 
 ## Commands and installation
 
@@ -36,13 +36,16 @@ managed launcher path when needed.
 | Environment            | `ON_TRACK_DATA_DIR`, `ON_TRACK_PORT`, `ON_TRACK_INSTALL_ROOT`, `ON_TRACK_MANAGED_LAUNCH`, `ON_TRACK_NATIVE_FILE`, `ON_TRACK_PRIVATE_DIRECTORY`, `ONTRACK_BOOTSTRAP_*`, installer template tokens and archive-helper variables |
 | Database and ownership | `on-track.sqlite` and sidecars, `.on-track-owner.sqlite`, `.on-track-install-owner.sqlite`, `.on-track-instance.json`, existing update/restore journals, staging and checkpoint names                                         |
 | Managed state          | `install.json`, `active.json`, `shim-runtime.json`, `last-update.json`, authenticated control endpoints and protocol shapes                                                                                                   |
-| Backups                | `.on-track-backup`, MIME `application/vnd.on-track.backup+sqlite`, application ID `0x4f545242`, `_on_track_bundle*` tables, format 1/schema 9 and supported legacy schema 3–8 descriptors                                     |
+| Backups                | `.on-track-backup`, MIME `application/vnd.on-track.backup+sqlite`, application ID `0x4f545242`, `_on_track_bundle*` tables, format 1/schema 11 and supported legacy schema 3–10 descriptors                                   |
 | Browser preferences    | `on-track-theme`, `on-track-show-examples`, `on-track-collapsed-sections`: read once for migration to SQLite, then removed; no ongoing browser writes                                                                         |
 | Shell profiles         | Existing On Track marker delimiters, allowing reuse without duplicate PATH blocks                                                                                                                                             |
 | Distribution           | `satankov/on-track` URLs, `on-track-vX.Y.Z.zip`, installer/bootstrap/manifest filenames, protocol 1 and managed compatibility floor `0.0.7`                                                                                   |
 
 Backup download display names begin `threadstr-`; the format and extension stay
-compatible. No database migration or data-path relocation is part of this change.
+compatible. The identity transition itself requires no database migration or
+data-path relocation. v0.2.0 separately migrates schema 9 to 11 for subthreads and
+retained source positions; older versions refuse the newer database. Back up
+before upgrading. Selecting a project for backup includes all its subthreads.
 Do not rename existing files, rewrite backup tables, or edit shipped migrations.
 Keeping ownership identities also prevents old and new launchers from opening
 the same data folder concurrently.

@@ -34,7 +34,6 @@ export function ExamplesSection({
             <path d="m6 9 6 6 6-6" />
           </svg>
         </span>
-        <span>{String(examples.length).padStart(2, "0")}</span>
       </button>
       <div id="rail-items-Examples" hidden={collapsed}>
         {error ? (

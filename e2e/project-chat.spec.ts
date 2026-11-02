@@ -355,7 +355,7 @@ test("creates, customizes, records, and reopens a private project thread", async
   expect([...unexpectedHosts]).toEqual([]);
 });
 
-test("pins projects and scans previews with Attention status", async ({
+test("pins projects in a title-only rail with Attention status", async ({
   page,
   request,
   localApp,
@@ -378,7 +378,7 @@ test("pins projects and scans previews with Attention status", async ({
     request,
     localApp.url,
     pinned.id,
-    "A deliberately long latest message preview that should remain on one line and end with a width-aware ellipsis in the compact project rail.",
+    "A private project note that must never appear in the project rail.",
   );
   const currentNote = await addNote(
     request,
@@ -446,16 +446,24 @@ test("pins projects and scans previews with Attention status", async ({
   await expect(
     page.getByRole("button", { name: `Open ${earlier.title}` }).locator(".."),
   ).toHaveAttribute("data-attention-state", "earlier");
-  expect(
-    await page
-      .getByRole("button", { name: `Open ${pinned.title}` })
-      .locator("small")
-      .evaluate((element) => element.scrollWidth > element.clientWidth),
-  ).toBe(true);
+  await expect(
+    page.getByRole("button", { name: `Open ${pinned.title}` }),
+  ).toHaveText(pinned.title);
+  await expect(page.locator(".project-rail")).not.toContainText(
+    "A private project note",
+  );
 
   const currentPin = page.getByRole("button", {
     name: `Pin ${current.title}`,
   });
+  if (testInfo.project.name === "mobile-webkit") {
+    const dot = currentPin.locator("..").locator(".project-attention-dot");
+    await currentPin.focus();
+    await expect(dot).toHaveCSS("opacity", "1");
+    const dotBox = (await dot.boundingBox())!;
+    const pinBox = (await currentPin.boundingBox())!;
+    expect(dotBox.x + dotBox.width).toBeLessThan(pinBox.x);
+  }
   await currentPin.click();
   await expect(currentPin).toHaveAttribute("aria-pressed", "true");
   await expect(currentPin).toBeFocused();
@@ -1157,10 +1165,7 @@ test("shows future messages in a silent full-width fade", async ({
   const projectButton = page.getByRole("button", {
     name: `Open ${project.title}`,
   });
-  await expect(projectButton.locator("small")).toHaveText("Already happened");
-  await expect(projectButton.locator("small")).not.toHaveText(
-    "Scheduled for tomorrow",
-  );
+  await expect(projectButton).toHaveText(project.title);
   await projectButton.click();
 
   const futureBoundary = page.getByRole("separator", {
@@ -2102,7 +2107,7 @@ test("opens near current work and restores each chat reading position", async ({
   ).toBeVisible();
 });
 
-test("uses Home, quiet section disclosures, plain previews, and the Links filter", async ({
+test("uses Home, quiet section disclosures, title-only rows, and the Links filter", async ({
   page,
   request,
   localApp,
@@ -2127,10 +2132,8 @@ test("uses Home, quiet section disclosures, plain previews, and the Links filter
   const pinned = page.getByRole("button", { name: "Pinned", exact: true });
   const projects = page.getByRole("button", { name: "Projects", exact: true });
   await expect(
-    page
-      .getByRole("button", { name: `Open ${project.title}` })
-      .locator("small"),
-  ).toHaveText("Header bold text Guide");
+    page.getByRole("button", { name: `Open ${project.title}` }),
+  ).toHaveText(project.title);
   if (testInfo.project.name === "desktop-chromium") {
     await page.getByRole("link", { name: "Home", exact: true }).hover();
     await expect(pinned.locator("svg")).toHaveCSS("opacity", "0");
@@ -2724,7 +2727,12 @@ test("keeps Home concise and remembers collapsed groups on reload", async ({
     ).toBeVisible();
     await expect(
       page.getByText("Select a project from the list or start new thread."),
-    ).toBeVisible();
+    ).toHaveCount(0);
+    const hero = (await page.locator(".home-hero").boundingBox())!;
+    const heading = (await page.locator(".home-hero h1").boundingBox())!;
+    expect(
+      Math.abs(heading.y + heading.height / 2 - hero.y - hero.height / 2),
+    ).toBeLessThan(1);
     const word = page.locator(".home-project-word");
     const wordBox = (await word.boundingBox())!;
     const decoration = (await word.locator(".empty-thread").boundingBox())!;

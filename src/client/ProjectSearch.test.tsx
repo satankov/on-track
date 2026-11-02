@@ -5,6 +5,42 @@ import { ProjectSearch, SearchSaveStatus } from "./ProjectSearch.js";
 
 afterEach(() => vi.useRealTimers());
 
+it("lets the caller search the whole project without changing the query", () => {
+  const scope = vi.fn();
+  const commit = vi.fn();
+  const view = render(
+    <ProjectSearch
+      id="search"
+      initialValue="pricing"
+      onCommit={commit}
+      onClose={vi.fn()}
+      status="1 matching message"
+      projectScope={false}
+      onProjectScopeChange={scope}
+    />,
+  );
+  const checkbox = screen.getByRole("checkbox", { name: "Project" });
+  expect(checkbox).not.toBeChecked();
+  fireEvent.click(checkbox);
+  expect(scope).toHaveBeenCalledWith(true);
+  expect(screen.getByRole("searchbox")).toHaveValue("pricing");
+  expect(commit).not.toHaveBeenCalled();
+  view.rerender(
+    <ProjectSearch
+      id="search"
+      onCommit={commit}
+      onClose={vi.fn()}
+      status="3 matching messages"
+      projectScope
+      onProjectScopeChange={scope}
+    />,
+  );
+  expect(checkbox).toBeChecked();
+  expect(checkbox).toHaveAccessibleDescription(
+    "Search Main and all subthreads, including archived conversations.",
+  );
+});
+
 it("shows the current count and remembers pending input immediately without committing early", () => {
   vi.useFakeTimers();
   const remember = vi.fn(),
