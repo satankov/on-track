@@ -42,7 +42,7 @@
     "@fastify/static": "10.1.7",
     "better-sqlite3": "12.10.0",
     "drizzle-orm": "0.45.4",
-    "fastify": "5.12.7",
+    "fastify": "5.12.8",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-markdown": "10.1.0",
