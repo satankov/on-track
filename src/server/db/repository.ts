@@ -39,6 +39,7 @@ interface ChatRow {
   updated_at: number;
   archived_at: number | null;
   pinned_at: number | null;
+  manual_alert: 0 | 1;
   collapse_long_messages: 0 | 1;
   label_configuration_revision: number;
 }
@@ -102,6 +103,7 @@ function toChat(
     updatedAt: row.updated_at,
     archivedAt: row.archived_at,
     pinnedAt: row.pinned_at,
+    manualAlert: row.manual_alert === 1,
     ...summary,
   };
 }
@@ -350,6 +352,14 @@ export class SqliteChatRepository {
     });
 
     return update() ? this.getChat(id, input.now) : undefined;
+  }
+
+  setChatAlert(id: string, manualAlert: boolean): boolean {
+    return (
+      this.database
+        .prepare("UPDATE chats SET manual_alert = ? WHERE id = ?")
+        .run(Number(manualAlert), id).changes > 0
+    );
   }
 
   setChatPinned(

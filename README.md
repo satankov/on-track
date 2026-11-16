@@ -14,11 +14,10 @@ where you left off. Use it for work projects, a side project, or your next trip.
 > **Early alpha.** Expect rough edges and keep backups. Avoid irreplaceable
 > information or make backups until stable release.
 
-Current release: **[v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1)**.
-See the [changelog](CHANGELOG.md) for changes and upgrade limitations.
-This checkout prepares **v0.2.0**, adding project subthreads, project-wide search,
-and a compact sidebar. The candidate is not yet published; the installation
-commands below still select the latest published release.
+This checkout prepares **v0.2.1** with expandable project shortcuts, persistent
+project alerts, a two-button message toolbar, and a workspace preference for
+message times. The installation commands below select the latest published
+release. See the [changelog](CHANGELOG.md) for changes and upgrade limitations.
 
 ## See it in action
 

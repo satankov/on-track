@@ -203,7 +203,7 @@ it.each(["replace", "merge"] as const)(
       try {
         expect(
           db.prepare("SELECT schema_version FROM app_metadata").pluck().get(),
-        ).toBe(11);
+        ).toBe(12);
         const paths = db
           .prepare("SELECT storage_path FROM note_attachments")
           .pluck()
@@ -742,6 +742,7 @@ it.each(["all", "selected"])(
       payload: {
         theme: "dark",
         showExamples: false,
+        alwaysShowMessageTime: false,
         collapsedSections: { Archive: true },
       },
     });
@@ -753,6 +754,7 @@ it.each(["all", "selected"])(
       })
     ).json();
     const url = `/api/chats/${project.id}`;
+    await app.inject({ method: "PUT", url: `${url}/alert` });
     const labels = project.labelDefinitions.map(
       (label: {
         id: string;
@@ -809,7 +811,11 @@ it.each(["all", "selected"])(
     await app.inject({
       method: "PATCH",
       url: "/api/preferences",
-      payload: { theme: "neutral", showExamples: true },
+      payload: {
+        theme: "neutral",
+        showExamples: true,
+        alwaysShowMessageTime: true,
+      },
     });
     const merged = await app.inject({
       method: "POST",
@@ -826,13 +832,17 @@ it.each(["all", "selected"])(
       (candidate: { id: string }) => candidate.id !== project.id,
     );
     const detail = (await app.inject(`/api/chats/${copy.id}`)).json();
+    expect(detail.manualAlert).toBe(true);
     const copiedLabel = detail.labelDefinitions.find(
       (label: { name: string }) => label.name === "Review",
     );
     expect(copiedLabel.id).not.toBe(custom.id);
     expect(detail.notes[0].labels).toEqual([copiedLabel.id]);
     expect(detail.labelConfigurationRevision).toBe(0);
-    expect((await app.inject("/api/preferences")).json().theme).toBe("neutral");
+    expect((await app.inject("/api/preferences")).json()).toMatchObject({
+      theme: "neutral",
+      alwaysShowMessageTime: true,
+    });
     const replaced = await app.inject({
       method: "POST",
       url: "/api/database/import",
@@ -847,6 +857,8 @@ it.each(["all", "selected"])(
     const preferences = (await app.inject("/api/preferences")).json();
     expect(preferences.theme).toBe(scope === "all" ? "dark" : "neutral");
     expect(preferences.initialized).toBe(true);
+    expect(preferences.alwaysShowMessageTime).toBe(scope !== "all");
+    expect((await app.inject(url)).json().manualAlert).toBe(true);
   },
 );
 
@@ -910,6 +922,7 @@ it.each([
       url: `/api/chats/${root.id}/notes/${rootNote.id}`,
     });
     await app.inject({ method: "PUT", url: `/api/chats/${child.id}/archive` });
+    await app.inject({ method: "PUT", url: `/api/chats/${child.id}/alert` });
     const exported = await app.inject({
       method: "POST",
       url: "/api/database/export",
@@ -972,6 +985,7 @@ it.each([
       (chat: { id: string }) => chat.id === newRoot.id,
     );
     expect(copiedChild).toMatchObject({
+      manualAlert: true,
       projectId: newRoot.id,
       origin: {
         sourceChatId: newRoot.id,

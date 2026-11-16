@@ -132,6 +132,8 @@ export function useWorkspacePreferences(
               collapsedSections: { ...retryInput.current.collapsedSections },
             };
             if (input.theme !== undefined) delete remaining.theme;
+            if (input.alwaysShowMessageTime !== undefined)
+              delete remaining.alwaysShowMessageTime;
             if (input.showExamples !== undefined) delete remaining.showExamples;
             for (const key of Object.keys(
               input.collapsedSections ?? {},

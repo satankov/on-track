@@ -55,7 +55,7 @@ the complete active palette, including inherited values, directly from CSS.
 | Structural separator `--line`       | #e8ebef | #3a4047 | #252b31 |
 | Strong separator `--line-strong`    | #d8dde3 | #626b76 | #444c56 |
 | Control boundary `--control-border` | #8a929c | #939eaa | #6e7a87 |
-| Focus `--focus`                     | #0b63ce | #8bb8ff | #8bb8ff |
+| Control focus `--focus`             | #0b63ce | #8bb8ff | #8bb8ff |
 | Primary action `--button-primary`   | #20242a | #1f66ad | #1f66ad |
 | Action text `--on-action`           | #ffffff | #ffffff | #ffffff |
 
@@ -130,11 +130,10 @@ reuse them inside those families rather than rounding every value globally.
 | Settings heading         | 28px above; align left edge with panels and backup feedback                   |
 | Settings sections        | 24px vertical margin; clear background on outer panel                         |
 | Edit form                | 24px top, 32px bottom; content width plus both gutters, capped at 100%        |
-| Edit top actions         | Back left / Save right; gap 8px; 28px below                                   |
+| Edit controls            | Back at the top left, Save changes at the bottom right after the fields       |
 | Field groups             | 24px between; label 8px above; help 8px below, inset 4px                      |
 | Group row                | min 48px, padding 10px 14px, gap 12px; natural height for wrapped text        |
 | Name / General row       | min or fixed height 50px as implemented                                       |
-| Lifecycle block          | 32px above; one vertical column; Archive, help, then Delete                   |
 | Messages                 | 18px between day groups; 10px date-to-list; 8px between messages              |
 | Bubble                   | padding 10px 12px 6px; max stack `min(760px,82%)`                             |
 
@@ -146,7 +145,8 @@ the requested adjustment is to the left margin.**
 ### Responsive rules
 
 - Above 760px keep the desktop sidebar/workspace model. At ≤960px message
-  actions stay visible below bubbles instead of relying on hover.
+  actions sit below the bubble. Devices with coarse pointers or no hover
+  keep those actions visible below the bubble at every width.
 - At ≤760px use the single-pane app; project detail hides the project rail.
   Settings navigation is horizontal, theme previews become one column, and
   **both settings gutters are 16px**. The triple desktop inset does not apply.
@@ -168,11 +168,11 @@ arrow, label popup, or settings group. Never nest a cosmetic card behind a group
 | Treatment                                  | Allowed use                                                      |
 | ------------------------------------------ | ---------------------------------------------------------------- |
 | No border / no shadow                      | Normal grouped settings, bubbles, composer, icon buttons, labels |
-| 1px `--line`                               | Structural rail/header/toolbar separators and table cells        |
+| 1px `--line`                               | Composer toolbar separators and table cells                      |
 | 1px `--line-strong`                        | Existing compact sender/timestamp control boundaries             |
 | 1.5px `--muted`                            | Unchecked square checkbox; meaningful off-state affordance       |
-| 1px `--focus`, offset 1px                  | Keyboard focus and focused inputs; composer uses `:focus-within` |
-| `0 12px 34px` shadow at 22%                | Floating message-label popup only                                |
+| 1px `--focus`, offset 1px                  | Keyboard focus for non-text controls                             |
+| `0 12px 34px` shadow at 22%                | Floating message action and label popups                         |
 | `0 20px 60px` shadow at 22%                | Create dialog only                                               |
 | Transparent → `--history`, 32px            | Composer's top fade; `pointer-events:none`; no black band        |
 | Transparent → `--message-surface`, 3.75rem | Collapsed message fade above Show more                           |
@@ -228,14 +228,22 @@ may be smaller; verify target size/spacing and do not shrink them further.
 
 ### Project rail
 
-User-project rows show the title and existing pin/restore and Attention controls.
-No message preview or empty-message placeholder is rendered. Rows have a 40px
-minimum height (44px on narrow/touch layouts), with vertically centered titles.
-Attention and pin/restore share a centered right-hand slot; hovering or focusing
-the row replaces the dot with the action. Narrow/touch layouts keep the action
-visible and place Attention beside it. Preserve visible mutation errors and
-accessible Attention descriptions. The wordmark has no subtitle.
-Section headers show their name and disclosure chevron, without item counts.
+The rail header, footer and edge meet the surrounding surfaces without dividing lines.
+The footer contains the Settings icon. The conversation header shares the history surface.
+
+A project or child occupies one title row, at least 40px high (44px on narrow/touch layouts).
+Hover or keyboard focus reveals a trailing strip ordered **Alert, Pin/Unpin, Archive, Delete**.
+Use the shortcut disclosure on touch. Preserve title truncation and an independent title target.
+Archived conversations offer Restore in the Archive position. Keep the actions reachable
+while the pointer moves between them. On a hover-capable device, leaving the row
+closes mouse-revealed shortcuts, including after selecting the title or toggling an action.
+Keyboard users can tab across the actions and use Escape to dismiss.
+
+An enabled manual Alert uses the same red dot and soft halo as the Alert history filter,
+both at rest and in the expanded strip. The inactive shortcut uses the muted dot.
+Clearing it returns the row to its message-derived Attention state. Expose the meaning
+and current state in accessible text. Display mutation errors beside the affected row.
+Section headings contain their name and disclosure chevron. The wordmark stands alone.
 
 ### Settings and Edit project
 
@@ -245,8 +253,8 @@ and `.field-help`. Outer panels are transparent. No title echo, eyebrow, or
 introductory sentence explaining that this is the settings screen.
 
 - Edit has an accessible main landmark named Edit project, no visible duplicate
-  title. The Settings-style back arrow (accessible name “Back to project”) and
-  Save changes are first in DOM and at the top. The arrow stays left aligned.
+  title. The Settings-style back arrow (accessible name “Back to project”) comes first,
+  at the top left. Save changes follows the last field at the bottom right.
 - Project accent: one horizontal swatch strip, native radios, visible check on
   selected swatch. Color names remain accessible, not printed beside every dot.
 - Project labels: one column, icon then name then right-aligned square checkbox.
@@ -277,11 +285,8 @@ introductory sentence explaining that this is the settings screen.
   name remains unchanged for backup compatibility.
 - General uses the same row/checkbox. Backups keep left-side selection checkboxes
   because these are bulk selection lists, not setting switches.
-- Archive and Delete stay in one column, separated by the archive preservation
-  note and spacing. Delete retains critical color and explicit confirmation.
-- Save errors appear immediately under the top actions; lifecycle errors appear
-  beside those controls. Keep draft values and retry. Never hide a failure below
-  the fold while its initiating button is at the top.
+- Archive, Restore and Delete belong to the project or subthread’s rail shortcuts.
+  A save error appears beside the bottom submit button, with the draft ready to retry.
 - Create project reuses the same field/swatch treatment in a real modal dialog.
   Keep its accessible title, Cancel/Create actions, Escape and focus restoration.
   Place “More settings in Edit project.” in the action footer using `.field-help`,
@@ -300,17 +305,18 @@ introductory sentence explaining that this is the settings screen.
 
 ### Buttons, fields, and state
 
-One primary action per local action group. Use `.button-primary` for global
-actions and `.send-button`/`--accent-action` for project composition. Quiet actions
-use the existing flat settings variants. Destructive actions are labeled, not
-communicated by red alone. Maintain disabled semantics and prevent duplicate
-writes; progress labels use Saving… / Deleting… without changing control width
-unnecessarily. Do not remove controls to communicate loading.
+New project, Edit and Settings use transparent, borderless controls. Primary
+commands such as Save changes and Create use the theme’s primary fill and action
+text. The composer’s Add and Save buttons use the project’s accent-action fill.
+Attachment actions use their local surface and foreground pair. Preserve disabled,
+pressed and keyboard-focus states.
 
-New settings fields belong inside `.project-settings-fields` or an equivalent
-scoped shared family. Focus must remain visible after decorative borders are
-removed. Placeholders supplement real labels. Validation uses `role="alert"`
-and associated fields where applicable; success/status uses polite announcements.
+Text-entry fields use the native insertion caret to indicate focus. Keep their
+edges clear of borders, outlines and focus shadows, including the surrounding
+search and composer containers. Apply the same rule to names, custom labels,
+sender, timestamp and add/edit textareas. Buttons, checkboxes, swatches and other
+non-text controls retain visible keyboard focus. Associate validation errors
+with their fields and announce submission feedback near its action.
 
 ### Project subthreads
 
@@ -332,11 +338,10 @@ linked source, or Continued in a linked child. Never quote the source. Deleting 
 at the same date and history position; the child’s source link focuses that marker.
 Deleted source conversations receive explicit fallback text. Links retain visible keyboard focus.
 
-Message action order: Change labels, Continue in subthread, Copy message, Edit
-message, Delete message. Reuse compact icon controls and reserve 160px beside
-desktop bubbles for five actions. Keep focus/touch visibility and existing narrow
-layout behavior. Creation asks for a name only. Child Edit has all settings except
-accent, plus archive/delete. Search uses a native Project checkbox for whole-project
+Editable messages expose Label and More. Label opens the checkbox picker. More holds
+Continue in subthread, Copy, Edit, Delete and the contextual Open message in history
+action when available. Reserve space for the two triggers on desktop and keep the
+actions reachable on narrow screens, by keyboard and by touch. Creation asks for a name only. Child Edit exposes name, labels and message display. Children inherit their project accent. Search uses a native Project checkbox for whole-project
 scope, including archived conversations. These new layout decisions target desktop.
 
 ### History filters
@@ -356,6 +361,10 @@ whole project even when the selected filters intersect.
 
 ### Message stream, composer, labels, attachments
 
+- General’s **Always show message time** defaults on. When switched off, hovering
+  anywhere across a message row reveals its bottom-right time. Keyboard focus
+  within the row or a tap also reveals the time. Reserve its space to keep
+  labels and bubble geometry stable.
 - Own bubbles align right; participants align left with a sender label and
   neutral surface. Preserve readable Markdown, long-word wrapping, code/table
   scrolling, collapse/expand state, and complete copy/edit behavior.
@@ -383,8 +392,11 @@ whole project even when the selected filters intersect.
 - Search defaults to the current conversation; Project includes Main and all
   children. Reuse the quiet compact field, counts,
   clear action, no-results feedback, and the existing highlight color pair.
-- Hover-only message actions must also appear on focus and touch layouts. Keep
-  state markers and counts readable without hover.
+- Hover anywhere across a message row to reveal Label and More, including the
+  empty space beside the bubble. A mouse-opened popup stays open while the
+  pointer moves across the row or into the popup. Leaving both dismisses the
+  popup and hides the hover toolbar. Keyboard navigation and touch also expose
+  the controls.
 
 ### Icons, branding, copy, accessibility
 
@@ -422,8 +434,7 @@ whole project even when the selected filters intersect.
 
 ### Legacy exceptions: do not copy into new UI
 
-The generic `.text-input`, `.file-input`, `.accent-option`, `.button-quiet`, and
-`.button-danger` still include older border/radius rules; current settings scope
+The generic `.file-input` and `.accent-option` still include older border/radius rules; current settings scope
 overrides them. `.settings-control-row` and old note-thread rules are not the
 canonical grouped settings/message recipe. The ≤430px accent grid rule does not
 control the newer flex swatches. Old opacity transitions are not a mandate for

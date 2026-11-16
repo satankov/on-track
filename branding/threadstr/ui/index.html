@@ -236,25 +236,20 @@
           </p>
           <div class="cb-specimen settings-workspace" data-accent="ocean">
             <form
-              class="project-settings-fields cb-demo-form"
+              class="project-edit-form project-settings-fields cb-demo-form"
               id="cb-settings-form"
             >
-              <div class="project-edit-actions">
-                <button
-                  class="settings-back-button"
-                  type="button"
-                  id="cb-reset"
-                  aria-label="Reset specimen"
-                  title="Reset specimen"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                    <path d="m15 18-6-6 6-6" />
-                  </svg></button
-                ><button class="button button-primary" type="submit">
-                  Preview saved state
-                </button>
-              </div>
-              <p class="form-status" role="status" id="cb-save-status"></p>
+              <button
+                class="settings-back-button"
+                type="button"
+                id="cb-reset"
+                aria-label="Reset specimen"
+                title="Reset specimen"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="m15 18-6-6 6-6" />
+                </svg>
+              </button>
               <label class="field-label" for="cb-project-name"
                 >Project name</label
               ><input
@@ -514,26 +509,13 @@
                   You can still expand or collapse each message.
                 </p>
               </fieldset>
-              <div class="project-lifecycle-actions">
-                <button
-                  class="button button-quiet"
-                  type="button"
-                  data-demo-action="Archive preserves all messages and files."
-                >
-                  Archive project
-                </button>
-                <p class="field-help">
-                  Archiving keeps all messages and files.
-                </p>
-                <button
-                  class="button button-danger"
-                  type="button"
-                  data-demo-action="The real app asks for confirmation before deleting. No data exists in this specimen."
-                >
-                  Delete project
-                </button>
-              </div>
-              <p id="cb-action-status" class="field-help" role="status"></p>
+              <p class="form-status" role="status" id="cb-save-status"></p>
+              <button
+                class="button button-primary project-edit-save"
+                type="submit"
+              >
+                Save changes
+              </button>
             </form>
           </div>
           <div class="cb-comparison">
@@ -548,7 +530,7 @@
               <b>Avoid this</b>
               <p>
                 “This is the edit tab” · background card behind another card ·
-                bright borders · iPhone switches · Archive beside Delete.
+                bright borders · iPhone switches.
               </p>
             </article>
           </div>
@@ -561,6 +543,10 @@
             Participants use neutral surfaces. Your own messages carry the
             project accent. Labels stay quieter than the message.
           </p>
+          <label class="examples-preference"
+            ><strong>Always show message time</strong>
+            <input type="checkbox" id="cb-message-time" checked
+          /></label>
           <div class="cb-conversation" data-accent="ocean">
             <div class="message-row message-row--participant">
               <div class="message-stack">
@@ -618,6 +604,104 @@
                     <time class="message-time">09:42</time>
                   </div>
                 </article>
+                <div
+                  class="message-actions"
+                  id="cb-message-actions"
+                  aria-label="Message actions"
+                >
+                  <div class="message-popup">
+                    <button
+                      type="button"
+                      class="message-action"
+                      aria-label="Change labels"
+                      title="Change labels"
+                      aria-expanded="false"
+                      aria-controls="cb-message-labels"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <path d="M20 13 13 20 4 11V4h7Z" />
+                        <circle cx="8.5" cy="8.5" r="1.25" />
+                      </svg>
+                    </button>
+                    <div
+                      class="message-label-popover"
+                      id="cb-message-labels"
+                      hidden
+                    >
+                      <fieldset>
+                        <legend>Message labels</legend>
+                        <label class="message-label-choice"
+                          ><input type="checkbox" checked />Todo</label
+                        >
+                        <label class="message-label-choice"
+                          ><input type="checkbox" checked />Decision</label
+                        >
+                      </fieldset>
+                    </div>
+                  </div>
+                  <div class="message-popup">
+                    <button
+                      type="button"
+                      class="message-action"
+                      aria-label="More message actions"
+                      title="More"
+                      aria-expanded="false"
+                      aria-controls="cb-more-actions"
+                      aria-haspopup="menu"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <path
+                          d="M5 12h.1M12 12h.1M19 12h.1"
+                          stroke-width="3.5"
+                        />
+                      </svg>
+                    </button>
+                    <div
+                      class="message-more-menu"
+                      role="menu"
+                      aria-label="More message actions"
+                      id="cb-more-actions"
+                      hidden
+                    >
+                      <button
+                        class="message-menu-item"
+                        type="button"
+                        role="menuitem"
+                      >
+                        Continue in subthread
+                      </button>
+                      <button
+                        class="message-menu-item"
+                        type="button"
+                        role="menuitem"
+                      >
+                        Copy message
+                      </button>
+                      <button
+                        class="message-menu-item"
+                        type="button"
+                        role="menuitem"
+                      >
+                        Edit message
+                      </button>
+                      <button
+                        class="message-menu-item message-menu-item--danger"
+                        type="button"
+                        role="menuitem"
+                      >
+                        Delete message
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="message-row message-row--own">
@@ -693,6 +777,7 @@
                 </article>
               </div>
             </div>
+            <p id="cb-message-status" class="field-help" role="status"></p>
             <div class="cb-composer-stage">
               <div class="composer-wrap cb-composer-wrap">
                 <form class="composer" id="cb-composer">
@@ -723,10 +808,19 @@
                       <button
                         class="send-button"
                         type="submit"
+                        aria-label="Add note"
                         disabled
                         id="cb-send"
                       >
-                        Add
+                        <span>Add</span>
+                        <svg
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                          focusable="false"
+                        >
+                          <path d="m4 12 16-8-5 16-3-6Z" />
+                          <path d="m12 14 3-3" />
+                        </svg>
                       </button>
                     </div>
                   </div>
@@ -748,64 +842,186 @@
           <h2>One project, distinct conversations.</h2>
           <p>
             Main remains the project. Compact children use regular text indented
-            24px, with full-width hover and selection. Hover or focus a row to
-            replace Attention with its pin control.
+            24px, with full-width hover and selection. Hover, focus or tap the
+            Navigation ideas shortcuts. The red Alert dot stays visible until
+            cleared.
           </p>
-          <ul class="project-items" aria-label="Subthread rail specimen">
-            <li class="project-row" data-accent="ocean">
-              <button class="project-item" type="button" aria-expanded="true">
-                <span class="project-item-copy"
-                  ><strong>Website redesign</strong></span
-                >
-              </button>
-            </li>
-            <li
-              class="project-row project-row--subthread project-row--active"
-              data-accent="ocean"
-              data-attention-state="today"
-            >
-              <button
-                class="project-item project-item--active"
-                type="button"
-                aria-current="page"
+          <aside
+            class="project-rail cb-rail"
+            aria-label="Project rail specimen"
+          >
+            <header class="rail-header">
+              <span class="brand-mark">
+                <img
+                  class="brand-wordmark brand-wordmark--light"
+                  src="../../../public/branding/threadstr-wordmark-on-light.svg"
+                  alt="threadstr"
+                  width="192"
+                  height="43"
+                />
+                <img
+                  class="brand-wordmark brand-wordmark--dark"
+                  src="../../../public/branding/threadstr-wordmark-on-dark.svg"
+                  alt="threadstr"
+                  width="192"
+                  height="43"
+                />
+                <span class="brand-fallback">threadstr</span></span
               >
-                <span class="project-item-copy"
-                  ><strong>Navigation ideas</strong></span
-                >
-              </button>
               <button
-                class="project-pin-button"
                 type="button"
-                aria-label="Pin Navigation ideas"
-                aria-pressed="false"
+                class="new-project-button"
+                id="cb-rail-create"
+                aria-label="New project"
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="m14 4 6 6-3 1-4 4 1 4-1 1-9-9 1-1 4 1 4-4Z" />
-                  <path d="m9 15-5 5" />
+                  <path d="M12 5v14M5 12h14" />
                 </svg>
               </button>
-              <span
-                class="attention-dot attention-dot--today project-attention-dot"
-                aria-hidden="true"
-              ></span>
-            </li>
-            <li class="project-row project-row--subthread" data-accent="ocean">
-              <button class="project-item" type="button">
-                <span class="project-item-copy"
-                  ><strong>Pricing experiment</strong></span
-                >
-              </button>
-            </li>
-            <li class="subthread-disclosure-row">
-              <button
-                class="subthread-disclosure"
-                type="button"
-                aria-expanded="false"
+            </header>
+            <ul class="project-items" aria-label="Subthread rail specimen">
+              <li class="project-row" data-accent="ocean">
+                <button class="project-item" type="button" aria-expanded="true">
+                  <span class="project-item-copy"
+                    ><strong>Website redesign</strong></span
+                  >
+                </button>
+              </li>
+              <li
+                class="project-row project-row--subthread project-row--active"
+                data-accent="ocean"
+                data-shortcuts-open="false"
+                data-project-row="navigation"
               >
-                Show all
-              </button>
-            </li>
-          </ul>
+                <button
+                  class="project-item project-item--active"
+                  type="button"
+                  aria-current="page"
+                >
+                  <span class="project-item-copy"
+                    ><strong>Navigation ideas</strong></span
+                  >
+                </button>
+                <div
+                  class="project-shortcuts"
+                  role="group"
+                  aria-label="Navigation ideas shortcuts"
+                  id="cb-shortcuts"
+                  hidden
+                >
+                  <button
+                    class="project-shortcut"
+                    type="button"
+                    data-project-action="alert"
+                    aria-label="Alert Navigation ideas"
+                    title="Alert"
+                    aria-pressed="true"
+                  >
+                    <span
+                      class="attention-dot attention-dot--today"
+                      aria-hidden="true"
+                    ></span>
+                  </button>
+                  <button
+                    class="project-shortcut"
+                    type="button"
+                    data-project-action="pin"
+                    aria-label="Pin Navigation ideas"
+                    title="Pin"
+                    aria-pressed="false"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="m14 4 6 6-3 1-4 4 1 4-1 1-9-9 1-1 4 1 4-4Z M9 15l-5 5"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    class="project-shortcut"
+                    type="button"
+                    data-project-action="archive"
+                    aria-label="Archive Navigation ideas"
+                    title="Archive"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path d="M4 10v11h16V10M3 6h18v4H3zM9 14h6" />
+                    </svg>
+                  </button>
+                  <button
+                    class="project-shortcut"
+                    type="button"
+                    data-project-action="delete"
+                    aria-label="Delete Navigation ideas"
+                    title="Delete"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6 M10 11v5 M14 11v5"
+                      />
+                    </svg>
+                  </button>
+                </div>
+                <button
+                  class="project-shortcuts-disclosure"
+                  type="button"
+                  aria-label="Shortcuts for Navigation ideas"
+                  aria-expanded="false"
+                  aria-controls="cb-shortcuts"
+                >
+                  <span
+                    class="attention-dot attention-dot--today"
+                    aria-hidden="true"
+                  ></span>
+                </button>
+              </li>
+              <li
+                class="project-row project-row--subthread"
+                data-accent="ocean"
+              >
+                <button class="project-item" type="button">
+                  <span class="project-item-copy"
+                    ><strong>Pricing experiment</strong></span
+                  >
+                </button>
+              </li>
+              <li class="subthread-disclosure-row">
+                <button
+                  class="subthread-disclosure"
+                  type="button"
+                  aria-expanded="false"
+                >
+                  Show all
+                </button>
+              </li>
+            </ul>
+            <footer class="local-footnote">
+              <a
+                class="settings-icon-button"
+                href="#settings"
+                aria-label="Settings"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="m9.7 3-.6 2.1-2 .9L5 5.5 3 9l1.6 1.6v2.8L3 15l2 3.5 2.1-.5 2 .9.6 2.1h4.6l.6-2.1 2-.9 2.1.5 2-3.5-1.6-1.6v-2.8L21 9l-2-3.5-2.1.5-2-.9-.6-2.1z"
+                  />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              </a>
+            </footer>
+          </aside>
+          <p class="field-help" id="cb-shortcuts-status" role="status"></p>
           <div class="chat-heading">
             <h1 class="subthread-heading">
               <button
@@ -847,8 +1063,8 @@
             ><input type="checkbox" checked /> Project</label
           >
           <p class="cb-note">
-            Static anatomy specimens. Both header titles truncate independently.
-            The same branch icon sits between Change labels and Copy message.
+            Both header titles truncate independently. More includes Continue in
+            subthread and uses the same branch icon.
           </p>
         </section>
         <section id="states" class="cb-section">
@@ -876,8 +1092,8 @@
                 />
               </div>
               <p class="cb-note">
-                1px focus outline, 1px offset. A focused field may have a line;
-                an idle field stays flat.
+                The caret marks the active text field. Primary actions use a
+                filled button.
               </p>
             </article>
             <article class="settings-workspace">
@@ -897,6 +1113,7 @@
                   <p class="form-error" id="cb-export-error">
                     The database could not be exported. Try again.
                   </p>
+                  <p id="cb-action-status" class="field-help" role="status"></p>
                 </div>
                 <div class="backup-actions">
                   <button

@@ -78,7 +78,6 @@ test("keeps Question editable and its message tags intact across themes and refl
     ).toBeFocused();
     if (desktop) {
       await page.keyboard.press("Shift+Tab");
-      await page.keyboard.press("Shift+Tab");
       await expect(back).toBeFocused();
     }
     await expect(back.locator("svg")).toHaveCount(1);
@@ -105,9 +104,17 @@ test("keeps Question editable and its message tags intact across themes and refl
         exact: true,
       });
       await expect(back).toBeInViewport();
-      await expect(
-        page.getByRole("button", { name: "Save changes" }),
-      ).toBeInViewport();
+      const lastField = page.getByRole("checkbox", {
+        name: "Collapse long messages by default",
+      });
+      await lastField.focus();
+      await page.keyboard.press("Tab");
+      const save = page.getByRole("button", { name: "Save changes" });
+      await expect(save).toBeFocused();
+      await expect(save).toBeInViewport();
+      const fieldBox = (await lastField.boundingBox())!;
+      const saveBox = (await save.boundingBox())!;
+      expect(saveBox.y).toBeGreaterThan(fieldBox.y + fieldBox.height);
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth,
@@ -127,7 +134,6 @@ test("keeps Question editable and its message tags intact across themes and refl
     await expect(
       page.getByRole("textbox", { name: "Project name", exact: true }),
     ).toBeFocused();
-    await page.keyboard.press("Shift+Tab");
     await page.keyboard.press("Shift+Tab");
     await expect(
       page.getByRole("button", { name: "Back to project", exact: true }),

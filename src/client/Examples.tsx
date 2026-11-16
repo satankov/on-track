@@ -82,10 +82,14 @@ export function ExamplesSection({
 
 export function GeneralSettingsWorkspace({
   showExamples,
+  alwaysShowMessageTime,
+  onMessageTimeChange,
   onChange,
   warning,
 }: {
   showExamples: boolean;
+  alwaysShowMessageTime: boolean;
+  onMessageTimeChange: (show: boolean) => void;
   onChange: (show: boolean) => void;
   warning: string;
 }) {
@@ -98,18 +102,32 @@ export function GeneralSettingsWorkspace({
         className="settings-panel general-settings-panel"
         aria-label="Workspace"
       >
-        <label className="examples-preference">
-          <strong>Show examples</strong>
-          <input
-            type="checkbox"
-            checked={showExamples}
-            onChange={(e) => onChange(e.target.checked)}
-            aria-describedby="examples-preference-description"
-          />
-        </label>
+        <div className="general-preferences">
+          <label className="examples-preference">
+            <strong>Show examples</strong>
+            <input
+              type="checkbox"
+              checked={showExamples}
+              onChange={(e) => onChange(e.target.checked)}
+              aria-describedby="examples-preference-description"
+            />
+          </label>
+          <label className="examples-preference">
+            <strong>Always show message time</strong>
+            <input
+              type="checkbox"
+              checked={alwaysShowMessageTime}
+              onChange={(event) => onMessageTimeChange(event.target.checked)}
+              aria-describedby="message-time-description"
+            />
+          </label>
+        </div>
         <p id="examples-preference-description" className="field-help">
-          Display read-only example projects in the sidebar. Saved in your local
-          database.
+          Examples appear as read-only projects in the sidebar.
+        </p>
+        <p id="message-time-description" className="field-help">
+          When message times are hidden, hover over, focus, or tap a message to
+          see its time.
         </p>
         {warning && <p role="status">{warning}</p>}
       </section>

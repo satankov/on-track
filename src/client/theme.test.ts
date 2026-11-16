@@ -79,9 +79,12 @@ describe("accent accessibility", () => {
     expect(ratio).toBeGreaterThanOrEqual(4.5);
   });
 
-  it("uses the action-safe accent for the filled composer action", () => {
+  it("uses the readable project accent for Send and the action palette for primary buttons", () => {
     expect(stylesheet).toMatch(
-      /\.send-button\s*\{[^}]*background:\s*var\(--accent-action\)/s,
+      /\.send-button\s*\{[^}]*color:\s*var\(--on-action\);[^}]*background:\s*var\(--accent-action\)/s,
+    );
+    expect(stylesheet).toMatch(
+      /\.button-primary\s*\{[^}]*color:\s*var\(--on-action\);[^}]*background:\s*var\(--button-primary\)/s,
     );
   });
 
@@ -236,7 +239,7 @@ describe("appearance theme contract", () => {
   it.each(THEMES)(
     "keeps focus visible against main surfaces in %s",
     (theme) => {
-      for (const background of ["paper", "history", "field"]) {
+      for (const background of ["paper", "history", "field", "control"]) {
         expect(
           contrastRatio(
             readThemeToken(theme, "focus"),
@@ -483,6 +486,6 @@ describe("appearance theme contract", () => {
     );
 
     expect(hoverRule?.groups?.body).toContain("background: var(--selection)");
-    expect(hoverRule?.groups?.body).toContain("color: var(--focus)");
+    expect(hoverRule?.groups?.body).toContain("color: var(--ink)");
   });
 });

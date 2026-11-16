@@ -48,6 +48,7 @@ export function copyExample(
         updated_at: Math.max(...example.notes.map((n) => n.createdAt)),
         pinned_at: null,
         archived_at: null,
+        manual_alert: 0,
         collapse_long_messages: example.collapseLongMessages ? 1 : 0,
       },
     ],

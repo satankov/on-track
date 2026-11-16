@@ -56,6 +56,10 @@ export interface ApiClient {
   createChat(input: CreateChatInput): Promise<Chat>;
   updateChat(id: string, input: UpdateChatInput): Promise<Chat>;
   setChatArchived(id: string, archived: boolean): Promise<ProjectArchiveState>;
+  setChatAlert(
+    id: string,
+    enabled: boolean,
+  ): Promise<Pick<Chat, "manualAlert">>;
   setChatPinned(id: string, pinned: boolean): Promise<ProjectPinState>;
   deleteChat(id: string): Promise<void>;
   appendNote(id: string, input: CreateNoteInput): Promise<Note>;
@@ -186,6 +190,13 @@ export const apiClient: ApiClient = {
       `/api/chats/${encodeURIComponent(id)}/archive`,
       {
         method: archived ? "PUT" : "DELETE",
+      },
+    ),
+  setChatAlert: (id, enabled) =>
+    request<Pick<Chat, "manualAlert">>(
+      `/api/chats/${encodeURIComponent(id)}/alert`,
+      {
+        method: enabled ? "PUT" : "DELETE",
       },
     ),
   setChatPinned: (id, pinned) =>

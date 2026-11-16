@@ -6,6 +6,25 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.2.1] - Unreleased
+
+- Hover or focus a project or subthread to reveal Alert, Pin, Archive and Delete.
+  On touch, tap its shortcut control. Turn on Alert to keep a red Alert dot on that
+  conversation independently of its message labels.
+- The message toolbar now has Label and More. More holds the remaining actions,
+  including opening a conversation search result in its original history.
+- Settings → General includes **Always show message time**, enabled by default.
+  Turn it off to reveal a message’s time on hover, keyboard focus or tap.
+- Remove workspace divider lines and the “Local only” footer. Conversation headers
+  share the history background. Rail and header commands are flat, primary
+  actions retain their fills, and text-entry fields show the caret without a
+  focus border.
+- Mouse-revealed shortcuts and message options close when the pointer leaves.
+  Edit places Save changes below the fields. Archive and Delete live in the rail.
+- Database schema 12 stores manual Alert and the timestamp preference. Format-1
+  backups from schemas 3–11 remain importable. Export a backup before upgrading
+  if you need to return to v0.2.0.
+
 ## [0.2.0] - 2026-11-02
 
 ### Added

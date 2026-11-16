@@ -42,6 +42,7 @@ export const chats = sqliteTable(
     updatedAt: integer("updated_at").notNull(),
     pinnedAt: integer("pinned_at"),
     archivedAt: integer("archived_at"),
+    manualAlert: integer("manual_alert").notNull().default(0),
     collapseLongMessages: integer("collapse_long_messages", {
       mode: "boolean",
     })
@@ -57,6 +58,7 @@ export const chats = sqliteTable(
       "chats_title_length",
       sql`length(trim(${table.title})) BETWEEN 1 AND 80`,
     ),
+    check("chats_manual_alert_boolean", sql`${table.manualAlert} IN (0,1)`),
     check("chats_accent_allowed", sql.raw(accentCheck)),
     check(
       "chats_pinned_at_nonnegative",
@@ -227,6 +229,9 @@ export const workspacePreferences = sqliteTable(
   {
     id: integer("id").primaryKey(),
     theme: text("theme").notNull().default("light"),
+    alwaysShowMessageTime: integer("always_show_message_time")
+      .notNull()
+      .default(1),
     showExamples: integer("show_examples").notNull().default(1),
     collapsedPinned: integer("collapsed_pinned").notNull().default(0),
     collapsedProjects: integer("collapsed_projects").notNull().default(0),
@@ -235,6 +240,10 @@ export const workspacePreferences = sqliteTable(
     initialized: integer("initialized").notNull().default(0),
   },
   (table) => [
+    check(
+      "workspace_preferences_message_time_boolean",
+      sql`${table.alwaysShowMessageTime} IN (0,1)`,
+    ),
     check("workspace_preferences_single_row", sql`${table.id} = 1`),
     check(
       "workspace_preferences_theme",

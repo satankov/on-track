@@ -225,6 +225,12 @@ export class ChatService {
     return chat;
   }
 
+  setChatAlert(id: string, manualAlert: boolean): Pick<Chat, "manualAlert"> {
+    if (!this.repository.setChatAlert(id, manualAlert))
+      throw new ProjectNotFoundError();
+    return { manualAlert };
+  }
+
   setChatPinned(id: string, pinned: boolean): ProjectPinState {
     const state = this.repository.setChatPinned(id, pinned, this.clock());
     if (!state) throw new ProjectNotFoundError();

@@ -216,6 +216,16 @@ select:focus {
   outline-offset: 1px;
 }
 
+input:where(
+    :not([type]),
+    [type="text"],
+    [type="search"],
+    [type="datetime-local"]
+  ):focus,
+textarea:focus {
+  outline: none;
+}
+
 .app-shell {
   height: 100vh;
   height: 100dvh;
@@ -233,7 +243,6 @@ select:focus {
   flex-direction: column;
   overflow: hidden;
   background: var(--rail);
-  border-right: 1px solid var(--line);
 }
 
 .rail-header {
@@ -244,7 +253,6 @@ select:focus {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--line);
 }
 
 .brand-mark {
@@ -301,13 +309,12 @@ select:focus {
   border: 0;
   border-radius: 9px;
   color: var(--ink);
-  background: var(--control);
+  background: transparent;
   cursor: pointer;
 }
 .new-project-button:hover {
-  color: var(--focus);
+  color: var(--ink);
   background: var(--selection);
-  border-color: var(--line-strong);
 }
 .new-project-button svg {
   width: 19px;
@@ -443,13 +450,25 @@ button.rail-section-label {
 .project-row--error .project-item-copy small {
   color: var(--critical);
 }
-.project-pin-button {
-  position: absolute;
-  z-index: 2;
-  inset: 50% 0 auto auto;
-  transform: translateY(-50%);
-  width: 44px;
-  height: 40px;
+.project-row[data-project-row] {
+  display: flex;
+  align-items: center;
+}
+.project-row[data-project-row] .project-item {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-right: 4px;
+}
+.project-shortcuts:not([hidden]) {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.project-shortcut,
+.project-shortcuts-disclosure {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 36px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -458,31 +477,39 @@ button.rail-section-label {
   color: var(--muted);
   background: transparent;
   cursor: pointer;
-  opacity: 0;
 }
-.project-pin-button:hover,
-.project-pin-button:focus-visible {
-  color: var(--ink);
-  opacity: 1;
-}
-.project-row:hover .project-pin-button,
-.project-row:focus-within .project-pin-button {
-  opacity: 1;
-}
-.project-pin-button[aria-pressed="true"] {
-  color: var(--accent);
-}
-.project-pin-button svg {
+.project-shortcut svg,
+.project-shortcuts-disclosure svg {
   width: 16px;
   height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 2;
+  stroke-width: 1.8;
 }
-.project-pin-button[aria-pressed="true"] svg {
-  fill: color-mix(in srgb, currentColor 20%, transparent);
+.project-shortcut:hover,
+.project-shortcuts-disclosure:hover {
+  color: var(--ink);
+}
+.project-shortcut[data-project-action="delete"]:hover {
+  color: var(--critical);
+}
+.project-shortcut[data-project-action="pin"][aria-pressed="true"] {
+  color: var(--accent);
+}
+.project-shortcut[aria-pressed="true"] svg {
+  fill: color-mix(in srgb, currentColor 18%, transparent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .project-row[data-shortcuts-open="true"] .project-shortcuts-disclosure {
+    display: none;
+  }
+  .project-row[data-shortcuts-open="false"]
+    .project-shortcuts-disclosure:not(:focus-visible)
+    > svg {
+    visibility: hidden;
+  }
 }
 .attention-dot {
   width: 7px;
@@ -499,18 +526,6 @@ button.rail-section-label {
 .project-attention-dot--earlier {
   background: var(--muted);
 }
-.project-attention-dot {
-  position: absolute;
-  z-index: 2;
-  right: 22px;
-  top: 50%;
-  transform: translate(50%, -50%);
-}
-.project-row:hover .project-attention-dot,
-.project-row:focus-within .project-attention-dot {
-  opacity: 0;
-}
-
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -563,20 +578,8 @@ button.rail-section-label {
   display: flex;
   align-items: center;
   gap: 10px;
-  border-top: 1px solid var(--line);
   background: transparent;
   text-align: left;
-}
-.local-indicator {
-  flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--success);
-}
-.local-footnote-copy {
-  display: grid;
-  gap: 2px;
 }
 .settings-icon-button,
 .settings-back-button {
@@ -588,14 +591,13 @@ button.rail-section-label {
   place-items: center;
   border: 0;
   border-radius: 9px;
-  background: var(--control);
+  background: transparent;
   color: var(--muted);
   cursor: pointer;
 }
 .settings-icon-button:hover,
 .settings-back-button:hover {
-  border-color: var(--line-strong);
-  background: var(--paper);
+  background: var(--selection);
   color: var(--ink);
 }
 .settings-icon-button svg,
@@ -613,13 +615,6 @@ button.rail-section-label {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 2;
-}
-.local-footnote strong {
-  font-size: 0.76rem;
-}
-.local-footnote small {
-  color: var(--muted);
-  font-size: 0.68rem;
 }
 
 .workspace {
@@ -783,7 +778,9 @@ button.rail-section-label {
 .button {
   min-height: 40px;
   padding: 0 15px;
-  border: 1px solid transparent;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
   border-radius: 8px;
   cursor: pointer;
   font-size: 0.8rem;
@@ -793,6 +790,9 @@ button.rail-section-label {
   cursor: wait;
   opacity: 0.58;
 }
+.button:hover:not(:disabled) {
+  background: var(--selection);
+}
 .button-primary {
   color: var(--on-action);
   background: var(--button-primary);
@@ -800,16 +800,8 @@ button.rail-section-label {
 .button-primary:hover:not(:disabled) {
   background: var(--button-primary-hover);
 }
-.button-quiet {
-  border-color: var(--line);
-  background: transparent;
-}
-.button-quiet:hover {
-  border-color: var(--line-strong);
-  background: var(--canvas);
-}
 .button-danger {
-  border-color: color-mix(in srgb, var(--critical) 58%, var(--line));
+  border: 1px solid color-mix(in srgb, var(--critical) 58%, var(--line));
   color: var(--critical);
   background: var(--critical-soft);
 }
@@ -837,8 +829,7 @@ button.rail-section-label {
   align-items: center;
   padding: 8px clamp(20px, 5vw, 72px);
   padding-left: calc(var(--history-filter-width) + clamp(20px, 5vw, 72px));
-  border-bottom: 1px solid var(--line);
-  background: var(--paper);
+  background: var(--history);
 }
 .chat-header-inner {
   width: 100%;
@@ -872,10 +863,6 @@ button.rail-section-label {
   align-items: center;
   border-radius: 12px;
   background: var(--paper);
-}
-.project-search-field:focus-within {
-  outline: 1px solid var(--focus);
-  outline-offset: 1px;
 }
 .project-search-field input {
   appearance: none;
@@ -938,29 +925,6 @@ button.rail-section-label {
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-.message-context {
-  position: relative;
-  width: 100%;
-}
-.message-row--search.message-row--own {
-  padding-right: 52px;
-}
-.message-row--search.message-row--participant {
-  padding-left: 52px;
-}
-.message-history-button {
-  position: absolute;
-  top: 50%;
-  right: -52px;
-  transform: translateY(-50%);
-}
-.message-row--participant .message-history-button {
-  right: auto;
-  left: -52px;
-}
-.message-row--participant .message-history-button svg {
-  transform: scaleX(-1);
 }
 .search-highlight {
   background: var(--search-match);
@@ -1102,7 +1066,7 @@ button.rail-section-label {
   width: 42px;
   height: 42px;
   padding: 0;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: 8px;
   background: transparent;
   cursor: pointer;
@@ -1140,7 +1104,7 @@ button.rail-section-label {
   padding: 10px;
   border: 0;
   border-radius: 50%;
-  background: var(--control);
+  background: transparent;
   color: var(--ink);
   cursor: pointer;
 }
@@ -1370,7 +1334,7 @@ button.rail-section-label {
   gap: 10px;
 }
 .message-day:focus-within,
-.message-day:has(.message-label-picker--open) {
+.message-day:has(.message-popup--open) {
   z-index: 2;
 }
 .message-date-separator {
@@ -1405,7 +1369,7 @@ button.rail-section-label {
   display: flex;
 }
 .message-row:focus-within,
-.message-row:has(.message-label-picker--open) {
+.message-row:has(.message-popup--open) {
   z-index: 2;
 }
 .message-row--own {
@@ -1499,9 +1463,25 @@ button.rail-section-label {
   justify-content: flex-start;
 }
 .message-row:hover .message-actions,
-.message-row:focus-within .message-actions,
-.message-actions:has(.message-label-picker--open) {
+.message-row:focus-visible .message-actions,
+.message-stack:has(:focus-visible) .message-actions,
+.message-actions:has(.message-popup--open) {
   opacity: 1;
+}
+/* Keep the gap between the trigger and its popover inside the row's hover area. */
+@media (hover: hover) and (pointer: fine) {
+  .message-popup--open::before {
+    content: "";
+    position: absolute;
+    left: var(--popup-gap-left, 0px);
+    width: var(--popup-gap-width, 100%);
+    top: 100%;
+    height: 7px;
+  }
+  .message-popup--open:has(> [data-side="up"])::before {
+    top: auto;
+    bottom: 100%;
+  }
 }
 .message-action {
   width: 28px;
@@ -1523,7 +1503,8 @@ button.rail-section-label {
   border-color: var(--critical);
   color: var(--critical);
 }
-.message-action svg {
+.message-action svg,
+.message-menu-item svg {
   width: 15px;
   height: 15px;
   fill: none;
@@ -1532,10 +1513,11 @@ button.rail-section-label {
   stroke-linejoin: round;
   stroke-width: 1.8;
 }
-.message-label-picker {
+.message-popup {
   position: relative;
 }
-.message-label-popover {
+.message-label-popover,
+.message-more-menu {
   position: absolute;
   right: auto;
   left: 0;
@@ -1550,13 +1532,57 @@ button.rail-section-label {
   box-shadow: 0 12px 34px
     color-mix(in srgb, var(--shadow-overlay) 22%, transparent);
 }
-.message-label-popover {
+.message-label-popover,
+.message-more-menu {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-.message-label-popover[data-side="up"] {
+.message-label-popover[data-side="up"],
+.message-more-menu[data-side="up"] {
   top: auto;
   bottom: calc(100% + 7px);
+}
+.message-more-menu {
+  display: grid;
+  gap: 2px;
+  width: max-content;
+  max-width: min(218px, calc(100vw - 32px));
+  padding: 6px;
+}
+.message-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+.message-menu-item:hover,
+.message-menu-item:focus-visible {
+  background: var(--selection);
+}
+.message-menu-item--danger {
+  color: var(--critical);
+}
+.message-menu-item[aria-disabled="true"] {
+  color: var(--muted);
+}
+@media (pointer: coarse), (hover: none) {
+  .message-action,
+  .message-menu-item {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .message-actions {
+    opacity: 1;
+  }
 }
 .message-label-popover fieldset {
   display: grid;
@@ -1749,11 +1775,9 @@ button.rail-section-label {
   background: color-mix(in srgb, var(--attachment-ink) 26%, transparent);
 }
 .attachment-action.button-quiet {
-  border-color: color-mix(in srgb, var(--attachment-ink) 20%, transparent);
   color: var(--attachment-ink);
 }
-.attachment-action.button-quiet:hover {
-  border-color: color-mix(in srgb, var(--attachment-ink) 32%, transparent);
+.attachment-action.button-quiet:hover:not(:disabled) {
   background: color-mix(in srgb, var(--attachment-ink) 10%, transparent);
 }
 .attachment-action:focus-visible {
@@ -1842,6 +1866,22 @@ button.rail-section-label {
   font-size: 0.68rem;
   font-weight: 700;
 }
+[data-message-time="on-interaction"] .message-row .message-time {
+  opacity: 0;
+}
+[data-message-time="on-interaction"]
+  :is(.message-row:focus-visible, .message-stack:has(:focus-visible))
+  .message-time,
+[data-message-time="on-interaction"][data-touch-interaction]
+  .message-row:focus-within
+  .message-time {
+  opacity: 1;
+}
+@media (hover: hover) {
+  [data-message-time="on-interaction"] .message-row:hover .message-time {
+    opacity: 1;
+  }
+}
 .settings-workspace {
   --settings-gutter: clamp(20px, 3vw, 40px);
   --settings-left-gutter: calc(3 * var(--settings-gutter));
@@ -1880,13 +1920,6 @@ button.rail-section-label {
   margin: 8px 0 0;
   color: var(--muted);
   line-height: 1.55;
-}
-.settings-workspace .button-quiet {
-  border: 0;
-  background: var(--paper);
-}
-.settings-workspace .button-quiet:hover {
-  background: var(--selection);
 }
 .settings-control-group {
   display: grid;
@@ -1938,10 +1971,8 @@ button.rail-section-label {
 }
 .theme-option {
   --preview-canvas: #f6f7f9;
-  --preview-paper: #ffffff;
   --preview-rail: #eef1f4;
   --preview-ink: #626a75;
-  --preview-line: #c9cfd7;
   --preview-note: #e7eef2;
   --preview-field: #ffffff;
   --preview-accent: #33758c;
@@ -1957,20 +1988,16 @@ button.rail-section-label {
 }
 .theme-option[data-preview-theme="neutral"] {
   --preview-canvas: #32373d;
-  --preview-paper: #383d44;
   --preview-rail: #292d32;
   --preview-ink: #c4cbd3;
-  --preview-line: #59616b;
   --preview-note: #46515b;
   --preview-field: #444a52;
   --preview-accent: #6db9d4;
 }
 .theme-option[data-preview-theme="dark"] {
   --preview-canvas: #13171b;
-  --preview-paper: #181c20;
   --preview-rail: #0d1013;
   --preview-ink: #b6bec8;
-  --preview-line: #30363d;
   --preview-note: #24313a;
   --preview-field: #242a30;
   --preview-accent: #6db9d4;
@@ -2000,7 +2027,6 @@ button.rail-section-label {
   align-content: start;
   gap: 7px;
   padding: 15px 11px;
-  border-right: 1px solid var(--preview-line);
   background: var(--preview-rail);
 }
 .theme-preview-rail i {
@@ -2023,8 +2049,7 @@ button.rail-section-label {
   position: absolute;
   inset: 0 0 auto;
   height: 22%;
-  border-bottom: 1px solid var(--preview-line);
-  background: var(--preview-paper);
+  background: var(--preview-canvas);
 }
 .theme-preview-history {
   position: absolute;
@@ -2296,10 +2321,6 @@ button.rail-section-label {
 .composer textarea::placeholder {
   color: var(--placeholder);
 }
-.composer:focus-within {
-  outline: 1px solid var(--focus);
-  outline-offset: 1px;
-}
 .composer-bar {
   flex-shrink: 0;
   min-height: 48px;
@@ -2435,7 +2456,6 @@ kbd {
   min-width: 100px;
   height: 34px;
   padding: 0 9px;
-  border-color: var(--line-strong);
   border-radius: 7px;
   background: var(--control);
   font-size: 0.72rem;
@@ -2467,7 +2487,6 @@ kbd {
   height: 34px;
   margin-left: 0;
   padding: 0 9px;
-  border-color: var(--line-strong);
   border-radius: 7px;
   background: var(--control);
   font-size: 0.72rem;
@@ -2646,9 +2665,6 @@ kbd {
   font-size: 1.4rem;
   line-height: 1.3;
 }
-.project-dialog .button-quiet {
-  border: 0;
-}
 .field-label,
 .accent-fieldset legend {
   display: block;
@@ -2660,7 +2676,7 @@ kbd {
   width: 100%;
   height: 48px;
   padding: 0 13px;
-  border: 1px solid var(--control-border);
+  border: 0;
   border-radius: 5px;
   color: var(--ink);
   background: var(--field);
@@ -2893,48 +2909,14 @@ kbd {
   border-radius: 12px;
   background: var(--paper);
 }
-.project-lifecycle-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 32px;
-}
-.project-lifecycle-actions .field-help {
-  margin: 0 4px 16px;
-}
-.project-lifecycle-actions .button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 0;
-  background: transparent;
-  padding-inline: 4px;
-}
-.project-lifecycle-actions .button:hover {
-  background: var(--selection);
-}
-.project-lifecycle-actions svg {
-  width: 17px;
-  height: 17px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.project-edit-actions {
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
+.project-edit-form > .settings-back-button {
   margin: 0 0 28px;
 }
-.project-edit-actions .settings-back-button {
-  margin-left: 0;
+.project-edit-save {
+  display: block;
+  margin: 24px 0 0 auto;
 }
 @media (forced-colors: active) {
-  .project-settings-fields .text-input,
   .project-settings-fields .accent-swatch,
   .project-label-option input,
   .project-message-display-option input,
@@ -2960,6 +2942,20 @@ kbd {
   color: var(--ink);
   background: var(--field);
 }
+.file-input::file-selector-button {
+  margin-right: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.file-input:not(:disabled)::file-selector-button:hover {
+  background: var(--selection);
+}
 .message-textarea {
   min-height: 160px;
   height: auto;
@@ -2971,10 +2967,9 @@ kbd {
   margin-bottom: 18px;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 960px), (pointer: coarse), (hover: none) {
   .message-actions {
     position: static;
-    opacity: 1;
     pointer-events: auto;
     justify-content: flex-end;
     margin-top: 6px;
@@ -2982,15 +2977,16 @@ kbd {
   .message-row--participant .message-actions {
     justify-content: flex-start;
   }
-  .message-label-picker {
+  .message-popup {
     position: relative;
   }
-  .message-label-popover {
+  .message-label-popover,
+  .message-more-menu {
     right: 0;
     left: auto;
     width: min(218px, calc(100vw - 32px));
   }
-  .message-row--participant .message-label-popover {
+  .message-row--participant :is(.message-label-popover, .message-more-menu) {
     left: 0;
     right: auto;
   }
@@ -3009,9 +3005,6 @@ kbd {
   }
   .project-rail--detail-open {
     display: none;
-  }
-  .project-pin-button {
-    opacity: 1;
   }
   .workspace-empty {
     display: none;
@@ -3050,7 +3043,6 @@ kbd {
   .history-filter {
     padding: 8px 12px;
     border-right: 0;
-    border-bottom: 1px solid var(--line);
   }
   .history-filter-inner {
     height: auto;
@@ -3128,7 +3120,6 @@ kbd {
   .settings-rail {
     height: auto;
     min-height: 0;
-    border-bottom: 1px solid var(--line);
   }
   .settings-section-list {
     min-height: 58px;
@@ -3136,7 +3127,6 @@ kbd {
     gap: 6px;
     padding: 8px 12px;
     overflow-x: auto;
-    border-top: 1px solid var(--line);
   }
   .settings-section-item {
     width: auto;
@@ -3168,12 +3158,6 @@ kbd {
   }
   .settings-control-row {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .project-edit-actions {
-    flex-wrap: nowrap;
-  }
-  .project-edit-actions .button {
-    padding-inline: 10px;
   }
   .project-edit-workspace {
     height: 100%;
@@ -3256,7 +3240,7 @@ kbd {
     transition: transform 140ms ease;
   }
   .project-item,
-  .project-pin-button,
+  .project-shortcut,
   .button,
   .new-project-button,
   .settings-icon-button,
@@ -3272,12 +3256,12 @@ kbd {
 @media (forced-colors: active) {
   .attention-dot,
   .note-node,
-  .local-indicator,
   .accent-swatch,
   .settings-section-icon {
     border: 1px solid CanvasText;
   }
 
+  .message-more-menu,
   .message-bubble,
   .attachment-list,
   .message-label-popover {
@@ -3320,19 +3304,10 @@ kbd {
   .project-item {
     min-height: 44px;
   }
-  .project-pin-button {
+  .project-shortcut,
+  .project-shortcuts-disclosure {
+    width: 36px;
     height: 44px;
-    opacity: 1;
-  }
-  .project-row[data-attention-state="today"] .project-item,
-  .project-row[data-attention-state="earlier"] .project-item {
-    padding-right: 64px;
-  }
-  .project-row .project-attention-dot,
-  .project-row:hover .project-attention-dot,
-  .project-row:focus-within .project-attention-dot {
-    right: 54px;
-    opacity: 1;
   }
 }
 
@@ -3553,11 +3528,13 @@ kbd {
     white-space: normal;
   }
 }
+.general-preferences {
+  background: var(--paper);
+  border-radius: 12px;
+}
 .general-settings-panel .examples-preference {
   min-height: 50px;
   padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--paper);
   font-size: 0.84rem;
 }
 .general-settings-panel .examples-preference strong {
@@ -4073,9 +4050,9 @@ kbd {
   transform: none;
   margin-left: auto;
 }
-@media (min-width: 961px) {
-  .workspace-chat:not(.workspace-example) .message-stack {
-    max-width: min(760px, 82%, calc(100% - 160px));
+@media (min-width: 961px) and (pointer: fine) and (hover: hover) {
+  .workspace-chat .message-stack {
+    max-width: min(760px, calc(100% - 68px));
   }
 }
 @media (forced-colors: active) {

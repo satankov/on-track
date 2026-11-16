@@ -379,9 +379,10 @@
 }
 .cb-demo-form {
   max-width: 840px;
+  padding: 0;
 }
 .cb-demo-form .form-status:empty,
-.cb-demo-form #cb-action-status:empty {
+#cb-action-status:empty {
   display: none;
 }
 .cb-icon {
@@ -567,12 +568,6 @@
   .cb-specimen.settings-workspace {
     height: auto;
   }
-  .cb-demo-form .project-edit-actions {
-    flex-wrap: wrap;
-  }
-  .cb-demo-form .project-edit-actions .button {
-    padding-inline: 10px;
-  }
   .cb-conversation .composer-shortcut {
     display: none;
   }
@@ -596,4 +591,13 @@
   .cb-filter-sample {
     width: 100%;
   }
+}
+
+.cb-conversation [hidden] {
+  display: none;
+}
+
+.cb-rail {
+  height: auto;
+  width: min(100%, 300px);
 }

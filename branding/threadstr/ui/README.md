@@ -31,7 +31,8 @@ app server and reads no project database.
   standards. The settings specimen omits the full sidebar and workspace gutter;
   the layout diagram and specification explain those separately.
 - Sample Save/Archive/Delete/Send actions only demonstrate feedback. Native
-  checkboxes/radios, Show more, focus, and the Create modal can be exercised.
+  checkboxes/radios, message actions and timestamps, rail shortcuts, Show more,
+  focus, and the Create modal can be exercised.
   This is not a replacement for testing the real React workflows.
 
 ## Maintain

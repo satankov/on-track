@@ -95,6 +95,7 @@ export const test = base.extend<{ resetPreferences: void }, WorkerFixtures>({
         data: {
           theme: "light",
           showExamples: true,
+          alwaysShowMessageTime: true,
           collapsedSections: {
             Pinned: false,
             Projects: false,

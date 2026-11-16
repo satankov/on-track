@@ -1,4 +1,7 @@
-import { rewindToSchema7 } from "../../test/legacy-database.js";
+import {
+  rewindToSchema7,
+  rewindToSchema11,
+} from "../../test/legacy-database.js";
 import {
   createV010Database,
   readV010Rows,
@@ -33,7 +36,7 @@ describe("SQLite project-chat persistence", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  it("upgrades forward-built v0.1.0 data to schema 11 without losing released state on restart", () => {
+  it("upgrades forward-built v0.1.0 data to schema 12 without losing released state on restart", () => {
     const released = createV010Database(join(directory, "released"), {
       missingAttachment: true,
     });
@@ -61,7 +64,7 @@ describe("SQLite project-chat persistence", () => {
           .prepare("SELECT schema_version FROM app_metadata")
           .pluck()
           .get(),
-      ).toBe(11);
+      ).toBe(12);
       expect(
         database
           .prepare("SELECT max(created_at) FROM __drizzle_migrations")
@@ -93,6 +96,58 @@ describe("SQLite project-chat persistence", () => {
       expect(database.pragma("integrity_check", { simple: true })).toBe("ok");
       expect(database.pragma("foreign_key_check")).toEqual([]);
     }
+  });
+
+  it("upgrades a schema-11 conversation and enforces boolean workspace controls across restart", () => {
+    repository.createChat({
+      id: "project",
+      title: "Project",
+      accent: "moss",
+      now: 5,
+    });
+    repository.createSubthread("project", {
+      id: "child",
+      title: "Child",
+      now: 10,
+    });
+    repository.appendNote({
+      id: "message",
+      chatId: "child",
+      body: "Preserve me",
+      now: 20,
+    });
+    rewindToSchema11(database);
+    database.exec(
+      "UPDATE workspace_preferences SET theme='dark', initialized=1",
+    );
+    database.close();
+    database = openDatabase(join(directory, "on-track.sqlite"));
+    repository = new SqliteChatRepository(database);
+    expect(repository.getChat("child")).toMatchObject({
+      manualAlert: false,
+      projectId: "project",
+      updatedAt: 20,
+    });
+    expect(repository.listNotes("child")[0]?.body).toBe("Preserve me");
+    expect(readPreferences(database)).toMatchObject({
+      alwaysShowMessageTime: true,
+      theme: "dark",
+    });
+    expect(() => database.exec("UPDATE chats SET manual_alert = 2")).toThrow(
+      /CHECK constraint/,
+    );
+    expect(() =>
+      database.exec(
+        "UPDATE workspace_preferences SET always_show_message_time = -1",
+      ),
+    ).toThrow(/CHECK constraint/);
+    repository.setChatAlert("child", true);
+    database.close();
+    database = openDatabase(join(directory, "on-track.sqlite"));
+    expect(new SqliteChatRepository(database).getChat("child")).toMatchObject({
+      manualAlert: true,
+      updatedAt: 20,
+    });
   });
 
   it("migrates schema 7 with inactive assignments and enforces project-owned label references", () => {
@@ -503,7 +558,7 @@ describe("SQLite project-chat persistence", () => {
         .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
         .pluck()
         .get(),
-    ).toBe(11);
+    ).toBe(12);
     expect(repository.getChat("chat-a")?.pinnedAt).toBeNull();
     expect(repository.getChat("chat-a")?.collapseLongMessages).toBe(true);
     expect(repository.listNotes("chat-a")).toMatchObject([

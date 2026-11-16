@@ -30,6 +30,16 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+async function chooseMessageAction(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+  row?: HTMLElement,
+) {
+  const scope = row ? within(row) : screen;
+  await user.click(scope.getByRole("button", { name: "More message actions" }));
+  await user.click(scope.getByRole("menuitem", { name }));
+}
+
 function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
   let preferences = structuredClone(DEFAULT_PREFERENCES);
   return {
@@ -67,6 +77,7 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
       updatedAt: 1,
     }),
     updateChat: vi.fn(),
+    setChatAlert: vi.fn(),
     setChatPinned: vi.fn(),
     setChatArchived: vi.fn(),
     deleteChat: vi.fn(),
@@ -100,6 +111,280 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
 
 describe("personal project chat workspace", () => {
   beforeEach(() => localStorage.clear());
+
+  it("expands ordered rail shortcuts and keeps a manual Alert independent of message attention", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "flag",
+      title: "Flagged",
+      accent: "ocean",
+      createdAt: 1,
+      updatedAt: 1,
+      latestAttentionAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      setChatAlert: vi.fn(async (_id, enabled) => ({ manualAlert: enabled })),
+    });
+    render(<App api={api} />);
+    const open = await screen.findByRole("button", { name: "Open Flagged" });
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Flagged" }),
+    );
+    const shortcuts = within(
+      screen.getByRole("group", { name: "Shortcuts for Flagged" }),
+    );
+    expect(
+      shortcuts
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual([
+      "Alert Flagged",
+      "Pin Flagged",
+      "Archive Flagged",
+      "Delete Flagged",
+    ]);
+    await user.click(shortcuts.getByRole("button", { name: "Alert Flagged" }));
+    expect(api.setChatAlert).toHaveBeenCalledWith("flag", true);
+    expect(open).toHaveAccessibleDescription(/Manual alert/);
+    await user.keyboard("{Escape}");
+    expect(
+      screen.queryByRole("group", { name: "Shortcuts for Flagged" }),
+    ).toBeNull();
+    expect(open).toHaveAccessibleDescription(/Manual alert/);
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Flagged" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Alert Flagged", pressed: true }),
+    );
+    expect(open).toHaveAccessibleDescription(/Earlier attention/);
+    expect(open).not.toHaveAccessibleDescription(/Manual alert/);
+  });
+
+  it("dismisses mouse shortcuts after opening the project or setting its Alert", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "mouse",
+      title: "Mouse project",
+      accent: "ocean",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("hover: hover"),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    try {
+      render(
+        <App
+          api={createApi({
+            listChats: vi.fn().mockResolvedValue([chat]),
+            getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+            setChatAlert: vi.fn(async (_id, enabled) => ({
+              manualAlert: enabled,
+            })),
+          })}
+        />,
+      );
+      const title = await screen.findByRole("button", {
+        name: "Open Mouse project",
+      });
+      const shortcuts = () =>
+        screen.queryByRole("group", { name: "Shortcuts for Mouse project" });
+      await user.click(title);
+      await user.unhover(title);
+      expect(shortcuts()).toBeNull();
+      await user.hover(title);
+      const alert = within(shortcuts()!).getByRole("button", {
+        name: "Alert Mouse project",
+      });
+      await user.click(alert);
+      expect(alert).toHaveAttribute("aria-pressed", "true");
+      await user.unhover(alert);
+      expect(shortcuts()).toBeNull();
+      expect(title).toHaveAccessibleDescription(/Manual alert/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("confirms the clicked rail project and preserves the other project's draft through cancel, failure and delete", async () => {
+    const user = userEvent.setup();
+    const current = {
+      id: "current",
+      title: "Current",
+      accent: "moss",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const target = { ...current, id: "target", title: "Remove me" };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([current, target]),
+      getChat: vi.fn().mockResolvedValue({ ...current, notes: [] }),
+      deleteChat: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Try again"))
+        .mockResolvedValue(undefined),
+    });
+    const confirm = vi
+      .spyOn(window, "confirm")
+      .mockReturnValueOnce(false)
+      .mockReturnValue(true);
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Current" }),
+    );
+    await user.type(screen.getByLabelText("Add a note"), "Keep this draft");
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Remove me" }),
+    );
+    const remove = screen.getByRole("button", { name: "Delete Remove me" });
+    await user.click(remove);
+    expect(confirm).toHaveBeenCalledWith(
+      'Delete "Remove me" and all of its subthreads, messages and files?',
+    );
+    expect(api.deleteChat).not.toHaveBeenCalled();
+    await user.click(remove);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Try again");
+    await user.click(remove);
+    expect(api.deleteChat).toHaveBeenLastCalledWith("target");
+    expect(screen.queryByRole("button", { name: "Open Remove me" })).toBeNull();
+    expect(screen.getByLabelText("Add a note")).toHaveValue("Keep this draft");
+    expect(screen.getByRole("button", { name: "Projects" })).toHaveFocus();
+  });
+
+  it("focuses the first shortcut from reverse Tab and retains it while another row is hovered", async () => {
+    const user = userEvent.setup();
+    const root = {
+      id: "a",
+      title: "First",
+      accent: "moss",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const next = { ...root, id: "b", title: "Second" };
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("hover: hover"),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    try {
+      render(
+        <App
+          api={createApi({
+            listChats: vi.fn().mockResolvedValue([root, next]),
+          })}
+        />,
+      );
+      await screen.findByRole("button", { name: "Open Second" });
+      act(() => screen.getByRole("button", { name: "Archive" }).focus());
+      await user.tab({ shift: true });
+      expect(
+        screen.getByRole("button", { name: "Shortcuts for Second" }),
+      ).toHaveFocus();
+      await user.keyboard("{Enter}");
+      const alert = screen.getByRole("button", { name: "Alert Second" });
+      expect(alert).toHaveFocus();
+      await user.hover(screen.getByRole("button", { name: "Open First" }));
+      expect(alert).toBeVisible();
+      expect(alert).toHaveFocus();
+      await user.tab();
+      expect(screen.getByRole("button", { name: "Pin Second" })).toHaveFocus();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("holds family deletion while a subthread is created from a child", async () => {
+    const root = {
+      id: "lock-root",
+      title: "Family",
+      accent: "moss",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const source = {
+      ...root,
+      id: "lock-child",
+      projectId: root.id,
+      title: "Child",
+    };
+    const created = { ...source, id: "new-child", title: "New child" };
+    const creation = deferred<typeof created>();
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([root, source]),
+      getChat: vi
+        .fn()
+        .mockResolvedValueOnce({ ...root, notes: [] })
+        .mockResolvedValueOnce({ ...source, notes: [] }),
+      createSubthread: vi.fn().mockReturnValue(creation.promise),
+    });
+    render(<App api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open Family" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Child" }));
+    await screen.findByRole("heading", { name: "Family / Child" });
+    fireEvent.click(screen.getByRole("button", { name: "New subthread" }));
+    fireEvent.change(screen.getByLabelText("Subthread name"), {
+      target: { value: "New child" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create subthread" }));
+    expect(api.createSubthread).toHaveBeenCalledOnce();
+    for (const name of ["Family", "Child"]) {
+      const row = screen
+        .getByRole("button", { name: `Open ${name}` })
+        .closest("li")!;
+      expect(
+        row.querySelector('[data-project-action="delete"]'),
+      ).toBeDisabled();
+    }
+    await act(async () => creation.resolve(created));
+    expect(
+      await screen.findByRole("heading", { name: "Family / New child" }),
+    ).toBeVisible();
+  });
+
+  it("blocks child creation during root deletion and preserves navigation into Settings", async () => {
+    const root = {
+      id: "lock-root",
+      title: "Family",
+      accent: "moss",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const child = {
+      ...root,
+      id: "lock-child",
+      projectId: root.id,
+      title: "Child",
+    };
+    const deletion = deferred<void>();
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([root, child]),
+      getChat: vi
+        .fn()
+        .mockResolvedValueOnce({ ...root, notes: [] })
+        .mockResolvedValueOnce({ ...child, notes: [] }),
+      deleteChat: vi.fn().mockReturnValue(deletion.promise),
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open Family" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Child" }));
+    await screen.findByRole("heading", { name: "Family / Child" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Shortcuts for Family" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete Family" }));
+    expect(
+      screen.getByRole("button", { name: "New subthread" }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await act(async () => deletion.resolve());
+    expect(screen.getByRole("heading", { name: "General" })).toBeVisible();
+    expect(api.createSubthread).not.toHaveBeenCalled();
+  });
 
   it.each([false, true])(
     "mobile navigation preserves a newer attachment focus (moved: %s)",
@@ -216,8 +501,10 @@ describe("personal project chat workspace", () => {
     );
     await user.click(screen.getByRole("button", { name: "Search messages" }));
     await user.type(screen.getByRole("searchbox"), "hotel");
-    await screen.findByRole("button", { name: "Open message in history" });
-    await user.click(screen.getByRole("button", { name: "Edit message" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Matching messages")).toHaveTextContent("1"),
+    );
+    await chooseMessageAction(user, "Edit message");
     await user.clear(screen.getByRole("textbox", { name: "Edit message" }));
     await user.type(
       screen.getByRole("textbox", { name: "Edit message" }),
@@ -325,14 +612,7 @@ describe("personal project chat workspace", () => {
       "hotel",
     );
     expect(screen.getByLabelText("Matching messages")).toHaveTextContent("1");
-    expect(
-      screen
-        .getByRole("button", { name: "Open message in history" })
-        .closest("article"),
-    ).toBeNull();
-    await user.click(
-      screen.getByRole("button", { name: "Open message in history" }),
-    );
+    await chooseMessageAction(user, "Open message in history");
     await waitFor(() =>
       expect(document.activeElement).toHaveAttribute("data-note-id", "n3"),
     );
@@ -495,8 +775,9 @@ describe("personal project chat workspace", () => {
     vi.useFakeTimers();
     try {
       fireEvent.click(
-        screen.getAllByRole("button", { name: "Edit message" })[0],
+        screen.getAllByRole("button", { name: "More message actions" })[0],
       );
+      fireEvent.click(screen.getByRole("menuitem", { name: "Edit message" }));
       expect(composer).toHaveAttribute("data-readonly-highlight", "true");
       act(() => vi.advanceTimersByTime(500));
       expect(composer).toHaveAttribute("data-readonly-highlight", "true");
@@ -506,8 +787,9 @@ describe("personal project chat workspace", () => {
       act(() => vi.advanceTimersByTime(300));
       expect(composer).not.toHaveAttribute("data-readonly-highlight", "true");
       fireEvent.click(
-        screen.getAllByRole("button", { name: "Delete message" })[0],
+        screen.getAllByRole("button", { name: "More message actions" })[0],
       );
+      fireEvent.click(screen.getByRole("menuitem", { name: "Delete message" }));
       expect(composer).toHaveAttribute("data-readonly-highlight", "true");
     } finally {
       vi.useRealTimers();
@@ -568,8 +850,11 @@ describe("personal project chat workspace", () => {
     ).toBeVisible();
     expect(api.copyExample).toHaveBeenCalledExactlyOnceWith("weekend-trip", 3);
     expect(screen.queryByText(/Read-only example/)).not.toBeInTheDocument();
+    await user.click(
+      screen.getAllByRole("button", { name: "More message actions" })[0],
+    );
     expect(
-      screen.getAllByRole("button", { name: "Edit message" })[0],
+      screen.getByRole("menuitem", { name: "Edit message" }),
     ).not.toHaveAttribute("aria-disabled");
   });
 
@@ -587,9 +872,7 @@ describe("personal project chat workspace", () => {
         name: "Open example 🇳🇱 Trip to Amsterdam",
       }),
     );
-    await user.click(
-      screen.getByRole("button", { name: "Settings. Local only." }),
-    );
+    await user.click(screen.getByRole("button", { name: "Settings" }));
     await act(async () => pending.resolve(getExample("weekend-trip")!));
     expect(screen.getByRole("heading", { name: "General" })).toBeVisible();
   });
@@ -658,6 +941,22 @@ describe("personal project chat workspace", () => {
     expect(api.getChat).toHaveBeenCalledWith("created");
   });
 
+  it("saves the message time preference from General", async () => {
+    const user = userEvent.setup();
+    const api = createApi();
+    render(<App api={api} />);
+    await user.click(await screen.findByRole("button", { name: /^Settings/ }));
+    const toggle = screen.getByRole("checkbox", {
+      name: "Always show message time",
+    });
+    expect(toggle).toBeChecked();
+    await user.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(api.updatePreferences).toHaveBeenCalledWith({
+      alwaysShowMessageTime: false,
+    });
+  });
+
   it("shows General settings and lets the user hide the Examples group", async () => {
     localStorage.clear();
     const user = userEvent.setup();
@@ -665,9 +964,7 @@ describe("personal project chat workspace", () => {
     expect(
       await screen.findByRole("button", { name: "Examples" }),
     ).toBeVisible();
-    await user.click(
-      screen.getByRole("button", { name: "Settings. Local only." }),
-    );
+    await user.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("heading", { name: "General" })).toBeVisible();
     const toggle = screen.getByRole("checkbox", { name: "Show examples" });
     expect(toggle).toBeChecked();
@@ -717,8 +1014,7 @@ describe("personal project chat workspace", () => {
       await user.click(
         await screen.findByRole("button", { name: "Open File drops" }),
       );
-      if (editing)
-        await user.click(screen.getByRole("button", { name: "Edit message" }));
+      if (editing) await chooseMessageAction(user, "Edit message");
       const draft = screen.getByRole("textbox", {
         name: editing ? "Edit message" : "Add a note",
       });
@@ -997,9 +1293,20 @@ describe("personal project chat workspace", () => {
     );
     await user.click(screen.getByRole("button", { name: "Edit" }));
     await user.type(screen.getByLabelText("Project name"), " draft");
-    const button = screen.getByRole("button", { name: "Archive project" });
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Failed archive" }),
+    );
+    const button = screen.getByRole("button", {
+      name: "Archive Failed archive",
+    });
     await user.click(button);
-    for (const name of ["Save changes", "Delete project", "Pin Failed archive"])
+    expect(
+      screen
+        .getByRole("button", { name: "Open Failed archive" })
+        .closest("li")
+        ?.querySelector('[data-project-action="pin"]'),
+    ).toBeDisabled();
+    for (const name of ["Save changes", "Delete Failed archive"])
       expect(screen.getByRole("button", { name })).toBeDisabled();
     await act(async () => pending.reject(new Error("Try again")));
     expect(button).toHaveFocus();
@@ -1046,6 +1353,9 @@ describe("personal project chat workspace", () => {
     );
     await user.type(screen.getByLabelText("Add a note"), "Keep my draft");
     await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Restore race" }),
+    );
+    await user.click(
       screen.getByRole("button", { name: "Restore Restore race from archive" }),
     );
     fireEvent(window, new Event("focus"));
@@ -1087,6 +1397,11 @@ describe("personal project chat workspace", () => {
         .mockResolvedValueOnce({ archivedAt: null, pinnedAt: null }),
     });
     render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Shortcuts for Retry restore",
+      }),
+    );
     const button = await screen.findByRole("button", {
       name: "Restore Retry restore from archive",
     });
@@ -1103,7 +1418,7 @@ describe("personal project chat workspace", () => {
     ).toHaveLength(0);
   });
 
-  it("archives only from settings and preserves unsaved fields through both settings actions", async () => {
+  it("keeps Save changes last in Edit and preserves its fields while using rail shortcuts", async () => {
     const user = userEvent.setup();
     const chat = {
       id: "archive",
@@ -1126,26 +1441,44 @@ describe("personal project chat workspace", () => {
     await user.click(
       await screen.findByRole("button", { name: "Open Archive journey" }),
     );
-    expect(
-      screen.queryByRole("button", { name: "Archive project" }),
-    ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = within(screen.getByRole("main", { name: "Edit project" }));
+    expect(
+      editor.queryByRole("button", { name: /Archive|Restore|Delete/ }),
+    ).not.toBeInTheDocument();
+    const lastField = editor.getByRole("checkbox", {
+      name: "Collapse long messages by default",
+    });
+    lastField.focus();
+    await user.tab();
+    expect(editor.getByRole("button", { name: "Save changes" })).toHaveFocus();
     await user.clear(screen.getByLabelText("Project name"));
     await user.type(screen.getByLabelText("Project name"), "Unsaved name");
-    await user.click(screen.getByRole("button", { name: "Archive project" }));
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Archive journey" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Archive Archive journey" }),
+    );
     expect(api.setChatArchived).toHaveBeenCalledWith("archive", true);
     expect(screen.getByRole("button", { name: "Archive" })).toHaveAttribute(
       "aria-expanded",
       "true",
     );
     expect(
-      screen.getByRole("button", { name: "Restore project" }),
+      screen.getByRole("button", {
+        name: "Restore Archive journey from archive",
+      }),
     ).toHaveFocus();
     expect(screen.getByLabelText("Project name")).toHaveValue("Unsaved name");
     expect(
       screen.queryByRole("button", { name: "Pin Archive journey" }),
     ).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Restore project" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "Restore Archive journey from archive",
+      }),
+    );
     expect(api.setChatArchived).toHaveBeenLastCalledWith("archive", false);
     expect(
       within(screen.getByRole("region", { name: "Archive" })).queryAllByRole(
@@ -1155,7 +1488,7 @@ describe("personal project chat workspace", () => {
     ).toHaveLength(0);
     expect(screen.getByLabelText("Project name")).toHaveValue("Unsaved name");
     expect(
-      screen.getByRole("button", { name: "Archive project" }),
+      screen.getByRole("button", { name: "Archive Archive journey" }),
     ).toHaveFocus();
   });
 
@@ -1178,11 +1511,18 @@ describe("personal project chat workspace", () => {
         setChatArchived: vi.fn().mockReturnValue(pending.promise),
       });
       render(<App api={api} />);
-      const restore = await screen.findByRole("button", {
+      if (collapsed)
+        await user.click(
+          await screen.findByRole("button", { name: "Projects" }),
+        );
+      await user.click(
+        await screen.findByRole("button", {
+          name: "Shortcuts for Archive journey",
+        }),
+      );
+      const restore = screen.getByRole("button", {
         name: "Restore Archive journey from archive",
       });
-      if (collapsed)
-        await user.click(screen.getByRole("button", { name: "Projects" }));
       await user.click(restore);
       expect(restore).toBeDisabled();
       await act(async () =>
@@ -1197,7 +1537,7 @@ describe("personal project chat workspace", () => {
       ).toHaveLength(0);
       expect(
         screen.getByRole("button", {
-          name: collapsed ? "Projects" : "Pin Archive journey",
+          name: collapsed ? "Projects" : "Archive Archive journey",
         }),
       ).toHaveFocus();
     },
@@ -1278,7 +1618,7 @@ describe("personal project chat workspace", () => {
     expect(screen.queryByRole("button", { name: "Open Other" })).toBeNull();
     await user.click(
       screen.getByRole("button", {
-        name: "Settings. Local only.",
+        name: "Settings",
       }),
     );
     await user.click(screen.getByRole("button", { name: "Back to projects" }));
@@ -1381,9 +1721,7 @@ describe("personal project chat workspace", () => {
     expect(screen.queryByText("No link")).toBeNull();
     expect(screen.queryByText("https://code.example")).toBeNull();
     const first = screen.getAllByRole("article")[0].closest("li")!;
-    await user.click(
-      within(first).getByRole("button", { name: "Edit message" }),
-    );
+    await chooseMessageAction(user, "Edit message", first);
     await user.clear(screen.getByRole("textbox", { name: "Edit message" }));
     await user.type(
       screen.getByRole("textbox", { name: "Edit message" }),
@@ -1918,11 +2256,14 @@ describe("personal project chat workspace", () => {
       });
       render(<App api={api} />);
 
-      const pin = await screen.findByRole("button", { name: "Pin Alpha" });
-      const header = screen.getByRole("button", {
+      const header = await screen.findByRole("button", {
         name: "Pinned",
       });
       if (collapsed) await user.click(header);
+      await user.click(
+        await screen.findByRole("button", { name: "Shortcuts for Alpha" }),
+      );
+      const pin = screen.getByRole("button", { name: "Pin Alpha" });
       await user.click(pin);
       expect(api.setChatPinned).toHaveBeenCalledWith("alpha", true);
       expect(screen.getByRole("button", { name: "Open Alpha" })).toBeEnabled();
@@ -1930,7 +2271,7 @@ describe("personal project chat workspace", () => {
 
       await act(async () => pinRequest.resolve({ pinnedAt: 123 }));
       const pinnedControl = document.querySelector(
-        '[data-project-pin-id="alpha"]',
+        '[data-project-row="alpha"] [data-project-action="pin"]',
       );
       expect(pinnedControl).toHaveAttribute("aria-pressed", "true");
       await waitFor(() =>
@@ -2015,7 +2356,10 @@ describe("personal project chat workspace", () => {
     });
     render(<App api={api} />);
 
-    const pin = await screen.findByRole("button", { name: "Pin Alpha" });
+    await user.click(
+      await screen.findByRole("button", { name: "Shortcuts for Alpha" }),
+    );
+    const pin = screen.getByRole("button", { name: "Pin Alpha" });
     await user.click(pin);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Database busy");
@@ -2039,6 +2383,7 @@ describe("personal project chat workspace", () => {
       accent: "coral" as const,
       enabledLabels: ["todo"] as ["todo"],
       collapseLongMessages: true,
+      manualAlert: false,
       createdAt: now - 3_000,
       updatedAt: now - 1_000,
       pinnedAt: null,
@@ -2092,9 +2437,7 @@ describe("personal project chat workspace", () => {
     )
       .getByText("Remove me")
       .closest("li")!;
-    await user.click(
-      within(removeMessage).getByRole("button", { name: "Delete message" }),
-    );
+    await chooseMessageAction(user, "Delete message", removeMessage);
     await waitFor(() => expect(api.deleteNote).toHaveBeenCalled());
     await user.click(screen.getByRole("button", { name: "Open Beta" }));
 
@@ -2116,6 +2459,7 @@ describe("personal project chat workspace", () => {
       accent: "coral" as const,
       enabledLabels: ["todo"] as ["todo"],
       collapseLongMessages: true,
+      manualAlert: false,
       createdAt: now - 2_000,
       updatedAt: now - 1_000,
       pinnedAt: null,
@@ -2384,6 +2728,7 @@ describe("personal project chat workspace", () => {
       title: "Discovery",
       accent: "moss" as const,
       collapseLongMessages: true,
+      manualAlert: false,
       createdAt: 1,
       updatedAt: 1,
     };
@@ -2433,7 +2778,7 @@ describe("personal project chat workspace", () => {
     ).toBeVisible();
   });
 
-  it("shows save failures beside the top actions and preserves edits for retry", async () => {
+  it("shows save failures beside the bottom Save button and preserves edits for retry", async () => {
     const user = userEvent.setup();
     const chat = {
       id: "chat-1",
@@ -2459,15 +2804,15 @@ describe("personal project chat workspace", () => {
     const name = screen.getByLabelText("Project name");
     await user.clear(name);
     await user.type(name, "Research");
-    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    const save = screen.getByRole("button", { name: "Save changes" });
+    await user.click(save);
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Database busy");
-    expect(
-      alert.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(save).toHaveAccessibleDescription("Database busy");
+    expect(alert.nextElementSibling).toBe(save);
     expect(name).toHaveValue("Research");
-    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await user.click(save);
     expect(
       await screen.findByRole("heading", { name: "Research" }),
     ).toBeVisible();
@@ -2576,13 +2921,34 @@ describe("personal project chat workspace", () => {
       within(within(message).getByLabelText("Message actions"))
         .getAllByRole("button")
         .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["Change labels", "More message actions"]);
+    const more = within(message).getByRole("button", {
+      name: "More message actions",
+    });
+    more.focus();
+    await user.keyboard("{Enter}");
+    const actions = within(message).getByRole("menu", {
+      name: "More message actions",
+    });
+    expect(
+      within(actions)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
     ).toEqual([
-      "Change labels",
       "Continue in subthread",
       "Copy message",
       "Edit message",
       "Delete message",
     ]);
+    expect(
+      within(actions).getByRole("menuitem", { name: "Continue in subthread" }),
+    ).toHaveFocus();
+    await user.keyboard("{End}");
+    expect(
+      within(actions).getByRole("menuitem", { name: "Delete message" }),
+    ).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(more).toHaveFocus();
     await user.click(
       within(message).getByRole("button", { name: "Change labels" }),
     );
@@ -2595,6 +2961,11 @@ describe("personal project chat workspace", () => {
     expect(
       within(message).queryByRole("checkbox", { name: "Question" }),
     ).toBeNull();
+    // Mobile WebKit focuses the enclosing row between pointerdown and click.
+    act(() => message.focus());
+    expect(
+      within(message).getByRole("group", { name: "Message labels" }),
+    ).toBeVisible();
     await user.click(within(message).getByRole("checkbox", { name: "Pin" }));
 
     await waitFor(() =>
@@ -2748,6 +3119,7 @@ describe("personal project chat workspace", () => {
         accent: "ocean" as const,
         enabledLabels: ["todo"] as "todo"[],
         collapseLongMessages: true,
+        manualAlert: false,
         createdAt: 100,
         updatedAt: 200,
       };
@@ -2799,7 +3171,7 @@ describe("personal project chat workspace", () => {
       expect(visibleLink).not.toHaveAttribute("tabindex");
       expect(clippedLink).not.toHaveAttribute("tabindex");
 
-      await user.click(screen.getByRole("button", { name: "Edit message" }));
+      await chooseMessageAction(user, "Edit message");
       await user.click(screen.getByRole("button", { name: "Cancel" }));
       expect(screen.getByRole("button", { name: "Show less" })).toHaveAttribute(
         "aria-expanded",
@@ -2838,6 +3210,7 @@ describe("personal project chat workspace", () => {
         accent: "ocean" as const,
         enabledLabels: ["todo"] as "todo"[],
         collapseLongMessages: true,
+        manualAlert: false,
         createdAt: 100,
         updatedAt: 200,
       };
@@ -2915,6 +3288,7 @@ describe("personal project chat workspace", () => {
         accent: "ocean" as const,
         enabledLabels: ["todo"] as "todo"[],
         collapseLongMessages: true,
+        manualAlert: false,
         createdAt: 100,
         updatedAt: 200,
       };
@@ -3052,6 +3426,7 @@ describe("personal project chat workspace", () => {
         accent: "ocean" as const,
         enabledLabels: ["todo"] as "todo"[],
         collapseLongMessages: true,
+        manualAlert: false,
         createdAt: 100,
         updatedAt: 200,
       };
@@ -3164,7 +3539,7 @@ describe("personal project chat workspace", () => {
     expect(screen.getByRole("button", { name: "Pin 0" })).toBeVisible();
   });
 
-  it("deletes the active project from the inline edit workspace", async () => {
+  it("deletes the active project through its rail shortcut", async () => {
     const user = userEvent.setup();
     const chat = {
       id: "chat-1",
@@ -3185,7 +3560,10 @@ describe("personal project chat workspace", () => {
       await screen.findByRole("button", { name: "Open Delivery" }),
     );
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    await user.click(screen.getByRole("button", { name: "Delete project" }));
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Delivery" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Delete Delivery" }));
 
     expect(api.deleteChat).toHaveBeenCalledWith("chat-1");
     expect(
@@ -3196,7 +3574,7 @@ describe("personal project chat workspace", () => {
     ).toBeVisible();
   });
 
-  it("keeps the inline project editor open for cancelled and failed deletes", async () => {
+  it("keeps the inline project editor open for cancelled and failed rail deletes", async () => {
     const user = userEvent.setup();
     const chat = {
       id: "chat-1",
@@ -3221,13 +3599,16 @@ describe("personal project chat workspace", () => {
       await screen.findByRole("button", { name: "Open Delivery" }),
     );
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    await user.click(screen.getByRole("button", { name: "Delete project" }));
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Delivery" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Delete Delivery" }));
 
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(api.deleteChat).not.toHaveBeenCalled();
     expect(screen.getByRole("main", { name: "Edit project" })).toBeVisible();
 
-    await user.click(screen.getByRole("button", { name: "Delete project" }));
+    await user.click(screen.getByRole("button", { name: "Delete Delivery" }));
 
     expect(api.deleteChat).toHaveBeenCalledWith("chat-1");
     expect(await screen.findByRole("alert")).toHaveTextContent("Delete failed");
@@ -3328,7 +3709,7 @@ describe("personal project chat workspace", () => {
       await user.click(
         await screen.findByRole("button", { name: "Open Delivery" }),
       );
-      await user.click(screen.getByRole("button", { name: "Edit message" }));
+      await chooseMessageAction(user, "Edit message");
       const editor = screen.getByRole("textbox", { name: "Edit message" });
       await user.clear(editor);
       await user.type(editor, "Revised message");
@@ -3425,9 +3806,7 @@ describe("personal project chat workspace", () => {
       await user.clear(composer);
 
       const noteItem = screen.getByRole("article").closest("li")!;
-      await user.click(
-        within(noteItem).getByRole("button", { name: "Edit message" }),
-      );
+      await chooseMessageAction(user, "Edit message", noteItem);
       expect(screen.getByRole("textbox", { name: "Edit message" })).toHaveStyle(
         { height: "120px" },
       );
@@ -3709,7 +4088,7 @@ describe("personal project chat workspace", () => {
       "This formatting would exceed the 10,000-character message limit.",
     );
 
-    await user.click(screen.getByRole("button", { name: "Edit message" }));
+    await chooseMessageAction(user, "Edit message");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -4170,15 +4549,12 @@ describe("personal project chat workspace", () => {
     expect(
       within(participant).getByRole("button", { name: "Change labels" }),
     ).toBeVisible();
-    expect(
-      within(participant).getByRole("button", { name: "Copy message" }),
-    ).toBeVisible();
-    expect(
-      within(participant).getByRole("button", { name: "Edit message" }),
-    ).toBeVisible();
-    expect(
-      within(participant).getByRole("button", { name: "Delete message" }),
-    ).toBeVisible();
+    await user.click(
+      within(participant).getByRole("button", { name: "More message actions" }),
+    );
+    for (const name of ["Copy message", "Edit message", "Delete message"]) {
+      expect(within(participant).getByRole("menuitem", { name })).toBeVisible();
+    }
     expect(document.querySelector(".message-avatar")).toBeNull();
 
     const mayaNames = screen.getAllByText("Maya Chen", {
@@ -4240,9 +4616,7 @@ describe("personal project chat workspace", () => {
     );
 
     const participant = screen.getByText("Participant update").closest("li")!;
-    await user.click(
-      within(participant).getByRole("button", { name: "Edit message" }),
-    );
+    await chooseMessageAction(user, "Edit message", participant);
     expect(screen.getByRole("textbox", { name: "Sender name" })).toHaveValue(
       "Maya Chen",
     );
@@ -4263,9 +4637,7 @@ describe("personal project chat workspace", () => {
       "Omar Haddad",
     );
 
-    await user.click(
-      within(participant).getByRole("button", { name: "Edit message" }),
-    );
+    await chooseMessageAction(user, "Edit message", participant);
     await user.click(screen.getByRole("button", { name: "You" }));
     await user.click(screen.getByRole("button", { name: "Save" }));
 
@@ -4850,17 +5222,11 @@ describe("personal project chat workspace", () => {
     );
     const note = await screen.findByText("Original");
     const noteItem = note.closest("li")!;
-    await user.click(
-      within(noteItem).getByRole("button", { name: "Copy message" }),
-    );
+    await chooseMessageAction(user, "Copy message", noteItem);
     expect(writeText).toHaveBeenCalledWith("Original **message**");
-    expect(
-      within(noteItem).getByRole("button", { name: "Message copied" }),
-    ).toBeVisible();
+    expect(within(noteItem).getByText("Message copied")).toBeVisible();
 
-    await user.click(
-      within(noteItem).getByRole("button", { name: "Edit message" }),
-    );
+    await chooseMessageAction(user, "Edit message", noteItem);
     expect(screen.queryByRole("dialog", { name: "Edit message" })).toBeNull();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeVisible();
     expect(screen.queryByLabelText("Message timestamp")).toBeNull();
@@ -4892,11 +5258,10 @@ describe("personal project chat workspace", () => {
     expect(await screen.findByText("Revised")).toBeVisible();
 
     const updatedItem = screen.getByText("Revised").closest("li")!;
-    await user.click(
-      within(updatedItem).getByRole("button", { name: "Delete message" }),
-    );
+    await chooseMessageAction(user, "Delete message", updatedItem);
     expect(api.deleteNote).toHaveBeenCalledWith("chat-1", "note-1");
     expect(screen.queryByText("Revised")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Add a note" })).toHaveFocus();
   });
 
   it("keeps composer editing active for invalid timestamps and cancelled deletes", async () => {
@@ -4931,14 +5296,18 @@ describe("personal project chat workspace", () => {
       await screen.findByRole("button", { name: "Open Delivery" }),
     );
     const noteItem = screen.getByText("Original message").closest("li")!;
-    await user.click(
-      within(noteItem).getByRole("button", { name: "Delete message" }),
-    );
+    await chooseMessageAction(user, "Delete message", noteItem);
     expect(api.deleteNote).not.toHaveBeenCalled();
 
-    await user.click(
-      within(noteItem).getByRole("button", { name: "Edit message" }),
-    );
+    vi.mocked(window.confirm).mockReturnValueOnce(true);
+    vi.mocked(api.deleteNote).mockRejectedValueOnce(new Error("Database busy"));
+    await chooseMessageAction(user, "Delete message", noteItem);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Database busy");
+    expect(
+      within(noteItem).getByRole("button", { name: "More message actions" }),
+    ).toHaveFocus();
+
+    await chooseMessageAction(user, "Edit message", noteItem);
     expect(screen.queryByLabelText("Message timestamp")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Choose timestamp" }));
     await user.clear(screen.getByLabelText("Message timestamp"));
@@ -4984,9 +5353,7 @@ describe("personal project chat workspace", () => {
       await screen.findByRole("button", { name: "Open Delivery" }),
     );
     const noteItem = screen.getByText("Original message").closest("li")!;
-    await user.click(
-      within(noteItem).getByRole("button", { name: "Copy message" }),
-    );
+    await chooseMessageAction(user, "Copy message", noteItem);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The message could not be copied.",
@@ -5019,6 +5386,7 @@ describe("personal project chat workspace", () => {
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
       collapseLongMessages: true,
+      manualAlert: false,
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
@@ -5058,6 +5426,7 @@ describe("personal project chat workspace", () => {
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
       collapseLongMessages: true,
+      manualAlert: false,
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
@@ -5114,6 +5483,7 @@ describe("personal project chat workspace", () => {
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
       collapseLongMessages: true,
+      manualAlert: false,
       createdAt: 1,
       updatedAt: 3,
       pinnedAt: null,
@@ -5152,9 +5522,7 @@ describe("personal project chat workspace", () => {
     const noteItem = (
       await within(screen.getByRole("main")).findByText("Remove me")
     ).closest("li")!;
-    await user.click(
-      within(noteItem).getByRole("button", { name: "Delete message" }),
-    );
+    await chooseMessageAction(user, "Delete message", noteItem);
     await user.click(screen.getByRole("button", { name: "Open Beta" }));
     expect(await screen.findByRole("heading", { name: "Beta" })).toBeVisible();
 
@@ -5178,6 +5546,7 @@ describe("personal project chat workspace", () => {
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
       collapseLongMessages: true,
+      manualAlert: false,
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
@@ -5206,7 +5575,10 @@ describe("personal project chat workspace", () => {
 
     await user.click(await screen.findByRole("button", { name: "Open Alpha" }));
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    await user.click(screen.getByRole("button", { name: "Delete project" }));
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Alpha" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Delete Alpha" }));
     await user.click(screen.getByRole("button", { name: "Open Beta" }));
     expect(await screen.findByRole("heading", { name: "Beta" })).toBeVisible();
 
@@ -5224,6 +5596,7 @@ describe("personal project chat workspace", () => {
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
       collapseLongMessages: true,
+      manualAlert: false,
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
@@ -5458,22 +5831,18 @@ it("offers continuation between labels and copy and creates an empty named subth
   fireEvent.click(
     await screen.findByRole("button", { name: "Open Website redesign" }),
   );
-  const actions = (
-    await screen.findByRole("button", { name: "Copy message" })
-  ).closest(".message-actions")!;
+  const more = await screen.findByRole("button", {
+    name: "More message actions",
+  });
+  const actions = more.closest(".message-actions") as HTMLElement;
   expect(
-    within(actions as HTMLElement)
+    within(actions)
       .getAllByRole("button")
       .map((button) => button.getAttribute("aria-label")),
-  ).toEqual([
-    "Change labels",
-    "Continue in subthread",
-    "Copy message",
-    "Edit message",
-    "Delete message",
-  ]);
+  ).toEqual(["Change labels", "More message actions"]);
+  fireEvent.click(more);
   fireEvent.click(
-    screen.getByRole("button", { name: "Continue in subthread" }),
+    screen.getByRole("menuitem", { name: "Continue in subthread" }),
   );
   fireEvent.change(screen.getByRole("textbox", { name: "Subthread name" }), {
     target: { value: "Navigation" },
@@ -5492,8 +5861,11 @@ it("offers continuation between labels and copy and creates an empty named subth
     screen.queryByRole("group", { name: "Project accent" }),
   ).not.toBeInTheDocument();
   expect(
-    screen.getByRole("button", { name: "Delete subthread" }),
-  ).toBeInTheDocument();
+    within(screen.getByRole("main", { name: "Edit subthread" })).queryByRole(
+      "button",
+      { name: /Delete|Archive|Restore/ },
+    ),
+  ).not.toBeInTheDocument();
 });
 
 it("preserves edits typed during navigation and clears cached work after replacement", async () => {
@@ -5504,6 +5876,7 @@ it("preserves edits typed during navigation and clears cached work after replace
     accent: "ocean" as const,
     enabledLabels: [],
     collapseLongMessages: true,
+    manualAlert: false,
     archivedAt: null,
     pinnedAt: null,
     latestAttentionAt: null,
@@ -5692,8 +6065,9 @@ it("updates the open child origin when its source deletion finishes after naviga
     await screen.findByRole("button", { name: "Open Source project" }),
   );
   fireEvent.click(
-    await screen.findByRole("button", { name: "Delete message" }),
+    await screen.findByRole("button", { name: "More message actions" }),
   );
+  fireEvent.click(screen.getByRole("menuitem", { name: "Delete message" }));
   fireEvent.click(screen.getByRole("button", { name: "Open Continued topic" }));
   await screen.findByRole("heading", {
     name: "Source project / Continued topic",

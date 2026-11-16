@@ -9,6 +9,7 @@ export interface ImportedProject {
   created_at: number;
   updated_at: number;
   pinned_at: number | null;
+  manual_alert: number;
   archived_at: number | null;
   collapse_long_messages: number;
 }
@@ -49,7 +50,7 @@ export function readImportedRecords(
   return {
     projects: source
       .prepare(
-        "SELECT id,title,accent,created_at,updated_at,pinned_at,archived_at,collapse_long_messages,project_id FROM chats ORDER BY project_id IS NOT NULL, id",
+        "SELECT id,title,accent,created_at,updated_at,pinned_at,archived_at,manual_alert,collapse_long_messages,project_id FROM chats ORDER BY project_id IS NOT NULL, id",
       )
       .all() as ImportedProject[],
     notes: source
@@ -80,7 +81,7 @@ export function insertImportedRecords(
   records: ImportedRecords,
 ): void {
   const project = database.prepare(
-    "INSERT INTO chats (id,title,accent,created_at,updated_at,pinned_at,archived_at,collapse_long_messages,project_id) VALUES (@id,@title,@accent,@created_at,@updated_at,@pinned_at,@archived_at,@collapse_long_messages,@project_id)",
+    "INSERT INTO chats (id,title,accent,created_at,updated_at,pinned_at,archived_at,manual_alert,collapse_long_messages,project_id) VALUES (@id,@title,@accent,@created_at,@updated_at,@pinned_at,@archived_at,@manual_alert,@collapse_long_messages,@project_id)",
   );
   const note = database.prepare(
     "INSERT INTO notes (id,chat_id,body,sender,created_at) VALUES (@id,@chat_id,@body,@sender,@created_at)",

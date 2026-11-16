@@ -416,6 +416,18 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         service.setChatArchived(request.params.id, false),
       ),
   );
+  app.put<{ Params: { id: string } }>("/api/chats/:id/alert", async (request) =>
+    maintenanceGate.runMutation(() =>
+      service.setChatAlert(request.params.id, true),
+    ),
+  );
+  app.delete<{ Params: { id: string } }>(
+    "/api/chats/:id/alert",
+    async (request) =>
+      maintenanceGate.runMutation(() =>
+        service.setChatAlert(request.params.id, false),
+      ),
+  );
   app.put<{ Params: { id: string } }>("/api/chats/:id/pin", async (request) =>
     maintenanceGate.runMutation(() =>
       service.setChatPinned(request.params.id, true),

@@ -8,9 +8,7 @@ limits live here. For managed installation and CLI commands, use the
 [macOS](install/macos.md), [Linux](install/linux.md), and
 [Windows](install/windows.md).
 
-This guide describes the v0.2.0 candidate, including subthreads and project-wide
-search. The latest published release is
-[v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1).
+This guide describes the v0.2.1 workspace.
 The primary command is `thr`; `ontrack` remains a compatibility alias.
 
 ## Try the Amsterdam example
@@ -44,6 +42,10 @@ keeping any custom data path unchanged. On PowerShell, use `npm.cmd` in place of
 - Resume each project at its remembered reading position during the current
   browser session. First visits open near current work and the first future
   message; future messages remain accessible through normal scrolling.
+- Hover or focus a project or subthread to reveal **Alert**, **Pin/Unpin**,
+  **Archive/Restore**, and **Delete**. On touch, tap the shortcuts button.
+  Turn on Alert to keep a red dot on that row until you clear it. Clearing
+  Alert reveals any Attention due to that conversation’s message labels.
 - Pin important projects above the activity-sorted project list, and independently
   collapse Pinned, Projects, Archive, and Examples. Their state is saved in the database.
 - Choose **Edit** to change a project's name, accent, labels, and message display.
@@ -58,7 +60,7 @@ keeping any custom data path unchanged. On PowerShell, use `npm.cmd` in place of
   Drag the two-line handle to move the whole row and reorder optional labels.
   You can also select a handle and then its destination, or use arrow keys while
   the handle is focused. Built-in names and symbols remain fixed;
-  turning a label off preserves existing message assignments. Choose **Save changes**
+  turning a label off preserves existing message assignments. Choose **Save changes** at the bottom
   to apply these settings.
 - Add multiline Markdown notes with a compact, selection-aware formatting strip
   for bold, italic, links, quotes, lists, checklists, code, and GFM tables. The
@@ -70,7 +72,13 @@ keeping any custom data path unchanged. On PowerShell, use `npm.cmd` in place of
   Question, Risk, and Milestone labels, then filter history by label.
 - Expand and collapse long Markdown notes, with a persisted per-project default
   configured from Edit project.
-- Copy, edit, timestamp-adjust, and delete notes.
+- Hover anywhere across a message row, including the empty space beside its
+  bubble, to reveal **Label** and **More**. Use **Label** to change its labels.
+  Open **More** to continue in a subthread, copy, edit or delete the message.
+  Conversation search also offers **Open message in history** there.
+- Message times appear in the bottom-right corner of each bubble. Uncheck
+  **Settings → General → Always show message time** to show a time when you
+  hover over its row, focus the message with the keyboard, or tap it.
 - Schedule future-dated messages and see where the history crosses into the
   future through a silent full-width fade that clears as timestamps arrive.
 - Scan compact project and subthread titles with today's or earlier Attention
@@ -189,10 +197,10 @@ Explicit project selections allow up to 10,000 projects and 1 MiB of options.
 A merge can grow the workspace beyond one bundle's limits; use selective export
 for smaller project sets.
 
-The v0.2.0 candidate uses schema 11 and backup format 1. It accepts current
-backups and strictly validated schema 3–10 bundles, migrating older backups in
+The v0.2.1 workspace uses schema 12 and backup format 1. It accepts current
+backups and strictly validated schema 3–11 bundles, migrating older backups in
 staging. It does not restore v0.0.3/schema-2 bundles. Supported older databases
-migrate during startup; older app versions cannot reopen a schema-11 database.
+migrate during startup; older app versions cannot reopen a schema-12 database.
 Export a backup before upgrading. You can isolate evaluation data
 with an absolute disposable path:
 

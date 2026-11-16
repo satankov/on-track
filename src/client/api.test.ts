@@ -222,6 +222,25 @@ describe("browser API client", () => {
     expect(await exported.text()).toBe("SQLite format 3");
   });
 
+  it.each([
+    [true, "PUT"],
+    [false, "DELETE"],
+  ] as const)(
+    "saves manual alert %s to the targeted conversation",
+    async (enabled, method) => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(Response.json({ manualAlert: enabled }));
+      vi.stubGlobal("fetch", fetchMock);
+      expect(await apiClient.setChatAlert("project/one", enabled)).toEqual({
+        manualAlert: enabled,
+      });
+      expect(fetchMock).toHaveBeenCalledWith("/api/chats/project%2Fone/alert", {
+        method,
+      });
+    },
+  );
+
   it("pins and unpins projects through encoded project routes", async () => {
     const fetchMock = vi
       .fn()

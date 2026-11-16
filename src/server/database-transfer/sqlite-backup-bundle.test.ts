@@ -1,4 +1,7 @@
-import { rewindToSchema7 } from "../../test/legacy-database.js";
+import {
+  rewindToSchema7,
+  rewindToSchema11,
+} from "../../test/legacy-database.js";
 import { insertProjectLabel, seedProjectLabels } from "../db/project-labels.js";
 import { readPreferences, writePreferences } from "../db/preferences.js";
 import { DEFAULT_PREFERENCES } from "../../domain/preferences.js";
@@ -111,6 +114,42 @@ describe("SQLite backup bundle", () => {
     },
   );
 
+  it("restores a v0.2.0 backup with the default alert and timestamp visibility", async () => {
+    sourceDatabase.exec(
+      "UPDATE workspace_preferences SET theme='dark', initialized=1",
+    );
+    const bundlePath = join(directory, "v0.2.0.on-track-backup");
+    await createSqliteBackupBundle({
+      sourceDatabase,
+      destinationPath: bundlePath,
+      attachmentStore: { read: vi.fn() },
+    });
+    mutateBundle(bundlePath, (legacy) => {
+      rewindToSchema11(legacy);
+      legacy.exec("UPDATE _on_track_bundle SET schema_version=11");
+    });
+    expect(validateSqliteBackupBundle(bundlePath).schemaVersion).toBe(11);
+    const prepared = prepareSqliteBackupBundle({
+      bundlePath,
+      workspace: createRestoreWorkspace(directory, "v020"),
+    });
+    const candidate = new Database(prepared.candidateDatabasePath);
+    try {
+      expect(readPreferences(candidate)).toMatchObject({
+        theme: "dark",
+        alwaysShowMessageTime: true,
+      });
+      expect(
+        candidate.prepare("SELECT manual_alert FROM chats").pluck().all(),
+      ).toEqual([0]);
+      expect(candidate.prepare("SELECT body FROM notes").pluck().all()).toEqual(
+        ["Plan"],
+      );
+    } finally {
+      candidate.close();
+    }
+  });
+
   it("migrates schema-10 backup provenance into persistent history anchors", async () => {
     sourceDatabase.exec(`INSERT INTO chats(id,title,accent,created_at,updated_at,project_id) VALUES('child','Child','ocean',2,2,'chat-a');
       INSERT INTO subthread_origins(chat_id,source_chat_id,source_note_id) VALUES('child','chat-a','note-a');`);
@@ -121,14 +160,15 @@ describe("SQLite backup bundle", () => {
       destinationPath: bundlePath,
       attachmentStore: { read: vi.fn() },
     });
-    mutateBundle(bundlePath, (legacy) =>
+    mutateBundle(bundlePath, (legacy) => {
+      rewindToSchema11(legacy);
       legacy.exec(`
       ALTER TABLE subthread_origins DROP COLUMN source_note_created_at;
       ALTER TABLE subthread_origins DROP COLUMN source_note_position_id;
       DELETE FROM __drizzle_migrations WHERE created_at > 1793364000000;
       UPDATE app_metadata SET schema_version=10;
-      UPDATE _on_track_bundle SET schema_version=10;`),
-    );
+      UPDATE _on_track_bundle SET schema_version=10;`);
+    });
     expect(validateSqliteBackupBundle(bundlePath).schemaVersion).toBe(10);
     const prepared = prepareSqliteBackupBundle({
       bundlePath,
@@ -162,6 +202,7 @@ describe("SQLite backup bundle", () => {
       attachmentStore: { read: vi.fn() },
     });
     mutateBundle(bundlePath, (legacy) => {
+      rewindToSchema11(legacy);
       legacy.exec(`DROP TABLE subthread_origins; DROP INDEX chats_project_idx;
         ALTER TABLE chats DROP COLUMN project_id;
         DELETE FROM __drizzle_migrations WHERE created_at > 1793269712711;
@@ -192,7 +233,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata")
           .pluck()
           .get(),
-      ).toBe(11);
+      ).toBe(12);
       expect(candidate.pragma("foreign_key_check")).toEqual([]);
     } finally {
       candidate.close();
@@ -267,7 +308,11 @@ describe("SQLite backup bundle", () => {
               "INSERT INTO __drizzle_migrations(hash,created_at) VALUES(?,?)",
             )
             .run(preferenceMigration.hash, preferenceMigration.created_at);
-          writePreferences(legacy, sourcePreferences);
+          legacy
+            .prepare(
+              "UPDATE workspace_preferences SET theme=?, initialized=1 WHERE id=1",
+            )
+            .run(sourcePreferences.theme);
         }
         legacy
           .prepare("UPDATE _on_track_bundle SET schema_version=?")
@@ -296,7 +341,7 @@ describe("SQLite backup bundle", () => {
             .prepare("SELECT schema_version FROM app_metadata")
             .pluck()
             .get(),
-        ).toBe(11);
+        ).toBe(12);
       } finally {
         candidate.close();
       }
@@ -306,6 +351,8 @@ describe("SQLite backup bundle", () => {
   it.each([
     "UPDATE workspace_preferences SET theme='invalid'",
     "UPDATE workspace_preferences SET initialized=2",
+    "UPDATE workspace_preferences SET always_show_message_time=2",
+    "UPDATE chats SET manual_alert=2 WHERE id='chat-b'",
     "UPDATE project_labels SET name_key='wrong' WHERE chat_id='chat-b' AND id='todo'",
     "UPDATE project_labels SET position=99 WHERE chat_id='chat-b' AND id='todo'",
     "UPDATE project_labels SET name='123456789',name_key='123456789' WHERE chat_id='chat-b' AND builtin=0",
@@ -380,7 +427,7 @@ describe("SQLite backup bundle", () => {
     );
     expect(manifest).toEqual({
       formatVersion: 1,
-      schemaVersion: 11,
+      schemaVersion: 12,
       createdAt: 1_725_000_100_000,
       attachmentCount: 1,
       totalBytes: 12,
@@ -1427,7 +1474,7 @@ describe("SQLite backup bundle", () => {
     });
 
     expect(validateSqliteBackupBundle(bundlePath)).toMatchObject({
-      schemaVersion: 11,
+      schemaVersion: 12,
     });
     const prepared = prepareSqliteBackupBundle({
       bundlePath,
@@ -1565,7 +1612,7 @@ describe("SQLite backup bundle", () => {
     });
 
     expect(validateSqliteBackupBundle(bundlePath)).toMatchObject({
-      schemaVersion: 11,
+      schemaVersion: 12,
     });
     const prepared = prepareSqliteBackupBundle({
       bundlePath,
@@ -1650,7 +1697,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(11);
+      ).toBe(12);
       expect(
         candidate
           .prepare("SELECT sender FROM notes WHERE id = 'note-a'")
@@ -1704,7 +1751,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(11);
+      ).toBe(12);
       expect(
         candidate
           .prepare(
@@ -1825,7 +1872,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(11);
+      ).toBe(12);
       expect(
         candidate
           .prepare("SELECT pinned_at FROM chats WHERE id = 'chat-a'")

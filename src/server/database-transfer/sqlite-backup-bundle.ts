@@ -62,13 +62,14 @@ import {
 
 export const SQL_ON_TRACK_BACKUP_APPLICATION_ID = 0x4f545242;
 export const SQL_ON_TRACK_BACKUP_FORMAT_VERSION = 1;
-export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 11;
+export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 12;
 const LEGACY_SCHEMA_MIGRATIONS: Readonly<
   Record<number, { migrationAt: number; migrationCount: number }>
 > = {
   3: { migrationAt: 1_788_356_400_000, migrationCount: 4 },
   4: { migrationAt: 1_788_516_961_034, migrationCount: 5 },
   5: { migrationAt: 1_788_523_044_823, migrationCount: 6 },
+  11: { migrationAt: 1793608243633, migrationCount: 12 },
   10: { migrationAt: 1793364000000, migrationCount: 11 },
   9: { migrationAt: 1793269712711, migrationCount: 10 },
   8: { migrationAt: 1793269343386, migrationCount: 9 },
@@ -596,7 +597,7 @@ export function prepareSqliteBackupBundle(
     candidate.pragma("journal_mode = DELETE");
     const sourcePreferences =
       copiedManifest.schemaVersion >= 8
-        ? readPreferences(candidate)
+        ? readPreferences(candidate, copiedManifest.schemaVersion)
         : undefined;
     pruneProjects(
       candidate,
@@ -913,14 +914,14 @@ function validateApplicationData(
     if (rows.length > 1 || rows.some((row) => row.id !== 1))
       throw validationError("Workspace preferences are invalid.");
     try {
-      readPreferences(database);
+      readPreferences(database, schemaVersion);
     } catch {
       throw validationError("Workspace preferences are invalid.");
     }
   }
   const chats = database
     .prepare(
-      `SELECT id, title, accent, created_at, updated_at${schemaVersion >= 4 ? ", pinned_at" : ""}${schemaVersion >= 5 ? ", collapse_long_messages" : ""}${schemaVersion >= 7 ? ", archived_at" : ""}
+      `SELECT id, title, accent, created_at, updated_at${schemaVersion >= 4 ? ", pinned_at" : ""}${schemaVersion >= 5 ? ", collapse_long_messages" : ""}${schemaVersion >= 7 ? ", archived_at" : ""}${schemaVersion >= 12 ? ", manual_alert" : ""}
        FROM chats`,
     )
     .all() as Array<{
@@ -930,6 +931,7 @@ function validateApplicationData(
     created_at: unknown;
     updated_at: unknown;
     pinned_at?: unknown;
+    manual_alert?: unknown;
     archived_at?: unknown;
     collapse_long_messages?: unknown;
   }>;
@@ -948,6 +950,12 @@ function validateApplicationData(
     }
     requireNonnegativeSafeInteger(chat.created_at, "project creation time");
     requireNonnegativeSafeInteger(chat.updated_at, "project update time");
+    if (
+      schemaVersion >= 12 &&
+      chat.manual_alert !== 0 &&
+      chat.manual_alert !== 1
+    )
+      throw validationError("Project manual alert is invalid.");
     if (schemaVersion >= 4 && chat.pinned_at !== null) {
       requireNonnegativeSafeInteger(chat.pinned_at, "project pin time");
     }

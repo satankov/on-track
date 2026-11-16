@@ -119,8 +119,9 @@ test("navigates history boundaries and paints accepted sends without changing sh
   const edited = page
     .locator(".history [data-note-id]")
     .filter({ hasText: "A thought captured in dark" });
+  await edited.getByRole("button", { name: "More message actions" }).click();
   await edited
-    .getByRole("button", { name: "Edit message", exact: true })
+    .getByRole("menuitem", { name: "Edit message", exact: true })
     .click();
   await page
     .getByRole("textbox", { name: "Edit message" })
@@ -417,29 +418,23 @@ test("pins projects in a title-only rail with Attention status", async ({
     exact: true,
   });
   await expect(pinnedSection).toContainText(pinned.title);
-  await expect(
-    page.getByRole("button", { name: `Pin ${pinned.title}` }),
-  ).toHaveAttribute("aria-pressed", "true");
+  const openPinned = page.getByRole("button", { name: `Open ${pinned.title}` });
   const pinnedControl = page.getByRole("button", {
     name: `Pin ${pinned.title}`,
   });
-  await page.mouse.move(1, 1);
-  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  await expect(pinnedControl).toBeHidden();
   if (testInfo.project.name === "mobile-webkit") {
-    await expect(pinnedControl).toHaveCSS("opacity", "1");
-  } else {
-    await expect(pinnedControl).toHaveCSS("opacity", "0");
-    await pinnedControl.focus();
-    await expect(pinnedControl).toHaveCSS("opacity", "1");
-    await page.mouse.move(1, 1);
-    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
-    await expect(pinnedControl).toHaveCSS("opacity", "0");
     await page
-      .getByRole("button", { name: `Open ${pinned.title}` })
-      .locator("..")
-      .hover();
-    await expect(pinnedControl).toHaveCSS("opacity", "1");
+      .getByRole("button", { name: `Shortcuts for ${pinned.title}` })
+      .tap();
+  } else {
+    await openPinned.hover();
+    await expect(pinnedControl).toBeVisible();
+    await page.mouse.move(1, 1);
+    await expect(pinnedControl).toBeHidden();
+    await openPinned.focus();
   }
+  await expect(pinnedControl).toHaveAttribute("aria-pressed", "true");
   await expect(
     page.getByRole("button", { name: `Open ${current.title}` }).locator(".."),
   ).toHaveAttribute("data-attention-state", "today");
@@ -456,32 +451,51 @@ test("pins projects in a title-only rail with Attention status", async ({
   const currentPin = page.getByRole("button", {
     name: `Pin ${current.title}`,
   });
-  if (testInfo.project.name === "mobile-webkit") {
-    const dot = currentPin.locator("..").locator(".project-attention-dot");
-    await currentPin.focus();
-    await expect(dot).toHaveCSS("opacity", "1");
-    const dotBox = (await dot.boundingBox())!;
-    const pinBox = (await currentPin.boundingBox())!;
-    expect(dotBox.x + dotBox.width).toBeLessThan(pinBox.x);
-  }
+  const openCurrent = page.getByRole("button", {
+    name: `Open ${current.title}`,
+    exact: true,
+  });
+  if (testInfo.project.name === "mobile-webkit")
+    await page
+      .getByRole("button", { name: `Shortcuts for ${current.title}` })
+      .tap();
+  else await openCurrent.hover();
+  const alert = page.getByRole("button", {
+    name: `Alert ${current.title}`,
+    exact: true,
+  });
+  await alert.click();
+  await expect(alert).toHaveAttribute("aria-pressed", "true");
+  await expect(openCurrent).toHaveAccessibleDescription(/Manual alert/);
   await currentPin.click();
-  await expect(currentPin).toHaveAttribute("aria-pressed", "true");
-  await expect(currentPin).toBeFocused();
   await expect(pinnedSection).toContainText(current.title);
+  if (testInfo.project.name === "desktop-chromium") {
+    await page.mouse.move(600, 10);
+    await expect(currentPin).toBeHidden();
+    await openCurrent.hover();
+  } else await expect(currentPin).toBeFocused();
+  await expect(currentPin).toHaveAttribute("aria-pressed", "true");
   await currentPin.click();
-  await expect(currentPin).toHaveAttribute("aria-pressed", "false");
   await expect(
     page.getByRole("region", { name: "Projects", exact: true }),
   ).toContainText(current.title);
+  if (testInfo.project.name === "desktop-chromium") await openCurrent.hover();
+  await expect(currentPin).toHaveAttribute("aria-pressed", "false");
 
   await localApp.restart();
   await page.goto(localApp.url);
+  await openPinned.focus();
+  await expect(pinnedControl).toHaveAttribute("aria-pressed", "true");
+  await openCurrent.focus();
+  await expect(currentPin).toHaveAttribute("aria-pressed", "false");
+  await expect(alert).toHaveAttribute("aria-pressed", "true");
+  await alert.press("Escape");
+  await expect(alert).toBeHidden();
   await expect(
-    page.getByRole("button", { name: `Pin ${pinned.title}` }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    page.getByRole("button", { name: `Pin ${current.title}` }),
-  ).toHaveAttribute("aria-pressed", "false");
+    openCurrent
+      .locator("..")
+      .locator(".project-shortcuts-disclosure .attention-dot--today"),
+  ).toBeVisible();
   await expect(page.locator(".project-dot, .project-arrow")).toHaveCount(0);
 
   await page.screenshot({
@@ -966,7 +980,8 @@ test("attributes participant messages with the compact desktop sender control", 
     page.locator(".message-list").getByText("Omar's update"),
   ).toBeHidden();
 
-  await firstMaya.getByRole("button", { name: "Edit message" }).click();
+  await firstMaya.getByRole("button", { name: "More message actions" }).click();
+  await firstMaya.getByRole("menuitem", { name: "Edit message" }).click();
   await page.getByRole("button", { name: "You" }).click();
   await page.getByRole("button", { name: "Save" }).click();
   await expect(
@@ -1088,10 +1103,11 @@ test("formats Markdown selections in a compact, responsive composer strip", asyn
 
   if (testInfo.project.name === "mobile-webkit") {
     await page.setViewportSize({ width: 320, height: 720 });
+    await page.getByRole("button", { name: "More message actions" }).click();
     await expect(
-      page.getByRole("button", { name: /Edit message/ }),
+      page.getByRole("menuitem", { name: /Edit message/ }),
     ).toBeVisible();
-    await page.getByRole("button", { name: /Edit message/ }).click();
+    await page.getByRole("menuitem", { name: /Edit message/ }).click();
     await expect(
       page.getByRole("group", { name: "Markdown assistance" }),
     ).toBeVisible();
@@ -1403,7 +1419,8 @@ test("manages markdown messages and database backups from the UI", async ({
   ).toBeVisible();
 
   const note = page.locator(".message-row").first();
-  await note.getByRole("button", { name: "Edit message" }).click();
+  await note.getByRole("button", { name: "More message actions" }).click();
+  await note.getByRole("menuitem", { name: "Edit message" }).click();
   await page
     .getByRole("textbox", { name: "Edit message" })
     .fill("Revised **decision**");
@@ -1417,7 +1434,8 @@ test("manages markdown messages and database backups from the UI", async ({
   await expect(page.getByText("August 29, 2026")).toBeVisible();
 
   page.once("dialog", (dialog) => dialog.accept());
-  await note.getByRole("button", { name: "Delete message" }).click();
+  await note.getByRole("button", { name: "More message actions" }).click();
+  await note.getByRole("menuitem", { name: "Delete message" }).click();
   await expect(page.locator(".message-list").getByText("Revised")).toBeHidden();
 
   const bundledAttachmentPath = testInfo.outputPath("bundled-roadmap.txt");
@@ -1778,10 +1796,9 @@ test("configures, applies, filters, and retains project message labels", async (
     page.getByRole("checkbox", { name: "Risk (inactive)" }),
   ).toBeChecked();
   await page.mouse.move(1, 1);
-  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
   await expect(page.locator(".message-actions").first()).toHaveCSS(
     "opacity",
-    "1",
+    testInfo.project.name === "mobile-webkit" ? "1" : "0",
   );
   await page.screenshot({
     path: testInfo.outputPath("labels-workspace.png"),
@@ -2226,12 +2243,18 @@ test("keeps keyboard focus when a project moves into a collapsed section", async
   });
   await pinnedHeader.click();
   await page
+    .getByRole("button", { name: `Open ${project.title}`, exact: true })
+    .focus();
+  await page
     .getByRole("button", { name: `Pin ${project.title}`, exact: true })
     .focus();
   await page.keyboard.press("Enter");
   await expect(pinnedHeader).toBeFocused();
   await projectsHeader.click();
   await pinnedHeader.click();
+  await page
+    .getByRole("button", { name: `Open ${project.title}`, exact: true })
+    .focus();
   await page
     .getByRole("button", { name: `Pin ${project.title}`, exact: true })
     .focus();
@@ -2281,7 +2304,8 @@ test("drops files into new and edited messages with a visible target", async ({
   await page.getByRole("button", { name: "Add note", exact: true }).click();
   const message = page.locator(".message-row");
   await expect(message.locator(".attachment-card")).toHaveCount(1);
-  await message.getByRole("button", { name: "Edit message" }).click();
+  await message.getByRole("button", { name: "More message actions" }).click();
+  await message.getByRole("menuitem", { name: "Edit message" }).click();
   const secondDrop = await page.evaluateHandle(() => {
     const transfer = new DataTransfer();
     transfer.items.add(
@@ -2406,8 +2430,9 @@ test("keeps full-width add and edit text above the composer toolbar", async ({
       height,
     );
     await textarea.fill("");
+    await page.getByRole("button", { name: "More message actions" }).click();
     await page
-      .getByRole("button", { name: "Edit message", exact: true })
+      .getByRole("menuitem", { name: "Edit message", exact: true })
       .click();
     await textarea.fill(eightLines);
     await expect(textarea).toHaveValue(eightLines);
@@ -2560,7 +2585,10 @@ test("keeps expanded edit controls reachable at 200 percent reflow", async ({
   await addNote(request, localApp.url, project.id, "Keep editing available");
   await page.goto(localApp.url);
   await page.getByRole("button", { name: `Open ${project.title}` }).click();
-  await page.getByRole("button", { name: "Edit message", exact: true }).click();
+  await page.getByRole("button", { name: "More message actions" }).click();
+  await page
+    .getByRole("menuitem", { name: "Edit message", exact: true })
+    .click();
   await page.getByRole("button", { name: /Show sender options/ }).click();
   await page.getByRole("textbox", { name: "Sender name" }).fill("Alex Morgan");
   await page
@@ -2653,6 +2681,104 @@ test("keeps expanded edit controls reachable at 200 percent reflow", async ({
   });
 });
 
+test("reveals message actions and time across the hovered row and dismisses them on exit", async ({
+  page,
+  request,
+  localApp,
+  isMobile,
+}) => {
+  test.skip(isMobile, "Exercises a hovering mouse and keyboard.");
+  const project = await createProject(request, localApp.url, {
+    title: "Message shortcuts",
+    accent: "moss",
+  });
+  await addNote(request, localApp.url, project.id, "A short message");
+  const reply = await request.post(
+    `${localApp.url}/api/chats/${project.id}/notes`,
+    {
+      multipart: { body: "A short reply", sender: "Maya" },
+    },
+  );
+  expect(reply.ok()).toBe(true);
+  const preferences = await request.patch(`${localApp.url}/api/preferences`, {
+    data: { alwaysShowMessageTime: false },
+  });
+  expect(preferences.ok()).toBe(true);
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: "Open Message shortcuts" }).click();
+  const row = page.locator(".message-row--own");
+  const neighbor = page.locator(".message-row--participant");
+  const toolbar = row.locator(".message-actions");
+  const time = row.locator("time");
+  const labels = row.getByRole("button", { name: "Change labels" });
+  const more = row.getByRole("button", { name: "More message actions" });
+  // The own message sits on the right, leaving this end of its row empty.
+  const hoverBesideMessage = () => row.hover({ position: { x: 2, y: 2 } });
+
+  for (const trigger of [labels, more]) {
+    await hoverBesideMessage();
+    await expect(toolbar).toHaveCSS("opacity", "1");
+    await expect(time).toHaveCSS("opacity", "1");
+    await expect(neighbor.locator(".message-actions")).toHaveCSS(
+      "opacity",
+      "0",
+    );
+    await expect(neighbor.locator("time")).toHaveCSS("opacity", "0");
+    await trigger.click();
+    const popup = row.locator(".message-label-popover, .message-more-menu");
+    await expect(popup).toBeVisible();
+    await hoverBesideMessage();
+    await expect(popup).toBeVisible();
+    await trigger.hover();
+    const buttonBox = (await trigger.boundingBox())!;
+    const popupBox = (await popup.boundingBox())!;
+    const entryY =
+      popupBox.y > buttonBox.y
+        ? popupBox.y + 1
+        : popupBox.y + popupBox.height - 1;
+    // Cross the gap at human pointer speeds before moving to an option.
+    const entryX = Math.min(
+      popupBox.x + popupBox.width - 1,
+      buttonBox.x + buttonBox.width + 30,
+    );
+    await page.mouse.move(entryX, entryY, { steps: 18 });
+    await popup.hover();
+    if (trigger === labels) {
+      const pin = popup.getByRole("checkbox", { name: "Pin", exact: true });
+      await pin.click();
+      await expect(pin).toBeChecked();
+    }
+    // The center of the neighbor's row is clear of its short, left-aligned reply.
+    await neighbor.hover();
+    await expect(popup).toHaveCount(0);
+    await expect(toolbar).toHaveCSS("opacity", "0");
+    await expect(time).toHaveCSS("opacity", "0");
+    await expect(neighbor.locator(".message-actions")).toHaveCSS(
+      "opacity",
+      "1",
+    );
+    await expect(neighbor.locator("time")).toHaveCSS("opacity", "1");
+  }
+
+  await more.click();
+  await more.click();
+  await page.mouse.move(0, 0);
+  await expect(toolbar).toHaveCSS("opacity", "0");
+  await expect(time).toHaveCSS("opacity", "0");
+
+  await labels.focus();
+  await page.keyboard.press("Tab");
+  await expect(more).toBeFocused();
+  await expect(toolbar).toHaveCSS("opacity", "1");
+  await expect(time).toHaveCSS("opacity", "1");
+  await page.keyboard.press("Enter");
+  await hoverBesideMessage();
+  await neighbor.hover();
+  await expect(row.getByRole("menu")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(more).toBeFocused();
+});
+
 test("keeps bottom message labels above the trigger without scrolling history", async ({
   page,
   localApp,
@@ -2695,7 +2821,8 @@ test("keeps bottom message labels above the trigger without scrolling history", 
   const topTrigger = page
     .getByRole("button", { name: "Change labels" })
     .first();
-  await topTrigger.click();
+  // Keyboard activation keeps the popup open when reflow moves it away from the pointer.
+  await topTrigger.press("Enter");
   const topMenu = (await popover.boundingBox())!;
   const topButton = (await topTrigger.boundingBox())!;
   expect(topMenu.y).toBeGreaterThanOrEqual(topButton.y + topButton.height);

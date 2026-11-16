@@ -322,16 +322,57 @@ describe("local project-chat API", () => {
     ).toBe(400);
   });
 
+  it("sets a manual alert independently on each conversation without changing activity or Attention", async () => {
+    const root = (
+      await app.inject({
+        method: "POST",
+        url: "/api/chats",
+        payload: { title: "Root", accent: "ocean" },
+      })
+    ).json();
+    expect(root.manualAlert).toBe(false);
+    const child = (
+      await app.inject({
+        method: "POST",
+        url: `/api/chats/${root.id}/subthreads`,
+        payload: { title: "Child" },
+      })
+    ).json();
+    const url = `/api/chats/${child.id}`;
+    for (const method of ["PUT", "PUT", "DELETE"] as const) {
+      const response = await app.inject({ method, url: `${url}/alert` });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ manualAlert: method === "PUT" });
+      expect((await app.inject(url)).json()).toMatchObject({
+        manualAlert: method === "PUT",
+        latestAttentionAt: null,
+        updatedAt: child.updatedAt,
+      });
+      expect(
+        (await app.inject(`/api/chats/${root.id}`)).json().manualAlert,
+      ).toBe(false);
+    }
+    expect(
+      (await app.inject({ method: "PUT", url: "/api/chats/missing/alert" }))
+        .statusCode,
+    ).toBe(404);
+  });
+
   it("persists workspace preferences and lets the database win over stale browser initialization", async () => {
     const get = await app.inject({ method: "GET", url: "/api/preferences" });
     expect(get.statusCode).toBe(200);
-    expect(get.json()).toMatchObject({ theme: "light", initialized: false });
+    expect(get.json()).toMatchObject({
+      theme: "light",
+      initialized: false,
+      alwaysShowMessageTime: true,
+    });
     const initialized = await app.inject({
       method: "POST",
       url: "/api/preferences/initialize",
       payload: {
         theme: "dark",
         showExamples: false,
+        alwaysShowMessageTime: false,
         collapsedSections: { Projects: true },
       },
     });
@@ -339,6 +380,7 @@ describe("local project-chat API", () => {
       theme: "dark",
       initialized: true,
       showExamples: false,
+      alwaysShowMessageTime: false,
     });
     await app.inject({
       method: "POST",
@@ -356,6 +398,7 @@ describe("local project-chat API", () => {
     expect(saved).toMatchObject({
       theme: "dark",
       showExamples: false,
+      alwaysShowMessageTime: false,
       collapsedSections: {
         Projects: true,
         Archive: true,
@@ -376,6 +419,15 @@ describe("local project-chat API", () => {
           method: "PATCH",
           url: "/api/preferences",
           payload: { theme: "pink" },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: "/api/preferences",
+          payload: { alwaysShowMessageTime: "false" },
         })
       ).statusCode,
     ).toBe(400);

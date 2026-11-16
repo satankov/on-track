@@ -1,12 +1,23 @@
 import { readFileSync } from "node:fs";
 import type Database from "better-sqlite3";
 
+/** Remove the additive v0.2.1 fields when constructing a v0.2.0 fixture. */
+export function rewindToSchema11(database: Database.Database): void {
+  database.exec(`
+    ALTER TABLE chats DROP COLUMN manual_alert;
+    ALTER TABLE workspace_preferences DROP COLUMN always_show_message_time;
+    DELETE FROM __drizzle_migrations WHERE created_at > 1793608243633;
+    UPDATE app_metadata SET schema_version=11;
+  `);
+}
+
 /** Test-only reconstruction of the shipped schema-7 label model. */
 export function rewindToSchema7(database: Database.Database): void {
   const version = database
     .prepare("SELECT schema_version FROM app_metadata")
     .pluck()
     .get() as number;
+  if (version >= 12) rewindToSchema11(database);
   if (version >= 10) {
     database.exec(
       "DROP TABLE subthread_origins; DROP INDEX chats_project_idx; ALTER TABLE chats DROP COLUMN project_id;",

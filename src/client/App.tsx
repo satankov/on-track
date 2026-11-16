@@ -35,6 +35,7 @@ import type {
   ExampleSummary,
   TimelineContent,
 } from "../domain/examples.js";
+import { MessagePopover } from "./MessagePopover.js";
 import { ExamplesSection, GeneralSettingsWorkspace } from "./Examples.js";
 import { useWorkspacePreferences } from "./useWorkspacePreferences.js";
 import type { RailSection } from "./preferences.js";
@@ -187,6 +188,7 @@ function chatFromDetail(detail: ChatDetail, now = Date.now()): Chat {
     updatedAt: detail.updatedAt,
     archivedAt: detail.archivedAt ?? null,
     pinnedAt: detail.pinnedAt ?? null,
+    manualAlert: detail.manualAlert,
     latestAttentionAt:
       attentionTimestamps.filter((timestamp) => timestamp <= now).at(-1) ??
       null,
@@ -643,16 +645,20 @@ function SubthreadForm({
   );
 }
 
+function confirmChatDeletion(chat: Chat): boolean {
+  const contents = chat.projectId
+    ? "messages and files"
+    : "subthreads, messages and files";
+  return window.confirm(`Delete "${chat.title}" and all of its ${contents}?`);
+}
+
 function ProjectEditWorkspace({
   chat,
   onBack,
   onSubmit,
-  onDelete,
-  onToggleArchived,
   mutationPending,
 }: {
   chat: ChatDetail;
-  onToggleArchived: () => Promise<void>;
   mutationPending: boolean;
   onBack: () => void;
   onSubmit: (input: {
@@ -661,7 +667,6 @@ function ProjectEditWorkspace({
     labelConfiguration: LabelConfiguration;
     collapseLongMessages: boolean;
   }) => Promise<void>;
-  onDelete: () => Promise<void>;
 }) {
   const isSubthread = Boolean(chat.projectId);
   const kind = isSubthread ? "subthread" : "project";
@@ -683,48 +688,13 @@ function ProjectEditWorkspace({
   const [collapseLongMessages, setCollapseLongMessages] = useState(
     chat.collapseLongMessages ?? true,
   );
-  const [error, setError] = useState<{
-    action: "save" | "archive" | "delete";
-    message: string;
-  } | null>(null);
+  const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [archiveStatus, setArchiveStatus] = useState("");
-  const archiveButton = useRef<HTMLButtonElement>(null);
-  const pendingArchiveFocus = useRef(false);
-  useLayoutEffect(() => {
-    if (!mutationPending && pendingArchiveFocus.current) {
-      pendingArchiveFocus.current = false;
-      archiveButton.current?.focus();
-    }
-  }, [mutationPending]);
-
-  async function handleArchive() {
-    setError(null);
-    setArchiveStatus("");
-    pendingArchiveFocus.current = true;
-    try {
-      await onToggleArchived();
-      setArchiveStatus(
-        chat.archivedAt == null
-          ? `${isSubthread ? "Subthread" : "Project"} moved to Archive.`
-          : `${isSubthread ? "Subthread" : "Project"} restored.`,
-      );
-    } catch (caught) {
-      setError({
-        action: "archive",
-        message: errorMessage(
-          caught,
-          "The project archive state could not be saved.",
-        ),
-      });
-    }
-  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setSaving(true);
-    setError(null);
+    setError("");
     try {
       setShowLabelErrors(true);
       const config = labelConfigurationSchema.safeParse(
@@ -741,32 +711,8 @@ function ProjectEditWorkspace({
         collapseLongMessages,
       });
     } catch (caught) {
-      setError({
-        action: "save",
-        message: errorMessage(caught, "The project could not be saved."),
-      });
+      setError(errorMessage(caught, "The project could not be saved."));
       setSaving(false);
-    }
-  }
-
-  async function handleDelete() {
-    if (
-      !window.confirm(
-        `Delete "${chat.title}" and all of its ${isSubthread ? "messages and files" : "subthreads, messages and files"}?`,
-      )
-    ) {
-      return;
-    }
-    setDeleting(true);
-    setError(null);
-    try {
-      await onDelete();
-    } catch (caught) {
-      setError({
-        action: "delete",
-        message: errorMessage(caught, "The project could not be deleted."),
-      });
-      setDeleting(false);
     }
   }
 
@@ -780,29 +726,15 @@ function ProjectEditWorkspace({
         className="project-edit-form project-settings-fields"
         onSubmit={handleSubmit}
       >
-        <div className="project-edit-actions">
-          <button
-            className="settings-back-button"
-            type="button"
-            aria-label="Back to project"
-            onClick={onBack}
-            disabled={saving || deleting || mutationPending}
-          >
-            <ArrowLeftIcon />
-          </button>
-          <button
-            className="button button-primary"
-            type="submit"
-            disabled={saving || deleting || mutationPending}
-          >
-            {saving ? "Saving…" : "Save changes"}
-          </button>
-        </div>
-        {error?.action === "save" && (
-          <p id="project-edit-error" role="alert" className="form-error">
-            {error.message}
-          </p>
-        )}
+        <button
+          className="settings-back-button"
+          type="button"
+          aria-label="Back to project"
+          onClick={onBack}
+          disabled={saving || mutationPending}
+        >
+          <ArrowLeftIcon />
+        </button>
         <div>
           <label className="field-label" htmlFor="project-edit-name">
             {isSubthread ? "Subthread name" : "Project name"}
@@ -829,7 +761,7 @@ function ProjectEditWorkspace({
           onChange={setLabelDrafts}
           glyph={(label) => <LabelGlyph label={label} />}
           showErrors={showLabelErrors}
-          disabled={saving || deleting || mutationPending}
+          disabled={saving || mutationPending}
         />
         <fieldset
           className="project-message-display-fieldset"
@@ -850,46 +782,30 @@ function ProjectEditWorkspace({
             You can still expand or collapse each message.
           </p>
         </fieldset>
-        {error && error.action !== "save" && (
+        {error && (
           <p id="project-edit-error" role="alert" className="form-error">
-            {error.message}
+            {error}
           </p>
         )}
-        <p role="status" className="visually-hidden">
-          {archiveStatus}
-        </p>
-        <div className="project-lifecycle-actions">
-          <button
-            ref={archiveButton}
-            className="button button-quiet"
-            type="button"
-            onClick={handleArchive}
-            disabled={saving || deleting || mutationPending}
-            aria-busy={mutationPending || undefined}
-            aria-describedby={
-              error?.action === "archive"
-                ? "project-edit-error"
-                : "project-archive-help"
-            }
-          >
-            <ArchiveRestoreIcon />
-            {chat.archivedAt == null ? `Archive ${kind}` : `Restore ${kind}`}
-          </button>
-          <p id="project-archive-help" className="field-help">
-            Archiving keeps all messages and files.
-          </p>
-          <button
-            className="button button-danger"
-            type="button"
-            onClick={handleDelete}
-            disabled={saving || deleting || mutationPending}
-          >
-            <TrashIcon />
-            {deleting ? "Deleting…" : `Delete ${kind}`}
-          </button>
-        </div>
+        <button
+          className="button button-primary project-edit-save"
+          type="submit"
+          aria-describedby={error ? "project-edit-error" : undefined}
+          disabled={saving || mutationPending}
+        >
+          {saving ? "Saving…" : "Save changes"}
+        </button>
       </form>
     </main>
+  );
+}
+
+type RailAction = "alert" | "pin" | "archive" | "delete";
+
+function usesMouseHover(pointerType: string): boolean {
+  return (
+    pointerType === "mouse" &&
+    window.matchMedia?.("(hover: hover) and (pointer: fine)").matches === true
   );
 }
 
@@ -903,13 +819,12 @@ function ProjectRail({
   activeId,
   expandedProjects,
   onSelect,
-  onTogglePinned,
-  onRestore,
+  onAction,
   onTemporalBoundary,
   onCreate,
   onSettings,
   navigationDisabled,
-  pinErrors,
+  railErrors,
   projectMutationIds,
 }: {
   homeUtilities?: ReactNode;
@@ -921,17 +836,50 @@ function ProjectRail({
   activeId?: string;
   expandedProjects: ReadonlySet<string>;
   onSelect: (id: string) => void;
-  onTogglePinned: (chat: Chat) => void;
-  onRestore: (chat: Chat) => void;
+  onAction: (chat: Chat, action: RailAction, section: RailSection) => void;
   onTemporalBoundary: () => void;
   onCreate: () => void;
   onSettings: () => void;
   navigationDisabled: boolean;
-  pinErrors: Record<string, string>;
+  railErrors: Record<string, string>;
   projectMutationIds: ReadonlySet<string>;
 }) {
   const [showAll, setShowAll] = useState<ReadonlySet<string>>(() => new Set());
   const [now, setNow] = useState(() => Date.now());
+  const [shortcutsId, setShortcutsId] = useState<string>();
+  const [hoveredRow, setHoveredRow] = useState<string>();
+  const focusShortcuts = useRef<string | undefined>(undefined);
+  const mouseFocus = useRef(false);
+  useEffect(() => {
+    // A Tab from elsewhere in the workspace can be the next entry into the rail.
+    const useKeyboardFocus = () => {
+      mouseFocus.current = false;
+    };
+    document.addEventListener("keydown", useKeyboardFocus, true);
+    return () =>
+      document.removeEventListener("keydown", useKeyboardFocus, true);
+  }, []);
+  useLayoutEffect(() => {
+    if (!shortcutsId || focusShortcuts.current !== shortcutsId) return;
+    focusShortcuts.current = undefined;
+    document
+      .getElementById(`shortcuts-${shortcutsId}`)
+      ?.querySelector<HTMLButtonElement>("button:enabled")
+      ?.focus();
+  }, [shortcutsId]);
+  useEffect(() => {
+    if (!shortcutsId) return;
+    function dismissOutside(event: PointerEvent) {
+      if (
+        !(event.target instanceof Element) ||
+        event.target.closest<HTMLElement>("[data-project-row]")?.dataset
+          .projectRow !== shortcutsId
+      )
+        setShortcutsId(undefined);
+    }
+    document.addEventListener("pointerdown", dismissOutside);
+    return () => document.removeEventListener("pointerdown", dismissOutside);
+  }, [shortcutsId]);
   const boundaryCallback = useRef(onTemporalBoundary);
   const handledTemporalKey = useRef("");
   const pinned = chats.filter(
@@ -1007,19 +955,80 @@ function ProjectRail({
     return () => window.removeEventListener("focus", refresh);
   }, [temporalKey]);
 
-  function renderRow(chat: Chat) {
+  function renderRow(chat: Chat, section: RailSection) {
     const attention = projectAttentionState(chat, now);
-    const error = pinErrors[chat.id];
+    const error = railErrors[chat.id];
     const isPinned = chat.pinnedAt != null;
     const isArchived = chat.archivedAt != null;
+    const rowKey = `${section}-${chat.id}`;
+    const open = shortcutsId === chat.id || hoveredRow === rowKey;
+    const visibleAttention = chat.manualAlert ? "today" : attention;
+    function revealOnFocus() {
+      if (!mouseFocus.current) setShortcutsId(chat.id);
+    }
+    const shortcutsLabel = `Shortcuts for ${chat.title}`;
+    const actionButton = (
+      action: RailAction,
+      name: string,
+      icon: ReactNode,
+      pressed?: boolean,
+    ) => (
+      <button
+        type="button"
+        className="project-shortcut"
+        data-project-action={action}
+        aria-label={name}
+        title={action === "pin" && pressed ? `Unpin ${chat.title}` : name}
+        aria-pressed={pressed}
+        aria-describedby={error ? errorId : undefined}
+        disabled={navigationDisabled || projectMutationIds.has(chat.id)}
+        onClick={() => onAction(chat, action, section)}
+      >
+        {icon}
+      </button>
+    );
     const statusId = `project-status-${chat.id}`;
-    const errorId = `project-pin-error-${chat.id}`;
+    const errorId = `project-action-error-${chat.id}`;
     return (
       <li
         className={`project-row ${chat.projectId ? "project-row--subthread" : ""} ${activeId === chat.id ? "project-row--active" : ""} ${error ? "project-row--error" : ""}`}
         data-accent={chat.accent}
         data-attention-state={attention}
+        data-project-row={chat.id}
+        data-shortcuts-open={open}
         key={chat.id}
+        onPointerEnter={(event) => {
+          if (usesMouseHover(event.pointerType)) setHoveredRow(rowKey);
+        }}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "mouse")
+            setHoveredRow((current) =>
+              current === rowKey ? undefined : current,
+            );
+        }}
+        onPointerDownCapture={(event) => {
+          mouseFocus.current = usesMouseHover(event.pointerType);
+          if (mouseFocus.current) setShortcutsId(undefined);
+        }}
+        onBlur={(event) => {
+          if (
+            event.relatedTarget &&
+            !event.currentTarget.contains(event.relatedTarget)
+          )
+            setShortcutsId((current) =>
+              current === chat.id ? undefined : current,
+            );
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && open) {
+            event.currentTarget
+              .querySelector<HTMLButtonElement>(".project-item")
+              ?.focus();
+            setShortcutsId(undefined);
+            setHoveredRow(undefined);
+            event.stopPropagation();
+          }
+        }}
       >
         <button
           className={`project-item ${activeId === chat.id ? "project-item--active" : ""}`}
@@ -1035,6 +1044,7 @@ function ProjectRail({
           }
           aria-current={activeId === chat.id ? "page" : undefined}
           disabled={navigationDisabled}
+          onFocus={revealOnFocus}
           onClick={() => onSelect(chat.id)}
         >
           <span className="project-item-copy">
@@ -1047,35 +1057,69 @@ function ProjectRail({
             {error && <small>{error}</small>}
           </span>
         </button>
-        <button
-          className="project-pin-button"
-          data-project-pin-id={chat.id}
-          type="button"
-          aria-label={
+        <div
+          className="project-shortcuts"
+          role="group"
+          aria-label={shortcutsLabel}
+          id={`shortcuts-${chat.id}`}
+          onFocus={revealOnFocus}
+          hidden={!open}
+        >
+          {actionButton(
+            "alert",
+            `Alert ${chat.title}`,
+            <span
+              className={`attention-dot attention-dot--${chat.manualAlert ? "today" : "earlier"}`}
+              aria-hidden="true"
+            />,
+            Boolean(chat.manualAlert),
+          )}
+          {!isArchived &&
+            actionButton("pin", `Pin ${chat.title}`, <PinIcon />, isPinned)}
+          {actionButton(
+            "archive",
             isArchived
               ? `Restore ${chat.title} from archive`
-              : `Pin ${chat.title}`
-          }
-          title={isArchived ? "Restore project" : undefined}
-          aria-pressed={isArchived ? undefined : isPinned}
-          aria-describedby={error ? errorId : undefined}
-          disabled={navigationDisabled || projectMutationIds.has(chat.id)}
-          onClick={() => (isArchived ? onRestore(chat) : onTogglePinned(chat))}
+              : `Archive ${chat.title}`,
+            <ArchiveRestoreIcon />,
+          )}
+          {actionButton("delete", `Delete ${chat.title}`, <TrashIcon />)}
+        </div>
+        <button
+          type="button"
+          className="project-shortcuts-disclosure"
+          aria-label={shortcutsLabel}
+          aria-controls={`shortcuts-${chat.id}`}
+          aria-expanded={open}
+          disabled={navigationDisabled}
+          onClick={() => {
+            if (open) {
+              setShortcutsId(undefined);
+              setHoveredRow(undefined);
+            } else {
+              focusShortcuts.current = chat.id;
+              setShortcutsId(chat.id);
+            }
+          }}
         >
-          {isArchived ? <ArchiveRestoreIcon /> : <PinIcon />}
+          {visibleAttention && !open ? (
+            <span
+              className={`attention-dot attention-dot--${visibleAttention} project-attention-dot`}
+              aria-hidden="true"
+            />
+          ) : (
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M5 12h.1M12 12h.1M19 12h.1" strokeWidth="3.5" />
+            </svg>
+          )}
         </button>
-        {attention && (
-          <span
-            className={`attention-dot attention-dot--${attention} project-attention-dot project-attention-dot--${attention}`}
-            aria-hidden="true"
-          />
-        )}
         <span className="visually-hidden" id={statusId}>
           {isArchived
             ? "Archived project. "
             : isPinned
               ? "Pinned project. "
               : ""}
+          {chat.manualAlert && "Manual alert. "}
           {attention === "today"
             ? "Attention today."
             : attention === "earlier"
@@ -1128,8 +1172,8 @@ function ProjectRail({
               visible = [...visible.slice(0, 4), selected];
             return (
               <Fragment key={chat.id}>
-                {renderRow(chat)}
-                {expanded && visible.map(renderRow)}
+                {renderRow(chat, label)}
+                {expanded && visible.map((child) => renderRow(child, label))}
                 {expanded && children.length > 5 && (
                   <li className="subthread-disclosure-row">
                     <button
@@ -1224,15 +1268,11 @@ function ProjectRail({
       </nav>
 
       <footer className="local-footnote">
-        <span className="local-indicator" aria-hidden="true" />
-        <span className="local-footnote-copy">
-          <strong>Local only</strong>
-        </span>
         <button
           className="settings-icon-button"
           type="button"
           onClick={onSettings}
-          aria-label="Settings. Local only."
+          aria-label="Settings"
         >
           <SettingsIcon />
         </button>
@@ -1725,36 +1765,6 @@ function FolderIcon() {
   );
 }
 
-function MessageActionButton({
-  label,
-  children,
-  danger = false,
-  allowReadOnly = false,
-  onClick,
-}: {
-  label: string;
-  children: ReactNode;
-  danger?: boolean;
-  allowReadOnly?: boolean;
-  onClick: () => void;
-}) {
-  const explainReadOnly = useContext(ExampleReadOnlyContext);
-  const blocked = Boolean(explainReadOnly) && !allowReadOnly;
-  return (
-    <button
-      type="button"
-      aria-disabled={blocked || undefined}
-      aria-describedby={blocked ? "example-notice" : undefined}
-      className={`message-action ${danger ? "message-action--danger" : ""}`}
-      aria-label={label}
-      title={label}
-      onClick={blocked ? explainReadOnly : onClick}
-    >
-      {children}
-    </button>
-  );
-}
-
 function MessageLabels({ labels }: { labels: Label[] }) {
   const definitions = useContext(ProjectLabelContext);
   if (labels.length === 0) return null;
@@ -1802,13 +1812,8 @@ function MessageLabelPicker({
       definitions.find((item) => item.id === id) ?? { id, name: id },
     );
   const explainReadOnly = useContext(ExampleReadOnlyContext);
-  const [open, setOpen] = useState(false);
   const [busyLabel, setBusyLabel] = useState<Label>();
   const [error, setError] = useState("");
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const popoverRef = useRef<HTMLDivElement>(null);
-  const popoverId = useId();
   const appliedLabels = note.labels ?? [];
   const permanent = new Set<Label>(PERMANENT_LABELS);
   const availableLabels = definitions
@@ -1819,58 +1824,6 @@ function MessageLabelPicker({
         enabledLabels.includes(label as ConfigurableLabel) ||
         appliedLabels.includes(label),
     );
-
-  useEffect(() => {
-    if (!open) return;
-    const dismiss = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", dismiss);
-    return () => document.removeEventListener("mousedown", dismiss);
-  }, [open]);
-
-  useLayoutEffect(() => {
-    if (!open) return;
-    const trigger = triggerRef.current;
-    const popover = popoverRef.current;
-    const history = rootRef.current?.closest(".history");
-    if (!trigger || !popover || !history) return;
-    let horizontalShift = 0;
-    const position = () => {
-      const button = trigger.getBoundingClientRect();
-      const bounds = history.getBoundingClientRect();
-      const above = Math.max(0, button.top - Math.max(0, bounds.top) - 7);
-      const below = Math.max(
-        0,
-        Math.min(window.innerHeight, bounds.bottom) - button.bottom - 7,
-      );
-      const up = popover.scrollHeight > below && above > below;
-      popover.dataset.side = up ? "up" : "down";
-      popover.style.maxHeight = `${up ? above : below}px`;
-      const menu = popover.getBoundingClientRect();
-      const naturalLeft = menu.left - horizontalShift;
-      const leftEdge = Math.max(0, bounds.left) + 8;
-      const rightEdge = Math.min(window.innerWidth, bounds.right) - 8;
-      horizontalShift =
-        Math.max(leftEdge, Math.min(naturalLeft, rightEdge - menu.width)) -
-        naturalLeft;
-      popover.style.transform = `translateX(${horizontalShift}px)`;
-    };
-    position();
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? undefined
-        : new ResizeObserver(position);
-    observer?.observe(history);
-    observer?.observe(popover);
-    history.addEventListener("scroll", position);
-    window.addEventListener("resize", position);
-    return () => {
-      observer?.disconnect();
-      history.removeEventListener("scroll", position);
-      window.removeEventListener("resize", position);
-    };
-  }, [open]);
 
   async function changeLabel(label: Label, applied: boolean) {
     setBusyLabel(label);
@@ -1885,40 +1838,14 @@ function MessageLabelPicker({
   }
 
   return (
-    <div
-      className={`message-label-picker ${open ? "message-label-picker--open" : ""}`}
-      ref={rootRef}
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && open) {
-          event.preventDefault();
-          setOpen(false);
-          triggerRef.current?.focus();
-        }
-      }}
+    <MessagePopover
+      label="Change labels"
+      icon={<LabelIcon />}
+      onBlocked={explainReadOnly}
+      onOpen={() => setError("")}
     >
-      <button
-        ref={triggerRef}
-        type="button"
-        className="message-action"
-        aria-label="Change labels"
-        aria-disabled={Boolean(explainReadOnly) || undefined}
-        aria-describedby={explainReadOnly ? "example-notice" : undefined}
-        title="Change labels"
-        aria-expanded={open}
-        aria-controls={popoverId}
-        onClick={() => {
-          if (explainReadOnly) {
-            explainReadOnly();
-            return;
-          }
-          setOpen((current) => !current);
-          setError("");
-        }}
-      >
-        <LabelIcon />
-      </button>
-      {open && (
-        <div className="message-label-popover" id={popoverId} ref={popoverRef}>
+      {() => (
+        <>
           <fieldset>
             <legend>Message labels</legend>
             {availableLabels.map((label) => {
@@ -1953,9 +1880,93 @@ function MessageLabelPicker({
               {error}
             </p>
           )}
-        </div>
+        </>
       )}
-    </div>
+    </MessagePopover>
+  );
+}
+
+function MessageMoreActions({
+  copied,
+  onContinue,
+  onCopy,
+  onEdit,
+  onDelete,
+  onOpenInHistory,
+}: {
+  copied: boolean;
+  onContinue?: () => void;
+  onCopy: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onOpenInHistory?: () => void;
+}) {
+  const explainReadOnly = useContext(ExampleReadOnlyContext);
+  const items = [
+    {
+      label: "Continue in subthread",
+      icon: <SubthreadIcon />,
+      action: onContinue,
+      blocked: explainReadOnly,
+    },
+    { label: "Copy message", icon: <CopyIcon />, action: onCopy },
+    {
+      label: "Edit message",
+      icon: <EditIcon />,
+      action: onEdit,
+      blocked: explainReadOnly,
+    },
+    {
+      label: "Delete message",
+      icon: <TrashIcon />,
+      action: onDelete,
+      blocked: explainReadOnly,
+      danger: true,
+    },
+    { label: "Open message in history", action: onOpenInHistory },
+  ];
+  return (
+    <>
+      <MessagePopover
+        label="More message actions"
+        menu
+        icon={
+          copied ? (
+            <CheckIcon />
+          ) : (
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 12h1m6.5 0h1m6.5 0h1" strokeWidth="3" />
+            </svg>
+          )
+        }
+      >
+        {() =>
+          items.map(
+            ({ label, icon, action, blocked, danger }) =>
+              action && (
+                <button
+                  key={label}
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  className={`message-menu-item ${danger ? "message-menu-item--danger" : ""}`}
+                  aria-disabled={blocked ? true : undefined}
+                  aria-describedby={blocked ? "example-notice" : undefined}
+                  onClick={blocked ?? action}
+                >
+                  {icon}
+                  {label}
+                </button>
+              ),
+          )
+        }
+      </MessagePopover>
+      {copied && (
+        <span className="visually-hidden" role="status">
+          Message copied
+        </span>
+      )}
+    </>
   );
 }
 
@@ -2413,64 +2424,43 @@ function MessageGroups({
                       data-note-id={note.id}
                       data-created-at={note.createdAt}
                       tabIndex={-1}
-                      className={`message-row ${onOpenInHistory ? "message-row--search" : ""} ${participant ? "message-row--participant" : "message-row--own"}`}
+                      className={`message-row ${participant ? "message-row--participant" : "message-row--own"}`}
                       style={{ gridRow: noteIndex + 1 }}
                     >
                       <div className="message-stack">
-                        <div className="message-context">
-                          <article className="message-bubble">
-                            {note.sender && (
-                              <p
-                                className="message-sender"
-                                data-sender-color={senderColor(note.sender)}
-                              >
-                                <HighlightText
-                                  text={note.sender}
-                                  terms={searchTerms}
-                                />
-                              </p>
-                            )}
-                            <AttachmentList
-                              searchTerms={searchTerms}
-                              note={note}
-                              onAction={onAttachmentAction}
-                            />
-                            <CollapsibleMessageBody
-                              searchTerms={searchTerms}
-                              key={String(collapseLongMessages)}
-                              body={note.body}
-                              collapseLongMessages={collapseLongMessages}
-                            />
-                            <footer className="message-footer">
-                              <MessageLabels labels={note.labels ?? []} />
-                              <time
-                                className="message-time"
-                                dateTime={new Date(
-                                  note.createdAt,
-                                ).toISOString()}
-                              >
-                                {formatMessageTime(note.createdAt)}
-                              </time>
-                            </footer>
-                          </article>
-                          {onOpenInHistory && (
-                            <button
-                              type="button"
-                              className="message-history-button"
-                              aria-label="Open message in history"
-                              title="Open in history"
-                              onClick={() => onOpenInHistory(note)}
+                        <article className="message-bubble">
+                          {note.sender && (
+                            <p
+                              className="message-sender"
+                              data-sender-color={senderColor(note.sender)}
                             >
-                              <svg
-                                viewBox="0 0 24 24"
-                                aria-hidden="true"
-                                focusable="false"
-                              >
-                                <path d="m9 10-5 5 5 5M4 15h10a6 6 0 0 0 0-12h-2" />
-                              </svg>
-                            </button>
+                              <HighlightText
+                                text={note.sender}
+                                terms={searchTerms}
+                              />
+                            </p>
                           )}
-                        </div>
+                          <AttachmentList
+                            searchTerms={searchTerms}
+                            note={note}
+                            onAction={onAttachmentAction}
+                          />
+                          <CollapsibleMessageBody
+                            searchTerms={searchTerms}
+                            key={String(collapseLongMessages)}
+                            body={note.body}
+                            collapseLongMessages={collapseLongMessages}
+                          />
+                          <footer className="message-footer">
+                            <MessageLabels labels={note.labels ?? []} />
+                            <time
+                              className="message-time"
+                              dateTime={new Date(note.createdAt).toISOString()}
+                            >
+                              {formatMessageTime(note.createdAt)}
+                            </time>
+                          </footer>
+                        </article>
                         <div
                           className="message-actions"
                           aria-label="Message actions"
@@ -2480,34 +2470,16 @@ function MessageGroups({
                             enabledLabels={enabledLabels}
                             onToggle={onSetNoteLabel}
                           />
-                          {onContinue && (
-                            <MessageActionButton
-                              label="Continue in subthread"
-                              onClick={() => onContinue(note)}
-                            >
-                              <SubthreadIcon />
-                            </MessageActionButton>
-                          )}
-                          <MessageActionButton
-                            allowReadOnly
-                            label={copied ? "Message copied" : "Copy message"}
-                            onClick={() => onCopyNote(note)}
-                          >
-                            {copied ? <CheckIcon /> : <CopyIcon />}
-                          </MessageActionButton>
-                          <MessageActionButton
-                            label="Edit message"
-                            onClick={() => onEditNote(note)}
-                          >
-                            <EditIcon />
-                          </MessageActionButton>
-                          <MessageActionButton
-                            label="Delete message"
-                            danger
-                            onClick={() => onDeleteNote(note)}
-                          >
-                            <TrashIcon />
-                          </MessageActionButton>
+                          <MessageMoreActions
+                            copied={copied}
+                            onContinue={onContinue && (() => onContinue(note))}
+                            onCopy={() => onCopyNote(note)}
+                            onEdit={() => onEditNote(note)}
+                            onDelete={() => onDeleteNote(note)}
+                            onOpenInHistory={
+                              onOpenInHistory && (() => onOpenInHistory(note))
+                            }
+                          />
                         </div>
                       </div>
                       {subthreads
@@ -2541,9 +2513,11 @@ function MessageGroups({
 }
 
 function ChatWorkspace({
+  alwaysShowMessageTime,
   chats = [],
   projectApi,
   onNewSubthread,
+  subthreadBusy = false,
   onNavigate,
   navigationTarget,
   sendFeedback,
@@ -2585,9 +2559,11 @@ function ChatWorkspace({
   copiedNoteId,
   navigationDisabled,
 }: {
+  alwaysShowMessageTime: boolean;
   chats?: Chat[];
   projectApi?: Pick<ApiClient, "getProject">;
   onNewSubthread?: (sourceNoteId?: string) => void;
+  subthreadBusy?: boolean;
   onNavigate?: (
     chatId: string,
     noteId?: string,
@@ -3129,7 +3105,7 @@ function ChatWorkspace({
                 type="button"
                 aria-label="New subthread"
                 title="New subthread"
-                disabled={navigationDisabled}
+                disabled={navigationDisabled || subthreadBusy}
                 onClick={() => onNewSubthread()}
               >
                 <SubthreadIcon />
@@ -3284,6 +3260,23 @@ function ChatWorkspace({
         <section
           ref={historyRef}
           className="history"
+          data-message-time={
+            alwaysShowMessageTime ? "always" : "on-interaction"
+          }
+          onPointerUp={(event) => {
+            if (alwaysShowMessageTime) return;
+            const touch = event.pointerType === "touch";
+            event.currentTarget.toggleAttribute(
+              "data-touch-interaction",
+              touch,
+            );
+            if (!touch || !(event.target instanceof Element)) return;
+            if (event.target.closest("button, a, input, label, [tabindex='0']"))
+              return;
+            event.target
+              .closest<HTMLElement>(".message-row")
+              ?.focus({ preventScroll: true });
+          }}
           tabIndex={-1}
           aria-label={`${detail.title} messages`}
         >
@@ -3416,7 +3409,9 @@ function ChatWorkspace({
                 (chat) => chat.origin?.sourceChatId === detail.id,
               )}
               onContinue={
-                onNewSubthread ? (note) => onNewSubthread(note.id) : undefined
+                onNewSubthread && !subthreadBusy
+                  ? (note) => onNewSubthread(note.id)
+                  : undefined
               }
               onNavigate={onNavigate}
               searchTerms={searchQuery.terms}
@@ -3848,7 +3843,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [examplesError, setExamplesError] = useState("");
   const [examplesReload, setExamplesReload] = useState(0);
   const workspacePreferences = useWorkspacePreferences(api);
-  const { theme, showExamples, collapsedSections } =
+  const { theme, showExamples, collapsedSections, alwaysShowMessageTime } =
     workspacePreferences.preferences;
   const preferenceWarning = workspacePreferences.warning;
   const [copyingExample, setCopyingExample] = useState(false);
@@ -3899,24 +3894,44 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const pendingNoteMutations = useRef(0);
   const previewTail = useRef<Promise<unknown>>(Promise.resolve());
   const [pendingNoteCount, setPendingNoteCount] = useState(0);
-  const [pinErrors, setPinErrors] = useState<Record<string, string>>({});
+  const [railErrors, setRailErrors] = useState<Record<string, string>>({});
   const [projectMutationIds, setProjectMutationIds] = useState<
     ReadonlySet<string>
   >(() => new Set());
   const projectMutations = useRef(new Set<string>());
-  const pendingPinFocus = useRef<string | undefined>(undefined);
+  const pendingRailFocus = useRef<
+    { chat: Chat; action: RailAction; section: RailSection } | undefined
+  >(undefined);
   useLayoutEffect(() => {
-    const id = pendingPinFocus.current;
-    if (id === undefined || projectMutationIds.has(id)) return;
-    pendingPinFocus.current = undefined;
-    const control = [
-      ...document.querySelectorAll<HTMLButtonElement>("[data-project-pin-id]"),
-    ].find((button) => button.dataset.projectPinId === id);
-    const target = control?.closest("[hidden]")
-      ? control
-          .closest(".project-section")
-          ?.querySelector<HTMLButtonElement>(".rail-section-label")
-      : control;
+    const pending = pendingRailFocus.current;
+    if (!pending || projectMutationIds.has(pending.chat.id)) return;
+    pendingRailFocus.current = undefined;
+    const rows = [
+      ...document.querySelectorAll<HTMLElement>("[data-project-row]"),
+    ];
+    const row = rows.find(
+      (item) => item.dataset.projectRow === pending.chat.id,
+    );
+    const focused = document.activeElement;
+    if (focused && focused !== document.body && !row?.contains(focused)) return;
+    const parent = rows.find(
+      (item) => item.dataset.projectRow === pending.chat.projectId,
+    );
+    const action = row?.querySelector<HTMLButtonElement>(
+      `[data-project-action="${pending.action}"]`,
+    );
+    const fallback = row ?? parent;
+    const target =
+      action && !action.closest("[hidden]")
+        ? action
+        : fallback?.closest("[hidden]")
+          ? fallback
+              .closest(".project-section")
+              ?.querySelector<HTMLButtonElement>(".rail-section-label")
+          : (fallback?.querySelector<HTMLButtonElement>(".project-item") ??
+            document
+              .getElementById(`rail-${pending.section}`)
+              ?.closest("button"));
     target?.focus();
   }, [projectMutationIds]);
   const [searchQueries] = useState(() => new Map<string, string>());
@@ -3924,7 +3939,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     () => new Map<string, ReadingPosition>(),
   );
   const selectionRequest = useRef(0);
-  const pendingSelection = useRef<"example" | "project" | undefined>(undefined);
+  const pendingSelection = useRef<"example" | { chatId: string } | undefined>(
+    undefined,
+  );
   const copiedFocus = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
     if (active?.id !== copiedFocus.current || !copiedFocus.current) return;
@@ -4239,7 +4256,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   ) {
     if (savingNote || copyInProgress.current) return;
     rememberConversation();
-    pendingSelection.current = "project";
+    pendingSelection.current = { chatId: id };
     const request = ++selectionRequest.current;
     setMode("projects");
     setError("");
@@ -4268,6 +4285,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ...current,
           active: {
             ...detail,
+            manualAlert: summary?.manualAlert ?? detail.manualAlert,
             archivedAt:
               summary?.archivedAt === undefined
                 ? detail.archivedAt
@@ -4317,39 +4335,47 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function createSubthread(title: string) {
     if (!subthreadSource) return;
     const source = subthreadSource;
-    rememberConversation();
-    activeMutationGeneration.current += 1;
-    summaryRequest.current += 1;
-    const chat = await api.createSubthread(source.chatId, {
-      title,
-      ...(source.sourceNoteId ? { sourceNoteId: source.sourceNoteId } : {}),
+    const conversation = chats.find((chat) => chat.id === source.chatId);
+    if (!conversation)
+      throw new Error("The source conversation is no longer available.");
+    // Creating from a child also changes its root's family membership.
+    const ids = conversation.projectId
+      ? [conversation.id, conversation.projectId]
+      : [conversation.id];
+    await runProjectMutation(ids, async () => {
+      rememberConversation();
+      const chat = await api.createSubthread(source.chatId, {
+        title,
+        ...(source.sourceNoteId ? { sourceNoteId: source.sourceNoteId } : {}),
+      });
+      selectionRequest.current += 1;
+      setExample(undefined);
+      setMode("projects");
+      setNavigationTarget(undefined);
+      setExpandedProjects((current) =>
+        new Set(current).add(chat.projectId ?? chat.id),
+      );
+      copiedFocus.current = chat.id;
+      setWorkspace((current) => ({
+        chats: sortChats([
+          ...current.chats.filter((item) => item.id !== chat.id),
+          chat,
+        ]),
+        active: { ...chat, notes: [] },
+      }));
+      restoreConversation(chat.id);
+      setSubthreadSource(undefined);
     });
-    activeMutationGeneration.current += 1;
-    summaryRequest.current += 1;
-    selectionRequest.current += 1;
-    setExample(undefined);
-    setMode("projects");
-    setNavigationTarget(undefined);
-    setExpandedProjects((current) =>
-      new Set(current).add(chat.projectId ?? chat.id),
-    );
-    copiedFocus.current = chat.id;
-    setWorkspace((current) => ({
-      chats: sortChats([
-        ...current.chats.filter((item) => item.id !== chat.id),
-        chat,
-      ]),
-      active: { ...chat, notes: [] },
-    }));
-    restoreConversation(chat.id);
-    setSubthreadSource(undefined);
   }
 
-  async function runProjectMutation(id: string, mutation: () => Promise<void>) {
-    if (projectMutations.current.has(id))
+  async function runProjectMutation(
+    ids: readonly string[],
+    mutation: () => Promise<void>,
+  ) {
+    if (ids.some((id) => projectMutations.current.has(id)))
       throw new Error("Wait for the current project change to finish.");
-    projectMutations.current.add(id);
-    setProjectMutationIds((current) => new Set(current).add(id));
+    for (const id of ids) projectMutations.current.add(id);
+    setProjectMutationIds(new Set(projectMutations.current));
     activeMutationGeneration.current += 1;
     summaryRequest.current += 1;
     try {
@@ -4357,96 +4383,75 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     } finally {
       activeMutationGeneration.current += 1;
       summaryRequest.current += 1;
-      projectMutations.current.delete(id);
-      setProjectMutationIds((current) => {
-        const next = new Set(current);
-        next.delete(id);
-        return next;
-      });
+      for (const id of ids) projectMutations.current.delete(id);
+      setProjectMutationIds(new Set(projectMutations.current));
     }
   }
 
   function clearProjectError(id: string) {
-    setPinErrors((current) => {
+    setRailErrors((current) => {
       const next = { ...current };
       delete next[id];
       return next;
     });
   }
 
-  async function toggleChatPinned(chat: Chat) {
+  async function applyChatAction(
+    chat: Chat,
+    action: Exclude<RailAction, "delete">,
+  ) {
+    const state =
+      action === "pin"
+        ? await api.setChatPinned(chat.id, chat.pinnedAt == null)
+        : action === "archive"
+          ? await api.setChatArchived(chat.id, chat.archivedAt == null)
+          : await api.setChatAlert(chat.id, !chat.manualAlert);
+    setWorkspace((current) => ({
+      active:
+        current.active?.id === chat.id
+          ? { ...current.active, ...state }
+          : current.active,
+      chats: sortChats(
+        current.chats.map((item) =>
+          item.id === chat.id ? { ...item, ...state } : item,
+        ),
+      ),
+    }));
+  }
+
+  async function runRailAction(
+    chat: Chat,
+    action: RailAction,
+    section: RailSection,
+  ) {
     if (projectMutations.current.has(chat.id)) return;
+    if (action === "delete" && !confirmChatDeletion(chat)) return;
     clearProjectError(chat.id);
+    const selection = selectionRequest.current;
     try {
-      await runProjectMutation(chat.id, async () => {
-        const state = await api.setChatPinned(chat.id, chat.pinnedAt == null);
-        setWorkspace((current) => ({
-          active:
-            current.active?.id === chat.id
-              ? { ...current.active, ...state }
-              : current.active,
-          chats: sortChats(
-            current.chats.map((item) =>
-              item.id === chat.id ? { ...item, ...state } : item,
-            ),
-          ),
-        }));
-        pendingPinFocus.current = chat.id;
+      await runProjectMutation([chat.id], async () => {
+        try {
+          if (action === "delete") await deleteChatUnlocked(chat.id);
+          else await applyChatAction(chat, action);
+        } finally {
+          if (selection === selectionRequest.current)
+            pendingRailFocus.current = { chat, action, section };
+        }
       });
     } catch (caught) {
-      setPinErrors((current) => ({
+      setRailErrors((current) => ({
         ...current,
-        [chat.id]: errorMessage(caught, "The project pin could not be saved."),
-      }));
-      pendingPinFocus.current = chat.id;
-    }
-  }
-
-  async function setChatArchived(
-    chat: Chat,
-    archived: boolean,
-    fromSidebar = false,
-  ) {
-    clearProjectError(chat.id);
-    await runProjectMutation(chat.id, async () => {
-      try {
-        const state = await api.setChatArchived(chat.id, archived);
-        setWorkspace((current) => ({
-          active:
-            current.active?.id === chat.id
-              ? { ...current.active, ...state }
-              : current.active,
-          chats: sortChats(
-            current.chats.map((item) =>
-              item.id === chat.id ? { ...item, ...state } : item,
-            ),
-          ),
-        }));
-      } finally {
-        if (fromSidebar) pendingPinFocus.current = chat.id;
-      }
-    });
-  }
-
-  async function restoreChat(chat: Chat) {
-    if (projectMutations.current.has(chat.id)) return;
-    try {
-      await setChatArchived(chat, false, true);
-    } catch (caught) {
-      setPinErrors((current) => ({
-        ...current,
-        [chat.id]: errorMessage(caught, "The project could not be restored."),
+        [chat.id]: errorMessage(
+          caught,
+          "The project change could not be saved.",
+        ),
       }));
     }
   }
 
   async function updateChat(input: Parameters<typeof updateChatUnlocked>[0]) {
     if (active)
-      await runProjectMutation(active.id, () => updateChatUnlocked(input));
-  }
-
-  async function deleteChat() {
-    if (active) await runProjectMutation(active.id, deleteChatUnlocked);
+      await runProjectMutation([active.id], () => updateChatUnlocked(input));
   }
 
   async function updateChatUnlocked(input: {
@@ -4498,15 +4503,15 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     if (activeId.current === projectId) focusMobileBackButton();
   }
 
-  async function deleteChatUnlocked() {
-    if (!active) return;
-    const projectId = active.id;
-    const selectionAtStart = selectionRequest.current;
+  async function deleteChatUnlocked(projectId: string) {
     await api.deleteChat(projectId);
     const deletedIds = new Set(
       chats
         .filter((chat) => chat.id === projectId || chat.projectId === projectId)
         .map((chat) => chat.id),
+    );
+    setSubthreadSource((current) =>
+      current && deletedIds.has(current.chatId) ? undefined : current,
     );
     for (const id of deletedIds) {
       searchQueries.delete(id);
@@ -4517,12 +4522,15 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       for (const id of deletedIds) next.delete(id);
       return next;
     });
-    const navigationUnchanged = selectionRequest.current === selectionAtStart;
-    if (navigationUnchanged) selectionRequest.current += 1;
+    const pending = pendingSelection.current;
+    if (pending && pending !== "example" && deletedIds.has(pending.chatId)) {
+      selectionRequest.current += 1;
+      pendingSelection.current = undefined;
+    }
     activeMutationGeneration.current += 1;
     setWorkspace((current) => ({
       chats: current.chats
-        .filter((chat) => !deletedIds.has(chat.id))
+        .filter((chat) => chat.id !== projectId && chat.projectId !== projectId)
         .map((chat) =>
           chat.origin?.sourceChatId && deletedIds.has(chat.origin.sourceChatId)
             ? {
@@ -4550,7 +4558,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
               }
             : current.active,
     }));
-    if (navigationUnchanged) {
+    if (activeId.current && deletedIds.has(activeId.current)) {
       setDraft("");
       resetSenderComposer();
       setPendingFiles([]);
@@ -4560,7 +4568,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       setError("");
       setEditingNote(undefined);
       setEditingAttachmentIds([]);
-      setMode("projects");
+      setMode((current) => (current === "projectEdit" ? "projects" : current));
     }
   }
 
@@ -4791,8 +4799,32 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     if (!window.confirm("Delete this message?")) return;
     const projectId = active.id;
     const epoch = databaseEpoch.current;
-    await runNoteMutation(() => api.deleteNote(projectId, note.id));
+    try {
+      await runNoteMutation(() => api.deleteNote(projectId, note.id));
+    } catch (caught) {
+      if (epoch === databaseEpoch.current && activeId.current === projectId)
+        setError(errorMessage(caught, "The message could not be deleted."));
+      return;
+    }
     if (epoch !== databaseEpoch.current) return;
+    const focusedRow =
+      document.activeElement?.closest<HTMLElement>(".message-row");
+    if (
+      activeId.current === projectId &&
+      focusedRow?.dataset.noteId === note.id
+    ) {
+      const rows = [
+        ...(focusedRow
+          .closest(".history")
+          ?.querySelectorAll<HTMLElement>(".message-row") ?? []),
+      ];
+      const index = rows.indexOf(focusedRow);
+      const destination =
+        rows[index + 1] ??
+        rows[index - 1] ??
+        document.querySelector<HTMLElement>("[data-composer-textarea]");
+      destination?.focus({ preventScroll: true });
+    }
     activeMutationGeneration.current += 1;
     const submittedNotes = active.notes.filter((item) => item.id !== note.id);
     const submittedUpdatedAt = chatActivityFromNotes(active, submittedNotes);
@@ -4934,8 +4966,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         setEditingNote(undefined);
         setEditingAttachmentIds([]);
         setCopiedNoteId(undefined);
-        setPinErrors({});
-        pendingPinFocus.current = undefined;
+        setRailErrors({});
+        pendingRailFocus.current = undefined;
         setError("");
       }
       try {
@@ -5086,8 +5118,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
               });
             } else void selectChat(id);
           }}
-          onTogglePinned={toggleChatPinned}
-          onRestore={restoreChat}
+          onAction={runRailAction}
           onTemporalBoundary={refreshProjectSummaries}
           onCreate={() => {
             selectionRequest.current++;
@@ -5102,7 +5133,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
             }
           }}
           navigationDisabled={savingNote || copyingExample}
-          pinErrors={pinErrors}
+          railErrors={railErrors}
           projectMutationIds={projectMutationIds}
         />
       )}
@@ -5115,6 +5146,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         settingsSection === "general" ? (
           <GeneralSettingsWorkspace
             showExamples={showExamples}
+            alwaysShowMessageTime={alwaysShowMessageTime}
+            onMessageTimeChange={(alwaysShowMessageTime) =>
+              workspacePreferences.update({ alwaysShowMessageTime })
+            }
             onChange={updateExamplesVisibility}
             warning=""
           />
@@ -5140,6 +5175,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       ) : example ? (
         <ExampleReadOnlyContext.Provider value={explainExampleReadOnly}>
           <ChatWorkspace
+            alwaysShowMessageTime={alwaysShowMessageTime}
             key={`${example.id}:${example.revision}`}
             detail={{ ...example, id: `${example.id}:${example.revision}` }}
             readingPositions={readingPositions}
@@ -5207,18 +5243,19 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           key={active.id}
           chat={active}
           mutationPending={projectMutationIds.has(active.id)}
-          onToggleArchived={() =>
-            setChatArchived(active, active.archivedAt == null)
-          }
           onBack={() => setMode("projects")}
           onSubmit={updateChat}
-          onDelete={deleteChat}
         />
       ) : active ? (
         <ChatWorkspace
+          alwaysShowMessageTime={alwaysShowMessageTime}
           key={`${active.id}:${navigationRevision}`}
           chats={chats}
           projectApi={api}
+          subthreadBusy={
+            projectMutationIds.has(active.id) ||
+            projectMutationIds.has(active.projectId ?? active.id)
+          }
           onNewSubthread={(sourceNoteId) =>
             setSubthreadSource({ chatId: active.id, sourceNoteId })
           }

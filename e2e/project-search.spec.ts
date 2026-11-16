@@ -18,9 +18,14 @@ test("search remains usable in read-only examples at narrow widths and 200 perce
   await toggle.click();
   const input = page.getByRole("searchbox");
   await input.fill("museum");
-  const context = page
-    .getByRole("button", { name: "Open message in history" })
+  await expect(page.locator(".message-body mark").first()).toBeVisible();
+  const more = page
+    .getByRole("button", { name: "More message actions" })
     .first();
+  await more.click();
+  const context = page.getByRole("menuitem", {
+    name: "Open message in history",
+  });
   await expect(context).toBeVisible();
   await expect(page.getByLabel("Add a note", { exact: true })).toBeDisabled();
   await expect(page.locator(".composer")).not.toHaveAttribute(
@@ -43,6 +48,8 @@ test("search remains usable in read-only examples at narrow widths and 200 perce
   });
   await toggle.click();
   await expect(input).toHaveValue("museum");
+  await expect(page.locator(".message-body mark").first()).toBeVisible();
+  await more.click();
   await expect(context).toBeVisible();
   await expect(input).toBeInViewport();
   expect((await input.boundingBox())!.width).toBeGreaterThan(300);
@@ -112,42 +119,39 @@ test("searches locally with a compact field, restores reading positions and open
   await expect(page.locator(".message-row")).toHaveCount(2);
   await expect(page.getByLabel("Matching messages")).toHaveText("2");
   await expect(page.locator(".message-body mark")).toHaveCount(4);
-  const composerBox = (await page.locator(".composer").boundingBox())!;
+  await expect(history).toHaveJSProperty("scrollTop", 0);
   for (const side of ["own", "participant"]) {
     const row = page.locator(`.message-row--${side}`).first();
-    const bubble = (await row.locator(".message-bubble").boundingBox())!;
-    const action = (await row
-      .locator(".message-history-button")
-      .boundingBox())!;
-    if (side === "own")
-      expect(action.x).toBeGreaterThan(bubble.x + bubble.width);
-    else expect(action.x + action.width).toBeLessThan(bubble.x);
-    expect(action.x).toBeGreaterThanOrEqual(composerBox.x - 1);
-    expect(action.x + action.width).toBeLessThanOrEqual(
-      composerBox.x + composerBox.width + 1,
-    );
+    const more = row.getByRole("button", { name: "More message actions" });
+    await more.click();
+    const action = page.getByRole("menuitem", {
+      name: "Open message in history",
+    });
+    await expect(action).toBeInViewport();
+    await action.press("Escape");
+    await expect(more).toBeFocused();
   }
+  await search.focus();
   await expect(page.locator(".project-search-field")).toHaveCSS(
-    "outline-width",
-    "1px",
+    "outline-style",
+    "none",
   );
   await expect(page.locator(".project-search-field")).toHaveCSS(
     "border-radius",
     "12px",
   );
   await draft.focus();
-  await expect(page.locator(".composer")).toHaveCSS("outline-width", "1px");
+  await expect(page.locator(".composer")).toHaveCSS("outline-style", "none");
   await expect(page.locator(".composer")).toHaveCSS("border-top-width", "0px");
   await search.focus();
   if (testInfo.project.name === "mobile-webkit") {
     const contextBox = await page
-      .getByRole("button", { name: "Open message in history" })
+      .getByRole("button", { name: "More message actions" })
       .first()
       .boundingBox();
     expect(contextBox!.width).toBeGreaterThanOrEqual(44);
     expect(contextBox!.height).toBeGreaterThanOrEqual(44);
   }
-  await expect(history).toHaveJSProperty("scrollTop", 0);
   expect(requests).toEqual([]);
   const box = await page.locator(".project-search").boundingBox();
   const field = await search.boundingBox();
@@ -183,7 +187,8 @@ test("searches locally with a compact field, restores reading positions and open
   await page.getByRole("button", { name: "Search all messages" }).click();
   await expect(page.locator(".message-row")).toHaveCount(2);
   const target = page.locator(`[data-note-id="${ids[10]}"]`);
-  await target.getByRole("button", { name: "Open message in history" }).click();
+  await target.getByRole("button", { name: "More message actions" }).click();
+  await page.getByRole("menuitem", { name: "Open message in history" }).click();
   await expect(search).toHaveCount(0);
   await expect(page.locator(".message-row")).toHaveCount(24);
   await expect(target).toBeFocused();
@@ -201,14 +206,16 @@ test("searches locally with a compact field, restores reading positions and open
   await page.getByRole("button", { name: /Show sender options/ }).click();
   const sender = page.getByRole("textbox", { name: "Sender name" });
   await sender.focus();
-  await expect(sender).toHaveCSS("outline-width", "1px");
+  await expect(sender).toHaveCSS("outline-style", "none");
+  await expect(sender).toHaveCSS("border-top-width", "0px");
   await page.getByRole("button", { name: /Hide sender options/ }).click();
   await page
     .getByRole("button", { name: "Choose timestamp", exact: true })
     .click();
   const timestamp = page.getByLabel("Message timestamp");
   await timestamp.focus();
-  await expect(timestamp).toHaveCSS("outline-width", "1px");
+  await expect(timestamp).toHaveCSS("outline-style", "none");
+  await expect(timestamp).toHaveCSS("border-top-width", "0px");
   await page
     .getByRole("button", { name: "Hide timestamp", exact: true })
     .click();

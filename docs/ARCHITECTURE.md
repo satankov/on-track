@@ -2,18 +2,12 @@
 
 ## Status
 
-The published baseline is [v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1),
-with the primary `thr` CLI. It includes the security hardening and dependency
-patches recorded in [plan 0025](plans/0025-security-audit-response.md)
-and the history controls, composer feedback, and managed uninstall in
-[plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md), plus
-current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
-Published database and backup schema is 9. Unreleased project subthreads advance
-the v0.2.0 candidate to schema 11; backup format remains 1. Release preparation
-and verification are tracked in [plan 0035](plans/0035-v0.2.0-release-preparation.md). See
-[ADR-0014](adr/0014-flat-project-subthreads.md) for the accepted ownership and
-provenance model and [plan 0034](plans/0034-project-subthreads.md) for delivery
-evidence. The managed compatibility floor remains `0.0.7`.
+The v0.2.1 workspace builds on the v0.2.0 subthread release tag.
+Schema 12 adds a checked boolean to each conversation for manual Alert and a
+checked boolean to workspace preferences for timestamp visibility. Both use
+the existing database and format-1 backup lifecycle. The managed compatibility
+floor remains `0.0.7`. See [workspace controls](plans/0036-v0.2.1-workspace-controls.md)
+and [subthread ownership](adr/0014-flat-project-subthreads.md).
 The included flat UI/design-contract slice changes client UI, tests, and documentation
 only; see [plan 0029](plans/0029-flat-ui-and-design-contract.md). It changes no
 API, database, backup, dependency, or installation contract. The included
@@ -33,7 +27,7 @@ transition; [compatibility guidance](compatibility.md) inventories retained
 storage, environment, protocol, and distribution names. Platform validation
 remains incomplete; see [plan 0021](plans/0021-managed-install-and-cli.md).
 
-Current source also includes the unreleased
+The v0.2.0 baseline includes the
 [UI trim](plans/0033-release-candidate-ui-trim.md). It removes derived preview
 fields and queries from project summaries while retaining Attention scheduling;
 the “Question” label change is presentation-only. No database or backup migration
@@ -157,7 +151,7 @@ Uninstall retains ownership lock files on every platform. See [ADR-0012](adr/001
   a chat is active. A Markdown analysis helper reuses unified/remark-parse and GFM
   to derive readable keyword-search text and automatic Links filtering, using
   the renderer's URL policy without fetching destinations. Reading anchors live in the app
-  session. Sidebar disclosure state, Appearance, and Show examples persist in
+  session. Sidebar disclosures, Appearance, Show examples and Always show message time persist in
   the database singleton `workspace_preferences`. Partial writes are serialized;
   failed fields remain retryable, focus refreshes are ordered, and import pauses
   pending writes. Valid legacy browser values initialize an uninitialized database
@@ -356,12 +350,12 @@ browser download route.
 All browser note creation and editing uses the same bounded multipart contract,
 whether or not files are attached. The client keeps project summaries and the
 active project detail in one canonical server-state value so mutations update
-both views atomically without duplicated synchronization branches. Dedicated
-idempotent pin routes patch only pin state; archive routes return only archive
-and pin state. The client excludes conflicting project mutations and invalidates
+both views atomically without duplicated synchronization branches. Project pin, archive and Alert mutations target an explicit conversation ID
+and update only their own state, with archiving also clearing the pin. The client excludes conflicting project mutations and invalidates
 stale reads at both request start and completion. The rail derives browser-local
 today/earlier Attention state and refreshes at the next future Attention time,
-local midnight, and browser focus.
+local midnight, and browser focus. A manual Alert takes visual precedence until
+cleared and does not change activity timestamps or message labels.
 
 Settings exports all or selected projects to a versioned SQLite
 `.on-track-backup` container, including
@@ -375,10 +369,9 @@ integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
 fresh managed paths, removes bundle payload tables, and compacts the current-
-schema candidate. Exact schema-10, schema-9, schema-8, schema-7, schema-6, schema-5, schema-4 development,
-and schema-3 v0.0.4 bundles are accepted through fixed legacy descriptors and migrated to schema 11
-only after copying into the staging workspace; older notes receive a null sender
-and all older projects receive null archive state.
+schema candidate. Schema 3–11 bundles are checked against their trusted legacy descriptors
+before migration to schema 12 in staging. Older conversations start with manual
+Alert off. Older preference rows default to always displaying message time.
 It then uses the maintenance gate and
 restore journal to replace live state. Exact active-schema expectations come
 from a trusted in-memory database built with checked-in migrations; imported SQL

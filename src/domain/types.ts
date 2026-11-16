@@ -23,6 +23,7 @@ export interface Chat {
   updatedAt: number;
   archivedAt: number | null;
   pinnedAt: number | null;
+  manualAlert: boolean;
   latestAttentionAt: number | null;
   nextAttentionAt: number | null;
 }

@@ -79,7 +79,17 @@ test("examples can be explored, copied, edited, backed up and hidden", async ({
     "Change labels",
     "Open packing-list.txt",
   ]) {
-    const action = page.getByRole("button", { name, exact: true }).first();
+    const inMenu = name === "Edit message" || name === "Delete message";
+    if (inMenu) {
+      const more = page
+        .getByRole("button", { name: "More message actions" })
+        .first();
+      if ((await more.getAttribute("aria-expanded")) !== "true")
+        await more.click();
+    }
+    const action = page
+      .getByRole(inMenu ? "menuitem" : "button", { name, exact: true })
+      .first();
     await action.focus();
     await page.keyboard.press("Enter");
     await expect(composer).toHaveAttribute("data-readonly-highlight", "true");
@@ -87,6 +97,7 @@ test("examples can be explored, copied, edited, backed up and hidden", async ({
       "data-readonly-highlight",
       "true",
     );
+    if (inMenu) await page.keyboard.press("Escape");
   }
   expect(localApp.nativeActionReceipts()).toHaveLength(0);
   for (const theme of ["light", "neutral", "dark"]) {
@@ -176,7 +187,7 @@ test("examples can be explored, copied, edited, backed up and hidden", async ({
     await page
       .getByRole("button", { name: "Back to projects", exact: true })
       .click();
-  await page.getByRole("button", { name: "Settings. Local only." }).click();
+  await page.getByRole("button", { name: "Settings" }).click();
   await expect(
     page.getByRole("heading", { name: "General", exact: true }),
   ).toBeVisible();
@@ -209,7 +220,7 @@ test("examples can be explored, copied, edited, backed up and hidden", async ({
     await request.get(`${localApp.url}/api/chats`)
   ).json();
   expect(restoredChats).toHaveLength(1);
-  await page.getByRole("button", { name: "Settings. Local only." }).click();
+  await page.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("checkbox", { name: "Show examples" }).check();
   await page
     .getByRole("button", { name: "Back to projects", exact: true })
