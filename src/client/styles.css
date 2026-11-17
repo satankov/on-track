@@ -1426,6 +1426,9 @@ button.rail-section-label {
   overflow-wrap: anywhere;
 }
 
+shared-message-gradient {
+  display: block;
+}
 .message-groups {
   width: 100%;
   max-width: var(--chat-column-width);
@@ -1548,7 +1551,7 @@ button.rail-section-label {
 :where([data-accent$="-gradient"]) .message-bubble,
 .theme-preview-history i {
   background-image: linear-gradient(
-    118deg in srgb,
+    165deg in srgb,
     color-mix(in srgb, var(--message-surface) 43%, var(--paper)),
     var(--message-surface) 47%,
     color-mix(
@@ -1557,6 +1560,9 @@ button.rail-section-label {
       var(--paper)
     )
   );
+  background-size: var(--message-gradient-size, 100% 100%);
+  background-position: var(--message-gradient-position, 0% 0%);
+  background-repeat: no-repeat;
 }
 .message-row--participant .message-bubble,
 .project-search-result[data-participant] {
@@ -2230,19 +2236,26 @@ button.rail-section-label {
   display: grid;
   align-content: start;
   justify-items: end;
-  gap: 9px;
+  --preview-bubble-height: 18px;
+  --preview-gap: 9px;
+  gap: var(--preview-gap);
+  container-type: inline-size;
 }
 .theme-preview-history i {
   --message-surface: var(--preview-note);
   --paper: var(--preview-paper);
   --accent-end: var(--lagoon-end);
   --message-end-strength: var(--preview-end-strength);
+  --message-gradient-size: 78cqw
+    calc(2 * var(--preview-bubble-height) + var(--preview-gap));
+  --message-gradient-position: right top;
   width: 78%;
-  height: 18px;
+  height: var(--preview-bubble-height);
   border-radius: 5px 5px 2px 5px;
   background-color: var(--preview-note);
 }
 .theme-preview-history i:last-child {
+  --message-gradient-position: right bottom;
   width: 56%;
 }
 .theme-preview-composer {

@@ -6,6 +6,7 @@
     <title>threadstr · UI cookbook</title>
     <link rel="stylesheet" href="../../../src/client/styles.css" />
     <link rel="stylesheet" href="cookbook.css" />
+    <script src="../../../src/client/shared-message-gradient.js" defer></script>
     <script src="cookbook.js" defer></script>
   </head>
   <body class="cb-body">
@@ -544,7 +545,9 @@
           <h2>Let the content lead.</h2>
           <p>
             Participants use neutral surfaces. Your own messages carry the
-            project accent. Labels stay quieter than the message.
+            project accent. With Lagoon, one gradient runs through both of your
+            messages. Expand the second message to see the color follow its
+            height.
           </p>
           <label class="examples-preference"
             ><strong>Always show message time</strong>
@@ -557,7 +560,11 @@
           >
             Open message in history
           </button>
-          <div class="cb-conversation" data-accent="ocean-gradient">
+          <shared-message-gradient
+            active
+            class="cb-conversation"
+            data-accent="ocean-gradient"
+          >
             <div
               class="message-row message-row--participant"
               id="cb-search-destination"
@@ -754,6 +761,10 @@
                         Choose any extra stop over lunch. A bookshop, a café, or
                         a nap are all perfectly acceptable outcomes.
                       </p>
+                      <p>
+                        The café holds our table until 13:00. If the museum runs
+                        late, message Maya before we leave.
+                      </p>
                     </div>
                   </div>
                   <button
@@ -862,7 +873,7 @@
               </div>
             </div>
             <p class="field-help" role="status" id="cb-send-status"></p>
-          </div>
+          </shared-message-gradient>
           <p class="cb-note">
             The composer overlaps the last specimen slightly to expose the 32px
             transparent-to-history fade. No black shadow strip. Show more fades

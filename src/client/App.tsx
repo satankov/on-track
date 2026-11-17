@@ -4,6 +4,7 @@ import {
   type ComposerFile,
 } from "./conversation-draft.js";
 import { useMessageSelection } from "./useMessageSelection.js";
+import { SharedMessageGradient } from "./SharedMessageGradient.js";
 import { ProjectSearchResults } from "./ProjectSearchResults.js";
 import { findProjectSearchResults } from "./project-search-results.js";
 import { labelDisplayName } from "./label-display.js";
@@ -2306,6 +2307,7 @@ function compareTimelinePosition(a: TimelinePosition, b: TimelinePosition) {
 }
 
 function MessageGroups({
+  gradient,
   notes,
   searchTerms,
   futureStartId,
@@ -2328,6 +2330,7 @@ function MessageGroups({
   showDetachedContinuations = true,
   onNavigate,
 }: {
+  gradient: boolean;
   onContinue?: (note: Note) => void;
   onStartSelection?: (note: Note) => void;
   selected?: ReadonlySet<string>;
@@ -2383,7 +2386,7 @@ function MessageGroups({
   }
   if (entries.length > notes.length) entries.sort(compareTimelinePosition);
 
-  function shiftRangeTarget(event: MouseEvent<HTMLDivElement>) {
+  function shiftRangeTarget(event: MouseEvent<HTMLElement>) {
     if (!selected || selectionLocked || !event.shiftKey || event.button !== 0)
       return;
     const target = event.target;
@@ -2398,7 +2401,8 @@ function MessageGroups({
   }
 
   return (
-    <div
+    <SharedMessageGradient
+      active={gradient}
       className="message-groups"
       onMouseDown={(event) => {
         // Shift-clicking text can otherwise also extend the browser's text selection.
@@ -2618,7 +2622,7 @@ function MessageGroups({
           </section>
         );
       })}
-    </div>
+    </SharedMessageGradient>
   );
 }
 
@@ -3597,6 +3601,7 @@ function ChatWorkspace({
               selected={batch.stage ? batch.selected : undefined}
               onToggleSelected={batch.toggle}
               selectionLocked={batch.stage === "delete" || batch.busy}
+              gradient={detail.accent.endsWith("-gradient")}
               showDetachedContinuations={
                 !searchQuery.key && historyFilter.length === 0
               }

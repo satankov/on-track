@@ -21,7 +21,8 @@ below `1.0.0`, releases may contain breaking changes.
 
 - Create and Edit offer one Accent picker with the six original solid colors followed
   by Guava, Honey, Jade, Lagoon, Orchid and Periwinkle gradients. Existing projects
-  keep their original solid color.
+  keep their original solid color. Each gradient flows across your messages in a
+  conversation, including across dates and participant replies.
 - Hover or focus a project or subthread to reveal Alert, Pin, Archive and Delete.
   On touch, tap its shortcut control. Turn on Alert to keep a red Alert dot on that
   conversation independently of its message labels.
