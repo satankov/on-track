@@ -1,3 +1,4 @@
+import { useMessageSelection } from "./useMessageSelection.js";
 import { ProjectSearchResults } from "./ProjectSearchResults.js";
 import { findProjectSearchResults } from "./project-search-results.js";
 import { labelDisplayName } from "./label-display.js";
@@ -35,6 +36,10 @@ import type {
   ExampleSummary,
   TimelineContent,
 } from "../domain/examples.js";
+import {
+  MessageDestinationPicker,
+  MessageSelectionBar,
+} from "./MessageBatchControls.js";
 import { MessagePopover } from "./MessagePopover.js";
 import { ExamplesSection, GeneralSettingsWorkspace } from "./Examples.js";
 import { useWorkspacePreferences } from "./useWorkspacePreferences.js";
@@ -51,6 +56,7 @@ import {
   type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -66,6 +72,7 @@ import type { Chat, ChatDetail, Note } from "../domain/types.js";
 import {
   ACCENTS,
   PERMANENT_LABELS,
+  type BatchNotesInput,
   type Accent,
   type ConfigurableLabel,
   type Label,
@@ -1900,6 +1907,7 @@ function MessageLabelPicker({
 function MessageMoreActions({
   copied,
   onContinue,
+  onSelect,
   onCopy,
   onEdit,
   onDelete,
@@ -1907,6 +1915,7 @@ function MessageMoreActions({
 }: {
   copied: boolean;
   onContinue?: () => void;
+  onSelect?: () => void;
   onCopy: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -1914,6 +1923,7 @@ function MessageMoreActions({
 }) {
   const explainReadOnly = useContext(ExampleReadOnlyContext);
   const items = [
+    { label: "Select messages", icon: <CheckIcon />, action: onSelect },
     {
       label: "Continue in subthread",
       icon: <SubthreadIcon />,
@@ -2290,6 +2300,16 @@ function AttachmentList({
   );
 }
 
+type TimelinePosition = Pick<Note, "id" | "createdAt"> & {
+  positionId?: string;
+};
+
+function compareTimelinePosition(a: TimelinePosition, b: TimelinePosition) {
+  const aKey = a.positionId ?? a.id;
+  const bKey = b.positionId ?? b.id;
+  return a.createdAt - b.createdAt || (aKey < bKey ? -1 : aKey > bKey ? 1 : 0);
+}
+
 function MessageGroups({
   notes,
   searchTerms,
@@ -2304,11 +2324,19 @@ function MessageGroups({
   onSetNoteLabel,
   onOpenInHistory,
   onContinue,
+  onStartSelection,
+  selected,
+  onToggleSelected,
+  selectionLocked,
   subthreads = [],
   showDetachedContinuations = true,
   onNavigate,
 }: {
   onContinue?: (note: Note) => void;
+  onStartSelection?: (note: Note) => void;
+  selected?: ReadonlySet<string>;
+  onToggleSelected: (id: string, extendRange?: boolean) => void;
+  selectionLocked: boolean;
   subthreads?: Chat[];
   showDetachedContinuations?: boolean;
   onNavigate?: (
@@ -2333,6 +2361,7 @@ function MessageGroups({
   onSetNoteLabel: (note: Note, label: Label, applied: boolean) => Promise<void>;
   onOpenInHistory?: (note: Note) => void;
 }) {
+  const definitions = useContext(ProjectLabelContext);
   type Continuation = {
     id: string;
     createdAt: number;
@@ -2355,15 +2384,39 @@ function MessageGroups({
       }
     }
   }
-  entries.sort((a, b) => {
-    const aKey = "continuation" in a ? a.positionId : a.id;
-    const bKey = "continuation" in b ? b.positionId : b.id;
-    return (
-      a.createdAt - b.createdAt || (aKey < bKey ? -1 : aKey > bKey ? 1 : 0)
-    );
-  });
+  if (entries.length > notes.length) entries.sort(compareTimelinePosition);
+
+  function shiftRangeTarget(event: MouseEvent<HTMLDivElement>) {
+    if (!selected || selectionLocked || !event.shiftKey || event.button !== 0)
+      return;
+    const target = event.target;
+    if (
+      !(target instanceof Element) ||
+      target.closest(
+        "a, button, input, label, select, textarea, summary, [tabindex='0']",
+      )
+    )
+      return;
+    return target.closest<HTMLElement>(".message-row");
+  }
+
   return (
-    <div className="message-groups">
+    <div
+      className="message-groups"
+      onMouseDown={(event) => {
+        // Shift-clicking text can otherwise also extend the browser's text selection.
+        if (shiftRangeTarget(event)) event.preventDefault();
+      }}
+      onClick={(event) => {
+        const row = shiftRangeTarget(event);
+        if (row?.dataset.noteId) {
+          row
+            .querySelector<HTMLElement>("[data-select-note]")
+            ?.focus({ preventScroll: true });
+          onToggleSelected(row.dataset.noteId, true);
+        }
+      }}
+    >
       {groupNotesByDay(entries).map((group) => {
         const futureStartIndex = group.notes.findIndex(
           (note) => note.id === futureStartId,
@@ -2413,7 +2466,14 @@ function MessageGroups({
                 const copied = copiedNoteId === note.id;
                 const participant = Boolean(note.sender);
                 return (
-                  <Fragment key={note.id}>
+                  <ProjectLabelContext.Provider
+                    key={note.id}
+                    value={
+                      note.labelSnapshots?.length
+                        ? definitions.concat(note.labelSnapshots)
+                        : definitions
+                    }
+                  >
                     {!futureStartsGroup && note.id === futureStartId && (
                       <li
                         key="future-boundary"
@@ -2435,9 +2495,38 @@ function MessageGroups({
                       data-note-id={note.id}
                       data-created-at={note.createdAt}
                       tabIndex={-1}
+                      data-selected={
+                        selected ? selected.has(note.id) : undefined
+                      }
                       className={`message-row ${participant ? "message-row--participant" : "message-row--own"}`}
                       style={{ gridRow: noteIndex + 1 }}
                     >
+                      {selected && (
+                        <label className="message-selection-check">
+                          <input
+                            type="checkbox"
+                            data-select-note={note.id}
+                            aria-label={`Select message: ${note.body.trim().slice(0, 90) || note.attachments?.[0]?.filename || formatMessageTime(note.createdAt)}`}
+                            checked={selected.has(note.id)}
+                            disabled={selectionLocked}
+                            aria-keyshortcuts="Shift+Space"
+                            onChange={(event) =>
+                              onToggleSelected(
+                                note.id,
+                                "shiftKey" in event.nativeEvent &&
+                                  event.nativeEvent.shiftKey === true,
+                              )
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === " " && event.shiftKey) {
+                                event.preventDefault();
+                                if (!event.repeat)
+                                  onToggleSelected(note.id, true);
+                              }
+                            }}
+                          />
+                        </label>
+                      )}
                       <div className="message-stack">
                         <article className="message-bubble">
                           {note.sender && (
@@ -2472,26 +2561,34 @@ function MessageGroups({
                             </time>
                           </footer>
                         </article>
-                        <div
-                          className="message-actions"
-                          aria-label="Message actions"
-                        >
-                          <MessageLabelPicker
-                            note={note}
-                            enabledLabels={enabledLabels}
-                            onToggle={onSetNoteLabel}
-                          />
-                          <MessageMoreActions
-                            copied={copied}
-                            onContinue={onContinue && (() => onContinue(note))}
-                            onCopy={() => onCopyNote(note)}
-                            onEdit={() => onEditNote(note)}
-                            onDelete={() => onDeleteNote(note)}
-                            onOpenInHistory={
-                              onOpenInHistory && (() => onOpenInHistory(note))
-                            }
-                          />
-                        </div>
+                        {!selected && (
+                          <div
+                            className="message-actions"
+                            aria-label="Message actions"
+                          >
+                            <MessageLabelPicker
+                              note={note}
+                              enabledLabels={enabledLabels}
+                              onToggle={onSetNoteLabel}
+                            />
+                            <MessageMoreActions
+                              copied={copied}
+                              onContinue={
+                                onContinue && (() => onContinue(note))
+                              }
+                              onSelect={
+                                onStartSelection &&
+                                (() => onStartSelection(note))
+                              }
+                              onCopy={() => onCopyNote(note)}
+                              onEdit={() => onEditNote(note)}
+                              onDelete={() => onDeleteNote(note)}
+                              onOpenInHistory={
+                                onOpenInHistory && (() => onOpenInHistory(note))
+                              }
+                            />
+                          </div>
+                        )}
                       </div>
                       {subthreads
                         .filter(
@@ -2512,7 +2609,7 @@ function MessageGroups({
                           </div>
                         ))}
                     </li>
-                  </Fragment>
+                  </ProjectLabelContext.Provider>
                 );
               })}
             </ol>
@@ -2527,6 +2624,7 @@ function ChatWorkspace({
   alwaysShowMessageTime,
   chats = [],
   projectApi,
+  onBatchNotes,
   onNewSubthread,
   subthreadBusy = false,
   onNavigate,
@@ -2573,6 +2671,7 @@ function ChatWorkspace({
   alwaysShowMessageTime: boolean;
   chats?: Chat[];
   projectApi?: Pick<ApiClient, "getProject">;
+  onBatchNotes?: (input: BatchNotesInput) => Promise<void>;
   onNewSubthread?: (sourceNoteId?: string) => void;
   subthreadBusy?: boolean;
   onNavigate?: (
@@ -2725,11 +2824,6 @@ function ChatWorkspace({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   useSendFeedback(composerRef, historyRef, sendFeedback);
-  const fileDrop = useComposerFileDrop(
-    composerRef,
-    saving || Boolean(explainReadOnly),
-    onFilesSelected,
-  );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const markdownToolsId = useId();
   const senderToolsId = useId();
@@ -2769,18 +2863,33 @@ function ChatWorkspace({
   const searchMatches = searchNotes.filter((note) =>
     matchesSearch(searchDocuments.get(note.id)!, searchQuery),
   );
-  const visibleNotes = searchMatches.filter((note) => {
-    return historyFilter.every((filter) => {
-      if (filter === "attachments") return hasAttachments(note);
-      if (filter === "links") return linkedNoteIds.has(note.id);
-      return (note.labels ?? []).includes(filter.slice(6) as Label);
-    });
-  });
+  const visibleNotes = searchMatches
+    .filter((note) => {
+      return historyFilter.every((filter) => {
+        if (filter === "attachments") return hasAttachments(note);
+        if (filter === "links") return linkedNoteIds.has(note.id);
+        return (note.labels ?? []).includes(filter.slice(6) as Label);
+      });
+    })
+    .sort(compareTimelinePosition);
   const projectResults = useMemo(
     () => findProjectSearchResults(projectConversations, searchQuery),
     [projectConversations, searchQuery],
   );
   const visibleIds = new Set(visibleNotes.map((note) => note.id));
+  const workspaceRef = useRef<HTMLElement>(null);
+  const batch = useMessageSelection(
+    historyRef,
+    workspaceRef,
+    visibleIds,
+    onBatchNotes,
+  );
+  const noticeDestination = batch.notice?.destination;
+  const fileDrop = useComposerFileDrop(
+    composerRef,
+    saving || Boolean(explainReadOnly) || Boolean(batch.stage),
+    onFilesSelected,
+  );
   const timelineNow = useTimelineNow(visibleNotes);
   const futureStartId = visibleNotes.find(
     (note) => note.createdAt > timelineNow,
@@ -2998,6 +3107,7 @@ function ChatWorkspace({
             "touch"),
       ),
     );
+    if (filterKey(next) !== historyKey) batch.clearOnFilter();
     beforeFilterChange(filterKey(next));
     onHistoryFilterChange(next);
   }
@@ -3016,6 +3126,7 @@ function ChatWorkspace({
   }
 
   function commitSearch(value: string) {
+    if (parseSearchQuery(value).key !== searchQuery.key) batch.clearOnFilter();
     beforeFilterChange(historyKey, parseSearchQuery(value).key);
     setSearchText(value);
   }
@@ -3026,6 +3137,7 @@ function ChatWorkspace({
   }
 
   function openSearch() {
+    batch.clearOnFilter();
     const searchDraft = searchQueries.get(detail.id) ?? "";
     beforeFilterChange(historyKey, parseSearchQuery(searchDraft).key);
     setSearchText(searchDraft);
@@ -3033,6 +3145,7 @@ function ChatWorkspace({
   }
 
   function closeSearch() {
+    batch.clearOnFilter();
     beforeFilterChange(historyKey, "");
     setSearchOpen(false);
     searchToggleRef.current?.focus();
@@ -3050,11 +3163,38 @@ function ChatWorkspace({
 
   return (
     <ProjectLabelContext.Provider value={definitions}>
+      {(batch.stage === "copy" || batch.stage === "move") && (
+        <MessageDestinationPicker
+          key={batch.stage}
+          chats={chats}
+          sourceId={detail.id}
+          action={batch.stage}
+          count={batch.selected.size}
+          busy={batch.busy}
+          error={batch.error}
+          onBack={batch.back}
+          onConfirm={(destination) => void batch.submit(destination)}
+          backIcon={<ArrowLeftIcon />}
+        />
+      )}
       <main
+        ref={workspaceRef}
+        hidden={batch.isPicker}
+        onKeyDown={(event) => {
+          if (
+            event.key === "Escape" &&
+            batch.stage &&
+            !event.defaultPrevented
+          ) {
+            event.preventDefault();
+            if (batch.stage === "delete") batch.back();
+            else batch.cancel();
+          }
+        }}
         className={`workspace workspace-chat ${explainReadOnly ? "workspace-example" : ""} ${searchOpen ? "workspace-chat--search" : ""}`}
         data-accent={detail.accent}
       >
-        <header className="chat-header">
+        <header className="chat-header" inert={batch.busy}>
           <div className="chat-header-inner">
             <button
               className="back-button"
@@ -3145,6 +3285,7 @@ function ChatWorkspace({
                       historyKey,
                       `${checked ? "project:" : ""}${searchQuery.key}`,
                     );
+                    batch.clearOnFilter();
                     setProjectScope(checked);
                   }
                 : undefined
@@ -3177,6 +3318,7 @@ function ChatWorkspace({
         )}
 
         <nav
+          inert={batch.busy}
           className="history-filter"
           aria-label="History filters"
           aria-describedby={filterHelpId}
@@ -3413,6 +3555,14 @@ function ChatWorkspace({
             </div>
           ) : (
             <MessageGroups
+              onStartSelection={
+                onBatchNotes && !saving && !editingNote
+                  ? batch.begin
+                  : undefined
+              }
+              selected={batch.stage ? batch.selected : undefined}
+              onToggleSelected={batch.toggle}
+              selectionLocked={batch.stage === "delete" || batch.busy}
               showDetachedContinuations={
                 !searchQuery.key && historyFilter.length === 0
               }
@@ -3445,7 +3595,42 @@ function ChatWorkspace({
           historyRef={historyRef}
           contentKey={`${detail.id}:${historyKey}:${searchQuery.key}`}
         />
-        <footer className="composer-wrap">
+        {batch.stage && !batch.isPicker && (
+          <footer className="composer-wrap">
+            <MessageSelectionBar
+              count={batch.selected.size}
+              source={
+                detail.projectId
+                  ? `${root?.title ?? "Project"} / ${detail.title}`
+                  : detail.title
+              }
+              confirming={batch.stage === "delete"}
+              busy={batch.busy}
+              error={batch.error}
+              onSelectAll={batch.selectAll}
+              onAction={batch.choose}
+              onCancel={batch.stage === "delete" ? batch.back : batch.cancel}
+              onConfirm={() => void batch.submit()}
+            />
+          </footer>
+        )}
+        <footer className="composer-wrap" hidden={Boolean(batch.stage)}>
+          {batch.notice && (
+            <div className="message-batch-notice" role="status">
+              {batch.notice.text}
+              {noticeDestination &&
+                chats.some((chat) => chat.id === noticeDestination) && (
+                  <button
+                    type="button"
+                    className="button button-quiet"
+                    data-open-destination
+                    onClick={() => onNavigate?.(noticeDestination)}
+                  >
+                    Open destination
+                  </button>
+                )}
+            </div>
+          )}
           <SearchSaveStatus
             savedNoteId={sendFeedback?.savedNoteId}
             hidden={
@@ -4485,8 +4670,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ...chat,
           notes: detail.notes.map((note) => ({
             ...note,
-            labels: note.labels.filter((id) =>
-              projectLabels(chat).some((label) => label.id === id),
+            labels: note.labels.filter(
+              (id) =>
+                projectLabels(chat).some((label) => label.id === id) ||
+                note.labelSnapshots?.some((label) => label.id === id),
             ),
           })),
         }),
@@ -4837,7 +5024,15 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       destination?.focus({ preventScroll: true });
     }
     activeMutationGeneration.current += 1;
-    const submittedNotes = active.notes.filter((item) => item.id !== note.id);
+    removeFromSource(active, [note]);
+  }
+
+  function removeFromSource(active: ChatDetail, removed: Note[]) {
+    const projectId = active.id;
+    const removedById = new Map(removed.map((note) => [note.id, note]));
+    const submittedNotes = active.notes.filter(
+      (item) => !removedById.has(item.id),
+    );
     const submittedUpdatedAt = chatActivityFromNotes(active, submittedNotes);
     const submittedDetail = {
       ...active,
@@ -4850,7 +5045,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         projectId,
         (chat) => mergeMessageSummary(chat, submittedDetail),
         (detail) => {
-          const notes = detail.notes.filter((item) => item.id !== note.id);
+          const notes = detail.notes.filter(
+            (item) => !removedById.has(item.id),
+          );
           return {
             ...detail,
             notes,
@@ -4858,8 +5055,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           };
         },
       );
-      next.chats = next.chats.map((chat) =>
-        chat.origin?.sourceNoteId === note.id
+      function detachSource<T extends Chat>(chat: T): T {
+        const sourceId = chat.origin?.sourceNoteId;
+        const note = sourceId && removedById.get(sourceId);
+        return note && chat.origin
           ? {
               ...chat,
               origin: {
@@ -4869,21 +5068,38 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
                 sourceNotePositionId: note.id,
               },
             }
-          : chat,
-      );
-      if (next.active?.origin?.sourceNoteId === note.id) {
-        next.active = {
-          ...next.active,
-          origin: {
-            ...next.active.origin,
-            sourceNoteId: null,
-            sourceNoteCreatedAt: note.createdAt,
-            sourceNotePositionId: note.id,
-          },
-        };
+          : chat;
       }
+      next.chats = next.chats.map(detachSource);
+      if (next.active) next.active = detachSource(next.active);
       return next;
     });
+  }
+
+  async function batchNotes(input: BatchNotesInput) {
+    if (!active || savingNote || pendingSelection.current)
+      throw new Error("Wait for the current change to finish.");
+    const source = active;
+    const ids =
+      input.action === "delete"
+        ? [source.id]
+        : [source.id, input.destinationChatId];
+    setSavingNote(true);
+    try {
+      await runProjectMutation(ids, () =>
+        runNoteMutation(() => api.batchNotes(source.id, input)),
+      );
+      if (input.action !== "copy") {
+        const removedIds = new Set(input.noteIds);
+        removeFromSource(
+          source,
+          source.notes.filter((note) => removedIds.has(note.id)),
+        );
+      }
+      refreshProjectSummaries();
+    } finally {
+      setSavingNote(false);
+    }
   }
 
   async function setNoteLabel(note: Note, label: Label, applied: boolean) {
@@ -5263,6 +5479,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           key={`${active.id}:${navigationRevision}`}
           chats={chats}
           projectApi={api}
+          onBatchNotes={batchNotes}
           subthreadBusy={
             projectMutationIds.has(active.id) ||
             projectMutationIds.has(active.projectId ?? active.id)

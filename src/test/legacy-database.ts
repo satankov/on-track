@@ -1,7 +1,22 @@
 import { readFileSync } from "node:fs";
 import type Database from "better-sqlite3";
 
+export function rewindToSchema13(database: Database.Database): void {
+  database.exec(`
+    DROP TABLE note_label_snapshots;
+    DELETE FROM __drizzle_migrations WHERE created_at > 1794905488811;
+    UPDATE app_metadata SET schema_version=13;
+  `);
+}
+
 export function rewindToSchema12(database: Database.Database): void {
+  if (
+    database
+      .prepare("SELECT schema_version FROM app_metadata")
+      .pluck()
+      .get() === 14
+  )
+    rewindToSchema13(database);
   database.exec(`
     ALTER TABLE chats DROP COLUMN accent_style;
     DELETE FROM __drizzle_migrations WHERE created_at > 1794839960460;
@@ -12,10 +27,9 @@ export function rewindToSchema12(database: Database.Database): void {
 /** Remove the additive v0.2.1 fields when constructing a v0.2.0 fixture. */
 export function rewindToSchema11(database: Database.Database): void {
   if (
-    database
-      .prepare("SELECT schema_version FROM app_metadata")
-      .pluck()
-      .get() === 13
+    Number(
+      database.prepare("SELECT schema_version FROM app_metadata").pluck().get(),
+    ) >= 13
   )
     rewindToSchema12(database);
   database.exec(`

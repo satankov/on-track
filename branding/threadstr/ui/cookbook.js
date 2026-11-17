@@ -374,5 +374,191 @@ toolbar.querySelector('[role="menu"]').addEventListener("click", (event) => {
     `${item.textContent} — specimen only.`;
   const trigger = toolbar.querySelector("[aria-haspopup]");
   showPopup(trigger, false);
-  trigger.focus();
+  if (item.hasAttribute("data-select-specimen")) startSelectionSpecimen();
+  else trigger.focus();
 });
+
+const selection = document.querySelector("#message-selection");
+const selectedHistory = selection.querySelector("#cb-selection-history");
+const destinationView = selection.querySelector("#cb-selection-picker");
+const destinationForm = selection.querySelector("form");
+const destinationList = destinationForm.querySelector("ul");
+const destinationSearch = destinationForm.querySelector('[type="search"]');
+const destinationSubmit = destinationForm.querySelector('[type="submit"]');
+const destinationNames = [
+  ["Product launch", ["Checklist", "Design"]],
+  ["Delivery notes", []],
+];
+let chosenDestination = "";
+const expandedProjects = new Map();
+for (const [project, children] of destinationNames) {
+  for (const name of [project, ...children]) {
+    const child = name !== project;
+    const row = element(
+      "li",
+      "project-row" + (child ? " project-row--subthread" : ""),
+    );
+    row.dataset.accent = "ocean";
+    row.dataset.project = project;
+    const label = child ? project + " / " + name : project;
+    const button = element("button", "project-item");
+    button.type = "button";
+    button.setAttribute("aria-label", label);
+    const content = element("span", "project-item-copy");
+    content.append(element("strong", "", name));
+    button.append(content);
+    row.append(button);
+    destinationList.append(row);
+    button.addEventListener("click", () => {
+      if (!child && children.length)
+        expandedProjects.set(
+          project,
+          chosenDestination !== project ||
+            button.getAttribute("aria-expanded") !== "true",
+        );
+      chosenDestination = label;
+      updateDestinationSpecimen();
+    });
+  }
+}
+function updateDestinationSpecimen() {
+  const query = destinationSearch.value.trim().toLocaleLowerCase();
+  let visible = false;
+  let selectedVisible = false;
+  for (const row of destinationList.children) {
+    const project = row.dataset.project;
+    const button = row.querySelector("button");
+    const name = button.getAttribute("aria-label");
+    const children = destinationNames.find(([title]) => title === project)[1];
+    const matchesChild = children.some((child) =>
+      (project + " / " + child).toLocaleLowerCase().includes(query),
+    );
+    const expanded =
+      expandedProjects.get(project) ??
+      (Boolean(query) || chosenDestination.startsWith(project + " / "));
+    const matches = name.toLocaleLowerCase().includes(query);
+    row.hidden =
+      name === project ? !matches && !matchesChild : !matches || !expanded;
+    if (name === project && matchesChild)
+      button.setAttribute("aria-expanded", String(expanded));
+    else button.removeAttribute("aria-expanded");
+    const selected = chosenDestination === name;
+    row.classList.toggle("project-row--active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+    if (!row.hidden) {
+      visible = true;
+      if (selected) selectedVisible = true;
+    }
+  }
+  destinationForm.querySelector(".field-help").hidden = visible;
+  destinationSubmit.disabled = !selectedVisible;
+}
+destinationSearch.addEventListener("input", () => {
+  expandedProjects.clear();
+  updateDestinationSpecimen();
+});
+const selectionStatus = selection.querySelector("#cb-selection-status");
+const selectionCount = selection.querySelector("#cb-selection-count");
+const choices = [...selectedHistory.querySelectorAll('input[type="checkbox"]')];
+let batchCommand = "";
+let rangeAnchor = 0;
+function updateSelectionSpecimen() {
+  const count = choices.filter((choice) => choice.checked).length;
+  const deleting = batchCommand === "Delete";
+  for (const choice of choices) {
+    choice.closest(".message-row").dataset.selected = String(choice.checked);
+    choice.disabled = deleting;
+  }
+  const amount = count + (count === 1 ? " message" : " messages");
+  for (const action of selectedHistory.querySelectorAll("button[data-batch]")) {
+    action.disabled =
+      ["Copy", "Move", "Delete"].includes(action.dataset.batch) && count === 0;
+    action.hidden =
+      deleting && ["all", "Copy", "Move"].includes(action.dataset.batch);
+    if (action.dataset.batch === "Delete")
+      action.textContent = deleting ? "Delete " + amount : "Delete";
+  }
+  selectionCount.textContent = deleting
+    ? "Delete " + amount + " from Website?"
+    : count + " selected";
+  return amount;
+}
+for (const [index, choice] of choices.entries()) {
+  function pickRange() {
+    for (const member of choices.slice(
+      Math.min(index, rangeAnchor),
+      Math.max(index, rangeAnchor) + 1,
+    ))
+      member.checked = true;
+  }
+  choice.addEventListener("click", (event) => {
+    if (event.shiftKey) pickRange();
+    else rangeAnchor = index;
+    selectionStatus.textContent = "";
+    updateSelectionSpecimen();
+  });
+  choice.addEventListener("keydown", (event) => {
+    if (event.key !== " " || !event.shiftKey) return;
+    event.preventDefault();
+    pickRange();
+    updateSelectionSpecimen();
+  });
+  choice.closest(".message-row").addEventListener("click", (event) => {
+    if (choice.disabled || !event.shiftKey || event.target.closest("label"))
+      return;
+    pickRange();
+    updateSelectionSpecimen();
+  });
+}
+selection.addEventListener("click", (event) => {
+  const action = event.target.closest("[data-batch]")?.dataset.batch;
+  if (!action) return;
+  selectionStatus.textContent = "";
+  if (action === "back" || action === "cancel") {
+    selectedHistory.hidden = false;
+    destinationView.hidden = true;
+    if (action === "cancel" && batchCommand !== "Delete")
+      choices.forEach((choice) => {
+        choice.checked = false;
+      });
+    batchCommand = "";
+    updateSelectionSpecimen();
+    choices[0].focus();
+  } else if (action === "all") {
+    for (const choice of choices) choice.checked = true;
+    updateSelectionSpecimen();
+  } else if (action === "Delete") {
+    if (batchCommand === "Delete") {
+      selectionStatus.textContent = "Deletion confirmed in this specimen.";
+      batchCommand = "";
+    } else batchCommand = "Delete";
+    updateSelectionSpecimen();
+  } else {
+    batchCommand = action;
+    const title = action + " " + updateSelectionSpecimen();
+    selectedHistory.hidden = true;
+    destinationView.hidden = false;
+    destinationForm.reset();
+    chosenDestination = "";
+    expandedProjects.clear();
+    updateDestinationSpecimen();
+    destinationForm.querySelector("h3").textContent = title;
+    destinationSubmit.textContent = title;
+    destinationSearch.focus();
+  }
+});
+destinationForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  destinationForm.querySelector("[data-batch=back]").click();
+  selectionStatus.textContent = "Selected " + chosenDestination + ".";
+});
+function startSelectionSpecimen() {
+  selectedHistory.hidden = false;
+  destinationView.hidden = true;
+  batchCommand = "";
+  selection.scrollIntoView();
+  choices[0].checked = true;
+  rangeAnchor = 0;
+  updateSelectionSpecimen();
+  choices[0].focus();
+}

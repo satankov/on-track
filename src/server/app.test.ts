@@ -75,6 +75,94 @@ describe("local project-chat API", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it("copies, moves and deletes whole message selections across conversations", async () => {
+    const create = async (title: string) =>
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/chats",
+          payload: { title, accent: "ocean" },
+        })
+      ).json().id as string;
+    const source = await create("Source");
+    const target = await create("Target");
+    const add = async (body: string) =>
+      (
+        await app.inject({
+          method: "POST",
+          url: `/api/chats/${source}/notes`,
+          payload: noteForm({ body, sender: "Maya", createdAt: 420 }),
+        })
+      ).json().id as string;
+    const first = await add("First");
+    const second = await add("Second");
+    await app.inject({
+      method: "PUT",
+      url: `/api/chats/${source}/notes/${first}/labels/pin`,
+    });
+    const batch = (chatId: string, payload: Record<string, unknown>) =>
+      app.inject({
+        method: "POST",
+        url: `/api/chats/${chatId}/notes/batch`,
+        payload,
+      });
+    const notes = async (chatId: string) =>
+      (await app.inject({ url: `/api/chats/${chatId}` })).json().notes as {
+        id: string;
+        body: string;
+      }[];
+    const transfer = { noteIds: [second, first], destinationChatId: target };
+    expect(
+      (await batch(source, { action: "copy", ...transfer })).statusCode,
+    ).toBe(204);
+    const copies = await notes(target);
+    expect(copies).toMatchObject([
+      { body: "First", createdAt: 420, sender: "Maya", labels: ["pin"] },
+      { body: "Second", createdAt: 420, sender: "Maya", labels: [] },
+    ]);
+    expect(copies.map((n) => n.id)).not.toContain(first);
+    expect(await notes(source)).toHaveLength(2);
+    expect(
+      (await batch(source, { action: "move", ...transfer })).statusCode,
+    ).toBe(204);
+    expect(await notes(source)).toHaveLength(0);
+    expect((await notes(target)).map((n) => n.id)).toEqual(
+      expect.arrayContaining([first, second]),
+    );
+    expect(
+      (await batch(target, { action: "delete", noteIds: [first, second] }))
+        .statusCode,
+    ).toBe(204);
+    expect(await notes(target)).toEqual(copies);
+    expect(
+      (
+        await batch(target, {
+          action: "delete",
+          noteIds: [copies[0].id, first],
+        })
+      ).statusCode,
+    ).toBe(404);
+    expect(await notes(target)).toEqual(copies);
+    expect(
+      (
+        await batch(target, {
+          action: "move",
+          noteIds: [copies[0].id],
+          destinationChatId: target,
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await batch(target, {
+          action: "copy",
+          noteIds: [copies[0].id, copies[0].id],
+          destinationChatId: source,
+        })
+      ).statusCode,
+    ).toBe(400);
+  });
+
   it("creates scoped subthreads and reads the same whole project from every conversation", async () => {
     const rootResponse = await app.inject({
       method: "POST",

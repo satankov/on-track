@@ -78,6 +78,7 @@ export function copyExample(
       })),
     ),
     attachments: [],
+    labelSnapshots: [],
     origins: [],
   };
   const published: string[] = [];

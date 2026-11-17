@@ -62,6 +62,25 @@ export const createSubthreadInputSchema = z
   .strict();
 export type CreateSubthreadInput = z.infer<typeof createSubthreadInputSchema>;
 
+const messageId = z.string().min(1).max(256);
+export const MAX_BATCH_NOTES = 1000;
+const selectedNoteIds = z
+  .array(messageId)
+  .min(1)
+  .max(MAX_BATCH_NOTES)
+  .refine((ids) => new Set(ids).size === ids.length, {
+    message: "Select each message only once.",
+  });
+export const batchNotesSchema = z.discriminatedUnion("action", [
+  z.strictObject({
+    action: z.enum(["copy", "move"]),
+    noteIds: selectedNoteIds,
+    destinationChatId: messageId,
+  }),
+  z.strictObject({ action: z.literal("delete"), noteIds: selectedNoteIds }),
+]);
+export type BatchNotesInput = z.infer<typeof batchNotesSchema>;
+
 export const updateChatInputSchema = z
   .object({
     title: titleSchema.optional(),

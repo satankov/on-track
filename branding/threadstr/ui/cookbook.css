@@ -604,8 +604,13 @@
   }
 }
 
-.cb-conversation [hidden] {
+.cb-conversation [hidden],
+#message-selection [hidden] {
   display: none;
+}
+
+#cb-selection-picker {
+  height: min(400px, 80dvh);
 }
 
 .cb-rail {

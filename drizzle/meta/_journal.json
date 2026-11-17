@@ -99,6 +99,13 @@
       "when": 1794905488811,
       "tag": "0013_project_accent_styles",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1794908242511,
+      "tag": "0014_note_label_snapshots",
+      "breakpoints": true
     }
   ]
 }

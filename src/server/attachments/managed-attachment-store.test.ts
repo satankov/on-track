@@ -47,6 +47,33 @@ describe("managed attachment storage", () => {
     });
   }
 
+  it("copies the current managed bytes independently and preserves native-open restrictions", () => {
+    const store = createStore();
+    const original = store.create({
+      attachmentId: "origin",
+      filename: "report.pdf",
+      content: Buffer.from("initial"),
+    });
+    const sourcePath = store.resolveAvailablePath(original.storagePath);
+    writeFileSync(sourcePath, "external edit");
+    if (process.platform !== "win32") chmodSync(sourcePath, 0o750);
+    const copy = store.copy(original.storagePath, "duplicate");
+    expect(copy.storagePath).not.toBe(original.storagePath);
+    expect(store.read(copy.storagePath).content.toString()).toBe(
+      "external edit",
+    );
+    if (process.platform !== "win32") {
+      expect(store.resolveAvailableTarget(copy.storagePath).mode & 0o777).toBe(
+        0o700,
+      );
+    }
+    writeFileSync(sourcePath, "source only");
+    store.remove(original.storagePath);
+    expect(store.read(copy.storagePath).content.toString()).toBe(
+      "external edit",
+    );
+  });
+
   it("publishes private files at generated repository-owned paths", () => {
     const store = createStore();
 

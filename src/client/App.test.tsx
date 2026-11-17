@@ -9,6 +9,7 @@ import {
   act,
   fireEvent,
   render,
+  renderHook,
   screen,
   waitFor,
   within,
@@ -19,6 +20,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getExample, listExamples } from "../server/examples/catalog.js";
 import { App } from "./App.js";
 import type { ApiClient } from "./api.js";
+import { useMessageSelection } from "./useMessageSelection.js";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -84,6 +86,7 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
     appendNote: vi.fn(),
     updateNote: vi.fn(),
     deleteNote: vi.fn(),
+    batchNotes: vi.fn(),
     setNoteLabel: vi.fn(),
     openAttachment: vi.fn(),
     revealAttachment: vi.fn(),
@@ -2882,6 +2885,65 @@ describe("personal project chat workspace", () => {
     });
   });
 
+  it("displays and removes a carried label alongside a differently marked local label of the same name", async () => {
+    const user = userEvent.setup();
+    const local = {
+      id: "custom-00000000-0000-4000-8000-000000000001",
+      name: "Review",
+      symbol: "🍎",
+      enabled: true,
+      builtin: false,
+      position: 7,
+    };
+    const carried = {
+      ...local,
+      id: "custom-00000000-0000-4000-8000-000000000002",
+      symbol: "📎",
+      enabled: false,
+    };
+    const chat = {
+      id: "chat",
+      title: "Launch",
+      accent: "ocean",
+      labelDefinitions: [...defaultProjectLabels(), local],
+      enabledLabels: [local.id],
+      createdAt: 100,
+      updatedAt: 200,
+    };
+    const note = {
+      id: "note",
+      body: "Copied message",
+      chatId: "chat",
+      sender: null,
+      createdAt: 200,
+      labels: [carried.id],
+      labelSnapshots: [carried],
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+      setNoteLabel: vi.fn().mockResolvedValue([]),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Launch" }),
+    );
+    const row = within((await screen.findByText(note.body)).closest("li")!);
+    expect(row.getByRole("listitem")).toHaveTextContent("📎Review");
+    await user.click(row.getByRole("button", { name: "Change labels" }));
+    expect(row.getByRole("checkbox", { name: "Review" })).not.toBeChecked();
+    const applied = row.getByRole("checkbox", { name: "Review (inactive)" });
+    expect(applied).toBeChecked();
+    await user.click(applied);
+    expect(api.setNoteLabel).toHaveBeenCalledWith(
+      "chat",
+      "note",
+      carried.id,
+      false,
+    );
+    await waitFor(() => expect(row.queryByRole("listitem")).toBeNull());
+  });
+
   it("shows, changes, and filters multiple labels with inactive assignments retained", async () => {
     const user = userEvent.setup();
     const chat = {
@@ -2955,13 +3017,14 @@ describe("personal project chat workspace", () => {
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
     ).toEqual([
+      "Select messages",
       "Continue in subthread",
       "Copy message",
       "Edit message",
       "Delete message",
     ]);
     expect(
-      within(actions).getByRole("menuitem", { name: "Continue in subthread" }),
+      within(actions).getByRole("menuitem", { name: "Select messages" }),
     ).toHaveFocus();
     await user.keyboard("{End}");
     expect(
@@ -6094,4 +6157,301 @@ it("updates the open child origin when its source deletion finishes after naviga
   });
   await act(async () => deletion.resolve());
   expect(screen.getByText(/Original message deleted/)).toBeInTheDocument();
+});
+
+describe("bulk message actions", () => {
+  const source: import("../domain/types.js").Chat = {
+    id: "main",
+    title: "Source",
+    accent: "ocean",
+    enabledLabels: [],
+    collapseLongMessages: true,
+    archivedAt: null,
+    pinnedAt: null,
+    manualAlert: false,
+    latestAttentionAt: null,
+    nextAttentionAt: null,
+    createdAt: 10,
+    updatedAt: 20,
+  };
+  const destination = {
+    ...source,
+    id: "child",
+    title: "Launch",
+    projectId: source.id,
+  };
+  const messages = ["Checklist", "Readiness"].map((body, i) => ({
+    id: "note-" + i,
+    chatId: source.id,
+    body,
+    sender: null,
+    labels: [],
+    attachments: [],
+    createdAt: 10 + i,
+  }));
+  async function openSelection(api: ApiClient) {
+    const user = userEvent.setup();
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Source" }),
+    );
+    const draft = await screen.findByRole("textbox", { name: "Add a note" });
+    await user.type(draft, "Unsent draft");
+    await chooseMessageAction(
+      user,
+      "Select messages",
+      screen.getByText("Checklist").closest("li")!,
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Select message: Checklist" }),
+    ).toBeChecked();
+    await user.click(
+      screen.getByRole("checkbox", { name: "Select message: Readiness" }),
+    );
+    return user;
+  }
+  function batchApi(overrides: Partial<ApiClient> = {}) {
+    return createApi({
+      listChats: vi.fn().mockResolvedValue([source, destination]),
+      getChat: vi.fn(async (id) => ({
+        ...(id === source.id ? source : destination),
+        notes: id === source.id ? messages : [],
+      })),
+      batchNotes: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    });
+  }
+  it("selects inclusive Shift ranges in visible history order and keeps earlier choices", async () => {
+    const user = userEvent.setup();
+    const notes = [6, 1, 3, 2, 0, 5, 4].map((i) => ({
+      ...messages[0],
+      id: String(i),
+      createdAt: 100 + i,
+      body: i === 4 ? "[Review](https://example.com)" : `Message ${i}`,
+      labels: i === 2 ? [] : ["pin"],
+    }));
+    const api = batchApi({
+      getChat: vi.fn().mockResolvedValue({ ...source, notes }),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Source" }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Pin 6" }));
+    await chooseMessageAction(
+      user,
+      "Select messages",
+      screen.getByText("Message 0").closest("li")!,
+    );
+    const history = within(
+      screen.getByRole("region", { name: "Source messages" }),
+    );
+    const checkbox = (i: number) =>
+      history.getByRole("checkbox", { name: `Select message: Message ${i}` });
+    const checked = () =>
+      history
+        .getAllByRole("checkbox", { checked: true })
+        .map((item) => item.getAttribute("data-select-note"));
+    await user.keyboard("{Shift>}");
+    await user.click(checkbox(3));
+    await user.click(checkbox(1).closest("label")!);
+    await user.keyboard("{/Shift}");
+    expect(checked()).toEqual(["0", "1", "3"]);
+    await user.click(checkbox(6));
+    await user.keyboard("{Shift>}");
+    await user.click(history.getByRole("link", { name: "Review" }));
+    expect(checked()).toEqual(["0", "1", "3", "6"]);
+    await user.click(
+      history.getByRole("link", { name: "Review" }).closest("li")!,
+    );
+    await user.keyboard("{/Shift}");
+    expect(checked()).toEqual(["0", "1", "3", "4", "5", "6"]);
+    await user.click(checkbox(1));
+    await user.click(checkbox(3));
+    checkbox(0).focus();
+    await user.keyboard("{Shift>}[Space]{/Shift}");
+    expect(checked()).toEqual(["0", "1", "3", "4", "5", "6"]);
+  });
+  it("selects all messages in the active filter and submits only those messages", async () => {
+    const user = userEvent.setup();
+    const notes = [
+      ...messages,
+      { ...messages[0], id: "other", body: "Other" },
+    ].map((note) => ({ ...note, labels: note.id === "other" ? [] : ["pin"] }));
+    const api = batchApi({
+      getChat: vi.fn().mockResolvedValue({ ...source, notes }),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Source" }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Pin 2" }));
+    await chooseMessageAction(
+      user,
+      "Select messages",
+      screen.getByText("Checklist").closest("li")!,
+    );
+    await user.click(screen.getByRole("button", { name: "Select all" }));
+    expect(screen.getByText("2 selected")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    expect(screen.queryByRole("button", { name: "Select all" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Delete 2 messages" }));
+    expect(api.batchNotes).toHaveBeenCalledWith(source.id, {
+      action: "delete",
+      noteIds: ["note-0", "note-1"],
+    });
+    expect(screen.getByRole("button", { name: "Pin 0" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+  it("reports oversized range and Select all attempts without partially selecting a batch", () => {
+    const ids = Array.from({ length: 1001 }, (_, i) => `note-${i}`);
+    const visible = new Set(ids);
+    const ref = { current: null };
+    const { result } = renderHook(() => useMessageSelection(ref, ref, visible));
+    act(() => result.current.begin(messages[0]));
+    act(() => result.current.toggle(ids[1000], true));
+    expect([...result.current.selected]).toEqual([ids[0]]);
+    expect(result.current.error).toMatch(/1,001.*1,000/);
+    act(() => result.current.toggle(ids[10], true));
+    expect(result.current.selected.size).toBe(11);
+    expect(result.current.error).toBe("");
+    act(() => result.current.selectAll());
+    expect(result.current.selected.size).toBe(11);
+    expect(result.current.error).toMatch(/1,001.*1,000/);
+    act(() => result.current.toggle(ids[999], true));
+    expect(result.current.selected.size).toBe(1000);
+  });
+  it("restores the selection entry reading position when cancelling after scrolling", async () => {
+    const user = userEvent.setup();
+    render(<App api={batchApi()} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Source" }),
+    );
+    const history = await screen.findByRole("region", {
+      name: "Source messages",
+    });
+    const rows = Array.from(
+      history.querySelectorAll<HTMLElement>(".message-row"),
+    );
+    vi.spyOn(history, "getBoundingClientRect").mockImplementation(
+      () => ({ top: 0, bottom: 200, height: 200 }) as DOMRect,
+    );
+    rows.forEach((row, index) =>
+      vi.spyOn(row, "getBoundingClientRect").mockImplementation(
+        () =>
+          ({
+            top: index * 200 - history.scrollTop,
+            bottom: (index + 1) * 200 - history.scrollTop,
+            height: 200,
+          }) as DOMRect,
+      ),
+    );
+    await act(async () => {
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve()),
+      );
+    });
+    history.scrollTop = 36;
+    await chooseMessageAction(user, "Select messages", rows[0]);
+    history.scrollTop = 240;
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(history.scrollTop).toBe(36);
+  });
+  it("keeps selections and the draft across the workspace picker and copies to a subthread", async () => {
+    const api = batchApi();
+    const user = await openSelection(api);
+    await user.click(screen.getByRole("button", { name: "Move" }));
+    const move = screen.getByRole("main", { name: "Move messages" });
+    expect(
+      within(move).getByRole("button", { name: "Move 2 messages" }),
+    ).toBeDisabled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await user.click(
+      within(move).getByRole("button", { name: "Back to messages" }),
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Select message: Readiness" }),
+    ).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Copy" }));
+    const picker = screen.getByRole("main", { name: "Copy messages" });
+    await user.type(within(picker).getByRole("searchbox"), "Source / Launch");
+    await user.click(
+      within(picker).getByRole("button", { name: "Source / Launch" }),
+    );
+    await user.click(
+      within(picker).getByRole("button", { name: "Copy 2 messages" }),
+    );
+    expect(api.batchNotes).toHaveBeenCalledWith("main", {
+      action: "copy",
+      destinationChatId: "child",
+      noteIds: ["note-0", "note-1"],
+    });
+    expect(screen.getByRole("textbox", { name: "Add a note" })).toHaveValue(
+      "Unsent draft",
+    );
+    expect(screen.getByText("Checklist")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Open destination" }));
+    expect(
+      await screen.findByRole("heading", { name: "Source / Launch" }),
+    ).toBeVisible();
+  });
+  it("returns a changed delete confirmation to the remaining visible selection after a refresh", async () => {
+    const refreshed = deferred<import("../domain/types.js").ChatDetail>();
+    const api = batchApi();
+    vi.mocked(api.getChat)
+      .mockImplementationOnce(
+        async () =>
+          ({
+            ...source,
+            notes: messages,
+          }) as import("../domain/types.js").ChatDetail,
+      )
+      .mockReturnValueOnce(refreshed.promise);
+    const user = await openSelection(api);
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    act(() => window.dispatchEvent(new Event("focus")));
+    await act(async () =>
+      refreshed.resolve({
+        ...source,
+        notes: [messages[1]],
+      }),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Delete 2 messages" }),
+    ).toBeNull();
+    expect(screen.getByText("1 selected")).toBeVisible();
+    expect(
+      screen.getByRole("checkbox", { name: "Select message: Readiness" }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Select message: Readiness" }),
+    ).toHaveFocus();
+    expect(api.batchNotes).not.toHaveBeenCalled();
+  });
+  it("confirms delete in the selection bar, retains the batch on failure and removes it on retry", async () => {
+    const api = batchApi({
+      batchNotes: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Try again"))
+        .mockResolvedValue(undefined),
+    });
+    const user = await openSelection(api);
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    const confirm = screen.getByRole("button", { name: "Delete 2 messages" });
+    expect(screen.getByText(/Delete 2 messages from Source/)).toBeVisible();
+    expect(api.batchNotes).not.toHaveBeenCalled();
+    await user.click(confirm);
+    expect(await screen.findByText("Try again")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Delete 2 messages" }));
+    expect(api.batchNotes).toHaveBeenLastCalledWith("main", {
+      action: "delete",
+      noteIds: ["note-0", "note-1"],
+    });
+    expect(screen.queryByText("Readiness")).toBeNull();
+    expect(screen.getByRole("textbox", { name: "Add a note" })).toHaveValue(
+      "Unsent draft",
+    );
+  });
 });

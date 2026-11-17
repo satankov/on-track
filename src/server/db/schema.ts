@@ -229,6 +229,30 @@ export const noteLabels = sqliteTable(
   ],
 );
 
+export const noteLabelSnapshots = sqliteTable(
+  "note_label_snapshots",
+  {
+    noteId: text("note_id")
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    name: text("name").notNull(),
+    symbol: text("symbol"),
+    position: integer("position").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.noteId, table.label] }),
+    check(
+      "note_label_snapshots_custom_id",
+      sql`length(${table.label}) = 43 AND substr(${table.label},1,7) = 'custom-'`,
+    ),
+    check(
+      "note_label_snapshots_bounds",
+      sql`length(${table.name}) BETWEEN 1 AND 256 AND (${table.symbol} IS NULL OR length(${table.symbol}) BETWEEN 1 AND 64) AND typeof(${table.position}) = 'integer' AND ${table.position} BETWEEN 0 AND 9007199254740991`,
+    ),
+  ],
+);
+
 export const workspacePreferences = sqliteTable(
   "workspace_preferences",
   {

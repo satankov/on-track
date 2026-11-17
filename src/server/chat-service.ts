@@ -1,3 +1,5 @@
+import { setImmediate as yieldToRequests } from "node:timers/promises";
+import type { PreparedAttachment } from "./db/batch-notes.js";
 import type {
   Chat,
   ChatDetail,
@@ -12,6 +14,7 @@ import type { Label } from "../domain/validation.js";
 import {
   MAX_ATTACHMENTS_PER_MESSAGE,
   MAX_ATTACHMENT_BYTES,
+  batchNotesSchema,
   createChatInputSchema,
   createSubthreadInputSchema,
   updateChatInputSchema,
@@ -23,6 +26,8 @@ import {
   type SqliteChatRepository,
 } from "./db/repository.js";
 import {
+  ManagedAttachmentChangedError,
+  ManagedAttachmentTooLargeError,
   ManagedAttachmentUnavailableError,
   type ManagedAttachmentStore,
 } from "./attachments/managed-attachment-store.js";
@@ -32,8 +37,8 @@ import { NativeFileActionUnsupportedError } from "./native-file-actions.js";
 import { NativeFileActionFailedError } from "./native-file-actions.js";
 
 export class ProjectNotFoundError extends Error {
-  constructor() {
-    super("Project not found.");
+  constructor(message = "Project not found.") {
+    super(message);
   }
 }
 
@@ -59,6 +64,8 @@ export class AttachmentOpenBlockedError extends Error {
   }
 }
 
+export class AttachmentCopyError extends Error {}
+
 export type AttachmentStore = Pick<
   ManagedAttachmentStore,
   "create" | "observe" | "remove"
@@ -66,7 +73,7 @@ export type AttachmentStore = Pick<
   Partial<
     Pick<
       ManagedAttachmentStore,
-      "resolveAvailableTarget" | "resolveSafeContainingDirectory"
+      "resolveAvailableTarget" | "resolveSafeContainingDirectory" | "copy"
     >
   >;
 
@@ -328,6 +335,78 @@ export class ChatService {
       throw new ProjectNotFoundError();
     }
     this.cleanup(result.storagePaths);
+  }
+
+  async batchNotes(chatId: string, input: unknown): Promise<void> {
+    const values = batchNotesSchema.parse(input);
+    if (values.action !== "delete" && values.destinationChatId === chatId)
+      throw new InvalidInputError();
+    const prepared = new Map<string, PreparedAttachment>();
+    try {
+      if (values.action === "copy") {
+        const files = this.repository.attachmentsForCopy(chatId, values);
+        if (!files)
+          throw new ProjectNotFoundError(
+            "The selected messages or conversation are no longer available.",
+          );
+        if (files.length) await this.prepareAttachmentCopies(files, prepared);
+      }
+      const removed = this.repository.batchNotes(
+        chatId,
+        values,
+        this.idFactory,
+        prepared,
+      );
+      if (!removed)
+        throw new ProjectNotFoundError(
+          "The selected messages or conversation are no longer available.",
+        );
+      this.cleanup(removed);
+    } catch (error) {
+      this.cleanup(Array.from(prepared.values(), (e) => e.target.storagePath));
+      throw error;
+    }
+  }
+
+  private async prepareAttachmentCopies(
+    files: StoredNoteAttachment[],
+    prepared: Map<string, PreparedAttachment>,
+  ) {
+    const store = this.requireAttachmentStore();
+    if (!store.copy)
+      throw new AttachmentCopyError(
+        "Managed attachment copying is unavailable.",
+      );
+    const ids = files.map(() => this.idFactory()).sort();
+    try {
+      for (const [i, source] of files.entries()) {
+        const copy = store.copy(source.storagePath, ids[i]);
+        prepared.set(source.id, {
+          source,
+          target: {
+            ...source,
+            storagePath: copy.storagePath,
+            id: ids[i],
+            byteSize: copy.byteSize,
+            modifiedAt: copy.modifiedAt,
+          },
+          verify: copy.verify,
+        });
+        await yieldToRequests();
+      }
+      for (const entry of prepared.values()) entry.verify();
+    } catch (error) {
+      if (error instanceof ManagedAttachmentUnavailableError)
+        throw new AttachmentUnavailableError(error.status);
+      if (
+        error instanceof ManagedAttachmentChangedError ||
+        error instanceof ManagedAttachmentTooLargeError
+      )
+        throw new AttachmentCopyError(error.message);
+      throw new AttachmentCopyError(
+        "A file could not be copied. Check available space and file access, then try again.",
+      );
+    }
   }
 
   setNoteLabel(

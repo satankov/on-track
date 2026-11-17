@@ -195,6 +195,11 @@ export function mergePreparedProjects(options: {
         chat_id: projectIds.get(row.chat_id)!,
         label: labelIds.get(JSON.stringify([row.chat_id, row.label]))!,
       })),
+      labelSnapshots: records.labelSnapshots.map((row) => ({
+        ...row,
+        note_id: noteIds.get(row.note_id)!,
+        label: `custom-${randomUUID()}`,
+      })),
     });
     committed = true;
     return result;

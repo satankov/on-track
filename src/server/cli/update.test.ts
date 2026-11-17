@@ -15,7 +15,11 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDatabaseCheckpoint } from "../runtime/database-checkpoint.js";
-import { LATEST_BUNDLED_MIGRATION_AT, openDatabase } from "../db/database.js";
+import {
+  CURRENT_SCHEMA_VERSION,
+  LATEST_BUNDLED_MIGRATION_AT,
+  openDatabase,
+} from "../db/database.js";
 import { DEFAULT_PREFERENCES } from "../../domain/preferences.js";
 import { readPreferences, writePreferences } from "../db/preferences.js";
 import { insertProjectLabel } from "../db/project-labels.js";
@@ -232,7 +236,7 @@ it("reconciles a stopped committed update without erasing later notes", async ()
 });
 
 it.each(["candidate_started", "committed"] as const)(
-  "recovers a real v0.1.0-to-schema-13 update at %s without crossing the durable commit boundary",
+  "recovers a real v0.1.0 update at %s without crossing the durable commit boundary",
   async (state) => {
     const f = fixture(true);
     const old = new Database(f.databasePath);
@@ -290,7 +294,7 @@ it.each(["candidate_started", "committed"] as const)(
           .prepare("SELECT schema_version FROM app_metadata")
           .pluck()
           .get(),
-      ).toBe(state === "committed" ? 13 : 7);
+      ).toBe(state === "committed" ? CURRENT_SCHEMA_VERSION : 7);
       if (state === "committed") {
         expect(
           recovered

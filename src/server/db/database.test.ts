@@ -20,6 +20,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { LATEST_BUNDLED_MIGRATION_AT, openDatabase } from "./database.js";
 import { SqliteChatRepository } from "./repository.js";
+import {
+  applyTransferLabels,
+  readTransferLabels,
+} from "./message-label-transfer.js";
 
 describe("SQLite project-chat persistence", () => {
   let directory: string;
@@ -37,7 +41,141 @@ describe("SQLite project-chat persistence", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  it("upgrades forward-built v0.1.0 data to schema 13 without losing released state on restart", () => {
+  it("preserves a message-owned custom label across restart, editing, and removal", () => {
+    const id = "custom-914ca7cb-3c2e-4eb6-b350-b5be7c604673";
+    repository.createChat({
+      id: "chat",
+      title: "Project",
+      accent: "ocean",
+      now: 1,
+    });
+    repository.appendNote({
+      id: "note",
+      chatId: "chat",
+      body: "Labeled",
+      now: 2,
+    });
+    database
+      .prepare(
+        "INSERT INTO note_label_snapshots(note_id,label,name,symbol,position) VALUES(?,?,?,?,?)",
+      )
+      .run("note", id, "Review", "🪴", 0);
+    database.close();
+    database = openDatabase(join(directory, "on-track.sqlite"));
+    repository = new SqliteChatRepository(database);
+    const expected = {
+      labels: [id],
+      labelSnapshots: [
+        {
+          id,
+          name: "Review",
+          symbol: "🪴",
+          enabled: false,
+          builtin: false,
+          position: 0,
+        },
+      ],
+    };
+    expect(repository.listNotes("chat")[0]).toMatchObject(expected);
+    expect(
+      repository.updateNote("chat", "note", { body: "Updated", now: 3 })?.note,
+    ).toMatchObject(expected);
+    expect(repository.setNoteLabel("chat", "note", id, false)).toEqual([]);
+    expect(repository.listNotes("chat")[0]?.labelSnapshots).toBeUndefined();
+  });
+
+  it("transfers every label through a full conflicting destination and back to an exact matching catalog", () => {
+    for (const [id, custom] of [
+      [
+        "src",
+        [
+          ["Review", "🪴"],
+          ["Ship", "🚀"],
+        ],
+      ],
+      [
+        "dest",
+        [
+          ["Review", "🔎"],
+          ["Ship", "🚀"],
+          ["UX", null],
+          ["Draft", null],
+          ["Data", null],
+        ],
+      ],
+    ] as const) {
+      const project = repository.createChat({
+        id,
+        title: id,
+        accent: "ocean",
+        now: 1,
+      });
+      repository.updateChat(id, {
+        now: 2,
+        labelConfiguration: {
+          revision: 0,
+          labels: [
+            ...project.labelDefinitions!.map(
+              ({ id, name, symbol, enabled }) => ({
+                id,
+                name,
+                symbol,
+                enabled,
+              }),
+            ),
+            ...custom.map(([name, symbol]) => ({
+              name,
+              symbol,
+              enabled: id === "src",
+            })),
+          ],
+        },
+      });
+    }
+    const dest = repository.getChat("dest")!;
+    for (const [id, chatId] of [
+      ["original", "src"],
+      ["copy", "dest"],
+      ["returned", "src"],
+    ] as const)
+      repository.appendNote({ id, chatId, body: "Keep labels", now: 3 });
+    const sourceCustom = repository
+      .getChat("src")!
+      .labelDefinitions!.filter((l) => !l.builtin);
+    for (const id of ["todo", ...sourceCustom.map((l) => l.id)] as const)
+      repository.setNoteLabel("src", "original", id, true);
+    repository.updateChat("dest", { now: 3, enabledLabels: [] });
+    applyTransferLabels(
+      database,
+      "dest",
+      "copy",
+      readTransferLabels(database, "original"),
+    );
+    const copied = repository.listNotes("dest")[0]!;
+    expect(copied.labels).toEqual([
+      "todo",
+      dest.labelDefinitions!.find((l) => l.name === "Ship")!.id,
+      copied.labelSnapshots![0]!.id,
+    ]);
+    expect(copied.labelSnapshots).toMatchObject([
+      { name: "Review", symbol: "🪴" },
+    ]);
+    expect(
+      repository.getChat("dest")!.labelDefinitions!.filter((l) => !l.builtin),
+    ).toEqual(dest.labelDefinitions!.filter((l) => !l.builtin));
+    applyTransferLabels(
+      database,
+      "src",
+      "returned",
+      readTransferLabels(database, "copy"),
+    );
+    expect(repository.listNotes("src").map((n) => n.labels)).toEqual([
+      ["todo", ...sourceCustom.map((l) => l.id)],
+      ["todo", ...sourceCustom.map((l) => l.id)],
+    ]);
+  });
+
+  it("upgrades forward-built v0.1.0 data to schema 14 without losing released state on restart", () => {
     const released = createV010Database(join(directory, "released"), {
       missingAttachment: true,
     });
@@ -65,7 +203,7 @@ describe("SQLite project-chat persistence", () => {
           .prepare("SELECT schema_version FROM app_metadata")
           .pluck()
           .get(),
-      ).toBe(13);
+      ).toBe(14);
       expect(
         database
           .prepare("SELECT max(created_at) FROM __drizzle_migrations")
@@ -606,7 +744,7 @@ describe("SQLite project-chat persistence", () => {
         .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
         .pluck()
         .get(),
-    ).toBe(13);
+    ).toBe(14);
     expect(repository.getChat("chat-a")?.pinnedAt).toBeNull();
     expect(repository.getChat("chat-a")?.collapseLongMessages).toBe(true);
     expect(repository.listNotes("chat-a")).toMatchObject([

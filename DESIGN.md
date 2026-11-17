@@ -342,9 +342,9 @@ linked source, or Continued in a linked child. Never quote the source. Deleting 
 at the same date and history position; the child’s source link focuses that marker.
 Deleted source conversations receive explicit fallback text. Links retain visible keyboard focus.
 
-Editable messages expose Label and More. Label opens the checkbox picker. More holds
-Continue in subthread, Copy, Edit, Delete and the contextual Open message in history
-action when available. Reserve space for the two triggers on desktop and keep the
+Editable messages expose Label and More. Label opens the checkbox picker. In history,
+Select messages comes first in More. The remaining actions are Continue in subthread,
+Copy message, Edit, Delete and Open message in history where available. Reserve space for the two triggers on desktop and keep the
 actions reachable on narrow screens, by keyboard and by touch. Creation asks for a name only. Child Edit exposes name, labels and message display. Children inherit their project accent. Search uses a native Project checkbox for whole-project
 scope, including archived conversations. These new layout decisions target desktop.
 
@@ -364,6 +364,25 @@ Touch taps toggle selections directly; mouse clicks use platform modifiers. Coun
 whole project even when the selected filters intersect.
 
 ### Message stream, composer, labels, attachments
+
+- **Select messages** checks the invoking message and opens a selection bar
+  in the composer's place. Align native square checkboxes in one left gutter
+  for both senders. Shift-click or Shift+Space extends the selection from the
+  last picked message through the current message, inclusive. Select all picks
+  every message in the current filtered history. Show the count alongside
+  Select all, Cancel, Copy, Move and Delete.
+  Keep the draft and reading position when returning from the destination
+  picker. Confirm deletion with the count and source conversation.
+- Copy and Move use the Edit project's workspace layout. Keep Back, the
+  title and search field above a scrolling list, with the counted action
+  always visible below it. Use compact project rows matching the sidebar.
+  A disclosure chevron marks projects with available subthreads.
+  Clicking a project selects its main conversation and expands or collapses
+  its indented subthreads. The project row itself names that destination.
+  Choosing a subthread selects it instead. Search reveals matching subthreads.
+  Omit archived projects and their children, and archived subthreads in active
+  projects. Destination messages use the ordinary bubble,
+  sender, time, label chips and editing controls.
 
 - General’s **Always show message time** defaults on. When switched off, hovering
   anywhere across a message row reveals its bottom-right time. Keyboard focus

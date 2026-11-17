@@ -5,12 +5,41 @@ import {
   CONFIGURABLE_LABELS,
   DEFAULT_ENABLED_LABELS,
   LABELS,
+  batchNotesSchema,
   createChatInputSchema,
   createNoteInputSchema,
   labelSchema,
   updateChatInputSchema,
   updateNoteInputSchema,
 } from "./validation.js";
+
+describe("batch message commands", () => {
+  const copy = {
+    action: "copy",
+    noteIds: ["a", "b"],
+    destinationChatId: "target",
+  };
+  it("accepts only a nonempty, unique selection and the fields for the action", () => {
+    for (const input of [
+      copy,
+      { ...copy, action: "move" },
+      { action: "delete", noteIds: ["a"] },
+    ])
+      expect(batchNotesSchema.parse(input)).toEqual(input);
+    for (const input of [
+      { ...copy, noteIds: [] },
+      { ...copy, noteIds: ["a", "a"] },
+      { ...copy, noteIds: [""] },
+      { ...copy, noteIds: Array(1001).fill("a") },
+      { ...copy, action: "delete" },
+      { ...copy, destinationChatId: "" },
+      { action: "copy", noteIds: ["a"] },
+      { ...copy, labels: ["pin"] },
+      { ...copy, action: "forward" },
+    ])
+      expect(batchNotesSchema.safeParse(input).success).toBe(false);
+  });
+});
 
 describe("chat input validation", () => {
   it("trims a valid title and accepts a built-in accent", () => {

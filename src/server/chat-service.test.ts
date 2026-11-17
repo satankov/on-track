@@ -74,6 +74,251 @@ describe("managed attachment service lifecycle", () => {
     expect(service()).not.toHaveProperty("downloadAttachment");
   });
 
+  it("stages attachment copies outside the write transaction and rejects changed selection contents", async () => {
+    const app = service();
+    ids.push(
+      "source",
+      "dest",
+      "one",
+      "f-a",
+      "two",
+      "fresh-a",
+      "fresh-b",
+      "fresh-c",
+      "extra",
+    );
+    app.createChat({ title: "Source", accent: "moss" });
+    app.createChat({ title: "Target", accent: "moss" });
+    const file = {
+      filename: "memo.txt",
+      mediaType: "text/plain",
+      byteSize: 1,
+      content: Buffer.from("x"),
+    };
+    app.appendNote("source", { body: "First", attachments: [file] });
+    app.appendNote("source", { body: "Second" });
+    const copy = store.copy.bind(store);
+    const writeLocks: boolean[] = [];
+    let staged = "";
+    vi.spyOn(store, "copy").mockImplementation((path, id) => {
+      writeLocks.push(database.inTransaction);
+      const created = copy(path, id);
+      staged = created.storagePath;
+      queueMicrotask(() =>
+        app.updateNote("source", "two", {
+          body: "Second",
+          attachments: [file],
+        }),
+      );
+      return created;
+    });
+    await expect(
+      app.batchNotes("source", {
+        action: "copy",
+        noteIds: ["one", "two"],
+        destinationChatId: "dest",
+      }),
+    ).rejects.toThrow(/changed/);
+    expect(writeLocks).toEqual([false]);
+    expect(existsSync(join(directory, staged))).toBe(false);
+    expect(app.getChat("dest").notes).toHaveLength(0);
+    expect(app.getChat("source").notes[1].attachments).toHaveLength(1);
+  });
+
+  it.each(["source", "copy"])(
+    "rejects a %s sidecar changed while staging",
+    async (changed) => {
+      const app = service();
+      ids.push("source", "dest", "note", "file", "copied-file", "copied-note");
+      app.createChat({ title: "Source", accent: "moss" });
+      app.createChat({ title: "Target", accent: "moss" });
+      app.appendNote("source", {
+        body: "File",
+        attachments: [
+          {
+            filename: "file.txt",
+            mediaType: "text/plain",
+            content: Buffer.from("x"),
+            byteSize: 1,
+          },
+        ],
+      });
+      let staged = "";
+      const copy = store.copy.bind(store);
+      vi.spyOn(store, "copy").mockImplementation((path, id) => {
+        const file = copy(path, id);
+        staged = file.storagePath;
+        queueMicrotask(() =>
+          writeFileSync(
+            store.resolveAvailablePath(changed === "source" ? path : staged),
+            "changed",
+          ),
+        );
+        return file;
+      });
+      await expect(
+        app.batchNotes("source", {
+          action: "copy",
+          noteIds: ["note"],
+          destinationChatId: "dest",
+        }),
+      ).rejects.toThrow(/changed/);
+      expect(app.getChat("dest").notes).toHaveLength(0);
+      expect(existsSync(join(directory, staged))).toBe(false);
+    },
+  );
+
+  it("preserves source order across equal timestamps and copies externally edited files with each new note", async () => {
+    const app = service();
+    ids.push(
+      "source",
+      "dest",
+      "m-a",
+      "f-a",
+      "m-b",
+      "f-b",
+      "f-z",
+      "f-c",
+      "m-z",
+      "m-c",
+    );
+    app.createChat({ title: "Source", accent: "iris" });
+    app.createChat({ title: "Destination", accent: "ocean" });
+    const file = {
+      filename: "Brief.pdf",
+      mediaType: "application/pdf",
+      content: Buffer.from("data"),
+      byteSize: 4,
+    };
+    app.appendNote("source", {
+      body: "First",
+      attachments: [file],
+      sender: "Jules",
+      createdAt: 456,
+    });
+    app.appendNote("source", {
+      body: "Second",
+      attachments: [file],
+      createdAt: 456,
+    });
+    const original = repository.getAttachment("source", "m-a", "f-a")!;
+    writeFileSync(
+      store.resolveAvailablePath(original.storagePath),
+      "revised file",
+    );
+    await app.batchNotes("source", {
+      action: "copy",
+      noteIds: ["m-b", "m-a"],
+      destinationChatId: "dest",
+    });
+    const copied = app.getChat("dest").notes;
+    expect(copied).toMatchObject([
+      {
+        id: "m-c",
+        body: "First",
+        sender: "Jules",
+        createdAt: 456,
+        attachments: [
+          { filename: "Brief.pdf", mediaType: "application/pdf", byteSize: 12 },
+        ],
+      },
+      {
+        id: "m-z",
+        body: "Second",
+        createdAt: 456,
+        attachments: [{ filename: "Brief.pdf", byteSize: 4 }],
+      },
+    ]);
+    const duplicate = repository.getAttachment(
+      "dest",
+      copied[0].id,
+      copied[0].attachments![0].id,
+    )!;
+    expect(duplicate.storagePath).not.toEqual(original.storagePath);
+    app.deleteChat("source");
+    expect(store.read(duplicate.storagePath).content.toString()).toBe(
+      "revised file",
+    );
+  });
+
+  it("rolls back previously moved notes, labels and continuation links on a later database error", async () => {
+    const app = service();
+    ids.push("source", "dest", "one", "two", "child");
+    app.createChat({ title: "Source", accent: "iris" });
+    app.createChat({ title: "Destination", accent: "ocean" });
+    app.appendNote("source", { body: "First" });
+    app.appendNote("source", { body: "Second" });
+    app.setNoteLabel("source", "one", "pin", true);
+    app.createSubthread("source", { title: "Follow-up", sourceNoteId: "one" });
+    database.exec(`CREATE TRIGGER fail_last_move BEFORE UPDATE OF chat_id ON notes
+      WHEN NEW.id='two' BEGIN SELECT RAISE(ABORT, 'simulated write failure'); END`);
+    await expect(
+      app.batchNotes("source", {
+        action: "move",
+        noteIds: ["two", "one"],
+        destinationChatId: "dest",
+      }),
+    ).rejects.toThrow("simulated write failure");
+    expect(app.getChat("dest").notes).toHaveLength(0);
+    expect(app.getChat("source").notes.map((n) => n.labels)).toEqual([
+      ["pin"],
+      [],
+    ]);
+    expect(app.getChat("child").origin?.sourceNoteId).toBe("one");
+  });
+
+  it("rolls back a batch with an unreadable copy, moves missing files intact, and retains continuation anchors", async () => {
+    const app = service();
+    ids.push("source", "dest", "one", "a", "two", "b", "child");
+    app.createChat({ title: "Source", accent: "ocean" });
+    app.createChat({ title: "Destination", accent: "ocean" });
+    const file = {
+      filename: "brief.txt",
+      mediaType: "text/plain",
+      content: Buffer.from("file"),
+      byteSize: 4,
+    };
+    app.appendNote("source", { body: "First", attachments: [file] });
+    app.appendNote("source", { body: "Second", attachments: [file] });
+    app.createSubthread("source", {
+      title: "Continuation",
+      sourceNoteId: "one",
+    });
+    app.updateNote("source", "one", { createdAt: 523 });
+    const originals = repository.listAllAttachmentStoragePaths();
+    const missing = repository.getAttachment("source", "two", "b")!;
+    store.remove(missing.storagePath);
+    ids.push("copied-a", "copied-b");
+    const values = { noteIds: ["two", "one"], destinationChatId: "dest" };
+    await expect(
+      app.batchNotes("source", { action: "copy", ...values }),
+    ).rejects.toThrow(/missing/);
+    expect(app.getChat("dest").notes).toHaveLength(0);
+    expect(repository.listAllAttachmentStoragePaths()).toEqual(originals);
+    expect(
+      existsSync(
+        join(directory, "attachments", "v1", "namespace-a", "copied-a"),
+      ),
+    ).toBe(false);
+    await app.batchNotes("source", { action: "move", ...values });
+    expect(app.getChat("source").notes).toHaveLength(0);
+    expect(app.getChat("dest").notes[1]).toMatchObject({
+      id: "two",
+      attachments: [{ id: "b", status: "missing" }],
+    });
+    expect(repository.listAllAttachmentStoragePaths()).toEqual(originals);
+    expect(app.getChat("child").origin).toMatchObject({
+      sourceChatId: "source",
+      sourceNoteId: null,
+      sourceNoteCreatedAt: 523,
+      sourceNotePositionId: "one",
+    });
+    const first = repository.getAttachment("dest", "one", "a")!;
+    await app.batchNotes("dest", { action: "delete", noteIds: ["one", "two"] });
+    expect(existsSync(join(directory, first.storagePath))).toBe(false);
+    expect(app.getChat("dest").notes).toHaveLength(0);
+  });
+
   it("creates, changes, preserves, and clears participant attribution", () => {
     ids.push("chat-a", "note-a");
     const chatService = service();

@@ -1,4 +1,11 @@
 import { randomUUID } from "node:crypto";
+import {
+  copyNote,
+  detachNoteOrigins,
+  moveNote,
+  BatchContentsChangedError,
+  type PreparedAttachment,
+} from "./batch-notes.js";
 import { storedAccent, type AccentStyle } from "./project-accent.js";
 import {
   insertProjectLabel,
@@ -8,6 +15,7 @@ import {
   InvalidLabelConfigurationError,
 } from "./project-labels.js";
 import type { LabelConfiguration, ProjectLabel } from "../../domain/labels.js";
+import { readNoteLabelFields } from "./message-label-transfer.js";
 import type Database from "better-sqlite3";
 
 import type {
@@ -23,6 +31,7 @@ import {
   type Accent,
   type AccentFamily,
   type ConfigurableLabel,
+  type BatchNotesInput,
   type Label,
 } from "../../domain/validation.js";
 
@@ -136,7 +145,7 @@ function toStoredAttachment(row: NoteAttachmentRow): StoredNoteAttachment {
 function toNote(
   row: NoteRow,
   attachments: NoteAttachment[] = [],
-  labels: Label[] = [],
+  labelFields: Pick<Note, "labels" | "labelSnapshots"> = { labels: [] },
 ): Note {
   return {
     id: row.id,
@@ -144,7 +153,7 @@ function toNote(
     body: row.body,
     sender: row.sender,
     createdAt: row.created_at,
-    labels,
+    ...labelFields,
     attachments,
   };
 }
@@ -490,9 +499,7 @@ export class SqliteChatRepository {
     });
 
     const row = append();
-    return row
-      ? toNote(row, this.listAttachments(row.id), this.listNoteLabels(row.id))
-      : undefined;
+    return row ? toNote(row, this.listAttachments(row.id)) : undefined;
   }
 
   listNotes(chatId: string): Note[] {
@@ -526,11 +533,10 @@ export class SqliteChatRepository {
       current.push(toStoredAttachment(row));
       attachmentsByNote.set(row.note_id, current);
     }
-    const labelsByNote = this.listLabelsForNotes(rows.map((row) => row.id));
+    const labelsByNote = readNoteLabelFields(this.database, "chat", chatId);
     return rows.map((row) => ({
-      ...toNote(row),
+      ...toNote(row, [], labelsByNote.get(row.id)),
       attachments: attachmentsByNote.get(row.id) ?? [],
-      labels: labelsByNote.get(row.id) ?? [],
     }));
   }
 
@@ -644,7 +650,9 @@ export class SqliteChatRepository {
           note: toNote(
             result.row,
             this.listAttachments(result.row.id),
-            this.listNoteLabels(result.row.id),
+            readNoteLabelFields(this.database, "note", result.row.id).get(
+              result.row.id,
+            ),
           ),
           removedStoragePaths: result.removedStoragePaths,
         }
@@ -659,15 +667,7 @@ export class SqliteChatRepository {
       const storagePaths = this.listStoredAttachments(noteId).map(
         (attachment) => attachment.storagePath,
       );
-      // Capture the latest source date before the FK clears its live reference.
-      this.database
-        .prepare(
-          `UPDATE subthread_origins SET
-        source_note_created_at = (SELECT created_at FROM notes WHERE id = ? AND chat_id = ?),
-        source_note_position_id = ?
-        WHERE source_note_id = ? AND source_chat_id = ?`,
-        )
-        .run(noteId, chatId, noteId, noteId, chatId);
+      detachNoteOrigins(this.database, chatId, [noteId]);
       const result = this.database
         .prepare("DELETE FROM notes WHERE id = ? AND chat_id = ?")
         .run(noteId, chatId);
@@ -677,6 +677,95 @@ export class SqliteChatRepository {
     });
 
     return remove();
+  }
+
+  private selectedNoteIds(
+    chatId: string,
+    input: BatchNotesInput,
+  ): string[] | undefined {
+    if (
+      input.action !== "delete" &&
+      (input.destinationChatId === chatId ||
+        !this.database
+          .prepare("SELECT 1 FROM chats WHERE id = ?")
+          .get(input.destinationChatId))
+    )
+      return undefined;
+    const ids = this.database
+      .prepare(
+        `SELECT id FROM notes WHERE chat_id = ?
+      AND id IN (SELECT value FROM json_each(?)) ORDER BY created_at, id`,
+      )
+      .pluck()
+      .all(chatId, JSON.stringify(input.noteIds)) as string[];
+    return ids.length && ids.length === input.noteIds.length ? ids : undefined;
+  }
+
+  attachmentsForCopy(
+    chatId: string,
+    input: BatchNotesInput,
+  ): StoredNoteAttachment[] | undefined {
+    const ids = this.selectedNoteIds(chatId, input);
+    return ids?.flatMap((id) => this.listStoredAttachments(id));
+  }
+
+  batchNotes(
+    chatId: string,
+    input: BatchNotesInput,
+    newId: () => string,
+    prepared: ReadonlyMap<string, PreparedAttachment>,
+  ): string[] | undefined {
+    return this.database
+      .transaction(() => {
+        const encodedIds = JSON.stringify(input.noteIds);
+        const ids = this.selectedNoteIds(chatId, input);
+        if (!ids) return undefined;
+        if (input.action !== "copy")
+          detachNoteOrigins(this.database, chatId, ids);
+
+        if (input.action === "delete") {
+          const paths = this.database
+            .prepare(
+              "SELECT storage_path FROM note_attachments WHERE note_id IN (SELECT value FROM json_each(?))",
+            )
+            .pluck()
+            .all(encodedIds) as string[];
+          this.database
+            .prepare(
+              "DELETE FROM notes WHERE chat_id = ? AND id IN (SELECT value FROM json_each(?))",
+            )
+            .run(chatId, encodedIds);
+          this.refreshChatActivity(chatId);
+          return paths;
+        }
+
+        const destination = input.destinationChatId;
+        if (input.action === "copy") {
+          // IDs break equal-time ties in history. Assign fresh IDs in that order.
+          const newIds = ids.map(() => newId()).sort();
+          let consumed = 0;
+          ids.forEach((id, index) => {
+            const files = this.listStoredAttachments(id);
+            consumed += files.length;
+            copyNote(
+              this.database,
+              id,
+              destination,
+              newIds[index],
+              files,
+              prepared,
+            );
+          });
+          if (consumed !== prepared.size) throw new BatchContentsChangedError();
+        } else {
+          for (const id of ids)
+            moveNote(this.database, chatId, destination, id);
+          this.refreshChatActivity(chatId);
+        }
+        this.refreshChatActivity(destination);
+        return [];
+      })
+      .immediate();
   }
 
   setNoteLabel(
@@ -712,8 +801,16 @@ export class SqliteChatRepository {
         this.database
           .prepare("DELETE FROM note_labels WHERE note_id = ? AND label = ?")
           .run(noteId, label);
+        this.database
+          .prepare(
+            "DELETE FROM note_label_snapshots WHERE note_id = ? AND label = ?",
+          )
+          .run(noteId, label);
       }
-      return this.listNoteLabels(noteId);
+      return (
+        readNoteLabelFields(this.database, "note", noteId).get(noteId)
+          ?.labels ?? []
+      );
     });
     return change();
   }
@@ -846,28 +943,5 @@ export class SqliteChatRepository {
     return new Map(
       chatIds.map((id) => [id, readProjectLabels(this.database, id)]),
     );
-  }
-
-  private listNoteLabels(noteId: string): Label[] {
-    return this.listLabelsForNotes([noteId]).get(noteId) ?? [];
-  }
-
-  private listLabelsForNotes(noteIds: string[]): Map<string, Label[]> {
-    const result = new Map<string, Label[]>();
-    if (noteIds.length === 0) return result;
-    const placeholders = noteIds.map(() => "?").join(", ");
-    const rows = this.database
-      .prepare(
-        `SELECT n.note_id, n.label FROM note_labels n JOIN project_labels p ON p.chat_id=n.chat_id AND p.id=n.label
-         WHERE n.note_id IN (${placeholders}) ORDER BY p.position`,
-      )
-      .all(...noteIds) as Array<{ note_id: string; label: Label }>;
-    for (const noteId of noteIds) {
-      const selected = new Set(
-        rows.filter((row) => row.note_id === noteId).map((row) => row.label),
-      );
-      result.set(noteId, [...selected]);
-    }
-    return result;
   }
 }

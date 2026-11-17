@@ -2,6 +2,7 @@ import {
   rewindToSchema7,
   rewindToSchema11,
   rewindToSchema12,
+  rewindToSchema13,
 } from "../../test/legacy-database.js";
 import { insertProjectLabel, seedProjectLabels } from "../db/project-labels.js";
 import { readPreferences, writePreferences } from "../db/preferences.js";
@@ -115,7 +116,7 @@ describe("SQLite backup bundle", () => {
     },
   );
 
-  it.each([11, 12])(
+  it.each([11, 12, 13])(
     "restores schema %i projects with the original plain accent",
     async (version) => {
       sourceDatabase.exec(
@@ -128,7 +129,8 @@ describe("SQLite backup bundle", () => {
         attachmentStore: { read: vi.fn() },
       });
       mutateBundle(bundlePath, (legacy) => {
-        if (version === 12) rewindToSchema12(legacy);
+        if (version === 13) rewindToSchema13(legacy);
+        else if (version === 12) rewindToSchema12(legacy);
         else rewindToSchema11(legacy);
         legacy
           .prepare("UPDATE _on_track_bundle SET schema_version=?")
@@ -161,6 +163,59 @@ describe("SQLite backup bundle", () => {
       }
     },
   );
+
+  it("preserves message-only labels in selected backup, replacement, and independent merge", async () => {
+    const id = "custom-914ca7cb-3c2e-4eb6-b350-b5be7c604673";
+    sourceDatabase
+      .prepare(
+        "INSERT INTO note_label_snapshots(note_id,label,name,symbol,position) VALUES('note-a',?,'Review','🪴',0)",
+      )
+      .run(id);
+    const bundlePath = join(directory, "snapshots.on-track-backup");
+    await createSqliteBackupBundle({
+      sourceDatabase,
+      destinationPath: bundlePath,
+      attachmentStore: { read: vi.fn() },
+      selection: ["chat-a"],
+    });
+    const prepared = prepareSqliteBackupBundle({
+      bundlePath,
+      workspace: createRestoreWorkspace(directory, "snapshots"),
+    });
+    const candidate = new Database(prepared.candidateDatabasePath, {
+      readonly: true,
+    });
+    try {
+      expect(
+        candidate.prepare("SELECT * FROM note_label_snapshots").all(),
+      ).toEqual([
+        {
+          note_id: "note-a",
+          label: id,
+          name: "Review",
+          symbol: "🪴",
+          position: 0,
+        },
+      ]);
+    } finally {
+      candidate.close();
+    }
+    mergePreparedProjects({
+      database: sourceDatabase,
+      candidateDatabasePath: prepared.candidateDatabasePath,
+      candidateDataDirectory: prepared.candidateDataDirectory,
+      dataDirectory: directory,
+      now: 200,
+    });
+    expect(
+      sourceDatabase
+        .prepare(
+          "SELECT name,symbol FROM note_label_snapshots WHERE note_id!='note-a' AND label!=?",
+        )
+        .all(id),
+    ).toEqual([{ name: "Review", symbol: "🪴" }]);
+    expect(sourceDatabase.pragma("foreign_key_check")).toEqual([]);
+  });
 
   it("migrates schema-10 backup provenance into persistent history anchors", async () => {
     sourceDatabase.exec(`INSERT INTO chats(id,title,accent,created_at,updated_at,project_id) VALUES('child','Child','ocean',2,2,'chat-a');
@@ -245,7 +300,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata")
           .pluck()
           .get(),
-      ).toBe(13);
+      ).toBe(14);
       expect(candidate.pragma("foreign_key_check")).toEqual([]);
     } finally {
       candidate.close();
@@ -353,7 +408,7 @@ describe("SQLite backup bundle", () => {
             .prepare("SELECT schema_version FROM app_metadata")
             .pluck()
             .get(),
-        ).toBe(13);
+        ).toBe(14);
       } finally {
         candidate.close();
       }
@@ -370,6 +425,10 @@ describe("SQLite backup bundle", () => {
     "UPDATE project_labels SET position=99 WHERE chat_id='chat-b' AND id='todo'",
     "UPDATE project_labels SET name='123456789',name_key='123456789' WHERE chat_id='chat-b' AND builtin=0",
     "UPDATE project_labels SET symbol='ab' WHERE chat_id='chat-b' AND builtin=0",
+    "UPDATE note_label_snapshots SET name=char(7)",
+    "UPDATE note_label_snapshots SET symbol='ab'",
+    "UPDATE note_label_snapshots SET position=1.5",
+    "UPDATE note_label_snapshots SET label='custom-00000000-0000-4000-8000-000000000001'",
   ])(
     "rejects hostile preference/label metadata before excluding projects: %s",
     async (sql) => {
@@ -385,6 +444,8 @@ describe("SQLite backup bundle", () => {
         position: 7,
         builtin: false,
       });
+      sourceDatabase.exec(`INSERT INTO notes(id,chat_id,body,created_at) VALUES('note-b','chat-b','Private',1);
+        INSERT INTO note_label_snapshots(note_id,label,name,symbol,position) VALUES('note-b','custom-00000000-0000-4000-8000-000000000002','Review','🪴',0)`);
       const bundlePath = join(directory, "hostile.on-track-backup");
       await createSqliteBackupBundle({
         sourceDatabase,
@@ -440,7 +501,7 @@ describe("SQLite backup bundle", () => {
     );
     expect(manifest).toEqual({
       formatVersion: 1,
-      schemaVersion: 13,
+      schemaVersion: 14,
       createdAt: 1_725_000_100_000,
       attachmentCount: 1,
       totalBytes: 12,
@@ -1487,7 +1548,7 @@ describe("SQLite backup bundle", () => {
     });
 
     expect(validateSqliteBackupBundle(bundlePath)).toMatchObject({
-      schemaVersion: 13,
+      schemaVersion: 14,
     });
     const prepared = prepareSqliteBackupBundle({
       bundlePath,
@@ -1625,7 +1686,7 @@ describe("SQLite backup bundle", () => {
     });
 
     expect(validateSqliteBackupBundle(bundlePath)).toMatchObject({
-      schemaVersion: 13,
+      schemaVersion: 14,
     });
     const prepared = prepareSqliteBackupBundle({
       bundlePath,
@@ -1710,7 +1771,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(13);
+      ).toBe(14);
       expect(
         candidate
           .prepare("SELECT sender FROM notes WHERE id = 'note-a'")
@@ -1764,7 +1825,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(13);
+      ).toBe(14);
       expect(
         candidate
           .prepare(
@@ -1885,7 +1946,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(13);
+      ).toBe(14);
       expect(
         candidate
           .prepare("SELECT pinned_at FROM chats WHERE id = 'chat-a'")

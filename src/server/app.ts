@@ -1,4 +1,5 @@
 import { InvalidSubthreadError } from "./db/repository.js";
+import { BatchContentsChangedError } from "./db/batch-notes.js";
 import {
   LabelConfigurationConflictError,
   InvalidLabelConfigurationError,
@@ -21,6 +22,7 @@ import { dirname } from "node:path";
 import { ZodError } from "zod";
 
 import {
+  AttachmentCopyError,
   AttachmentUnavailableError,
   AttachmentOpenBlockedError,
   ChatService,
@@ -311,6 +313,14 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         status: error.status,
       });
     }
+    if (error instanceof BatchContentsChangedError)
+      return reply
+        .code(409)
+        .send({ code: "batch_changed", message: error.message });
+    if (error instanceof AttachmentCopyError)
+      return reply
+        .code(409)
+        .send({ code: "attachment_copy_failed", message: error.message });
     if (error instanceof AttachmentOpenBlockedError) {
       return reply.code(409).send({
         code: "attachment_open_blocked",
@@ -445,6 +455,16 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     async (request, reply) => {
       await maintenanceGate.runMutation(() =>
         service.deleteChat(request.params.id),
+      );
+      return reply.code(204).send();
+    },
+  );
+  app.post<{ Params: { id: string } }>(
+    "/api/chats/:id/notes/batch",
+    { bodyLimit: 2 * 1024 * 1024 },
+    async (request, reply) => {
+      await maintenanceGate.runMutation(() =>
+        service.batchNotes(request.params.id, request.body),
       );
       return reply.code(204).send();
     },

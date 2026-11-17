@@ -44,6 +44,8 @@ export interface Note {
   sender: string | null;
   createdAt: number;
   labels: Label[];
+  /** Message-owned custom labels retained when a destination has no exact definition. */
+  labelSnapshots?: ProjectLabel[];
   attachments?: NoteAttachment[];
 }
 

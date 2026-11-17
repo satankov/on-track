@@ -1,5 +1,6 @@
 import {
   labelConfigurationSchema,
+  projectLabelInputSchema,
   labelNameKey,
   isBuiltinLabel,
 } from "../../domain/labels.js";
@@ -62,7 +63,7 @@ import {
 
 export const SQL_ON_TRACK_BACKUP_APPLICATION_ID = 0x4f545242;
 export const SQL_ON_TRACK_BACKUP_FORMAT_VERSION = 1;
-export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 13;
+export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 14;
 const LEGACY_SCHEMA_MIGRATIONS: Readonly<
   Record<number, { migrationAt: number; migrationCount: number }>
 > = {
@@ -70,6 +71,7 @@ const LEGACY_SCHEMA_MIGRATIONS: Readonly<
   4: { migrationAt: 1_788_516_961_034, migrationCount: 5 },
   5: { migrationAt: 1_788_523_044_823, migrationCount: 6 },
   12: { migrationAt: 1794839960460, migrationCount: 13 },
+  13: { migrationAt: 1794905488811, migrationCount: 14 },
   11: { migrationAt: 1793608243633, migrationCount: 12 },
   10: { migrationAt: 1793364000000, migrationCount: 11 },
   9: { migrationAt: 1793269712711, migrationCount: 10 },
@@ -1083,6 +1085,42 @@ function validateApplicationData(
   }
   if (schemaVersion >= 9) validateProjectLabelData(database);
   else validateLabelData(database);
+  if (schemaVersion >= 14) validateMessageLabelSnapshots(database);
+}
+
+function validateMessageLabelSnapshots(database: Database.Database): void {
+  const rows = database
+    .prepare(
+      `
+    SELECT s.label, s.name, s.symbol, s.position, p.id AS collision
+    FROM note_label_snapshots s JOIN notes n ON n.id=s.note_id
+    LEFT JOIN project_labels p ON p.chat_id=n.chat_id AND p.id=s.label
+  `,
+    )
+    .iterate() as Iterable<{
+    label: string;
+    name: string;
+    symbol: string | null;
+    position: number;
+    collision: string | null;
+  }>;
+  for (const row of rows) {
+    const result = projectLabelInputSchema.safeParse({
+      id: row.label,
+      name: row.name,
+      symbol: row.symbol,
+      enabled: false,
+    });
+    if (
+      !result.success ||
+      row.collision !== null ||
+      isBuiltinLabel(row.label) ||
+      row.name !== result.data.name ||
+      !Number.isSafeInteger(row.position) ||
+      row.position < 0
+    )
+      throw validationError("Message label metadata is invalid.");
+  }
 }
 
 /** Foreign keys establish existence; these checks establish project ownership. */

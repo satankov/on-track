@@ -203,7 +203,7 @@ it.each(["replace", "merge"] as const)(
       try {
         expect(
           db.prepare("SELECT schema_version FROM app_metadata").pluck().get(),
-        ).toBe(13);
+        ).toBe(14);
         const paths = db
           .prepare("SELECT storage_path FROM note_attachments")
           .pluck()

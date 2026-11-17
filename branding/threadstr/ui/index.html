@@ -47,6 +47,7 @@
         <a href="#settings">05 &nbsp; Settings recipe</a>
         <a href="#messages">06 &nbsp; Messages & fade</a>
         <a href="#subthreads">Subthreads</a>
+        <a href="#message-selection">Message selection</a>
         <a href="#states">07 &nbsp; States & feedback</a>
         <a href="#responsive">08 &nbsp; Responsive rules</a>
         <a href="#guardrails">09 &nbsp; Agent checklist</a>
@@ -677,6 +678,14 @@
                         class="message-menu-item"
                         type="button"
                         role="menuitem"
+                        data-select-specimen
+                      >
+                        Select messages
+                      </button>
+                      <button
+                        class="message-menu-item"
+                        type="button"
+                        role="menuitem"
                       >
                         Continue in subthread
                       </button>
@@ -837,6 +846,127 @@
             to its own bubble surface instead. Wide tables scroll inside their
             bubble; focus the table region and use the arrow keys.
           </p>
+        </section>
+
+        <section id="message-selection" class="cb-section" data-accent="ocean">
+          <h2>Message selection</h2>
+          <div id="cb-selection-history">
+            <div
+              class="message-row message-row--participant"
+              data-selected="true"
+            >
+              <label class="message-selection-check"
+                ><input
+                  type="checkbox"
+                  aria-label="Select checklist message"
+                  checked
+              /></label>
+              <div class="message-stack">
+                <article class="message-bubble">
+                  <p class="message-sender" data-sender-color="iris">Maya</p>
+                  <p class="note-body">
+                    The launch checklist is ready for review.
+                  </p>
+                </article>
+              </div>
+            </div>
+            <div class="message-row message-row--own" data-selected="false">
+              <label class="message-selection-check"
+                ><input type="checkbox" aria-label="Select review message"
+              /></label>
+              <div class="message-stack">
+                <article class="message-bubble">
+                  <p class="note-body">I’ll review it this afternoon.</p>
+                </article>
+              </div>
+            </div>
+            <div class="message-row message-row--own" data-selected="false">
+              <label class="message-selection-check"
+                ><input type="checkbox" aria-label="Select waitlist message"
+              /></label>
+              <div class="message-stack">
+                <article class="message-bubble">
+                  <p class="note-body">Let’s open the waitlist on Friday.</p>
+                </article>
+              </div>
+            </div>
+            <div
+              class="message-selection-bar"
+              aria-label="Selected message actions"
+              role="group"
+            >
+              <strong role="status" id="cb-selection-count">1 selected</strong>
+              <div class="message-selection-buttons">
+                <button
+                  class="button button-quiet"
+                  type="button"
+                  data-batch="all"
+                >
+                  Select all
+                </button>
+                <button
+                  class="button button-quiet"
+                  type="button"
+                  data-batch="cancel"
+                >
+                  Cancel
+                </button>
+                <button
+                  class="button batch-transfer"
+                  type="button"
+                  data-batch="Copy"
+                >
+                  Copy
+                </button>
+                <button
+                  class="button batch-transfer"
+                  type="button"
+                  data-batch="Move"
+                >
+                  Move
+                </button>
+                <button
+                  class="button batch-delete"
+                  type="button"
+                  data-batch="Delete"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+          <div id="cb-selection-picker" class="batch-destination" hidden>
+            <form class="project-edit-form project-settings-fields">
+              <button
+                class="settings-back-button"
+                type="button"
+                data-batch="back"
+                aria-label="Back to messages"
+              >
+                ←
+              </button>
+              <h3></h3>
+              <input
+                type="search"
+                class="text-input"
+                aria-label="Find a thread or subthread"
+                placeholder="Find a thread or subthread"
+              />
+              <section
+                class="batch-destination-list"
+                aria-label="Destination conversations"
+              >
+                <ul class="project-items"></ul>
+                <p class="field-help" hidden>No matching conversations.</p>
+              </section>
+              <div class="batch-destination-footer">
+                <button type="submit" class="button button-primary" disabled>
+                  Copy
+                </button>
+              </div>
+            </form>
+          </div>
+          <p class="field-help" role="status" id="cb-selection-status"></p>
         </section>
 
         <section id="subthreads" class="cb-section">

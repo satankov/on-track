@@ -45,6 +45,13 @@ export interface ImportedRecords {
     source_note_position_id: string | null;
   }>;
   noteLabels: Array<{ note_id: string; chat_id: string; label: string }>;
+  labelSnapshots: Array<{
+    note_id: string;
+    label: string;
+    name: string;
+    symbol: string | null;
+    position: number;
+  }>;
 }
 export function readImportedRecords(
   source: Database.Database,
@@ -76,6 +83,11 @@ export function readImportedRecords(
     noteLabels: source
       .prepare("SELECT note_id,chat_id,label FROM note_labels")
       .all() as ImportedRecords["noteLabels"],
+    labelSnapshots: source
+      .prepare(
+        "SELECT note_id,label,name,symbol,position FROM note_label_snapshots",
+      )
+      .all() as ImportedRecords["labelSnapshots"],
   };
 }
 export function insertImportedRecords(
@@ -100,6 +112,9 @@ export function insertImportedRecords(
   const origin = database.prepare(
     "INSERT INTO subthread_origins(chat_id,source_chat_id,source_note_id,source_note_created_at,source_note_position_id) VALUES(@chat_id,@source_chat_id,@source_note_id,@source_note_created_at,@source_note_position_id)",
   );
+  const snapshot = database.prepare(
+    "INSERT INTO note_label_snapshots(note_id,label,name,symbol,position) VALUES(@note_id,@label,@name,@symbol,@position)",
+  );
   database.transaction(() => {
     for (const row of [...records.projects].sort(
       (a, b) => Number(a.project_id !== null) - Number(b.project_id !== null),
@@ -109,6 +124,7 @@ export function insertImportedRecords(
     for (const row of records.attachments) file.run(row);
     for (const row of records.labelDefinitions) definition.run(row);
     for (const row of records.noteLabels) label.run(row);
+    for (const row of records.labelSnapshots) snapshot.run(row);
     for (const row of records.origins) origin.run(row);
   })();
 }

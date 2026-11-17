@@ -25,7 +25,10 @@ Deliver the [v0.2.1 workspace controls](plans/0036-v0.2.1-workspace-controls.md)
 Projects and subthreads gain an expandable shortcut strip and a persistent Alert.
 Messages use a Label and More toolbar and a workspace preference for time
 visibility. Schema 13 adds twelve project accent choices to the same persistence and backup
-flow. Format 1 supports legacy bundles from schemas 3–12. The preceding release scope is in
+flow. Messages can be selected together and copied, moved or deleted. Copy and
+Move retain every label, including custom names and symbols specific to the
+source conversation. Schema 14 preserves these on individual messages. Format 1
+supports legacy bundles from schemas 3–13. The preceding release scope is in
 [plan 0035](plans/0035-v0.2.0-release-preparation.md).
 
 The published v0.1.1 release includes the completed flat UI and design cookbook

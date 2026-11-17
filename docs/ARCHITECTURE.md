@@ -7,7 +7,8 @@ Schema 12 adds a checked boolean to each conversation for manual Alert and a
 checked boolean to workspace preferences for timestamp visibility. Both use
 the existing database and format-1 backup lifecycle. Schema 13 adds a checked plain or gradient finish alongside the six stored
 hues. The API exposes the selection as a single accent ID. Roots supply both
-values to their subthreads. The managed compatibility
+values to their subthreads. Schema 14 adds note-owned custom label snapshots for
+messages copied or moved between conversations. The managed compatibility
 floor remains `0.0.7`. See [workspace controls](plans/0036-v0.2.1-workspace-controls.md)
 and [subthread ownership](adr/0014-flat-project-subthreads.md).
 The included flat UI/design-contract slice changes client UI, tests, and documentation
@@ -331,6 +332,20 @@ ambiguous state, rolls pre-commit states back idempotently, and validates a
 committed database plus managed attachment path safety before deleting rollback
 state. Exact generated-namespace inventory validation runs before commit.
 
+The scoped `POST /api/chats/:chatId/notes/batch` endpoint copies, moves or deletes
+an explicit selection of message IDs. Copy creates independent managed files.
+Move retains the files and changes their conversation ownership through the
+message. Both retain sender, message time and relative order. The database
+commits the group together. Moving or deleting a source message keeps any
+existing continuation anchored in its source conversation.
+
+Built-in labels transfer by canonical ID. A custom label with the same name and
+symbol in the destination uses its local definition, including a disabled one.
+Otherwise, `note_label_snapshots` records the name and symbol on that message.
+Snapshots can be removed in the message label picker and survive another
+transfer, restart and selective backup. A transfer leaves the destination’s
+configured label slots available for the user.
+
 Message attachments are owner-only files under
 `attachments/v1/<generated-namespace>/<attachment-id>/<safe-filename>`.
 SQLite stores metadata, a unique repository-owned POSIX relative path, and
@@ -371,8 +386,8 @@ integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
 fresh managed paths, removes bundle payload tables, and compacts the current-
-schema candidate. Schema 3–12 bundles are checked against their trusted legacy descriptors
-before migration to schema 13 in staging. Legacy projects adopt the plain finish. Older conversations start with manual
+schema candidate. Schema 3–13 bundles are checked against their trusted legacy descriptors
+before migration to schema 14 in staging. Legacy projects adopt the plain finish. Older conversations start with manual
 Alert off. Older preference rows default to always displaying message time.
 It then uses the maintenance gate and
 restore journal to replace live state. Exact active-schema expectations come

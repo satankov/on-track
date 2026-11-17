@@ -31,6 +31,7 @@ export class ImportOutcomeUnknownError extends Error {
   }
 }
 import type {
+  BatchNotesInput,
   CreateChatInput,
   CreateNoteInput,
   UpdateChatInput,
@@ -69,6 +70,7 @@ export interface ApiClient {
     input: UpdateNoteInput,
   ): Promise<Note>;
   deleteNote(chatId: string, noteId: string): Promise<void>;
+  batchNotes(chatId: string, input: BatchNotesInput): Promise<void>;
   setNoteLabel(
     chatId: string,
     noteId: string,
@@ -226,6 +228,33 @@ export const apiClient: ApiClient = {
     await request<void>(
       `/api/chats/${encodeURIComponent(chatId)}/notes/${encodeURIComponent(noteId)}`,
       { method: "DELETE" },
+    );
+  },
+  batchNotes: async (chatId, input) => {
+    const unknown = () =>
+      new Error(
+        "The result could not be confirmed. Refresh and check your messages before trying again.",
+      );
+    let response: Response;
+    try {
+      response = await fetch(
+        `/api/chats/${encodeURIComponent(chatId)}/notes/batch`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        },
+      );
+    } catch {
+      throw unknown();
+    }
+    if (response.status === 204) return;
+    if (response.ok || response.status >= 500) throw unknown();
+    const payload = (await response.json().catch(() => null)) as {
+      message?: string;
+    } | null;
+    throw new Error(
+      payload?.message ?? "The selected messages could not be processed.",
     );
   },
   setNoteLabel: (chatId, noteId, label, applied) =>

@@ -3037,7 +3037,8 @@ kbd {
 .project-label-option input,
 .project-message-display-option input,
 .examples-preference input,
-.backup-project-row input {
+.backup-project-row input,
+.message-selection-check input {
   appearance: none;
   flex: 0 0 22px;
   width: 22px;
@@ -3054,14 +3055,16 @@ kbd {
 .project-label-option input:checked,
 .project-message-display-option input:checked,
 .examples-preference input:checked,
-.backup-project-row input:checked {
+.backup-project-row input:checked,
+.message-selection-check input:checked {
   border-color: var(--accent-action, var(--ocean-action));
   background: var(--accent-action, var(--ocean-action));
 }
 .project-label-option input:checked::after,
 .project-message-display-option input:checked::after,
 .examples-preference input:checked::after,
-.backup-project-row input:checked::after {
+.backup-project-row input:checked::after,
+.message-selection-check input:checked::after {
   content: "";
   width: 6px;
   height: 11px;
@@ -4232,5 +4235,154 @@ kbd {
   .thread-origin button,
   .subthread-parent-title {
     color: LinkText;
+  }
+}
+
+.workspace-chat[hidden],
+.composer-wrap[hidden] {
+  display: none;
+}
+.message-row[data-selected] {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  justify-content: stretch;
+  border-radius: 8px;
+}
+.message-row[data-selected="true"] {
+  background: color-mix(in srgb, var(--accent) 9%, var(--history));
+}
+.message-row[data-selected] .message-stack {
+  grid-column: 2;
+  max-width: min(760px, 100%);
+}
+.message-row--own[data-selected] .message-stack {
+  justify-self: end;
+}
+.message-row--participant[data-selected] .message-stack {
+  justify-self: start;
+}
+.message-row[data-selected] .thread-continuation {
+  grid-column: 1 / -1;
+}
+.message-selection-check {
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.message-selection-check input:disabled {
+  cursor: default;
+}
+.message-selection-bar,
+.message-batch-notice {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0 auto;
+  max-width: var(--chat-column-width);
+  padding: 6px 12px;
+  color: var(--ink);
+  font-size: 0.84rem;
+}
+.message-selection-bar {
+  border-radius: 12px;
+  background: var(--field);
+}
+.message-selection-bar strong {
+  overflow-wrap: anywhere;
+  flex: 1 1 auto;
+}
+.message-selection-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.message-selection-buttons .batch-transfer {
+  background: var(--history);
+}
+.message-selection-buttons .batch-delete {
+  color: var(--critical);
+  background: transparent;
+}
+.message-selection-bar :is(.field-help, .composer-error) {
+  flex-basis: 100%;
+}
+.batch-destination {
+  overflow: hidden;
+}
+.batch-destination .project-edit-form {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  height: 100%;
+}
+.batch-destination h1 {
+  margin: 0 0 16px;
+  font-size: 1.4rem;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+.batch-destination .text-input {
+  width: 100%;
+}
+.batch-destination-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-block: 12px;
+  padding: 2px;
+}
+.batch-destination-list .project-item {
+  padding-right: 10px;
+}
+.batch-destination-list .project-item[aria-expanded]::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  margin-inline: 8px 2px;
+  border: solid var(--muted);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(-45deg);
+}
+.batch-destination-list .project-item[aria-expanded="true"]::after {
+  transform: rotate(45deg);
+}
+.batch-destination-footer {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+@media (max-height: 500px) {
+  .batch-destination .project-edit-form {
+    padding-block: 8px;
+  }
+  .batch-destination :is(.settings-back-button, h1) {
+    margin-bottom: 4px;
+  }
+  .batch-destination-list {
+    margin-block: 4px;
+  }
+}
+@media (max-width: 420px) {
+  .message-selection-buttons {
+    width: 100%;
+  }
+  .message-selection-buttons .button {
+    padding-inline: 8px;
+    flex: 1 1 auto;
+  }
+}
+@media (forced-colors: active) {
+  .batch-destination-list .project-row--active::before {
+    border-inline-start: 3px solid Highlight;
+    forced-color-adjust: none;
+  }
+  .message-selection-check input {
+    appearance: auto;
+    forced-color-adjust: auto;
+  }
+  .message-selection-check input:checked::after {
+    content: none;
   }
 }

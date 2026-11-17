@@ -8,6 +8,12 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [0.2.1] - Unreleased
 
+- Use **More → Select messages** to copy, move or delete several messages.
+  Shift-click selects a range, and **Select all** selects the current filtered
+  history. For Copy and Move, pick an active project or expand it to choose a
+  subthread. The destination list scrolls with the action button in view.
+  Transfers preserve times, senders, attachments and every label. Copies are independent.
+
 - Create and Edit offer one Accent picker with the six original solid colors followed
   by Guava, Honey, Jade, Lagoon, Orchid and Periwinkle gradients. Existing projects
   keep their original solid color.
@@ -24,8 +30,9 @@ below `1.0.0`, releases may contain breaking changes.
   focus border.
 - Mouse-revealed shortcuts and message options close when the pointer leaves.
   Edit places Save changes below the fields. Archive and Delete live in the rail.
-- Database schema 13 stores the project accent finish alongside schema 12’s
-  manual Alert and timestamp preference. Format-1 backups from schemas 3–12 remain importable. Export a backup before upgrading
+- Database schema 14 retains custom labels carried into another conversation.
+  Schema 13 stores the project accent finish alongside schema 12’s manual Alert
+  and timestamp preference. Format-1 backups from schemas 3–13 remain importable. Export a backup before upgrading
   if you need to return to v0.2.0.
 
 ## [0.2.0] - 2026-11-02
