@@ -91,3 +91,9 @@ merge retain the anchor metadata. Live schema-10 sources are backfilled on upgra
 previously deleted sources retain the conversation-only fallback because their
 dates are no longer available. Source-conversation deletion still makes the source
 unavailable, and deleting a subthread removes its continuation marker.
+
+## Amendment — outgoing message drafts
+
+Each root or child conversation owns one durable outgoing draft in schema 15.
+Selected backups include that draft and its files. Unfinished edits to previously
+sent messages still belong to the browser session. [Message drafts](../plans/0039-message-drafts-checklists-and-reading.md)

@@ -28,7 +28,10 @@ visibility. Schema 13 adds twelve project accent choices to the same persistence
 flow. Messages can be selected together and copied, moved or deleted. Copy and
 Move retain every label, including custom names and symbols specific to the
 source conversation. Schema 14 preserves these on individual messages. Format 1
-supports legacy bundles from schemas 3–13. The preceding release scope is in
+supports legacy bundles from schemas 3–14. Schema 15 saves one outgoing draft
+per conversation, including its attached files and picker settings. Markdown task
+boxes can be checked in place, single newlines display as line breaks, and search
+briefly highlights the opened message. See [plan 0039](plans/0039-message-drafts-checklists-and-reading.md). The preceding release scope is in
 [plan 0035](plans/0035-v0.2.0-release-preparation.md).
 
 The published v0.1.1 release includes the completed flat UI and design cookbook

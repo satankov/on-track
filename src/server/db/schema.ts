@@ -134,13 +134,38 @@ export const subthreadOrigins = sqliteTable(
   ],
 );
 
+export const conversationDrafts = sqliteTable(
+  "conversation_drafts",
+  {
+    chatId: text("chat_id")
+      .primaryKey()
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    revision: text("revision").notNull(),
+    body: text("body").notNull(),
+    sender: text("sender").notNull(),
+    timestamp: text("timestamp").notNull(),
+    senderOpen: integer("sender_open").notNull(),
+    timestampOpen: integer("timestamp_open").notNull(),
+  },
+  (table) => [
+    check(
+      "draft_bounds",
+      sql`length(${table.revision}) = 36 AND length(${table.body}) <= 10000 AND length(${table.sender}) <= 80 AND length(${table.timestamp}) <= 32 AND ${table.senderOpen} IN (0,1) AND ${table.timestampOpen} IN (0,1)`,
+    ),
+  ],
+);
+
 export const noteAttachments = sqliteTable(
   "note_attachments",
   {
     id: text("id").primaryKey(),
-    noteId: text("note_id")
-      .notNull()
-      .references(() => notes.id, { onDelete: "cascade" }),
+    draftChatId: text("draft_chat_id").references(
+      () => conversationDrafts.chatId,
+      { onDelete: "cascade" },
+    ),
+    position: integer("position"),
+    noteId: text("note_id").references(() => notes.id, { onDelete: "cascade" }),
     filename: text("filename").notNull(),
     mediaType: text("media_type").notNull(),
     storagePath: text("storage_path").notNull().unique(),
@@ -149,6 +174,15 @@ export const noteAttachments = sqliteTable(
     createdAt: integer("created_at").notNull(),
   },
   (table) => [
+    check(
+      "attachment_owner",
+      sql`(${table.noteId} IS NULL) <> (${table.draftChatId} IS NULL)`,
+    ),
+    check(
+      "attachment_position",
+      sql`(${table.noteId} IS NOT NULL AND ${table.position} IS NULL) OR (typeof(${table.position}) = 'integer' AND ${table.position} BETWEEN 0 AND 9)`,
+    ),
+    index("note_attachments_draft_idx").on(table.draftChatId, table.position),
     check(
       "note_attachments_filename_length",
       sql`length(trim(${table.filename})) BETWEEN 1 AND 255`,

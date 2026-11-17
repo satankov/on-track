@@ -1,3 +1,4 @@
+import { DraftRepository } from "./drafts.js";
 import { randomUUID } from "node:crypto";
 import {
   copyNote,
@@ -164,6 +165,8 @@ export class ArchivedProjectPinError extends Error {
   }
 }
 
+export class NoteBodyConflictError extends Error {}
+
 export class InvalidAttachmentSelectionError extends Error {
   constructor() {
     super("An attachment selection does not belong to this message.");
@@ -186,7 +189,10 @@ const CHAT_SELECT = `SELECT chats.*, COALESCE(root.accent, chats.accent) AS effe
   LEFT JOIN notes AS source_note ON source_note.id = origin.source_note_id`;
 
 export class SqliteChatRepository {
-  constructor(private readonly database: Database.Database) {}
+  readonly drafts: DraftRepository;
+  constructor(private readonly database: Database.Database) {
+    this.drafts = new DraftRepository(database);
+  }
 
   createChat(input: {
     id: string;
@@ -434,8 +440,8 @@ export class SqliteChatRepository {
         .prepare(
           `SELECT note_attachments.storage_path
            FROM note_attachments
-           INNER JOIN notes ON notes.id = note_attachments.note_id
-           WHERE notes.chat_id = ? OR notes.chat_id IN (SELECT id FROM chats WHERE project_id = ?)
+           LEFT JOIN notes ON notes.id = note_attachments.note_id
+           WHERE COALESCE(notes.chat_id,note_attachments.draft_chat_id) IN (SELECT id FROM chats WHERE id = ? OR project_id = ?)
            ORDER BY note_attachments.storage_path`,
         )
         .pluck()
@@ -524,7 +530,7 @@ export class SqliteChatRepository {
          FROM note_attachments
          INNER JOIN notes ON notes.id = note_attachments.note_id
          WHERE notes.chat_id = ?
-         ORDER BY note_attachments.created_at ASC, note_attachments.id ASC`,
+         ORDER BY note_attachments.position IS NULL, note_attachments.position, note_attachments.created_at ASC, note_attachments.id ASC`,
       )
       .all(chatId) as NoteAttachmentRow[];
     const attachmentsByNote = new Map<string, StoredNoteAttachment[]>();
@@ -545,6 +551,7 @@ export class SqliteChatRepository {
     noteId: string,
     input: {
       body?: string;
+      expectedBody?: string;
       sender?: string | null;
       createdAt?: number;
       now: number;
@@ -565,6 +572,12 @@ export class SqliteChatRepository {
         .prepare("SELECT * FROM notes WHERE id = ? AND chat_id = ?")
         .get(noteId, chatId) as NoteRow | undefined;
       if (!existing) return undefined;
+      if (
+        input.expectedBody !== undefined &&
+        existing.body !== input.expectedBody
+      ) {
+        throw new NoteBodyConflictError();
+      }
       const existingAttachments = this.listStoredAttachments(noteId);
       if (input.keepAttachmentIds !== undefined) {
         const existingAttachmentIds = new Set(
@@ -880,7 +893,7 @@ export class SqliteChatRepository {
         `SELECT *
          FROM note_attachments
          WHERE note_id = ?
-         ORDER BY created_at ASC, id ASC`,
+         ORDER BY position IS NULL, position, created_at ASC, id ASC`,
       )
       .all(noteId) as NoteAttachmentRow[];
     return rows.map(toAttachment);
@@ -891,7 +904,7 @@ export class SqliteChatRepository {
       .prepare(
         `SELECT * FROM note_attachments
          WHERE note_id = ?
-         ORDER BY created_at ASC, id ASC`,
+         ORDER BY position IS NULL, position, created_at ASC, id ASC`,
       )
       .all(noteId) as NoteAttachmentRow[];
     return rows.map(toStoredAttachment);

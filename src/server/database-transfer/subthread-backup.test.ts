@@ -46,3 +46,23 @@ it("catalogs project roots and includes archived subthread messages and files in
     },
   ]);
 });
+
+it("counts unsent draft files in a project's backup without counting a draft as a message", () => {
+  const directory = mkdtempSync(join(tmpdir(), "threadstr-draft-catalog-"));
+  directories.push(directory);
+  const path = join(directory, "catalog.sqlite");
+  const database = new Database(path);
+  database.exec(`
+    CREATE TABLE chats(id TEXT PRIMARY KEY, title TEXT, created_at INTEGER, pinned_at INTEGER, archived_at INTEGER, project_id TEXT);
+    CREATE TABLE notes(id TEXT PRIMARY KEY, chat_id TEXT);
+    CREATE TABLE note_attachments(id TEXT PRIMARY KEY, note_id TEXT, draft_chat_id TEXT);
+    INSERT INTO chats VALUES('main','Website',1,NULL,NULL,NULL),('child','Pricing',2,NULL,10,'main'),('other','Other',3,NULL,NULL,NULL);
+    INSERT INTO notes VALUES('sent','main');
+    INSERT INTO note_attachments VALUES('sent-file','sent',NULL),('draft-file',NULL,'child'),('another-draft-file',NULL,'other');
+  `);
+  database.close();
+  expect(readBackupProjects(path, 15)).toMatchObject([
+    { id: "other", messageCount: 0, attachmentCount: 1 },
+    { id: "main", messageCount: 1, attachmentCount: 2 },
+  ]);
+});

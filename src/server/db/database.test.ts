@@ -175,7 +175,7 @@ describe("SQLite project-chat persistence", () => {
     ]);
   });
 
-  it("upgrades forward-built v0.1.0 data to schema 14 without losing released state on restart", () => {
+  it("upgrades forward-built v0.1.0 data to schema 15 without losing released state on restart", () => {
     const released = createV010Database(join(directory, "released"), {
       missingAttachment: true,
     });
@@ -203,7 +203,7 @@ describe("SQLite project-chat persistence", () => {
           .prepare("SELECT schema_version FROM app_metadata")
           .pluck()
           .get(),
-      ).toBe(14);
+      ).toBe(15);
       expect(
         database
           .prepare("SELECT max(created_at) FROM __drizzle_migrations")
@@ -679,6 +679,8 @@ describe("SQLite project-chat persistence", () => {
         .all(),
     ).toEqual([
       "id",
+      "draft_chat_id",
+      "position",
       "note_id",
       "filename",
       "media_type",
@@ -744,7 +746,7 @@ describe("SQLite project-chat persistence", () => {
         .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
         .pluck()
         .get(),
-    ).toBe(14);
+    ).toBe(15);
     expect(repository.getChat("chat-a")?.pinnedAt).toBeNull();
     expect(repository.getChat("chat-a")?.collapseLongMessages).toBe(true);
     expect(repository.listNotes("chat-a")).toMatchObject([

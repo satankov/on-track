@@ -122,8 +122,13 @@ Select a project to reveal its subthreads in the sidebar. The first five are
 shown initially; **Show all** reveals the rest. Children share the project's
 accent. Labels and message-display settings are copied at creation and then
 edited independently; pin and archive state also belong to each conversation.
-Unsent text, files, edits, and reading positions are retained per conversation
-during the app session. Reloading loses unsaved drafts.
+Each conversation automatically saves one outgoing draft on this computer.
+Wait for **Draft saved** before closing the page, especially after attaching files.
+Reopening restores the text, files in order, sender, and timestamp pickers.
+You can edit a sent message and return to your outgoing draft with Save or Cancel.
+A successful send clears the submitted draft. Backups include the drafts and
+attached files in the selected conversations. Message edits and reading positions
+belong to the current session.
 
 Follow a continuation's source link to return to its branch point. If the source
 message is deleted, its continuation marker stays at that date without retaining
@@ -132,6 +137,11 @@ but preserves sibling subthreads. Deleting a root project removes Main, all its
 subthreads, and their managed attachments; export a backup first when needed.
 
 ## Markdown assistance
+
+Press Enter once for a visible line break in your message. A blank line starts a
+new paragraph. In a saved checklist such as `- [ ] Book tickets`, click the box
+to mark it done or click it again to reopen it. Keyboard users can Tab to the
+box and press Space. Editable copies of Examples also support this action.
 
 Use the `M↓` control beside Attach and Timestamp to reveal the compact Markdown
 strip. Select existing text before choosing an action to format that selection;
@@ -268,8 +278,9 @@ Search combines with Files, Links, or selected label filters and retains
 chronological order within each conversation, including future messages. Full text is searched even when
 a long message is collapsed; use Show more to read it. Matching text is highlighted,
 and the number inside the search field counts messages in the current filter.
-The return-arrow beside a result opens that message among its neighbors. The
-cross inside the input clears the query and restores your position; the magnifier
+Choose **Open message in history** from a result's More menu, or open a project-wide
+result directly. The matching row takes on the message-selection color and fades
+back within a second. The cross inside the input clears the query and restores your position; the magnifier
 or Escape closes search. Each conversation's last query is remembered during this app
 session, including after opening a result in history or switching conversations.
 Clearing the input forgets it; reloading the app resets all queries. Search stays

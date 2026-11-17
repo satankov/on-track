@@ -1,3 +1,8 @@
+import {
+  isLocalFile,
+  useConversationDraft,
+  type ComposerFile,
+} from "./conversation-draft.js";
 import { useMessageSelection } from "./useMessageSelection.js";
 import { ProjectSearchResults } from "./ProjectSearchResults.js";
 import { findProjectSearchResults } from "./project-search-results.js";
@@ -23,7 +28,6 @@ import {
   type HistoryFilter,
 } from "./history-filters.js";
 import { HighlightText } from "./HighlightText.js";
-import { rehypeSearchHighlight } from "./search-highlight.js";
 import {
   HomeWorkspace,
   type WorkspacePlaceholderState,
@@ -46,6 +50,7 @@ import { useWorkspacePreferences } from "./useWorkspacePreferences.js";
 import type { RailSection } from "./preferences.js";
 import {
   Fragment,
+  useCallback,
   useContext,
   useEffect,
   useId,
@@ -60,8 +65,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { MarkdownMessage } from "./MarkdownMessage.js";
 
 import { BackupSettingsWorkspace } from "./BackupSettingsWorkspace.js";
 import type {
@@ -72,12 +76,14 @@ import type { Chat, ChatDetail, Note } from "../domain/types.js";
 import {
   ACCENTS,
   PERMANENT_LABELS,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS_PER_MESSAGE,
   type BatchNotesInput,
   type Accent,
   type ConfigurableLabel,
   type Label,
 } from "../domain/validation.js";
-import { apiClient, type ApiClient } from "./api.js";
+import { apiClient, NoteBodyConflictError, type ApiClient } from "./api.js";
 import {
   applyMarkdownAction,
   MARKDOWN_TOOLS,
@@ -1991,66 +1997,23 @@ function MessageMoreActions({
   );
 }
 
-const messageMarkdownComponents: Components = {
-  table: ({ node, ...props }) => {
-    void node;
-    return (
-      <div
-        className="message-table-scroll"
-        role="region"
-        aria-label="Scrollable table"
-        tabIndex={0}
-      >
-        <table {...props} />
-      </div>
-    );
-  },
-  a: ({ node, ...props }) => {
-    // The Markdown AST node is not a DOM attribute.
-    void node;
-    return props.href?.startsWith("#") ? (
-      <a {...props} />
-    ) : (
-      <a {...props} target="_blank" rel="noopener noreferrer" />
-    );
-  },
-};
-
-function MarkdownMessage({
-  body,
-  searchTerms,
-}: {
-  body: string;
-  searchTerms: string[];
-}) {
-  if (!body.trim()) return null;
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[[rehypeSearchHighlight, { terms: searchTerms }]]}
-      skipHtml
-      components={messageMarkdownComponents}
-    >
-      {body}
-    </ReactMarkdown>
-  );
-}
-
 function syncClippedMessageFocus(
   bodyElement: HTMLDivElement,
   collapsed: boolean,
 ) {
   const clipBottom =
     bodyElement.getBoundingClientRect().top + MESSAGE_COLLAPSED_HEIGHT_PX;
-  for (const link of bodyElement.querySelectorAll<HTMLAnchorElement>("a")) {
+  for (const control of bodyElement.querySelectorAll<HTMLElement>(
+    "a, input[type=checkbox]",
+  )) {
     const clipped =
-      collapsed && link.getBoundingClientRect().bottom > clipBottom;
+      collapsed && control.getBoundingClientRect().bottom > clipBottom;
     if (clipped) {
-      link.dataset.messageClippedLink = "true";
-      link.tabIndex = -1;
-    } else if (link.dataset.messageClippedLink === "true") {
-      delete link.dataset.messageClippedLink;
-      link.removeAttribute("tabindex");
+      control.dataset.messageClippedControl = "true";
+      control.tabIndex = -1;
+    } else if (control.dataset.messageClippedControl === "true") {
+      delete control.dataset.messageClippedControl;
+      control.removeAttribute("tabindex");
     }
   }
   for (const table of bodyElement.querySelectorAll<HTMLDivElement>(
@@ -2073,7 +2036,9 @@ function CollapsibleMessageBody({
   body,
   searchTerms,
   collapseLongMessages,
+  onTaskChange,
 }: {
+  onTaskChange?: (body: string) => Promise<void>;
   body: string;
   searchTerms: string[];
   collapseLongMessages: boolean;
@@ -2083,6 +2048,26 @@ function CollapsibleMessageBody({
   const [isLong, setIsLong] = useState(false);
   const [expanded, setExpanded] = useState(!collapseLongMessages);
   const collapsed = isLong && !expanded;
+  const inFlight = useRef(false);
+  const [savingTask, setSavingTask] = useState<{
+    original: string;
+    updated: string;
+  }>();
+  const [taskError, setTaskError] = useState("");
+  async function changeTask(nextBody: string) {
+    if (!onTaskChange || inFlight.current) return;
+    inFlight.current = true;
+    setSavingTask({ original: body, updated: nextBody });
+    setTaskError("");
+    try {
+      await onTaskChange(nextBody);
+    } catch (caught) {
+      setTaskError(errorMessage(caught, "The task could not be saved."));
+    } finally {
+      inFlight.current = false;
+      setSavingTask(undefined);
+    }
+  }
 
   useLayoutEffect(() => {
     const bodyElement = bodyRef.current;
@@ -2124,9 +2109,19 @@ function CollapsibleMessageBody({
         }
       >
         <div className="message-body note-body" id={contentId} ref={bodyRef}>
-          <MarkdownMessage body={body} searchTerms={searchTerms} />
+          <MarkdownMessage
+            body={savingTask?.original === body ? savingTask.updated : body}
+            searchTerms={searchTerms}
+            pending={Boolean(savingTask)}
+            onChange={onTaskChange && changeTask}
+          />
         </div>
       </div>
+      {taskError && (
+        <p role="alert" className="attachment-action-error">
+          {taskError}
+        </p>
+      )}
       {isLong && (
         <button
           className="message-collapse-toggle"
@@ -2322,6 +2317,7 @@ function MessageGroups({
   onDeleteNote,
   onEditNote,
   onSetNoteLabel,
+  onTaskChange,
   onOpenInHistory,
   onContinue,
   onStartSelection,
@@ -2359,6 +2355,7 @@ function MessageGroups({
   onDeleteNote: (note: Note) => void;
   onEditNote: (note: Note) => void;
   onSetNoteLabel: (note: Note, label: Label, applied: boolean) => Promise<void>;
+  onTaskChange?: (note: Note, body: string) => Promise<void>;
   onOpenInHistory?: (note: Note) => void;
 }) {
   const definitions = useContext(ProjectLabelContext);
@@ -2549,6 +2546,11 @@ function MessageGroups({
                             searchTerms={searchTerms}
                             key={String(collapseLongMessages)}
                             body={note.body}
+                            onTaskChange={
+                              onTaskChange && !selected
+                                ? (body) => onTaskChange(note, body)
+                                : undefined
+                            }
                             collapseLongMessages={collapseLongMessages}
                           />
                           <footer className="message-footer">
@@ -2629,6 +2631,9 @@ function ChatWorkspace({
   subthreadBusy = false,
   onNavigate,
   navigationTarget,
+  onSearchDestinationOpened,
+  onOpenSearchResult,
+  onTaskChange,
   sendFeedback,
   exampleCopyAction,
   exampleError,
@@ -2643,6 +2648,9 @@ function ChatWorkspace({
   editingNote,
   editingAttachmentIds,
   pendingFiles,
+  draftNotice,
+  draftLocked = false,
+  uploadFailed = false,
   historyFilter,
   saving,
   senderOpen,
@@ -2679,7 +2687,10 @@ function ChatWorkspace({
     noteId?: string,
     fallback?: ReadingPosition,
   ) => void;
-  navigationTarget?: ReadingPosition;
+  navigationTarget?: ReadingPosition & { fromSearch?: boolean };
+  onOpenSearchResult?: (chatId: string, noteId: string) => void;
+  onSearchDestinationOpened?: () => void;
+  onTaskChange?: (note: Note, body: string) => Promise<void>;
   sendFeedback?: SendFeedback;
   readingPositions: Map<string, ReadingPosition>;
   searchQueries: Map<string, string>;
@@ -2693,7 +2704,10 @@ function ChatWorkspace({
   error: string;
   editingNote?: Note;
   editingAttachmentIds: string[];
-  pendingFiles: File[];
+  pendingFiles: ComposerFile[];
+  draftNotice?: ReactNode;
+  draftLocked?: boolean;
+  uploadFailed?: boolean;
   historyFilter: HistoryFilter;
   saving: boolean;
   senderOpen: boolean;
@@ -2800,6 +2814,20 @@ function ChatWorkspace({
   );
   const searchToggleRef = useRef<HTMLButtonElement>(null);
   const searchId = useId();
+  const clearDestination = useRef<() => void>(() => {});
+  const highlightDestination = useCallback((row: HTMLElement) => {
+    clearDestination.current();
+    row.setAttribute("data-search-destination", "");
+    const timer = window.setTimeout(
+      () => row.removeAttribute("data-search-destination"),
+      900,
+    );
+    clearDestination.current = () => {
+      window.clearTimeout(timer);
+      row.removeAttribute("data-search-destination");
+    };
+  }, []);
+  useLayoutEffect(() => () => clearDestination.current(), []);
   const beforeFilterChange = useHistoryPosition(
     historyRef,
     detail.id,
@@ -2807,6 +2835,7 @@ function ChatWorkspace({
     readingPositions,
     Boolean(explainReadOnly),
     `${projectSearchActive ? "project:" : ""}${searchQuery.key}`,
+    highlightDestination,
   );
   useLayoutEffect(() => {
     if (!navigationTarget) return;
@@ -2818,9 +2847,13 @@ function ChatWorkspace({
         ...history.querySelectorAll<HTMLElement>("[data-note-id]"),
       ].find((item) => item.dataset.noteId === navigationTarget.noteId);
       row?.focus({ preventScroll: true });
+      if (navigationTarget.fromSearch) {
+        if (row) highlightDestination(row);
+        onSearchDestinationOpened?.();
+      }
     });
     return () => cancelAnimationFrame(frame);
-  }, [navigationTarget]);
+  }, [navigationTarget, highlightDestination, onSearchDestinationOpened]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   useSendFeedback(composerRef, historyRef, sendFeedback);
@@ -2887,7 +2920,7 @@ function ChatWorkspace({
   const noticeDestination = batch.notice?.destination;
   const fileDrop = useComposerFileDrop(
     composerRef,
-    saving || Boolean(explainReadOnly) || Boolean(batch.stage),
+    saving || draftLocked || Boolean(explainReadOnly) || Boolean(batch.stage),
     onFilesSelected,
   );
   const timelineNow = useTimelineNow(visibleNotes);
@@ -3138,6 +3171,7 @@ function ChatWorkspace({
 
   function openSearch() {
     batch.clearOnFilter();
+    clearDestination.current();
     const searchDraft = searchQueries.get(detail.id) ?? "";
     beforeFilterChange(historyKey, parseSearchQuery(searchDraft).key);
     setSearchText(searchDraft);
@@ -3504,7 +3538,7 @@ function ChatWorkspace({
                 visibleIds.has(result.note.id),
               )}
               query={searchQuery}
-              onOpen={(chatId, note) => onNavigate?.(chatId, note.id)}
+              onOpen={(chatId, note) => onOpenSearchResult?.(chatId, note.id)}
             />
           ) : projectSearchActive ? (
             <div className="no-notes">
@@ -3586,6 +3620,7 @@ function ChatWorkspace({
               onDeleteNote={onDeleteNote}
               onEditNote={beginEditingNote}
               onSetNoteLabel={onSetNoteLabel}
+              onTaskChange={onTaskChange}
               onOpenInHistory={searchQuery.key ? openInHistory : undefined}
             />
           )}
@@ -3641,6 +3676,7 @@ function ChatWorkspace({
             }
           />
           {exampleError}
+          {draftNotice}
           {visibleComposerError && (
             <p role="alert" className="composer-error">
               Your note is still here. {visibleComposerError}
@@ -3689,7 +3725,7 @@ function ChatWorkspace({
             )}
             <fieldset
               className="composer-controls"
-              disabled={Boolean(explainReadOnly)}
+              disabled={Boolean(explainReadOnly) || draftLocked || saving}
             >
               {fileDrop.active && (
                 <div className="composer-drop-target" role="status">
@@ -3724,24 +3760,41 @@ function ChatWorkspace({
                         </button>
                       </span>
                     ))}
-                    {pendingFiles.map((file, index) => (
-                      <span
-                        className="pending-attachment"
-                        key={`${file.name}-${index}`}
-                      >
-                        <span>
-                          <strong>{file.name}</strong>
-                          <small>{formatFileSize(file.size)}</small>
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={`Remove ${file.name}`}
-                          onClick={() => onRemovePendingFile(index)}
+                    {pendingFiles.map((file, index) => {
+                      const name = isLocalFile(file)
+                        ? file.name
+                        : file.filename;
+                      const size = isLocalFile(file)
+                        ? file.size
+                        : file.byteSize;
+                      return (
+                        <span
+                          className="pending-attachment"
+                          key={isLocalFile(file) ? `${name}-${index}` : file.id}
                         >
-                          <XIcon />
-                        </button>
-                      </span>
-                    ))}
+                          <span>
+                            <strong>{name}</strong>
+                            <small>
+                              {!isLocalFile(file) && file.status !== "available"
+                                ? "File unavailable. Remove or reattach it."
+                                : formatFileSize(size)}
+                              {isLocalFile(file) &&
+                                !editingNote &&
+                                (uploadFailed
+                                  ? " · Upload pending"
+                                  : " · Saving…")}
+                            </small>
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={`Remove ${name}`}
+                            onClick={() => onRemovePendingFile(index)}
+                          >
+                            <XIcon />
+                          </button>
+                        </span>
+                      );
+                    })}
                   </div>
                 )}
                 {senderOpen && (
@@ -3902,19 +3955,21 @@ function ChatWorkspace({
                       M↓
                     </span>
                   </button>
-                  <input
-                    ref={fileInputRef}
-                    className="visually-hidden-file"
-                    tabIndex={-1}
-                    type="file"
-                    multiple
-                    aria-label="Attach files"
-                    onChange={(event) => {
-                      fileDrop.clearError();
-                      onFilesSelected(Array.from(event.target.files ?? []));
-                      event.target.value = "";
-                    }}
-                  />
+                  {!draftLocked && (
+                    <input
+                      ref={fileInputRef}
+                      className="visually-hidden-file"
+                      tabIndex={-1}
+                      type="file"
+                      multiple
+                      aria-label="Attach files"
+                      onChange={(event) => {
+                        fileDrop.clearError();
+                        onFilesSelected(Array.from(event.target.files ?? []));
+                        event.target.value = "";
+                      }}
+                    />
+                  )}
                   <button
                     className="composer-icon-button"
                     type="button"
@@ -3993,6 +4048,49 @@ function ChatWorkspace({
   );
 }
 
+function DraftNotice({
+  outgoing,
+}: {
+  outgoing: ReturnType<typeof useConversationDraft>;
+}) {
+  const { session, view } = outgoing;
+  if (!session) return null;
+  if (view.status === "error" || view.status === "conflict") {
+    const reload = view.status === "conflict" || !view.ready;
+    return (
+      <div className="composer-error" role="alert">
+        {view.message}{" "}
+        <button
+          type="button"
+          className="button button-quiet"
+          onClick={() => {
+            if (reload) void session.load(true);
+            else void session.flush().catch(() => {});
+          }}
+        >
+          {view.status === "conflict" ? "Use saved draft" : "Retry"}
+        </button>
+      </div>
+    );
+  }
+  const hasDraft =
+    view.body ||
+    view.files.length ||
+    view.senderOpen ||
+    view.timestampOpen ||
+    view.sender ||
+    view.timestamp;
+  return (
+    <span className="draft-save-status" role="status">
+      {view.status === "saving"
+        ? "Saving draft…"
+        : view.status === "saved" && hasDraft
+          ? "Draft saved"
+          : ""}
+    </span>
+  );
+}
+
 export function App({ api = apiClient }: { api?: ApiClient }) {
   const homeUpdates = useHomeUpdates(api);
   const [narrowHome, setNarrowHome] = useState(
@@ -4009,6 +4107,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     chats: [],
   });
   const { chats, active } = workspace;
+  const outgoing = useConversationDraft(api, active?.id);
   const [expandedProjects, setExpandedProjects] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -4016,9 +4115,15 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     chatId: string;
     sourceNoteId?: string;
   }>();
-  const [navigationTarget, setNavigationTarget] = useState<ReadingPosition>();
+  const [navigationTarget, setNavigationTarget] = useState<
+    ReadingPosition & { fromSearch?: boolean }
+  >();
   const [navigationRevision, setNavigationRevision] = useState(0);
-  const conversationDrafts = useRef(
+  const clearNavigationTarget = useCallback(
+    () => setNavigationTarget(undefined),
+    [],
+  );
+  const conversationSessions = useRef(
     new Map<
       string,
       {
@@ -4152,11 +4257,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const summaryRequest = useRef(0);
   const activeId = useRef<string | undefined>(undefined);
   const copyResetTimer = useRef<number | undefined>(undefined);
-  const newMessageSender = useRef("");
-  const newMessageSenderOpen = useRef(false);
   useLayoutEffect(() => {
     if (!active || example) return;
-    conversationDrafts.current.set(active.id, {
+    conversationSessions.current.set(active.id, {
       draft,
       sender: draftSender,
       timestamp: draftTimestamp,
@@ -4399,25 +4502,13 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           : "empty";
 
   function resetSenderComposer() {
-    newMessageSender.current = "";
-    newMessageSenderOpen.current = false;
     setDraftSender("");
     setComposerSenderOpen(false);
   }
 
-  function changeDraftSender(value: string) {
-    setDraftSender(value);
-    if (!editingNote) newMessageSender.current = value;
-  }
-
-  function changeSenderOpen(open: boolean) {
-    setComposerSenderOpen(open);
-    if (!editingNote) newMessageSenderOpen.current = open;
-  }
-
   function rememberConversation() {
     if (!active || example) return;
-    conversationDrafts.current.set(active.id, {
+    conversationSessions.current.set(active.id, {
       draft,
       sender: draftSender,
       timestamp: draftTimestamp,
@@ -4430,16 +4521,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     });
   }
   function restoreConversation(id: string) {
-    const saved = conversationDrafts.current.get(id);
+    const saved = conversationSessions.current.get(id);
     setDraft(saved?.draft ?? "");
     setDraftSender(saved?.sender ?? "");
     setDraftTimestamp(saved?.timestamp ?? "");
     setComposerSenderOpen(saved?.senderOpen ?? false);
     setComposerTimestampOpen(saved?.timestampOpen ?? false);
-    newMessageSender.current = saved?.editing ? "" : (saved?.sender ?? "");
-    newMessageSenderOpen.current = saved?.editing
-      ? false
-      : (saved?.senderOpen ?? false);
     setPendingFiles(saved?.files ?? []);
     setHistoryFilter(saved?.filter ?? []);
     setEditingNote(saved?.editing);
@@ -4449,6 +4536,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     id: string,
     noteId?: string,
     fallback?: ReadingPosition,
+    fromSearch = false,
   ) {
     if (savingNote || copyInProgress.current) return;
     rememberConversation();
@@ -4467,7 +4555,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         ? detail.notes.find((note) => note.id === noteId)
         : undefined;
       const target = targetNote
-        ? { noteId: targetNote.id, createdAt: targetNote.createdAt, offset: 16 }
+        ? {
+            noteId: targetNote.id,
+            createdAt: targetNote.createdAt,
+            offset: 16,
+            fromSearch,
+          }
         : fallback;
       setNavigationTarget(target);
       if (noteId || fallback) {
@@ -4713,7 +4806,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     );
     for (const id of deletedIds) {
       searchQueries.delete(id);
-      conversationDrafts.current.delete(id);
+      conversationSessions.current.delete(id);
+      outgoing.forget(id);
     }
     setReadingPositions((current) => {
       const next = new Map(current);
@@ -4771,19 +4865,25 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   }
 
   async function appendNote() {
-    if (!active || (!draft.trim() && pendingFiles.length === 0) || savingNote)
+    if (!active || savingNote) return;
+    if (
+      editingNote
+        ? !draft.trim() && !pendingFiles.length && !editingAttachmentIds.length
+        : !outgoing.session ||
+          (!outgoing.view.body.trim() && !outgoing.view.files.length)
+    )
       return;
     const projectId = active.id;
     const submittedDraft = draft;
     const submittedSender = draftSender.trim();
     const submittedFiles = pendingFiles;
     const editing = editingNote;
-    const timestampValue = draftTimestamp;
+    const timestampValue = editing ? draftTimestamp : outgoing.view.timestamp;
     setSavingNote(true);
     setError("");
     try {
       const timestamp =
-        (editing || composerTimestampOpen) && timestampValue
+        (editing || outgoing.view.timestampOpen) && timestampValue
           ? fromDateTimeLocalValue(timestampValue)
           : undefined;
       if (editing) {
@@ -4799,19 +4899,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           keepAttachmentIds: editingAttachmentIds,
           files: submittedFiles,
         });
+        setEditingNote(undefined);
+        setEditingAttachmentIds([]);
         if (activeId.current === projectId)
           setSendFeedback({ projectId, attempt, savedNoteId: editing.id });
-        setDraftSender(newMessageSender.current);
-        setComposerSenderOpen(newMessageSenderOpen.current);
       } else {
         const attempt = ++sendAttempt.current;
         setSendFeedback({ projectId, attempt });
-        const note = await api.appendNote(projectId, {
-          body: submittedDraft,
-          ...(submittedSender ? { sender: submittedSender } : {}),
-          ...(timestamp === undefined ? {} : { createdAt: timestamp }),
-          ...(submittedFiles.length === 0 ? {} : { files: submittedFiles }),
-        });
+        const note = await outgoing.session!.send(timestamp);
         if (activeId.current === projectId)
           setSendFeedback({
             projectId,
@@ -4831,7 +4926,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
             projectId,
             (chat) => ({ ...chat, updatedAt: submittedUpdatedAt }),
             (detail) => {
-              const notes = sortNotes([...detail.notes, note]);
+              const notes = sortNotes([
+                ...detail.notes.filter((item) => item.id !== note.id),
+                note,
+              ]);
               return {
                 ...detail,
                 notes,
@@ -4841,7 +4939,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ),
         );
       }
-      if (activeId.current === projectId) {
+      if (editing && activeId.current === projectId) {
         setDraft((current) => (current === submittedDraft ? "" : current));
         setPendingFiles((current) =>
           current === submittedFiles ? [] : current,
@@ -4851,7 +4949,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       }
     } catch (caught) {
       if (activeId.current === projectId) {
-        setError(errorMessage(caught, "The note could not be added."));
+        setError(
+          editing && caught instanceof NoteBodyConflictError
+            ? "This message changed in another window. Your unsaved edit is still here. Copy any changes you want to keep, then cancel and reopen the message to edit the latest version."
+            : errorMessage(caught, "The note could not be added."),
+        );
       }
     } finally {
       setSavingNote(false);
@@ -4859,8 +4961,6 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   }
 
   function startEditingNote(note: Note) {
-    newMessageSender.current = draftSender;
-    newMessageSenderOpen.current = composerSenderOpen;
     setEditingNote(note);
     setEditingAttachmentIds(
       note.attachments?.map((attachment) => attachment.id) ?? [],
@@ -4883,8 +4983,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setEditingNote(undefined);
     setEditingAttachmentIds([]);
     setDraft("");
-    setDraftSender(newMessageSender.current);
-    setComposerSenderOpen(newMessageSenderOpen.current);
+    resetSenderComposer();
     setPendingFiles([]);
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
@@ -4923,6 +5022,25 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     }
   }
 
+  function attachToDraft(files: File[]) {
+    if (
+      outgoing.view.files.length + files.length >
+      MAX_ATTACHMENTS_PER_MESSAGE
+    ) {
+      setError(
+        `A message can have up to ${MAX_ATTACHMENTS_PER_MESSAGE} attachments.`,
+      );
+      return;
+    }
+    const oversized = files.find((file) => file.size > MAX_ATTACHMENT_BYTES);
+    if (oversized) {
+      setError(`${oversized.name} exceeds the 100 MiB attachment limit.`);
+      return;
+    }
+    setError("");
+    outgoing.session?.edit({ files: [...outgoing.view.files, ...files] });
+  }
+
   function addPendingFiles(files: File[]) {
     setPendingFiles((current) => [...current, ...files]);
   }
@@ -4944,15 +5062,62 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     input: {
       body: string;
       sender?: string | null;
-      createdAt: number;
+      createdAt?: number;
       keepAttachmentIds?: string[];
       files?: File[];
     },
   ) {
     if (!active) return;
     const projectId = active.id;
-    const updated = await api.updateNote(projectId, noteToUpdate.id, input);
+    const epoch = databaseEpoch.current;
+    const selection = selectionRequest.current;
+    const mutation = activeMutationGeneration.current;
+    let updated: Note;
+    try {
+      updated = await api.updateNote(projectId, noteToUpdate.id, {
+        ...input,
+        expectedBody: noteToUpdate.body,
+      });
+    } catch (caught) {
+      if (caught instanceof NoteBodyConflictError) {
+        const detail = await api.getChat(projectId);
+        if (
+          epoch === databaseEpoch.current &&
+          selection === selectionRequest.current &&
+          mutation === activeMutationGeneration.current
+        ) {
+          setWorkspace((current) =>
+            commitProjectUpdate(
+              current,
+              projectId,
+              () => chatFromDetail(detail),
+              () => detail,
+            ),
+          );
+        }
+      }
+      throw caught;
+    }
+    if (epoch !== databaseEpoch.current) return;
     activeMutationGeneration.current += 1;
+    if (input.createdAt === undefined) {
+      setWorkspace((current) =>
+        commitProjectUpdate(
+          current,
+          projectId,
+          (chat) => chat,
+          (detail) => ({
+            ...detail,
+            notes: detail.notes.map((note) =>
+              note.id === updated.id && note.body === noteToUpdate.body
+                ? { ...note, body: updated.body }
+                : note,
+            ),
+          }),
+        ),
+      );
+      return;
+    }
     const submittedNotes = sortNotes(
       active.notes.map((note) => (note.id === updated.id ? updated : note)),
     );
@@ -4976,8 +5141,6 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         },
       ),
     );
-    setEditingNote(undefined);
-    setEditingAttachmentIds([]);
   }
 
   async function runNoteMutation<T>(operation: () => Promise<T>): Promise<T> {
@@ -5133,6 +5296,15 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   }
 
   async function exportDatabase(selection: ProjectSelection) {
+    const included =
+      selection === "all"
+        ? undefined
+        : new Set(
+            chats
+              .filter((chat) => selection.includes(chat.projectId ?? chat.id))
+              .map((chat) => chat.id),
+          );
+    await Promise.all(outgoing.flush(included));
     const blob = await api.exportDatabase(selection);
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -5172,10 +5344,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     invalidate();
     await workspacePreferences.pause();
     try {
+      // Drain local writes before changing databases. A previously rejected save
+      // cannot prevent a user-confirmed replacement or discard a local edit on merge.
+      await Promise.allSettled(outgoing.flush());
       const result = await api.importDatabase(file, options);
       invalidate();
       if (options.mode === "replace") {
-        conversationDrafts.current.clear();
+        conversationSessions.current.clear();
+        outgoing.clear();
         setExpandedProjects(new Set());
         setSubthreadSource(undefined);
         setNavigationTarget(undefined);
@@ -5225,9 +5401,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     if (savingNote || copyInProgress.current) return;
     rememberConversation();
     if (active) {
-      const saved = conversationDrafts.current.get(active.id);
+      const saved = conversationSessions.current.get(active.id);
       if (saved)
-        conversationDrafts.current.set(active.id, { ...saved, filter: [] });
+        conversationSessions.current.set(active.id, { ...saved, filter: [] });
     }
     const exampleSlug = example?.slug;
     setExample(undefined);
@@ -5491,23 +5667,42 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
             void selectChat(id, noteId, fallback)
           }
           navigationTarget={navigationTarget}
+          onSearchDestinationOpened={clearNavigationTarget}
+          onOpenSearchResult={(id, noteId) =>
+            void selectChat(id, noteId, undefined, true)
+          }
+          onTaskChange={(note, body) =>
+            runNoteMutation(() => updateNote(note, { body }))
+          }
           sendFeedback={
             sendFeedback?.projectId === active.id ? sendFeedback : undefined
           }
           readingPositions={readingPositions}
           searchQueries={searchQueries}
           detail={active}
-          draft={draft}
-          draftSender={draftSender}
-          draftTimestamp={draftTimestamp}
+          draft={editingNote ? draft : outgoing.view.body}
+          draftSender={editingNote ? draftSender : outgoing.view.sender}
+          draftTimestamp={
+            editingNote ? draftTimestamp : outgoing.view.timestamp
+          }
+          draftLocked={!editingNote && !outgoing.view.ready}
+          uploadFailed={
+            outgoing.view.status === "error" ||
+            outgoing.view.status === "conflict"
+          }
+          draftNotice={!editingNote && <DraftNotice outgoing={outgoing} />}
           error={error}
           editingNote={editingNote}
           editingAttachmentIds={editingAttachmentIds}
-          pendingFiles={pendingFiles}
+          pendingFiles={editingNote ? pendingFiles : outgoing.view.files}
           historyFilter={historyFilter}
           saving={savingNote}
-          senderOpen={composerSenderOpen}
-          timestampOpen={composerTimestampOpen}
+          senderOpen={
+            editingNote ? composerSenderOpen : outgoing.view.senderOpen
+          }
+          timestampOpen={
+            editingNote ? composerTimestampOpen : outgoing.view.timestampOpen
+          }
           onBack={backToProjects}
           onCustomize={() => setMode("projectEdit")}
           onCopyNote={copyNote}
@@ -5515,17 +5710,48 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           onEditNote={startEditingNote}
           onCancelEditNote={cancelEditingNote}
           onDeleteNote={deleteNote}
-          onDraftChange={setDraft}
-          onDraftSenderChange={changeDraftSender}
-          onDraftTimestampChange={setDraftTimestamp}
-          onFilesSelected={addPendingFiles}
+          onDraftChange={
+            editingNote ? setDraft : (body) => outgoing.session?.edit({ body })
+          }
+          onDraftSenderChange={
+            editingNote
+              ? setDraftSender
+              : (sender) => outgoing.session?.edit({ sender })
+          }
+          onDraftTimestampChange={
+            editingNote
+              ? setDraftTimestamp
+              : (timestamp) => outgoing.session?.edit({ timestamp })
+          }
+          onFilesSelected={editingNote ? addPendingFiles : attachToDraft}
           onHistoryFilterChange={setHistoryFilter}
           onRemoveEditingAttachment={removeEditingAttachment}
-          onRemovePendingFile={removePendingFile}
+          onRemovePendingFile={
+            editingNote
+              ? removePendingFile
+              : (index) =>
+                  outgoing.session?.edit({
+                    files: outgoing.view.files.filter((_, i) => i !== index),
+                  })
+          }
           onSetNoteLabel={setNoteLabel}
           onSubmit={appendNote}
-          onSenderOpenChange={changeSenderOpen}
+          onSenderOpenChange={
+            editingNote
+              ? setComposerSenderOpen
+              : (senderOpen) => outgoing.session?.edit({ senderOpen })
+          }
           onToggleTimestamp={() => {
+            if (!editingNote) {
+              const timestampOpen = !outgoing.view.timestampOpen;
+              outgoing.session?.edit({
+                timestampOpen,
+                timestamp:
+                  outgoing.view.timestamp ||
+                  (timestampOpen ? toDateTimeLocalValue(Date.now()) : ""),
+              });
+              return;
+            }
             setComposerTimestampOpen((current) => {
               const next = !current;
               if (next && !draftTimestamp) {

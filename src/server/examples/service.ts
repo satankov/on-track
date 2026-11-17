@@ -77,6 +77,7 @@ export function copyExample(
         label,
       })),
     ),
+    drafts: [],
     attachments: [],
     labelSnapshots: [],
     origins: [],
@@ -96,6 +97,8 @@ export function copyExample(
         records.attachments.push({
           id: attachmentId,
           note_id: noteIds.get(note.id)!,
+          draft_chat_id: null,
+          position: null,
           filename: file.filename,
           media_type: file.mediaType,
           storage_path: result.storagePath,

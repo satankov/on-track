@@ -56,8 +56,9 @@ Preferences now belong to one local database, shared across browser profiles and
 ports. Full backups carry these settings; project-only exports remain portable.
 Schema 9 requires current code and prevents older releases from reopening the
 database. Built-in enablement remains compatible with an already-open old UI
-without disabling custom labels. Current filter/search selections, drafts and
-reading anchors stay session-only.
+without disabling custom labels. Schema 9 kept filter/search selections, drafts and reading anchors in the session.
+Schema 15 persists outgoing message drafts and attachments per conversation.
+See [message drafts](../plans/0039-message-drafts-checklists-and-reading.md).
 
 ## Verification
 

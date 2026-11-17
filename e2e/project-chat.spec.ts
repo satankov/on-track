@@ -1050,6 +1050,119 @@ test("attributes participant messages with the compact desktop sender control", 
   expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.viewportWidth);
 });
 
+test("saves task checkboxes from the timeline and renders single-Enter line breaks", async ({
+  page,
+  request,
+  localApp,
+}) => {
+  const project = await createProject(request, localApp.url, {
+    title: "Reading notes",
+    accent: "moss",
+  });
+  const original =
+    "Packing\nRemember the tickets\n\n- [ ] Tickets\n  - [X] Tickets\n\n`- [ ] literal`";
+  const { id: noteId } = await addNote(
+    request,
+    localApp.url,
+    project.id,
+    original,
+    Date.now(),
+  );
+  const open = page.getByRole("button", { name: "Open Reading notes" });
+  await page.goto(localApp.url);
+  await open.click();
+  const article = page.getByRole("article");
+  await expect(article.locator("p").first().locator("br")).toHaveCount(1);
+  const tasks = article.getByRole("checkbox", { name: "Tickets" });
+  await expect(tasks).toHaveCount(2);
+  await expect(tasks.last()).toBeChecked();
+  const checkboxStyle = (input: Element) => {
+    const box = getComputedStyle(input);
+    const tick = getComputedStyle(input, "::after");
+    return {
+      appearance: box.appearance,
+      size: [box.width, box.height],
+      radius: box.borderRadius,
+      border: box.borderTop,
+      fill: box.backgroundColor,
+      tick: [tick.content, tick.borderBottom, tick.transform],
+    };
+  };
+  const more = page.getByRole("button", { name: "More message actions" });
+  await more.click();
+  await page.getByRole("menuitem", { name: "Select messages" }).click();
+  const selection = page.getByRole("checkbox", { name: /^Select message:/ });
+  const checkedStyle = await selection.evaluate(checkboxStyle);
+  await selection.uncheck();
+  const uncheckedStyle = await selection.evaluate(checkboxStyle);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(await tasks.first().evaluate(checkboxStyle)).toEqual(uncheckedStyle);
+  expect(await tasks.last().evaluate(checkboxStyle)).toEqual(checkedStyle);
+  const noteUrl = `${localApp.url}/api/chats/${project.id}/notes/${noteId}`;
+  const waitForSave = () =>
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" && response.url() === noteUrl,
+    );
+  await tasks.last().focus();
+  const keyboardSave = waitForSave();
+  await tasks.last().press("Space");
+  await expect(tasks.last()).not.toBeChecked();
+  expect((await keyboardSave).ok()).toBe(true);
+  const pointerSave = waitForSave();
+  await tasks.first().click();
+  expect((await pointerSave).ok()).toBe(true);
+  await expect(tasks.first()).toBeChecked();
+  const saved = await request.get(`${localApp.url}/api/chats/${project.id}`);
+  expect((await saved.json()).notes[0].body).toBe(
+    original.replace("- [ ] Tickets", "- [x] Tickets").replace("[X]", "[ ]"),
+  );
+  await page.reload();
+  await open.click();
+  await expect(tasks.first()).toBeChecked();
+  await expect(tasks.last()).not.toBeChecked();
+
+  // A second client changes the source while this page still has an old body.
+  const remoteBody = "- [ ] Changed elsewhere";
+  expect(
+    (await request.patch(noteUrl, { multipart: { body: remoteBody } })).ok(),
+  ).toBe(true);
+  await tasks.first().click();
+  await expect(article.getByRole("alert")).toContainText(
+    "changed in another window",
+  );
+  const refreshed = article.getByRole("checkbox", {
+    name: "Changed elsewhere",
+  });
+  await expect(refreshed).not.toBeChecked();
+
+  const edit = async () => {
+    await page.getByRole("button", { name: "More message actions" }).click();
+    await page.getByRole("menuitem", { name: "Edit message" }).click();
+  };
+  await edit();
+  const editor = page.getByLabel("Edit message", { exact: true });
+  await editor.fill("My unfinished edit");
+  expect(
+    (
+      await request.patch(noteUrl, {
+        multipart: { body: "- [x] Changed elsewhere" },
+      })
+    ).ok(),
+  ).toBe(true);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText(/Your unsaved edit is still here/)).toBeVisible();
+  await expect(editor).toHaveValue("My unfinished edit");
+  await expect(refreshed).toBeChecked();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await edit();
+  await expect(editor).toHaveValue("- [x] Changed elsewhere");
+  await editor.fill("- [x] Changed elsewhere\nMy unfinished edit");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(article).toContainText("My unfinished edit");
+});
+
 test("formats Markdown selections in a compact, responsive composer strip", async ({
   page,
   request,
@@ -1463,9 +1576,9 @@ test("manages markdown messages and database backups from the UI", async ({
   writeFileSync(bundledAttachmentPath, "bundle sidecar bytes");
   // Exercise export after a slow upload, when the composer still shows the file.
   await page.route(
-    `**/api/chats/${exportedProject.id}/notes`,
+    `**/api/chats/${exportedProject.id}/draft`,
     async (route) => {
-      if (route.request().method() === "POST") {
+      if (route.request().method() === "PUT") {
         await new Promise((resolve) => setTimeout(resolve, 750));
       }
       await route.continue();

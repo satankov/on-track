@@ -382,6 +382,7 @@ test("shows five flat children and searches the complete project from a continue
     unrelated.id,
     "Entry plan should stay outside this search.",
   );
+  await page.clock.install();
   await page.goto(localApp.url);
   const rootRow = page.getByRole("button", {
     name: `Open ${rootTitle}`,
@@ -422,6 +423,16 @@ test("shows five flat children and searches the complete project from a continue
   await expect(page.locator(".project-search-results")).not.toContainText(
     unrelated.title,
   );
+  await page.emulateMedia({ reducedMotion: "reduce", forcedColors: "active" });
+  const systemHighlight = await page.evaluate(() => {
+    const swatch = document.createElement("span");
+    swatch.style.color = "Highlight";
+    swatch.style.forcedColorAdjust = "none";
+    document.body.append(swatch);
+    const color = getComputedStyle(swatch).color;
+    swatch.remove();
+    return color;
+  });
   const mainResult = page.locator(
     `.project-search-result[data-chat-id="${root.id}"]`,
   );
@@ -431,6 +442,17 @@ test("shows five flat children and searches the complete project from a continue
   await expect(
     page.locator(`.message-row[data-note-id="${rootNote.id}"]`),
   ).toBeFocused();
+  const destination = page.locator("[data-search-destination]");
+  await expect(destination).toHaveAttribute("data-note-id", rootNote.id);
+  await expect(destination).toHaveCSS("animation-name", "none");
+  await expect(destination).toHaveCSS("background-color", systemHighlight);
+  await expect(destination.locator(".message-bubble")).toHaveCSS(
+    "box-shadow",
+    "none",
+  );
+  await page.clock.fastForward(1000);
+  expect(await destination.count()).toBe(0);
+  await page.emulateMedia({ forcedColors: "none" });
   await expect(search).toHaveCount(0);
 
   await page

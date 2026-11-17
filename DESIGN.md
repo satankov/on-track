@@ -391,10 +391,19 @@ whole project even when the selected filters intersect.
 - Own bubbles align right; participants align left with a sender label and
   neutral surface. Preserve readable Markdown, long-word wrapping, code/table
   scrolling, collapse/expand state, and complete copy/edit behavior.
+- Render a single Enter as a line break in Markdown prose. Task list items use
+  the same 22px square, 5px corners and checkmark as message selection.
+  Each native checkbox has the task text as its accessible name. A click,
+  tap, or Space saves the check. Keep clipped tasks outside the Tab order until
+  Show more reveals them. Read-only Examples and message selection disable edits.
 - Wrap Markdown tables in `.message-table-scroll`, a named keyboard-focusable
   region with local horizontal scrolling. Tables retain their content width;
   the bubble and its grid track stay within the message column. Collapsed content
   must not leave clipped links or table regions in the Tab order.
+- Align draft save status to the trailing edge of the composer in muted 0.68rem text.
+  Show “Draft saved” after the local write and file uploads finish. Unavailable
+  files identify themselves inside the existing attachment chips. Place a
+  retryable error directly above the composer.
 - Reuse the full-width composer input above its toolbar. Sender, Timestamp,
   Format share compact 46px helper rows and left alignment. Timestamp is a
   native datetime-local input, 34px tall, max 240px wide; no `margin-left:auto`.
@@ -416,7 +425,10 @@ whole project even when the selected filters intersect.
   children. Reuse the quiet compact field, counts,
   clear action, no-results feedback, and the existing highlight color pair.
   Search matches inside bubbles have a thin outline in the match text color so
-  they stay distinct on every project tint.
+  they stay distinct on every project tint. Opening a result marks the
+  entire destination row with the message-selection fill and fades it out
+  within 900 ms. Keep its position and focus stable. Reduced motion shows
+  the same fill briefly without animation. Forced colors use the system highlight.
 - Hover anywhere across a message row to reveal Label and More, including the
   empty space beside the bubble. A mouse-opened popup stays open while the
   pointer moves across the row or into the popup. Leaving both dismisses the

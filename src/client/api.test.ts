@@ -1,10 +1,33 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { apiClient } from "./api.js";
+import { apiClient, NoteBodyConflictError } from "./api.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("browser API client", () => {
+  it("sends exact Markdown source and reports a conditional note conflict", async () => {
+    const rejected = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json(
+          { code: "note_body_conflict", message: "The message changed." },
+          { status: 409 },
+        ),
+      );
+    vi.stubGlobal("fetch", rejected);
+    const input = {
+      body: "> - [x] line\r\n  ",
+      expectedBody: "> - [ ] line\r\n  ",
+    };
+    await expect(
+      apiClient.updateNote("project", "note", input),
+    ).rejects.toBeInstanceOf(NoteBodyConflictError);
+    const init = rejected.mock.calls[0][1]!;
+    expect(
+      JSON.parse(String((init.body as FormData).get("bodyChange"))),
+    ).toEqual(input);
+  });
+
   it("submits one scoped batch and distinguishes rejection from an unknown result", async () => {
     const fetchMock = vi
       .fn()

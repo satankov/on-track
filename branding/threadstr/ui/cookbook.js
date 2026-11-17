@@ -1,4 +1,4 @@
-/* global document, getComputedStyle, CSS */
+/* global document, window, getComputedStyle, CSS */
 
 const root = document.documentElement;
 const accentNames = {
@@ -562,3 +562,17 @@ function startSelectionSpecimen() {
   updateSelectionSpecimen();
   choices[0].focus();
 }
+
+let destinationTimer;
+document.getElementById("cb-open-history").addEventListener("click", () => {
+  const row = document.getElementById("cb-search-destination");
+  row.focus();
+  window.clearTimeout(destinationTimer);
+  row.removeAttribute("data-search-destination");
+  void row.offsetWidth;
+  row.setAttribute("data-search-destination", "");
+  destinationTimer = window.setTimeout(
+    () => row.removeAttribute("data-search-destination"),
+    900,
+  );
+});

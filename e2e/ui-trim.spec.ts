@@ -65,8 +65,16 @@ test("keeps Question editable and its message tags intact across themes and refl
     await expect(
       message.locator('.message-label[data-label="open-question"]'),
     ).toHaveText("Question");
-    await page.getByRole("button", { name: /^Show sender options/ }).click();
-    await page.getByRole("textbox", { name: "Sender name" }).fill("Maya");
+    const sender = page.getByRole("textbox", { name: "Sender name" });
+    if (theme === "light") {
+      await page.getByRole("button", { name: /^Show sender options/ }).click();
+      await sender.fill("Maya");
+      await expect(
+        page.getByText("Draft saved", { exact: true }),
+      ).toBeVisible();
+    } else {
+      await expect(sender).toHaveValue("Maya");
+    }
     await page.screenshot({ path: testInfo.outputPath(`sender-${theme}.png`) });
     await page.getByRole("button", { name: "Edit", exact: true }).click();
     const back = page.getByRole("button", {

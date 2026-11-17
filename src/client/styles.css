@@ -1568,6 +1568,20 @@ button.rail-section-label {
   outline: 1px solid var(--focus);
   outline-offset: 1px;
 }
+.note-body ul > .task-list-item {
+  list-style-type: none;
+}
+.note-body .task-list-item input {
+  display: inline-grid;
+  margin: 0 2px 2px 0;
+  vertical-align: middle;
+}
+.note-body .task-list-item input:disabled {
+  cursor: default;
+}
+.note-body .task-list-item input[aria-disabled="true"] {
+  cursor: progress;
+}
 .message-sender {
   margin: 0 0 5px;
   max-width: 100%;
@@ -3038,6 +3052,7 @@ kbd {
 .project-message-display-option input,
 .examples-preference input,
 .backup-project-row input,
+.task-list-item input,
 .message-selection-check input {
   appearance: none;
   flex: 0 0 22px;
@@ -3056,6 +3071,7 @@ kbd {
 .project-message-display-option input:checked,
 .examples-preference input:checked,
 .backup-project-row input:checked,
+.task-list-item input:checked,
 .message-selection-check input:checked {
   border-color: var(--accent-action, var(--ocean-action));
   background: var(--accent-action, var(--ocean-action));
@@ -3064,6 +3080,7 @@ kbd {
 .project-message-display-option input:checked::after,
 .examples-preference input:checked::after,
 .backup-project-row input:checked::after,
+.task-list-item input:checked::after,
 .message-selection-check input:checked::after {
   content: "";
   width: 6px;
@@ -4242,15 +4259,34 @@ kbd {
 .composer-wrap[hidden] {
   display: none;
 }
+.message-row[data-selected],
+.message-row[data-search-destination] {
+  border-radius: 8px;
+}
 .message-row[data-selected] {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
   align-items: center;
   justify-content: stretch;
-  border-radius: 8px;
 }
-.message-row[data-selected="true"] {
-  background: color-mix(in srgb, var(--accent) 9%, var(--history));
+.message-row[data-selected="true"],
+.message-row[data-search-destination] {
+  --message-row-highlight: color-mix(in srgb, var(--accent) 9%, var(--history));
+  background-color: var(--message-row-highlight);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .message-row[data-search-destination]:not([data-selected="true"]) {
+    animation: search-destination 900ms ease-out forwards;
+  }
+  @keyframes search-destination {
+    from,
+    20% {
+      background-color: var(--message-row-highlight);
+    }
+    to {
+      background-color: transparent;
+    }
+  }
 }
 .message-row[data-selected] .message-stack {
   grid-column: 2;
@@ -4378,11 +4414,33 @@ kbd {
     border-inline-start: 3px solid Highlight;
     forced-color-adjust: none;
   }
+  .message-row:is([data-selected="true"], [data-search-destination]) {
+    --message-row-highlight: Highlight;
+    forced-color-adjust: none;
+  }
+  .message-row:is([data-selected="true"], [data-search-destination]) > * {
+    forced-color-adjust: auto;
+  }
+  .task-list-item input,
   .message-selection-check input {
     appearance: auto;
     forced-color-adjust: auto;
   }
+  .task-list-item input:checked::after,
   .message-selection-check input:checked::after {
     content: none;
   }
+}
+
+.draft-save-status {
+  display: block;
+  max-width: var(--chat-column-width);
+  margin: 0 auto 4px;
+  text-align: end;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+.draft-save-status:empty {
+  display: none;
 }

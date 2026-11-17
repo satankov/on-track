@@ -1,3 +1,4 @@
+import type { ConversationDraft, DraftFields } from "../domain/drafts.js";
 import type {
   PreferenceInput,
   WorkspacePreferences,
@@ -22,6 +23,8 @@ import type {
   ImportResult,
   ProjectSelection,
 } from "../domain/database-transfer.js";
+export class NoteBodyConflictError extends Error {}
+
 export class ImportOutcomeUnknownError extends Error {
   constructor() {
     super(
@@ -38,7 +41,34 @@ import type {
   UpdateNoteInput,
 } from "../domain/validation.js";
 
+export type SaveDraftInput = DraftFields & {
+  revision: string | null;
+  keepAttachmentIds: string[];
+};
+export type SentDraft = Note & { draftRevision: string; replayed?: true };
+
+export class RequestError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
+}
+
 export interface ApiClient {
+  getDraft(id: string): Promise<ConversationDraft>;
+  saveDraft(
+    id: string,
+    input: SaveDraftInput,
+    files: File[],
+  ): Promise<ConversationDraft>;
+  sendDraft(
+    id: string,
+    revision: string,
+    createdAt?: number,
+  ): Promise<SentDraft>;
   getPreferences(): Promise<WorkspacePreferences>;
   initializePreferences(input: PreferenceInput): Promise<WorkspacePreferences>;
   updatePreferences(input: PreferenceInput): Promise<WorkspacePreferences>;
@@ -106,9 +136,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as {
       message?: string;
+      code?: string;
     } | null;
-    throw new Error(
+    if (response.status === 409 && payload?.code === "note_body_conflict")
+      throw new NoteBodyConflictError(payload.message);
+    throw new RequestError(
+      response.status,
       payload?.message ?? "The local service could not complete that request.",
+      payload?.code,
     );
   }
 
@@ -116,7 +151,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+const draftPath = (id: string) => `/api/chats/${encodeURIComponent(id)}/draft`;
+
 export const apiClient: ApiClient = {
+  getDraft: (id) => request(draftPath(id), { cache: "no-store" }),
+  saveDraft: (id, input, files) => {
+    const form = new FormData();
+    form.set("draft", JSON.stringify(input));
+    for (const file of files) form.append("files", file);
+    return request(draftPath(id), { method: "PUT", body: form });
+  },
+  sendDraft: (id, revision, createdAt) =>
+    request(`${draftPath(id)}/send`, {
+      method: "POST",
+      body: JSON.stringify({ revision, createdAt }),
+    }),
   getPreferences: () => request("/api/preferences", { cache: "no-store" }),
   initializePreferences: (input) =>
     request("/api/preferences/initialize", {
@@ -333,7 +382,12 @@ export const apiClient: ApiClient = {
 
 function noteFormData(input: CreateNoteInput | UpdateNoteInput): FormData {
   const form = new FormData();
-  if (input.body !== undefined) form.set("body", input.body);
+  if ("expectedBody" in input && input.expectedBody !== undefined) {
+    form.set(
+      "bodyChange",
+      JSON.stringify({ body: input.body, expectedBody: input.expectedBody }),
+    );
+  } else if (input.body !== undefined) form.set("body", input.body);
   if (input.sender !== undefined) form.set("sender", input.sender ?? "");
   if (input.createdAt !== undefined) {
     form.set("createdAt", String(input.createdAt));

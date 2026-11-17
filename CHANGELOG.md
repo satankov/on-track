@@ -8,6 +8,11 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [0.2.1] - Unreleased
 
+- Autosave one outgoing message per conversation, including attached files,
+  sender, and time. Schema 15 includes drafts in full and selected backups.
+- Toggle Markdown task boxes directly in a saved message. A single Enter now
+  renders a line break. Opening a search result in history briefly highlights it.
+
 - Use **More → Select messages** to copy, move or delete several messages.
   Shift-click selects a range, and **Select all** selects the current filtered
   history. For Copy and Move, pick an active project or expand it to choose a
@@ -32,7 +37,7 @@ below `1.0.0`, releases may contain breaking changes.
   Edit places Save changes below the fields. Archive and Delete live in the rail.
 - Database schema 14 retains custom labels carried into another conversation.
   Schema 13 stores the project accent finish alongside schema 12’s manual Alert
-  and timestamp preference. Format-1 backups from schemas 3–13 remain importable. Export a backup before upgrading
+  and timestamp preference. Format-1 backups from schemas 3–14 remain importable. Export a backup before upgrading
   if you need to return to v0.2.0.
 
 ## [0.2.0] - 2026-11-02

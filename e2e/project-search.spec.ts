@@ -98,6 +98,17 @@ test("searches locally with a compact field, restores reading positions and open
   await page.goto(localApp.url);
   await page.getByRole("button", { name: "Open Search notebook" }).click();
   await expect(page.locator(".message-row")).toHaveCount(24);
+  const target = page.locator(`[data-note-id="${ids[10]}"]`);
+  const restingColor = await target.evaluate(
+    (row) => getComputedStyle(row).backgroundColor,
+  );
+  await target.getByRole("button", { name: "More message actions" }).click();
+  await page.getByRole("menuitem", { name: "Select messages" }).click();
+  const selectionColor = await target.evaluate(
+    (row) => getComputedStyle(row).backgroundColor,
+  );
+  expect(selectionColor).not.toBe(restingColor);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   const history = page.locator(".history");
   await history.evaluate((el) => {
     el.scrollTop = 500;
@@ -105,6 +116,7 @@ test("searches locally with a compact field, restores reading positions and open
   const position = await history.evaluate((el) => el.scrollTop);
   const draft = page.getByLabel("Add a note");
   await draft.fill("Preserve this draft");
+  await expect(page.getByText("Draft saved", { exact: true })).toBeVisible();
   const toggle = page.getByRole("button", {
     name: "Search messages",
     exact: true,
@@ -215,12 +227,50 @@ test("searches locally with a compact field, restores reading positions and open
   ).toBeVisible();
   await page.getByRole("button", { name: "Search all messages" }).click();
   await expect(page.locator(".message-row")).toHaveCount(2);
-  const target = page.locator(`[data-note-id="${ids[10]}"]`);
   await target.getByRole("button", { name: "More message actions" }).click();
   await page.getByRole("menuitem", { name: "Open message in history" }).click();
   await expect(search).toHaveCount(0);
   await expect(page.locator(".message-row")).toHaveCount(24);
   await expect(target).toBeFocused();
+  await expect(target).toHaveAttribute("data-search-destination", "");
+  await expect(page.locator("[data-search-destination]")).toHaveCount(1);
+  await expect(target.locator(".message-bubble")).toHaveCSS(
+    "box-shadow",
+    "none",
+  );
+  const fade = await target.evaluate((row) => {
+    const animation = row.getAnimations()[0];
+    if (!animation?.effect) throw new Error("Expected the message row to fade");
+    const duration = Number(animation.effect.getComputedTiming().duration);
+    animation.pause();
+    animation.currentTime = 0;
+    const start = getComputedStyle(row).backgroundColor;
+    animation.currentTime = duration * 0.75;
+    const fading = getComputedStyle(row).backgroundColor;
+    animation.play();
+    return { duration, start, fading };
+  });
+  // Browsers serialize the animated and static colors in different color spaces.
+  const [start, selection, fading] = await page.evaluate(
+    (colors) => {
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d")!;
+      return colors.map((color) => {
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        return Array.from(context.getImageData(0, 0, 1, 1).data);
+      });
+    },
+    [fade.start, selectionColor, fade.fading],
+  );
+  expect(start).toEqual(selection);
+  expect(fade.duration).toBeGreaterThan(0);
+  expect(fade.duration).toBeLessThanOrEqual(1000);
+  expect(fading[3]).toBeGreaterThan(0);
+  expect(fading[3]).toBeLessThan(start[3]);
+  await expect(target).not.toHaveAttribute("data-search-destination", "");
+  await expect(target).toHaveCSS("background-color", restingColor);
   await expect(target).toBeInViewport();
   await expect(draft).toHaveValue("Preserve this draft");
   await toggle.click();

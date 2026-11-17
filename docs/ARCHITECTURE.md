@@ -386,8 +386,8 @@ integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
 fresh managed paths, removes bundle payload tables, and compacts the current-
-schema candidate. Schema 3–13 bundles are checked against their trusted legacy descriptors
-before migration to schema 14 in staging. Legacy projects adopt the plain finish. Older conversations start with manual
+schema candidate. Schema 3–14 bundles are checked against their trusted legacy descriptors
+before migration to schema 15 in staging. Legacy projects adopt the plain finish. Older conversations start with manual
 Alert off. Older preference rows default to always displaying message time.
 It then uses the maintenance gate and
 restore journal to replace live state. Exact active-schema expectations come
@@ -485,6 +485,17 @@ forgotten credentials, recovery, and cleanup of plaintext artifacts. Backup
 integrity, import conflict handling, recovery UX, and restore failure modes must
 be hardened before production-readiness claims.
 
+## Outgoing message drafts
+
+Schema 15 keys one outgoing draft by conversation. Draft attachments share the
+managed-file inventory, with exactly one owner and a stable display order.
+The composer serializes writes and sends an expected revision with each save.
+A send transaction creates the note, reassigns its files and rotates the draft
+revision. Replaying the submitted revision recovers the same message after a lost
+response. A stale save retains the local composer contents. Edit sessions use a
+separate in-memory buffer. Project-scoped backups carry draft text, picker states
+and attachment bytes. Merge remaps owners, and restore renews revision tokens.
+
 ## Project keyword search
 
 Search defaults to the loaded conversation. Project scope loads the root and all
@@ -495,8 +506,8 @@ message; `project-search-results.ts` builds these contextual results.
 then applies normalized literal substring AND matching across body, displayed
 sender, and filenames. It intersects existing filters and keeps chronological
 ordering within each conversation. Parsed-text caches belong to the mounted
-workspace; the App owns session-only last-query and composer-draft maps per conversation. Drafts include
-unsent files and edits; replacement import clears all cached work. Returning
+workspace. The App holds last queries and unfinished message edits in memory.
+Replacement import clears these caches. Returning
 through Home resets filters to All and retains the All reading anchor. Typing updates that map without rendering
 the timeline until the debounced query commits. Deletion/replacement clears the
 relevant memory. A rehype transform highlights rendered text nodes (including
@@ -506,14 +517,14 @@ no search query, index, or history enters an API, URL, persistent browser storag
 SQLite, or backups. The memory-only history-position hook isolates search anchors
 from ordinary All/filter navigation. Current-conversation results reuse original message rendering and actions;
 project-scope results open the owning conversation before mutation. The context
-action restores All and focuses the original message. Search introduces no persistent data. This is linear search over a fully
+action restores All, focuses the original message, and briefly highlights its whole row. Search introduces no persistent data. This is linear search over a fully
 loaded, unvirtualized project, not an architecture for unbounded histories.
 
 ## Critical user journeys
 
 - Create an empty independent subthread or continue from a message, follow source
   links, and branch again into a sibling while preserving independent settings
-  and session drafts.
+  and saved outgoing drafts.
 - Search the current conversation or enable Project to include Main and all
   children, including archives; combine with history filters and open a result
   in its owning conversation without losing the query or composer draft.

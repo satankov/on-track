@@ -69,9 +69,9 @@ export function copyNote(
     readTransferLabels(db, sourceNoteId),
   );
   const insert = db.prepare(`INSERT INTO note_attachments
-      (id, note_id, filename, media_type, storage_path, byte_size, modified_at, created_at)
-      VALUES (@id, @noteId, @filename, @mediaType, @storagePath, @byteSize, @modifiedAt, @createdAt)`);
-  for (const source of attachments) {
+      (id, note_id, filename, media_type, storage_path, byte_size, modified_at, created_at, position)
+      VALUES (@id, @noteId, @filename, @mediaType, @storagePath, @byteSize, @modifiedAt, @createdAt, @position)`);
+  for (const [position, source] of attachments.entries()) {
     const entry = prepared.get(source.id);
     if (
       !entry ||
@@ -82,6 +82,6 @@ export function copyNote(
       entry.source.createdAt !== source.createdAt
     )
       throw new BatchContentsChangedError();
-    insert.run({ ...entry.target, noteId: newNoteId });
+    insert.run({ ...entry.target, noteId: newNoteId, position });
   }
 }

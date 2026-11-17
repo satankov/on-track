@@ -550,8 +550,19 @@
             ><strong>Always show message time</strong>
             <input type="checkbox" id="cb-message-time" checked
           /></label>
+          <button
+            class="button button-quiet"
+            id="cb-open-history"
+            type="button"
+          >
+            Open message in history
+          </button>
           <div class="cb-conversation" data-accent="ocean-gradient">
-            <div class="message-row message-row--participant">
+            <div
+              class="message-row message-row--participant"
+              id="cb-search-destination"
+              tabindex="-1"
+            >
               <div class="message-stack">
                 <article class="message-bubble">
                   <p class="message-sender" data-sender-color="iris">Maya</p>
@@ -569,8 +580,19 @@
               <div class="message-stack">
                 <article class="message-bubble">
                   <div class="note-body">
-                    One museum, a quiet base, and plenty of wandering. I saved
-                    the practical details below.
+                    <p>
+                      One museum and a quiet base.<br />I saved our checklist
+                      here.
+                    </p>
+                    <ul>
+                      <li class="task-list-item">
+                        <input
+                          type="checkbox"
+                          aria-label="Reserve the museum tickets"
+                        />
+                        Reserve the museum tickets
+                      </li>
+                    </ul>
                   </div>
                   <div class="message-footer">
                     <div
@@ -791,6 +813,7 @@
             <p id="cb-message-status" class="field-help" role="status"></p>
             <div class="cb-composer-stage">
               <div class="composer-wrap cb-composer-wrap">
+                <span class="draft-save-status">Draft saved</span>
                 <form class="composer" id="cb-composer">
                   <div class="composer-timestamp-row">
                     <label class="field-label" for="cb-timestamp"

@@ -1,4 +1,9 @@
-import { InvalidSubthreadError } from "./db/repository.js";
+import { registerDraftRoutes } from "./draft-routes.js";
+import { DraftConflictError, DraftFileSelectionError } from "./db/drafts.js";
+import {
+  InvalidSubthreadError,
+  NoteBodyConflictError,
+} from "./db/repository.js";
 import { BatchContentsChangedError } from "./db/batch-notes.js";
 import {
   LabelConfigurationConflictError,
@@ -19,7 +24,7 @@ import Fastify, {
 } from "fastify";
 import { rmSync } from "node:fs";
 import { dirname } from "node:path";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 
 import {
   AttachmentCopyError,
@@ -144,6 +149,13 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     },
   });
 
+  const conditionalBody = z
+    .object({
+      body: z.string().max(10_000),
+      expectedBody: z.string().max(10_000),
+    })
+    .strict();
+
   async function parseMultipartNote(request: {
     parts: () => AsyncIterableIterator<
       | {
@@ -156,6 +168,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     >;
   }): Promise<{
     body?: string;
+    expectedBody?: string;
     sender?: string | null;
     createdAt?: number;
     keepAttachmentIds?: string[];
@@ -168,6 +181,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     }[];
   }> {
     let body: string | undefined;
+    let expectedBody: string | undefined;
     let sender: string | null | undefined;
     let senderSeen = false;
     let createdAt: number | undefined;
@@ -187,7 +201,17 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
           continue;
         }
         if (part.fieldname === "body" && typeof part.value === "string") {
+          if (expectedBody !== undefined) throw new InvalidInputError();
           body = part.value.replace(/\r\n?/g, "\n");
+        }
+        if (part.fieldname === "bodyChange") {
+          if (body !== undefined || typeof part.value !== "string")
+            throw new InvalidInputError();
+          // FormData normalizes line endings in plain string fields. JSON keeps
+          // both the original source and its proposed replacement byte-for-byte.
+          const change = conditionalBody.parse(JSON.parse(part.value));
+          body = change.body;
+          expectedBody = change.expectedBody;
         }
         if (part.fieldname === "sender") {
           if (senderSeen || typeof part.value !== "string") {
@@ -219,6 +243,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     }
     return {
       body,
+      expectedBody,
       sender,
       createdAt,
       keepAttachmentIds,
@@ -277,10 +302,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   });
 
   registerPreferenceRoutes(app, () => database);
+  registerDraftRoutes(app, () => service, maintenanceGate);
 
   app.setErrorHandler((error, _request, reply) => {
     if (
       error instanceof ZodError ||
+      error instanceof DraftFileSelectionError ||
       error instanceof InvalidInputError ||
       error instanceof InvalidSubthreadError ||
       error instanceof InvalidLabelConfigurationError
@@ -290,6 +317,16 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         message: "Please check the submitted values.",
       });
     }
+    if (error instanceof DraftConflictError)
+      return reply
+        .code(409)
+        .send({ code: "draft_conflict", message: error.message });
+    if (error instanceof NoteBodyConflictError)
+      return reply.code(409).send({
+        code: "note_body_conflict",
+        message:
+          "This message changed in another window. Review the latest message before trying again.",
+      });
     if (error instanceof LabelConfigurationConflictError)
       return reply.code(409).send({
         code: "label_conflict",

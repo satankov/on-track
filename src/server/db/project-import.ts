@@ -24,7 +24,9 @@ export interface ImportedNote {
 }
 export interface ImportedAttachment {
   id: string;
-  note_id: string;
+  note_id: string | null;
+  draft_chat_id: string | null;
+  position: number | null;
   filename: string;
   media_type: string;
   storage_path: string;
@@ -36,6 +38,15 @@ export interface ImportedRecords {
   projects: ImportedProject[];
   notes: ImportedNote[];
   attachments: ImportedAttachment[];
+  drafts: Array<{
+    chat_id: string;
+    revision: string;
+    body: string;
+    sender: string;
+    timestamp: string;
+    sender_open: number;
+    timestamp_open: number;
+  }>;
   labelDefinitions: ProjectLabelRow[];
   origins: Array<{
     chat_id: string;
@@ -67,9 +78,14 @@ export function readImportedRecords(
         "SELECT id,chat_id,body,sender,created_at FROM notes ORDER BY id",
       )
       .all() as ImportedNote[],
+    drafts: source
+      .prepare(
+        "SELECT chat_id,revision,body,sender,timestamp,sender_open,timestamp_open FROM conversation_drafts",
+      )
+      .all() as ImportedRecords["drafts"],
     attachments: source
       .prepare(
-        "SELECT id,note_id,filename,media_type,storage_path,byte_size,modified_at,created_at FROM note_attachments ORDER BY id",
+        "SELECT id,note_id,draft_chat_id,position,filename,media_type,storage_path,byte_size,modified_at,created_at FROM note_attachments ORDER BY id",
       )
       .all() as ImportedAttachment[],
     labelDefinitions: source
@@ -100,8 +116,11 @@ export function insertImportedRecords(
   const note = database.prepare(
     "INSERT INTO notes (id,chat_id,body,sender,created_at) VALUES (@id,@chat_id,@body,@sender,@created_at)",
   );
+  const draft = database.prepare(
+    "INSERT INTO conversation_drafts(chat_id,revision,body,sender,timestamp,sender_open,timestamp_open) VALUES (@chat_id,@revision,@body,@sender,@timestamp,@sender_open,@timestamp_open)",
+  );
   const file = database.prepare(
-    "INSERT INTO note_attachments (id,note_id,filename,media_type,storage_path,byte_size,modified_at,created_at) VALUES (@id,@note_id,@filename,@media_type,@storage_path,@byte_size,@modified_at,@created_at)",
+    "INSERT INTO note_attachments (id,note_id,draft_chat_id,position,filename,media_type,storage_path,byte_size,modified_at,created_at) VALUES (@id,@note_id,@draft_chat_id,@position,@filename,@media_type,@storage_path,@byte_size,@modified_at,@created_at)",
   );
   const definition = database.prepare(
     "INSERT INTO project_labels (chat_id,id,name,name_key,symbol,enabled,position,builtin) VALUES (@chat_id,@id,@name,@name_key,@symbol,@enabled,@position,@builtin)",
@@ -121,6 +140,7 @@ export function insertImportedRecords(
     ))
       project.run(row);
     for (const row of records.notes) note.run(row);
+    for (const row of records.drafts) draft.run(row);
     for (const row of records.attachments) file.run(row);
     for (const row of records.labelDefinitions) definition.run(row);
     for (const row of records.noteLabels) label.run(row);

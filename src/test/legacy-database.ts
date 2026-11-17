@@ -1,7 +1,46 @@
 import { readFileSync } from "node:fs";
 import type Database from "better-sqlite3";
 
+/** Restore the original attachment table when constructing a pre-draft fixture. */
+export function rewindToSchema14(database: Database.Database): void {
+  const version = database
+    .prepare("SELECT schema_version FROM app_metadata")
+    .pluck()
+    .get();
+  if (version !== 15) return;
+  const columns =
+    "id,note_id,filename,media_type,storage_path,byte_size,modified_at,created_at";
+  const foreignKeys = database.pragma("foreign_keys", { simple: true });
+  database.pragma("foreign_keys=OFF"); // Preserve the bundle payload FK during the table rebuild.
+  try {
+    database.transaction(() => {
+      database.exec(`CREATE TEMP TABLE old_files AS SELECT ${columns} FROM note_attachments WHERE note_id IS NOT NULL;
+        DROP TABLE note_attachments; DROP TABLE conversation_drafts;`);
+      const schema = readFileSync(
+        "drizzle/0002_attachment_messages.sql",
+        "utf8",
+      );
+      for (const statement of schema.split("--> statement-breakpoint")) {
+        if (
+          statement.trim().startsWith("CREATE TABLE `note_attachments`") ||
+          statement
+            .trim()
+            .startsWith("CREATE INDEX `note_attachments_note_idx`")
+        )
+          database.exec(statement);
+      }
+      database.exec(`INSERT INTO note_attachments (${columns}) SELECT ${columns} FROM old_files;
+        DROP TABLE old_files;
+        DELETE FROM __drizzle_migrations WHERE created_at > 1794908242511;
+        UPDATE app_metadata SET schema_version=14;`);
+    })();
+  } finally {
+    database.pragma(foreignKeys ? "foreign_keys=ON" : "foreign_keys=OFF");
+  }
+}
+
 export function rewindToSchema13(database: Database.Database): void {
+  rewindToSchema14(database);
   database.exec(`
     DROP TABLE note_label_snapshots;
     DELETE FROM __drizzle_migrations WHERE created_at > 1794905488811;
@@ -11,10 +50,10 @@ export function rewindToSchema13(database: Database.Database): void {
 
 export function rewindToSchema12(database: Database.Database): void {
   if (
-    database
+    (database
       .prepare("SELECT schema_version FROM app_metadata")
       .pluck()
-      .get() === 14
+      .get() as number) >= 14
   )
     rewindToSchema13(database);
   database.exec(`

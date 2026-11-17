@@ -119,6 +119,7 @@ export const createNoteInputSchema = z.object({
 
 export const updateNoteInputSchema = z
   .object({
+    expectedBody: z.string().max(10_000).optional(),
     body: noteBodySchema.optional(),
     sender: senderSchema.nullable().optional(),
     createdAt: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),

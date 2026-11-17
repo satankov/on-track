@@ -75,6 +75,58 @@ describe("local project-chat API", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it("rejects a stale conditional note body and retains metadata and files", async () => {
+    const chat = (
+      await app.inject({
+        method: "POST",
+        url: "/api/chats",
+        payload: { title: "Tasks", accent: "ocean" },
+      })
+    ).json();
+    const body = "- [ ] Write\n- [ ] Read";
+    const original = noteForm({ body, sender: "Frank", createdAt: 13 });
+    original.append("files", new File(["keep"], "keep.txt"));
+    const note = (
+      await app.inject({
+        method: "POST",
+        url: `/api/chats/${chat.id}/notes`,
+        payload: original,
+      })
+    ).json();
+    const url = `/api/chats/${chat.id}/notes/${note.id}`;
+    await app.inject({ method: "PUT", url: url + "/labels/pin" });
+    const save = (next: string, expectedBody = body) => {
+      const form = new FormData();
+      form.set("bodyChange", JSON.stringify({ body: next, expectedBody }));
+      return app.inject({ method: "PATCH", url, payload: form });
+    };
+    const first = body.replace("[ ]", "[x]");
+    expect((await save(first)).json()).toMatchObject({
+      body: first,
+      createdAt: 13,
+      sender: "Frank",
+      labels: ["pin"],
+      attachments: [{ id: note.attachments[0].id }],
+    });
+    expect((await save("older manual edit")).statusCode).toBe(409);
+    expect(
+      (await app.inject({ url: `/api/chats/${chat.id}` })).json().notes[0].body,
+    ).toBe(first);
+    expect((await save("corrected", ` ${first} `)).statusCode).toBe(409);
+    expect((await save("  corrected note  ", first)).json().body).toBe(
+      "corrected note",
+    );
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/database/export",
+          payload: { selection: "all" },
+        })
+      ).statusCode,
+    ).toBe(200);
+  });
+
   it("copies, moves and deletes whole message selections across conversations", async () => {
     const create = async (title: string) =>
       (

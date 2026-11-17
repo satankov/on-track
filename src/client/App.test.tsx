@@ -1,3 +1,7 @@
+import {
+  EMPTY_DRAFT_FIELDS,
+  type ConversationDraft,
+} from "../domain/drafts.js";
 import { defaultProjectLabels } from "../domain/labels.js";
 import {
   DEFAULT_PREFERENCES,
@@ -44,6 +48,14 @@ async function chooseMessageAction(
 
 function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
   let preferences = structuredClone(DEFAULT_PREFERENCES);
+  const drafts = new Map<string, ConversationDraft>();
+  const fileContents = new Map<string, File>();
+  const empty = (): ConversationDraft => ({
+    ...EMPTY_DRAFT_FIELDS,
+    revision: null,
+    attachments: [],
+  });
+  const appendNote = overrides.appendNote ?? vi.fn();
   return {
     getPreferences: vi.fn(async () => preferences),
     initializePreferences: vi.fn(
@@ -83,7 +95,44 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setChatPinned: vi.fn(),
     setChatArchived: vi.fn(),
     deleteChat: vi.fn(),
-    appendNote: vi.fn(),
+    appendNote,
+    getDraft: vi.fn(async (id) => drafts.get(id) ?? empty()),
+    saveDraft: async (id, input, files) => {
+      const attachments = (drafts.get(id)?.attachments ?? []).filter((item) =>
+        input.keepAttachmentIds.includes(item.id),
+      );
+      for (const file of files) {
+        const key = crypto.randomUUID();
+        fileContents.set(key, file);
+        attachments.push({
+          id: key,
+          filename: file.name,
+          byteSize: file.size,
+          status: "available",
+        });
+      }
+      const draft = { ...input, revision: crypto.randomUUID(), attachments };
+      drafts.set(id, draft);
+      return draft;
+    },
+    sendDraft: async (id, _revision, createdAt) => {
+      const draft = drafts.get(id)!;
+      const note = await appendNote(id, {
+        body: draft.body,
+        ...(draft.sender.trim() ? { sender: draft.sender.trim() } : {}),
+        ...(createdAt === undefined ? {} : { createdAt }),
+        ...(draft.attachments.length
+          ? {
+              files: draft.attachments.map((item) =>
+                fileContents.get(item.id)!,
+              ),
+            }
+          : {}),
+      });
+      const draftRevision = crypto.randomUUID();
+      drafts.set(id, { ...empty(), revision: draftRevision });
+      return { ...note, draftRevision };
+    },
     updateNote: vi.fn(),
     deleteNote: vi.fn(),
     batchNotes: vi.fn(),
@@ -105,15 +154,135 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
         },
       ],
     }),
-    importDatabase: vi
-      .fn()
-      .mockResolvedValue({ importedCount: 1, renames: [] }),
+    importDatabase: vi.fn(async (_file, options) => {
+      if (options.mode === "replace") {
+        drafts.clear();
+        fileContents.clear();
+      }
+      return { importedCount: 1, renames: [] };
+    }),
     ...overrides,
   };
 }
 
 describe("personal project chat workspace", () => {
   beforeEach(() => localStorage.clear());
+
+  it("exposes the attachment input only after the conversation can accept files", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "loading",
+      title: "Loading files",
+      accent: "moss",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const pending = deferred<ConversationDraft>();
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      getDraft: vi.fn(() => pending.promise),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Loading files" }),
+    );
+    expect(screen.getByLabelText("Open file picker")).toBeDisabled();
+    expect(screen.queryByLabelText("Attach files", { exact: true })).toBeNull();
+    await act(async () =>
+      pending.resolve({
+        ...EMPTY_DRAFT_FIELDS,
+        revision: null,
+        attachments: [],
+      }),
+    );
+    await user.upload(
+      screen.getByLabelText("Attach files", { exact: true }),
+      new File(["file"], "early.txt"),
+    );
+    expect(
+      screen.getByRole("button", { name: "Remove early.txt" }),
+    ).toBeVisible();
+  });
+
+  it("restores the saved outgoing draft and its files after editing another message", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "drafts",
+      title: "Drafts",
+      accent: "moss",
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const original = {
+      id: "existing",
+      chatId: chat.id,
+      body: "Existing message",
+      sender: null,
+      createdAt: 2,
+      labels: [],
+    };
+    const saved = {
+      revision: "saved",
+      body: "  Work in progress\n",
+      sender: "Maya",
+      senderOpen: true,
+      timestamp: "2026-11-18T09:00",
+      timestampOpen: true,
+      attachments: [
+        {
+          id: "attachment",
+          filename: "outline.txt",
+          byteSize: 4,
+          status: "available" as const,
+        },
+      ],
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [original] }),
+      getDraft: vi.fn().mockResolvedValue(saved),
+      saveDraft: vi.fn(async (_id, fields) => ({
+        ...saved,
+        ...fields,
+        revision: "new",
+      })),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Drafts" }),
+    );
+    const composer = await screen.findByLabelText("Add a note");
+    await waitFor(() => expect(composer).toHaveValue(saved.body));
+    expect(screen.getByLabelText("Sender name")).toHaveValue("Maya");
+    expect(screen.getByLabelText("Message timestamp")).toHaveValue(
+      saved.timestamp,
+    );
+    expect(
+      screen.getByRole("button", { name: "Remove outline.txt" }),
+    ).toBeVisible();
+    fireEvent.change(composer, { target: { value: "New draft text  " } });
+    await waitFor(() =>
+      expect(api.saveDraft).toHaveBeenCalledWith(
+        chat.id,
+        expect.objectContaining({
+          body: "New draft text  ",
+          keepAttachmentIds: ["attachment"],
+          revision: "saved",
+        }),
+        [],
+      ),
+    );
+    await chooseMessageAction(user, "Edit message");
+    expect(screen.getByLabelText("Edit message")).toHaveValue(
+      "Existing message",
+    );
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByLabelText("Add a note")).toHaveValue("New draft text  ");
+    expect(
+      screen.getByRole("button", { name: "Remove outline.txt" }),
+    ).toBeVisible();
+  });
 
   it("expands ordered rail shortcuts and keeps a manual Alert independent of message attention", async () => {
     const user = userEvent.setup();
@@ -535,6 +704,91 @@ describe("personal project chat workspace", () => {
     ).toBeVisible();
   });
 
+  it("renders soft lines within prose and preserves Markdown block structure", async () => {
+    const chat = {
+      id: "breaks",
+      title: "Breaks",
+      accent: "ocean",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const body =
+      "one\n**two**  \nthree\n\nfour\n\n- first\n  second\n\n```\na\nb\n```";
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({
+        ...chat,
+        notes: [{ id: "note", chatId: chat.id, body, createdAt: 1 }],
+      }),
+    });
+    const user = userEvent.setup();
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Breaks" }),
+    );
+    const article = await screen.findByRole("article");
+    expect(article.querySelectorAll("p:first-child br")).toHaveLength(2);
+    expect(article.querySelectorAll(".note-body > p")).toHaveLength(2);
+    expect(article.querySelectorAll(".note-body li br")).toHaveLength(1);
+    expect(article.querySelector("pre code")?.textContent).toBe("a\nb\n");
+  });
+
+  it("toggles a single nested task and preserves the unfinished composer", async () => {
+    const chat = {
+      id: "tasks",
+      title: "Tasks",
+      accent: "ocean",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const body = "> - [ ] Repeat\n>   1. [X] **Repeat**\n\n`- [ ] literal`";
+    const note = {
+      id: "note",
+      chatId: chat.id,
+      body,
+      sender: "Maya",
+      createdAt: 1,
+    };
+    const updated = { ...note, body: body.replace("[X]", "[ ]") };
+    const firstSave = deferred<typeof note>();
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+      updateNote: vi
+        .fn()
+        .mockReturnValueOnce(firstSave.promise)
+        .mockRejectedValueOnce(new Error("Could not save checkbox.")),
+    });
+    const user = userEvent.setup();
+    render(<App api={api} />);
+    await user.click(await screen.findByRole("button", { name: "Open Tasks" }));
+    const draft = screen.getByLabelText("Add a note");
+    await user.type(draft, "Unsent");
+    const tasks = within(await screen.findByRole("article")).getAllByRole(
+      "checkbox",
+      { name: "Repeat" },
+    );
+    expect(tasks).toHaveLength(2);
+    tasks[1].focus();
+    await user.keyboard(" ");
+    await waitFor(() =>
+      expect(api.updateNote).toHaveBeenCalledWith(chat.id, note.id, {
+        body: updated.body,
+        expectedBody: body,
+      }),
+    );
+    expect(tasks[1]).not.toBeChecked();
+    expect(tasks[1]).toHaveAttribute("aria-disabled", "true");
+    await act(async () => firstSave.resolve(updated));
+    expect(tasks[0]).not.toBeChecked();
+    expect(draft).toHaveValue("Unsent");
+    await user.click(tasks[0]);
+    const failure = await screen.findByText("Could not save checkbox.");
+    expect(failure).toBeVisible();
+    expect(failure.closest(".message-body-viewport")).toBeNull();
+    expect(tasks[0]).not.toBeChecked();
+  });
+
   it("searches loaded messages with compact icon controls and opens a result in history", async () => {
     const user = userEvent.setup();
     const chat = {
@@ -619,6 +873,10 @@ describe("personal project chat workspace", () => {
     await waitFor(() =>
       expect(document.activeElement).toHaveAttribute("data-note-id", "n3"),
     );
+    expect(document.querySelectorAll("[data-search-destination]")).toHaveLength(
+      1,
+    );
+    expect(document.activeElement).toHaveAttribute("data-search-destination");
     expect(screen.getAllByRole("article")).toHaveLength(3);
     expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Add a note")).toHaveValue("Keep my draft");
@@ -3191,7 +3449,11 @@ describe("personal project chat workspace", () => {
       .spyOn(HTMLElement.prototype, "getBoundingClientRect")
       .mockImplementation(function (this: HTMLElement) {
         if (this.textContent === "Visible reference") return rect(40, 20);
-        if (this.textContent === "Clipped reference") return rect(240, 20);
+        if (
+          this.textContent === "Clipped reference" ||
+          this.getAttribute("aria-label") === "Clipped task"
+        )
+          return rect(240, 20);
         return originalRect.call(this);
       });
     try {
@@ -3214,7 +3476,7 @@ describe("personal project chat workspace", () => {
             {
               id: "note-1",
               chatId: "chat-1",
-              body: "[Visible reference](https://example.com/visible)\n\nFirst paragraph\n\n[Clipped reference](https://example.com/clipped)",
+              body: "[Visible reference](https://example.com/visible)\n\nFirst paragraph\n\n[Clipped reference](https://example.com/clipped)\n\n- [ ] Clipped task",
               createdAt: 200,
               labels: [],
             },
@@ -3241,6 +3503,10 @@ describe("personal project chat workspace", () => {
         "message-body-viewport--collapsed",
       );
       expect(visibleLink).not.toHaveAttribute("tabindex");
+      const clippedTask = screen.getByRole("checkbox", {
+        name: "Clipped task",
+      });
+      expect(clippedTask).toHaveAttribute("tabindex", "-1");
       expect(clippedLink).toHaveAttribute("tabindex", "-1");
       expect(clippedLink).not.toHaveAttribute("aria-disabled");
 
@@ -3252,6 +3518,7 @@ describe("personal project chat workspace", () => {
         "message-body-viewport--collapsed",
       );
       expect(visibleLink).not.toHaveAttribute("tabindex");
+      expect(clippedTask).not.toHaveAttribute("tabindex");
       expect(clippedLink).not.toHaveAttribute("tabindex");
 
       await chooseMessageAction(user, "Edit message");
@@ -4726,6 +4993,7 @@ describe("personal project chat workspace", () => {
 
     expect(updateNote).toHaveBeenLastCalledWith("chat-1", "note-1", {
       body: "Participant update",
+      expectedBody: "Participant update",
       sender: null,
       createdAt: 3_600_000,
       keepAttachmentIds: [],
@@ -5334,6 +5602,7 @@ describe("personal project chat workspace", () => {
 
     expect(api.updateNote).toHaveBeenCalledWith("chat-1", "note-1", {
       body: "Revised **message**",
+      expectedBody: "Original **message**",
       createdAt: new Date(revisedTimestamp).getTime(),
       keepAttachmentIds: ["attachment-keep"],
       files: [newFile],

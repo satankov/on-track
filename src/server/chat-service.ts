@@ -1,3 +1,8 @@
+import {
+  saveDraftSchema,
+  sendDraftSchema,
+  type ConversationDraft,
+} from "../domain/drafts.js";
 import { setImmediate as yieldToRequests } from "node:timers/promises";
 import type { PreparedAttachment } from "./db/batch-notes.js";
 import type {
@@ -94,6 +99,9 @@ const noteWriteAttachmentSchema = z
     },
   );
 
+export type DraftUploadPart =
+  { fields: unknown } | { file: z.input<typeof noteWriteAttachmentSchema> };
+
 const noteBodySchema = z.string().trim().max(10_000);
 const noteTimestampSchema = z
   .number()
@@ -119,6 +127,7 @@ const appendNoteCommandSchema = z
 const updateNoteCommandSchema = z
   .object({
     body: noteBodySchema.optional(),
+    expectedBody: z.string().max(10_000).optional(),
     sender: senderSchema.nullable().optional(),
     createdAt: noteTimestampSchema.optional(),
     keepAttachmentIds: z
@@ -258,6 +267,98 @@ export class ChatService {
     this.cleanup(result.storagePaths);
   }
 
+  getDraft(chatId: string): ConversationDraft {
+    const draft = this.repository.drafts.read(chatId);
+    if (!draft) throw new ProjectNotFoundError();
+    return {
+      ...draft,
+      attachments: draft.attachments.map((file) => {
+        const observed = this.requireAttachmentStore().observe(
+          file.storagePath,
+        );
+        return {
+          id: file.id,
+          filename: file.filename,
+          status: observed.status,
+          byteSize: observed.byteSize ?? file.byteSize,
+        };
+      }),
+    };
+  }
+
+  async saveDraft(
+    chatId: string,
+    parts: AsyncIterable<DraftUploadPart>,
+  ): Promise<ConversationDraft> {
+    if (!this.repository.drafts.read(chatId)) throw new ProjectNotFoundError();
+    let fields: z.infer<typeof saveDraftSchema> | undefined;
+    const installed: ReturnType<ChatService["installAttachments"]> = [];
+    let removed: string[] | undefined;
+    try {
+      for await (const part of parts) {
+        if ("fields" in part) {
+          if (fields) throw new InvalidInputError();
+          fields = saveDraftSchema.parse(part.fields);
+        } else {
+          if (
+            installed.length + (fields?.keepAttachmentIds.length ?? 0) >=
+            MAX_ATTACHMENTS_PER_MESSAGE
+          )
+            throw new InvalidInputError();
+          const file = noteWriteAttachmentSchema.parse(part.file);
+          installed.push(...this.installAttachments([file], this.clock()));
+        }
+      }
+      if (
+        !fields ||
+        installed.length + fields.keepAttachmentIds.length >
+          MAX_ATTACHMENTS_PER_MESSAGE
+      )
+        throw new InvalidInputError();
+      removed = this.repository.drafts.save(chatId, fields, installed);
+      if (!removed) throw new ProjectNotFoundError();
+    } catch (error) {
+      this.cleanup(installed.map((file) => file.storagePath));
+      throw error;
+    }
+    this.cleanup(removed);
+    return this.getDraft(chatId);
+  }
+
+  sendDraft(chatId: string, input: unknown) {
+    const { revision, createdAt } = sendDraftSchema.parse(input);
+    const receipt = this.repository.drafts.consume(
+      chatId,
+      revision,
+      (draft) => {
+        const body = draft.body.trim();
+        if (!body && !draft.attachments.length) throw new InvalidInputError();
+        if (draft.timestampOpen && draft.timestamp && createdAt === undefined)
+          throw new InvalidInputError();
+        for (const file of draft.attachments) {
+          const observed = this.requireAttachmentStore().observe(
+            file.storagePath,
+          );
+          if (observed.status !== "available")
+            throw new AttachmentUnavailableError(observed.status);
+          if ((observed.byteSize ?? 0) > MAX_ATTACHMENT_BYTES)
+            throw new InvalidInputError();
+        }
+        this.repository.appendNote({
+          id: revision,
+          chatId,
+          body,
+          sender: draft.sender.trim() || null,
+          createdAt:
+            draft.timestampOpen && draft.timestamp ? createdAt : undefined,
+          now: this.clock(),
+        });
+      },
+    );
+    if (!receipt) throw new ProjectNotFoundError();
+    return { ...this.refreshedNote(chatId, revision), ...receipt };
+  }
+
   appendNote(chatId: string, input: unknown): Note {
     const values = appendNoteCommandSchema.parse(input);
     const now = this.clock();
@@ -306,6 +407,7 @@ export class ChatService {
     try {
       result = this.repository.updateNote(chatId, noteId, {
         body: values.body,
+        expectedBody: values.expectedBody,
         sender: values.sender,
         createdAt: values.createdAt,
         now,
