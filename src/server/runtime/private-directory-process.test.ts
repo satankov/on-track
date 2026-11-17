@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ensurePrivateDirectory } from "./private-directory.js";
 
 vi.mock("node:child_process", async (original) => ({
@@ -10,8 +10,11 @@ vi.mock("node:child_process", async (original) => ({
   spawnSync: vi.fn(),
 }));
 const roots: string[] = [];
+const systemRoot = join(tmpdir(), "threadstr-system-root");
+beforeEach(() => vi.stubEnv("SystemRoot", systemRoot));
 afterEach(() => {
   vi.resetAllMocks();
+  vi.unstubAllEnvs();
   for (const root of roots.splice(0))
     rmSync(root, { recursive: true, force: true });
 });
@@ -69,3 +72,36 @@ it("returns the canonical directory only after a successful permission check", (
   vi.mocked(spawnSync).mockReturnValue(result(0));
   expect(protect()).toBe(realpathSync(roots[0]));
 });
+
+it("isolates the system PowerShell module paths before permission-helper startup", () => {
+  vi.stubEnv("pSmOdUlEpAtH", "/incompatible/powershell/modules");
+  vi.stubEnv("WinPSModulePath", "/incompatible/windows/modules");
+  vi.mocked(spawnSync).mockReturnValue(result(0));
+  expect(protect()).toBe(realpathSync(roots[0]));
+  const home = join(systemRoot, "System32", "WindowsPowerShell", "v1.0");
+  const [executable, , options] = vi.mocked(spawnSync).mock.calls[0];
+  expect(executable).toBe(join(home, "powershell.exe"));
+  expect(options?.env).toMatchObject({
+    PSModulePath: join(home, "Modules"),
+    WinPSModulePath: join(home, "Modules"),
+    ON_TRACK_PRIVATE_DIRECTORY: roots[0],
+  });
+  expect(
+    Object.keys(options?.env ?? {}).filter((key) =>
+      ["psmodulepath", "winpsmodulepath"].includes(key.toLowerCase()),
+    ),
+  ).toEqual(["PSModulePath", "WinPSModulePath"]);
+});
+
+it.each([undefined, "relative"])(
+  "fails closed before launching with an unsafe system root: %s",
+  (root) => {
+    vi.stubEnv("SystemRoot", root);
+    vi.stubEnv("SYSTEMROOT", root);
+    vi.mocked(spawnSync).mockReturnValue(result(0));
+    expect(protect).toThrow(
+      "Could not locate the system Windows PowerShell installation.",
+    );
+    expect(spawnSync).not.toHaveBeenCalled();
+  },
+);

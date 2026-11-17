@@ -645,8 +645,13 @@ test("keeps labels visible and attachments full width in wide messages", async (
 
   const message = page.locator(".message-row").last();
   await expect(message.locator(".attachment-card")).toHaveCount(2);
-  await message.hover();
-  await message.getByRole("button", { name: "Change labels" }).click();
+  const changeLabels = message.getByRole("button", { name: "Change labels" });
+  if (testInfo.project.name === "mobile-webkit") {
+    await changeLabels.tap();
+  } else {
+    await message.hover();
+    await changeLabels.click();
+  }
   const popover = message.locator(".message-label-popover");
   await expect(popover).toBeVisible();
   await message

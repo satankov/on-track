@@ -36,6 +36,16 @@ jobs:
         run: npx playwright install --with-deps chromium webkit
       - name: Run authoritative verification
         run: npm run verify
+      - name: Retain failed browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-failures-node-${{ matrix.node }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
   portability:
     name: Native install (Node ${{ matrix.node }}, ${{ matrix.os }})

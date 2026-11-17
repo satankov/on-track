@@ -186,15 +186,24 @@ test("selects a range or all messages and keeps the transfer controls visible wh
   await page.goto(localApp.url);
   const button = (name: string) =>
     page.getByRole("button", { name, exact: true });
-  await button("Open Range selection").click();
+  const openSource = button("Open Range selection");
+  if (mobile) await openSource.tap();
+  else await openSource.click();
+  await expect(
+    page.locator(".chat-header").getByText("Range selection", { exact: true }),
+  ).toBeVisible();
   const rows = page.locator(".message-row");
-  await rows
+  await expect(rows).toHaveCount(6);
+  await rows.first().scrollIntoViewIfNeeded();
+  const more = rows
     .first()
-    .getByRole("button", { name: "More message actions" })
-    .click();
+    .getByRole("button", { name: "More message actions" });
+  if (mobile) await more.tap();
+  else await more.click();
   const firstAction = page.getByRole("menuitem").first();
   await expect(firstAction).toHaveText("Select messages");
-  await firstAction.click();
+  if (mobile) await firstAction.tap();
+  else await firstAction.click();
   const fifth = rows.nth(4).getByRole("checkbox");
   if (mobile) {
     await fifth.focus();
