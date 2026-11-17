@@ -1,4 +1,12 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  readSync,
+  symlinkSync,
+  rmSync,
+  truncateSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,6 +23,7 @@ import {
 } from "vitest";
 
 import { buildApp } from "./app.js";
+import { ManagedAttachmentStore } from "./attachments/managed-attachment-store.js";
 import { openDatabase } from "./db/database.js";
 import { MaintenanceGate } from "./database-transfer/maintenance-gate.js";
 import type { StagedUpload } from "./database-transfer/staged-upload.js";
@@ -40,6 +49,7 @@ describe("local project-chat API", () => {
   let directory: string;
   let app: FastifyInstance;
   let sequence: number;
+  let maintenanceGate: MaintenanceGate;
   let exportDirectoryCleanup: Mock<(path: string) => void>;
   let stagedUploadCleanup: Mock<(staged: StagedUpload) => void>;
   let nativeFileActions: NativeFileActions;
@@ -59,7 +69,9 @@ describe("local project-chat API", () => {
       open: vi.fn(async () => undefined),
       reveal: vi.fn(async () => undefined),
     };
+    maintenanceGate = new MaintenanceGate();
     app = buildApp({
+      maintenanceGate,
       database: openDatabase(join(directory, "on-track.sqlite")),
       databasePath: join(directory, "on-track.sqlite"),
       idFactory: () => `id-${++sequence}`,
@@ -894,6 +906,210 @@ describe("local project-chat API", () => {
     });
 
     expect(attachment.statusCode).toBe(404);
+  });
+
+  describe("picture previews", () => {
+    const imageHeaders = {
+      "sec-fetch-site": "same-origin",
+      "sec-fetch-mode": "no-cors",
+      "sec-fetch-dest": "image",
+    };
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=",
+      "base64",
+    );
+
+    async function uploadPicture(filename = "picture.PNG") {
+      const chat = await app.inject({
+        method: "POST",
+        url: "/api/chats",
+        payload: { title: "Photos", accent: "moss" },
+      });
+      const form = new FormData();
+      form.append(
+        "files",
+        new File([new Uint8Array(png)], filename, {
+          type: "application/octet-stream",
+        }),
+      );
+      const note = await app.inject({
+        method: "POST",
+        url: `/api/chats/${chat.json().id}/notes`,
+        payload: form,
+      });
+      expect(note.statusCode).toBe(201);
+      const { id, attachments } = note.json();
+      const db = new Database(join(directory, "on-track.sqlite"), {
+        readonly: true,
+      });
+      try {
+        const row = db
+          .prepare("SELECT storage_path FROM note_attachments WHERE id = ?")
+          .get(attachments[0].id) as { storage_path: string };
+        return {
+          url: `/api/chats/${chat.json().id}/notes/${id}/attachments/${attachments[0].id}/preview`,
+          path: join(directory, row.storage_path),
+        };
+      } finally {
+        db.close();
+      }
+    }
+
+    it("serves the current, scoped image bytes with a verified media type", async () => {
+      const { url, path } = await uploadPicture();
+      const resource = await app.inject({ url, headers: imageHeaders });
+      expect(resource.statusCode).toBe(200);
+      expect(resource.rawPayload).toEqual(png);
+      expect(resource.headers).toMatchObject({
+        "content-type": "image/png",
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+        "cross-origin-resource-policy": "same-origin",
+      });
+      for (const segment of ["id-1", "id-2", "id-3"]) {
+        expect(
+          (
+            await app.inject({
+              url: url.replace(segment, "other"),
+              headers: imageHeaders,
+            })
+          ).statusCode,
+        ).toBe(404);
+      }
+      writeFileSync(path, "edited to plain text");
+      expect(
+        (await app.inject({ url, headers: imageHeaders })).statusCode,
+      ).toBe(415);
+      truncateSync(path, 12 * 1024 * 1024 + 1);
+      expect(
+        (await app.inject({ url, headers: imageHeaders })).statusCode,
+      ).toBe(413);
+      rmSync(path);
+      const missing = await app.inject({ url, headers: imageHeaders });
+      expect(missing.statusCode).toBe(409);
+      expect(missing.json()).toMatchObject({
+        code: "attachment_unavailable",
+        status: "missing",
+      });
+      expect(missing.body).not.toContain(directory);
+      expect(nativeFileActions.open).not.toHaveBeenCalled();
+    });
+
+    it("discards bytes when a picture changes while loading", async () => {
+      const { url, path } = await uploadPicture();
+      await app.close();
+      const databasePath = join(directory, "on-track.sqlite");
+      // Simulate an external editor writing into the open managed descriptor.
+      let edit = true;
+      const attachmentStore = new ManagedAttachmentStore(directory, {
+        descriptorRead: (...args) => {
+          const count = readSync(...args);
+          if (edit) {
+            edit = false;
+            writeFileSync(path, "external edit");
+          }
+          return count;
+        },
+      });
+      app = buildApp({
+        database: openDatabase(databasePath),
+        databasePath,
+        attachmentStore,
+      });
+      const response = await app.inject({ url, headers: imageHeaders });
+      expect(response.statusCode).toBe(409);
+      expect(response.json().code).toBe("preview_changed");
+      expect(response.body).not.toContain(directory);
+    });
+
+    it.runIf(process.platform !== "win32")(
+      "keeps unsafe managed files outside the preview",
+      async () => {
+        const { url, path } = await uploadPicture();
+        const other = join(directory, "other.png");
+        writeFileSync(other, png);
+        rmSync(path);
+        symlinkSync(other, path);
+        const response = await app.inject({ url, headers: imageHeaders });
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toMatchObject({
+          code: "attachment_unavailable",
+          status: "unsafe",
+        });
+        expect(response.body).not.toContain(directory);
+      },
+    );
+
+    it("defers picture reads during restore, then serves the image", async () => {
+      const { url } = await uploadPicture();
+      await maintenanceGate.runRestore(async () => {
+        const result = await app.inject({ url, headers: imageHeaders });
+        expect(result.statusCode).toBe(503);
+        expect(result.json().code).toBe("maintenance_busy");
+      });
+      expect(
+        (await app.inject({ url, headers: imageHeaders })).statusCode,
+      ).toBe(200);
+    });
+
+    it("bounds simultaneous picture responses and releases capacity after sending", async () => {
+      let release!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let outstanding = 0;
+      app.addHook("onSend", async (request, reply) => {
+        if (request.url.endsWith("/preview") && reply.statusCode === 200) {
+          outstanding++;
+          await hold;
+        }
+      });
+      const { url } = await uploadPicture();
+      const pending = Promise.all(
+        Array.from({ length: 8 }, () =>
+          app.inject({ url, headers: imageHeaders }),
+        ),
+      );
+      try {
+        await vi.waitFor(() => expect(outstanding).toBe(8));
+        const busy = await app.inject({ url, headers: imageHeaders });
+        expect(busy.statusCode).toBe(503);
+        expect(busy.json().code).toBe("preview_busy");
+      } finally {
+        release();
+      }
+      expect(
+        (await pending).every((response) => response.statusCode === 200),
+      ).toBe(true);
+      expect(
+        (await app.inject({ url, headers: imageHeaders })).statusCode,
+      ).toBe(200);
+    });
+
+    it("keeps ordinary file attachments outside the image resource", async () => {
+      const { url } = await uploadPicture("report.pdf");
+      expect(
+        (await app.inject({ url, headers: imageHeaders })).statusCode,
+      ).toBe(415);
+    });
+
+    it("requires a same-origin image request before resolving the attachment", async () => {
+      const url = "/api/chats/a/notes/b/attachments/c/preview";
+      for (const headers of [
+        {},
+        { ...imageHeaders, "sec-fetch-site": "none" },
+        { ...imageHeaders, "sec-fetch-site": "same-site" },
+        {
+          ...imageHeaders,
+          "sec-fetch-mode": "navigate",
+          "sec-fetch-dest": "document",
+        },
+        { ...imageHeaders, "sec-fetch-dest": "empty" },
+        { ...imageHeaders, "sec-fetch-mode": "cors" },
+      ]) {
+        expect((await app.inject({ url, headers })).statusCode).toBe(403);
+      }
+    });
   });
 
   it("opens and reveals scoped managed attachments through privileged routes", async () => {

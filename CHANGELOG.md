@@ -8,6 +8,10 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [0.2.1] - Unreleased
 
+- See saved JPEG and PNG pictures directly in the message stream. Select a
+  picture for a larger in-browser view. Messages with several pictures show a
+  thumbnail beside each filename.
+
 - Use **More → Select messages** to copy, move or delete several messages.
   Shift-click selects a range, and **Select all** selects the current filtered
   history. For Copy and Move, pick an active project or expand it to choose a

@@ -1471,7 +1471,12 @@ test("manages markdown messages and database backups from the UI", async ({
       await route.continue();
     },
   );
-  await page.getByLabel("Attach files").setInputFiles(bundledAttachmentPath);
+  await page
+    .getByLabel("Attach files")
+    .setInputFiles([
+      bundledAttachmentPath,
+      "branding/threadstr/picture-previews/earthrise-proof.jpg",
+    ]);
   await page.getByLabel("Add a note").fill("Bundled attachment");
   await page.getByRole("button", { name: /Add note/ }).click();
   await expect(
@@ -1525,6 +1530,12 @@ test("manages markdown messages and database backups from the UI", async ({
     .click();
   await expect(page.getByText("bundled-roadmap.txt")).toBeVisible();
 
+  await expect(
+    page
+      .getByRole("button", { name: "View earthrise-proof.jpg larger" })
+      .locator("img"),
+  ).toHaveJSProperty("naturalWidth", 1280);
+
   const activeDatabase = new Database(
     join(localApp.dataDirectory, "on-track.sqlite"),
     { readonly: true, fileMustExist: true },
@@ -1554,6 +1565,198 @@ test("manages markdown messages and database backups from the UI", async ({
   } finally {
     activeDatabase.close();
   }
+});
+
+test("previews saved pictures inline and refreshes the larger view after an external edit", async ({
+  page,
+  localApp,
+  request,
+  isMobile,
+}, testInfo) => {
+  const project = await createProject(request, localApp.url, {
+    title: "Gallery proofs",
+    accent: "slate",
+  });
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: "Open " + project.title }).click();
+  const sampleBytes = readFileSync(
+    "branding/threadstr/picture-previews/earthrise-proof.jpg",
+  );
+  const portrait = Buffer.from(
+    await page.evaluate(() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1200;
+      canvas.height = 2400;
+      const context = canvas.getContext("2d")!;
+      context.fillStyle = "#726789";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/png").split(",")[1];
+    }),
+    "base64",
+  );
+  const attach = page.getByLabel("Attach files");
+  const save = page.getByRole("button", { name: /Add note/ });
+  const proof = {
+    name: "earthrise.jpg",
+    mimeType: "image/jpeg",
+    buffer: sampleBytes,
+  };
+  const receipts = localApp.nativeActionReceipts().length;
+  await attach.setInputFiles(proof);
+  await save.click();
+  const viewerButton = page.getByRole("button", {
+    name: "View earthrise.jpg larger",
+    exact: true,
+  });
+  const inline = viewerButton.locator("img");
+  await expect(inline).toHaveJSProperty("naturalWidth", 1280);
+  const wide = await viewerButton.boundingBox();
+  expect(wide!.width).toBeGreaterThan(120);
+  expect(wide!.width).toBeLessThanOrEqual(401);
+  await page.getByRole("button", { name: "Files 1", exact: true }).click();
+  await expect(inline).toHaveJSProperty("naturalHeight", 720);
+  if (isMobile) await viewerButton.tap();
+  else await viewerButton.press("Enter");
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("img")).toHaveJSProperty("naturalWidth", 1280);
+  if (isMobile) await dialog.getByRole("button", { name: /Close/ }).tap();
+  else await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  if (!isMobile) await expect(viewerButton).toBeFocused();
+  await page.reload();
+  await page.getByRole("button", { name: "Open " + project.title }).click();
+  await expect(inline).toHaveJSProperty("naturalHeight", 720);
+
+  const picture = {
+    name: "orientation.png",
+    mimeType: "image/png",
+    buffer: portrait,
+  };
+  const memo = {
+    name: "gallery-spec.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("portrait and print"),
+  };
+  await attach.setInputFiles([
+    picture,
+    memo,
+    { ...proof, name: "landscape.jpg" },
+  ]);
+  await save.click();
+  const mixed = page.locator(".message-row").filter({ hasText: memo.name });
+  const thumbs = mixed.getByRole("button", { name: /^View .+ larger$/ });
+  await expect(thumbs).toHaveCount(2);
+  await expect(thumbs.first().locator("img")).toHaveJSProperty(
+    "naturalHeight",
+    144,
+  );
+  await expect(thumbs.first().locator("img")).toHaveJSProperty(
+    "naturalWidth",
+    72,
+  );
+  await thumbs.first().click();
+  await expect(dialog.locator("img")).toHaveJSProperty("naturalHeight", 2400);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(thumbs.last().locator("img")).toHaveJSProperty(
+    "naturalWidth",
+    1280,
+  );
+  await expect(thumbs.last()).toBeEnabled();
+  expect((await thumbs.first().boundingBox())!.width).toBeLessThanOrEqual(97);
+  await expect(mixed.locator(".attachment-copy strong")).toHaveText([
+    picture.name,
+    memo.name,
+    "landscape.jpg",
+  ]);
+  await mixed.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: testInfo.outputPath("inline-picture-previews.png"),
+    animations: "disabled",
+  });
+
+  // A changed JPEG at the same managed path must reload the same record.
+  const stored = readAttachmentRow(
+    localApp.dataDirectory,
+    project.title,
+    proof.name,
+  );
+  const imagePath = join(localApp.dataDirectory, stored.storagePath);
+  writeFileSync(
+    imagePath,
+    readFileSync("branding/threadstr/picture-previews/earthrise-source.jpg"),
+  );
+  const edited = new Date(stored.modifiedAt + 5000);
+  utimesSync(imagePath, edited, edited);
+  await viewerButton.scrollIntoViewIfNeeded();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(inline).toHaveJSProperty("naturalWidth", 1200);
+  await expect(mixed.locator(".attachment-copy strong")).toHaveText([
+    picture.name,
+    memo.name,
+    "landscape.jpg",
+  ]);
+  const row = page.locator(".message-row").filter({ has: viewerButton });
+  await row.getByRole("button", { name: "More message actions" }).click();
+  await row.getByRole("menuitem", { name: "Select messages" }).click();
+  await expect(row.getByRole("checkbox")).toBeChecked();
+  await viewerButton.click();
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(row.getByRole("checkbox")).toBeChecked();
+  expect(localApp.nativeActionReceipts()).toHaveLength(receipts);
+});
+
+test("opens a saved picture in the owning subthread from project search", async ({
+  page,
+  localApp,
+  request,
+}) => {
+  const root = await createProject(request, localApp.url, {
+    title: "Gallery archive",
+    accent: "iris",
+  });
+  const base = localApp.url + "/api/chats/";
+  const child = await (
+    await request.post(base + root.id + "/subthreads", {
+      data: { title: "Original photographs" },
+    })
+  ).json();
+  await request.post(base + child.id + "/notes", {
+    multipart: {
+      body: "Lunar horizon",
+      files: {
+        name: "earthrise.jpg",
+        mimeType: "image/jpeg",
+        buffer: readFileSync(
+          "branding/threadstr/picture-previews/earthrise-source.jpg",
+        ),
+      },
+    },
+  });
+  await page.goto(localApp.url);
+  await page
+    .getByRole("button", { name: "Open " + root.title, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Search messages", exact: true })
+    .click();
+  await page
+    .getByRole("searchbox", { name: "Search messages" })
+    .fill("Lunar horizon");
+  await page.getByRole("checkbox", { name: "Project", exact: true }).check();
+  const result = page
+    .locator(".project-search-result")
+    .filter({ hasText: "earthrise.jpg" });
+  await result.getByRole("button", { name: "Open message in history" }).click();
+  const picture = page.getByRole("button", {
+    name: "View earthrise.jpg larger",
+  });
+  await expect(picture.locator("img")).toHaveJSProperty("naturalWidth", 1200);
+  await expect(page.locator(".chat-heading")).toContainText(
+    "Original photographs",
+  );
 });
 
 test("adds an attachment message and filters history by files", async ({

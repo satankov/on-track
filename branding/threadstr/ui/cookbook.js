@@ -562,3 +562,11 @@ function startSelectionSpecimen() {
   updateSelectionSpecimen();
   choices[0].focus();
 }
+
+const pictureViewer = document.querySelector("#cb-picture-viewer");
+document
+  .querySelector("#cb-picture-open")
+  .addEventListener("click", () => pictureViewer.showModal());
+document
+  .querySelector("#cb-picture-close")
+  .addEventListener("click", () => pictureViewer.close());

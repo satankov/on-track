@@ -1,3 +1,10 @@
+import { PicturePreview } from "./PicturePreview.js";
+import { PictureLoadQueue } from "./picture-load-queue.js";
+import { useModalDialog } from "./useModalDialog.js";
+import {
+  MAX_PICTURE_PREVIEW_BYTES,
+  picturePreviewMediaType,
+} from "../domain/picture-preview.js";
 import { useMessageSelection } from "./useMessageSelection.js";
 import { ProjectSearchResults } from "./ProjectSearchResults.js";
 import { findProjectSearchResults } from "./project-search-results.js";
@@ -58,7 +65,6 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
-  type RefObject,
 } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -77,7 +83,7 @@ import {
   type ConfigurableLabel,
   type Label,
 } from "../domain/validation.js";
-import { apiClient, type ApiClient } from "./api.js";
+import { apiClient, attachmentPath, type ApiClient } from "./api.js";
 import {
   applyMarkdownAction,
   MARKDOWN_TOOLS,
@@ -311,20 +317,6 @@ function fileTypeLabel(filename: string, mediaType: string): string {
     ? filename.split(".").pop()?.toUpperCase()
     : "";
   return extension || mediaType.split("/").pop()?.toUpperCase() || "FILE";
-}
-
-function useModalDialog(): RefObject<HTMLDialogElement | null> {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  useLayoutEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog || typeof dialog.showModal !== "function") return;
-    dialog.removeAttribute("open");
-    // Let the native dialog move initial focus and remember its opener. React
-    // autoFocus would move it before showModal can capture the return target.
-    dialog.showModal();
-    return () => dialog.close();
-  }, []);
-  return dialogRef;
 }
 
 function isMobileViewport(): boolean {
@@ -2144,10 +2136,12 @@ function CollapsibleMessageBody({
 }
 
 function AttachmentList({
+  pictureLoads,
   note,
   searchTerms,
   onAction,
 }: {
+  pictureLoads: PictureLoadQueue;
   note: Note;
   searchTerms: string[];
   onAction: (
@@ -2157,9 +2151,22 @@ function AttachmentList({
   ) => Promise<void>;
 }) {
   const explainReadOnly = useContext(ExampleReadOnlyContext);
+  // A restored backup can reuse every ID, size and timestamp from an earlier visit.
+  const previewVisit = useId();
   const [busyAction, setBusyAction] = useState<string>();
   const [actionError, setActionError] = useState<string>();
   if (!note.attachments?.length) return null;
+
+  const candidates = note.attachments.filter(
+    (attachment) =>
+      !explainReadOnly &&
+      (attachment.status ?? "available") === "available" &&
+      picturePreviewMediaType(attachment.filename),
+  );
+  const multiplePictures =
+    candidates.filter(
+      (attachment) => attachment.byteSize <= MAX_PICTURE_PREVIEW_BYTES,
+    ).length > 1;
 
   async function runAction(attachmentId: string, action: "open" | "reveal") {
     if (explainReadOnly) {
@@ -2182,7 +2189,10 @@ function AttachmentList({
   }
 
   return (
-    <div className="attachment-list" aria-label="Message attachments">
+    <div
+      className={`attachment-list${multiplePictures ? " attachment-list--pictures" : ""}`}
+      aria-label="Message attachments"
+    >
       {note.attachments.map((attachment) => {
         const status = attachment.status ?? "available";
         const openCapability =
@@ -2204,11 +2214,29 @@ function AttachmentList({
         const openBusy = busyAction === `${attachment.id}:open`;
         const revealBusy = busyAction === `${attachment.id}:reveal`;
         const modifiedAt = attachment.modifiedAt ?? attachment.createdAt;
+        const picture = candidates.includes(attachment);
+        const oversized =
+          picture && attachment.byteSize > MAX_PICTURE_PREVIEW_BYTES;
+        const previewSource =
+          picture && !oversized
+            ? `${attachmentPath(note.chatId, note.id, attachment.id, "preview")}?v=${modifiedAt}-${attachment.byteSize}-${encodeURIComponent(previewVisit)}`
+            : undefined;
         return (
           <div className="attachment-card" key={attachment.id}>
-            <span className="attachment-type" aria-hidden="true">
-              {fileTypeLabel(attachment.filename, attachment.mediaType)}
-            </span>
+            {previewSource && (
+              <PicturePreview
+                key={previewSource + (multiplePictures ? ":compact" : "")}
+                compact={multiplePictures}
+                filename={attachment.filename}
+                source={previewSource}
+                queue={pictureLoads}
+              />
+            )}
+            {(!previewSource || !multiplePictures) && (
+              <span className="attachment-type" aria-hidden="true">
+                {fileTypeLabel(attachment.filename, attachment.mediaType)}
+              </span>
+            )}
             <span className="attachment-copy">
               <strong>
                 <HighlightText text={attachment.filename} terms={searchTerms} />
@@ -2235,6 +2263,11 @@ function AttachmentList({
                   `${formatFileSize(attachment.byteSize)} · ${formatAttachmentModifiedCompact(modifiedAt)}`
                 )}
               </small>
+              {oversized && (
+                <small className="attachment-status--warning">
+                  Image is too large to preview.
+                </small>
+              )}
             </span>
             <span className="attachment-actions">
               <button
@@ -2362,6 +2395,7 @@ function MessageGroups({
   onOpenInHistory?: (note: Note) => void;
 }) {
   const definitions = useContext(ProjectLabelContext);
+  const [pictureLoads] = useState(() => new PictureLoadQueue());
   type Continuation = {
     id: string;
     createdAt: number;
@@ -2393,7 +2427,7 @@ function MessageGroups({
     if (
       !(target instanceof Element) ||
       target.closest(
-        "a, button, input, label, select, textarea, summary, [tabindex='0']",
+        "a, button, dialog, input, label, select, textarea, summary, [tabindex='0']",
       )
     )
       return;
@@ -2541,6 +2575,7 @@ function MessageGroups({
                             </p>
                           )}
                           <AttachmentList
+                            pictureLoads={pictureLoads}
                             searchTerms={searchTerms}
                             note={note}
                             onAction={onAttachmentAction}

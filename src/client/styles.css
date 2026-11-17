@@ -4386,3 +4386,155 @@ kbd {
     content: none;
   }
 }
+
+/* Saved pictures share their attachment's inset, metadata and native actions. */
+.picture-frame {
+  position: relative;
+  grid-column: 1 / -1;
+  display: grid;
+  place-items: center;
+  width: 400px;
+  max-width: 100%;
+  min-width: 0;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: var(--attachment-ink);
+  background: color-mix(
+    in srgb,
+    var(--attachment-ink) 8%,
+    var(--attachment-surface)
+  );
+  cursor: zoom-in;
+}
+.picture-frame:disabled {
+  cursor: default;
+}
+.picture-frame img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: scale-down;
+  border-radius: inherit;
+}
+.picture-frame:focus-visible {
+  outline: 2px solid var(--attachment-ink);
+  outline-offset: 2px;
+}
+.picture-expand {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  color: var(--attachment-ink);
+  background: var(--attachment-surface);
+}
+.picture-expand svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.picture-error {
+  display: grid;
+  gap: 2px;
+  padding: 2px;
+  font-size: 0.7rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.picture-frame:has(.picture-error) {
+  cursor: pointer;
+}
+.attachment-list--pictures .attachment-card {
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+}
+.attachment-list--pictures .picture-frame {
+  grid-column: 1;
+  width: 96px;
+  aspect-ratio: 4 / 3;
+}
+.attachment-list--pictures .attachment-type {
+  width: 38px;
+  justify-self: center;
+}
+.attachment-list--pictures .picture-expand {
+  display: none;
+}
+@media (hover: hover) {
+  .attachment-list--pictures .picture-frame:hover .picture-expand {
+    display: grid;
+  }
+}
+.attachment-list--pictures .picture-frame:focus-visible .picture-expand {
+  display: grid;
+}
+.project-dialog.picture-viewer {
+  width: fit-content;
+  max-width: 100%;
+  padding: 10px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.picture-viewer header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 0 8px 4px;
+}
+.picture-viewer h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
+}
+.picture-viewer img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(1040px, 100%);
+  max-height: calc(100dvh - 116px);
+  margin: auto;
+  border-radius: 5px;
+  object-fit: contain;
+}
+@container (max-width: 600px) {
+  .attachment-list--pictures .attachment-card {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+  .attachment-list--pictures .picture-frame {
+    width: 72px;
+  }
+  .attachment-list--pictures .attachment-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+  .attachment-list--pictures .attachment-copy small {
+    white-space: normal;
+  }
+}
+@media (pointer: coarse) {
+  .attachment-list:has(.picture-frame) .attachment-action,
+  .picture-viewer .button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+@media (forced-colors: active) {
+  .picture-frame,
+  .picture-viewer {
+    border: 1px solid ButtonText;
+  }
+  .picture-frame:focus-visible {
+    outline-color: Highlight;
+  }
+}

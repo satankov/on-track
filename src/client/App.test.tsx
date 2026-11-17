@@ -4904,6 +4904,146 @@ describe("personal project chat workspace", () => {
     }
   });
 
+  it("previews a saved picture before opening its browser viewer and refreshes edited bytes", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Gallery",
+      accent: "slate",
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const file = {
+      id: "pic",
+      filename: "proof.PNG",
+      byteSize: 128,
+      modifiedAt: 2,
+      createdAt: 1,
+      mediaType: "application/octet-stream",
+      status: "available",
+    };
+    const note = {
+      id: "note-1",
+      chatId: chat.id,
+      body: "",
+      createdAt: 2,
+      attachments: [file],
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi
+        .fn()
+        .mockResolvedValueOnce({ ...chat, notes: [note] })
+        .mockResolvedValue({
+          ...chat,
+          notes: [{ ...note, attachments: [{ ...file, modifiedAt: 3 }] }],
+        }),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Gallery" }),
+    );
+    const trigger = await screen.findByRole("button", {
+      name: "View proof.PNG larger",
+    });
+    const image = trigger.querySelector("img")!;
+    expect(image.getAttribute("src")).toMatch(
+      /^\/api\/chats\/chat-1\/notes\/note-1\/attachments\/pic\/preview\?/,
+    );
+    fireEvent.load(image);
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "proof.PNG" });
+    expect(within(dialog).getByRole("img")).toHaveAttribute(
+      "src",
+      image.getAttribute("src"),
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(api.openAttachment).not.toHaveBeenCalled();
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("button", { name: "View proof.PNG larger" })
+          .querySelector("img"),
+      ).toHaveAttribute("src", expect.stringContaining("v=3-128-")),
+    );
+  });
+
+  it("bounds picture reads and keeps native actions available when a mixed attachment cannot preview", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat",
+      title: "Proofs",
+      accent: "slate",
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const attachments = [
+      "first.jpg",
+      "spec.pdf",
+      "second.png",
+      "third.jpeg",
+      "large.jpg",
+      "gone.png",
+    ].map((filename, i) => ({
+      id: String(i),
+      filename,
+      byteSize: i === 4 ? 13 * 1024 * 1024 : 512,
+      modifiedAt: 2,
+      createdAt: 1,
+      status: i === 5 ? "missing" : "available",
+      actions: {
+        open: i === 5 ? "unavailable" : "available",
+        reveal: "available",
+      },
+    }));
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({
+        ...chat,
+        notes: [
+          {
+            id: "note-1",
+            chatId: chat.id,
+            body: "Print these",
+            createdAt: 2,
+            attachments,
+          },
+        ],
+      }),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Proofs" }),
+    );
+    const previews = screen.getAllByRole("button", {
+      name: /^View .+ larger$/,
+    });
+    expect(previews.map((el) => el.getAttribute("aria-label"))).toEqual([
+      "View first.jpg larger",
+      "View second.png larger",
+      "View third.jpeg larger",
+    ]);
+    const images = previews.map((el) => el.querySelector("img")!);
+    expect(images.filter((el) => el.hasAttribute("src"))).toHaveLength(2);
+    expect(screen.getByText("Image is too large to preview.")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Show gone.png in Folder" }),
+    ).toBeEnabled();
+    fireEvent.error(images[0]);
+    expect(screen.getByText("Image preview unavailable.")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Open first.jpg" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Show first.jpg in Folder" }),
+    ).toBeEnabled();
+    expect(images[2]).toHaveAttribute("src");
+    expect(api.openAttachment).not.toHaveBeenCalled();
+    expect(api.revealAttachment).not.toHaveBeenCalled();
+  });
+
   it("renders attachment cards and filters history to messages with files", async () => {
     const user = userEvent.setup();
     const chat = {

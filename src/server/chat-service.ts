@@ -31,6 +31,11 @@ import {
   ManagedAttachmentUnavailableError,
   type ManagedAttachmentStore,
 } from "./attachments/managed-attachment-store.js";
+import {
+  MAX_PICTURE_PREVIEW_BYTES,
+  picturePreviewMediaType,
+} from "../domain/picture-preview.js";
+import { inspectPicturePreview } from "./attachments/picture-preview.js";
 import { attachmentOpenPolicy } from "./attachment-open-policy.js";
 import type { NativeFileActions } from "./native-file-actions.js";
 import { NativeFileActionUnsupportedError } from "./native-file-actions.js";
@@ -73,7 +78,10 @@ export type AttachmentStore = Pick<
   Partial<
     Pick<
       ManagedAttachmentStore,
-      "resolveAvailableTarget" | "resolveSafeContainingDirectory" | "copy"
+      | "resolveAvailableTarget"
+      | "resolveSafeContainingDirectory"
+      | "copy"
+      | "read"
     >
   >;
 
@@ -422,6 +430,24 @@ export class ChatService {
     return labels;
   }
 
+  getPicturePreview(chatId: string, noteId: string, attachmentId: string) {
+    const attachment = this.requireScopedAttachment(
+      chatId,
+      noteId,
+      attachmentId,
+    );
+    if (!picturePreviewMediaType(attachment.filename)) return;
+    const store = this.requireAttachmentStore();
+    if (!store.read)
+      throw new Error("Managed attachment reads are unavailable.");
+    const { content } = store.read(
+      attachment.storagePath,
+      MAX_PICTURE_PREVIEW_BYTES,
+    );
+    const mediaType = inspectPicturePreview(content, attachment.filename);
+    if (mediaType) return { content, mediaType };
+  }
+
   async openAttachment(
     chatId: string,
     noteId: string,
@@ -581,10 +607,12 @@ export class ChatService {
     modifiedAt: number;
     createdAt: number;
   }> {
+    // Reads order equal creation times by ID. Assign those IDs in upload order.
+    const ids = attachments.map(() => this.idFactory()).sort();
     const installed = [];
     try {
-      for (const attachment of attachments) {
-        const id = this.idFactory();
+      for (const [index, attachment] of attachments.entries()) {
+        const id = ids[index];
         const created = this.requireAttachmentStore().create({
           attachmentId: id,
           filename: attachment.filename,

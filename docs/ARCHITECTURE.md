@@ -361,8 +361,16 @@ document/media allowlist; executable POSIX files remain blocked. Unknown types,
 launchers, archives, and legacy/macro-enabled Office files retain Show in Folder
 only. Allowed suffixes do not guarantee safe contents or default applications.
 Folder reveal remains independent. Browser focus refreshes attachment metadata
-after a user returns from an external application. Attachment bytes are not exposed by a
-browser download route.
+after a user returns from an external application. Saved JPEG and PNG pictures have
+a scoped, read-only image route bound to the owning conversation, note and file.
+The server requires a same-origin image subrequest, enforces a 12 MiB bound on
+the open file descriptor, checks the raster structure and limits the dimensions
+to 24 megapixels. It returns verified static image bytes with a fixed media type,
+same-origin resource policy and private, non-stored responses. The browser
+loads at most two inline pictures at once per history and downsizes originals
+over 2 megapixels in memory for display. Distant rows release image sources.
+The viewer uses the same protected source at original resolution. Other
+attachment bytes remain accessible through their existing native and backup workflows.
 
 All browser note creation and editing uses the same bounded multipart contract,
 whether or not files are attached. The client keeps project summaries and the
