@@ -1,3 +1,7 @@
+import {
+  EMPTY_DRAFT_FIELDS,
+  type ConversationDraft,
+} from "../domain/drafts.js";
 import { defaultProjectLabels } from "../domain/labels.js";
 import {
   DEFAULT_PREFERENCES,
@@ -9,6 +13,7 @@ import {
   act,
   fireEvent,
   render,
+  renderHook,
   screen,
   waitFor,
   within,
@@ -19,6 +24,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getExample, listExamples } from "../server/examples/catalog.js";
 import { App } from "./App.js";
 import type { ApiClient } from "./api.js";
+import { useMessageSelection } from "./useMessageSelection.js";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -30,8 +36,26 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+async function chooseMessageAction(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+  row?: HTMLElement,
+) {
+  const scope = row ? within(row) : screen;
+  await user.click(scope.getByRole("button", { name: "More message actions" }));
+  await user.click(scope.getByRole("menuitem", { name }));
+}
+
 function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
   let preferences = structuredClone(DEFAULT_PREFERENCES);
+  const drafts = new Map<string, ConversationDraft>();
+  const fileContents = new Map<string, File>();
+  const empty = (): ConversationDraft => ({
+    ...EMPTY_DRAFT_FIELDS,
+    revision: null,
+    attachments: [],
+  });
+  const appendNote = overrides.appendNote ?? vi.fn();
   return {
     getPreferences: vi.fn(async () => preferences),
     initializePreferences: vi.fn(
@@ -67,12 +91,51 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
       updatedAt: 1,
     }),
     updateChat: vi.fn(),
+    setChatAlert: vi.fn(),
     setChatPinned: vi.fn(),
     setChatArchived: vi.fn(),
     deleteChat: vi.fn(),
-    appendNote: vi.fn(),
+    appendNote,
+    getDraft: vi.fn(async (id) => drafts.get(id) ?? empty()),
+    saveDraft: async (id, input, files) => {
+      const attachments = (drafts.get(id)?.attachments ?? []).filter((item) =>
+        input.keepAttachmentIds.includes(item.id),
+      );
+      for (const file of files) {
+        const key = crypto.randomUUID();
+        fileContents.set(key, file);
+        attachments.push({
+          id: key,
+          filename: file.name,
+          byteSize: file.size,
+          status: "available",
+        });
+      }
+      const draft = { ...input, revision: crypto.randomUUID(), attachments };
+      drafts.set(id, draft);
+      return draft;
+    },
+    sendDraft: async (id, _revision, createdAt) => {
+      const draft = drafts.get(id)!;
+      const note = await appendNote(id, {
+        body: draft.body,
+        ...(draft.sender.trim() ? { sender: draft.sender.trim() } : {}),
+        ...(createdAt === undefined ? {} : { createdAt }),
+        ...(draft.attachments.length
+          ? {
+              files: draft.attachments.map((item) =>
+                fileContents.get(item.id)!,
+              ),
+            }
+          : {}),
+      });
+      const draftRevision = crypto.randomUUID();
+      drafts.set(id, { ...empty(), revision: draftRevision });
+      return { ...note, draftRevision };
+    },
     updateNote: vi.fn(),
     deleteNote: vi.fn(),
+    batchNotes: vi.fn(),
     setNoteLabel: vi.fn(),
     openAttachment: vi.fn(),
     revealAttachment: vi.fn(),
@@ -91,15 +154,460 @@ function createApi(overrides: Partial<ApiClient> = {}): ApiClient {
         },
       ],
     }),
-    importDatabase: vi
-      .fn()
-      .mockResolvedValue({ importedCount: 1, renames: [] }),
+    importDatabase: vi.fn(async (_file, options) => {
+      if (options.mode === "replace") {
+        drafts.clear();
+        fileContents.clear();
+      }
+      return { importedCount: 1, renames: [] };
+    }),
     ...overrides,
   };
 }
 
 describe("personal project chat workspace", () => {
   beforeEach(() => localStorage.clear());
+
+  it("exposes the attachment input only after the conversation can accept files", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "loading",
+      title: "Loading files",
+      accent: "moss",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const pending = deferred<ConversationDraft>();
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      getDraft: vi.fn(() => pending.promise),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Loading files" }),
+    );
+    expect(screen.getByLabelText("Open file picker")).toBeDisabled();
+    expect(screen.queryByLabelText("Attach files", { exact: true })).toBeNull();
+    await act(async () =>
+      pending.resolve({
+        ...EMPTY_DRAFT_FIELDS,
+        revision: null,
+        attachments: [],
+      }),
+    );
+    await user.upload(
+      screen.getByLabelText("Attach files", { exact: true }),
+      new File(["file"], "early.txt"),
+    );
+    expect(
+      screen.getByRole("button", { name: "Remove early.txt" }),
+    ).toBeVisible();
+  });
+
+  it("restores the saved outgoing draft and its files after editing another message", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "drafts",
+      title: "Drafts",
+      accent: "moss",
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const original = {
+      id: "existing",
+      chatId: chat.id,
+      body: "Existing message",
+      sender: null,
+      createdAt: 2,
+      labels: [],
+    };
+    const saved = {
+      revision: "saved",
+      body: "  Work in progress\n",
+      sender: "Maya",
+      senderOpen: true,
+      timestamp: "2026-11-18T09:00",
+      timestampOpen: true,
+      attachments: [
+        {
+          id: "attachment",
+          filename: "outline.txt",
+          byteSize: 4,
+          status: "available" as const,
+        },
+      ],
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [original] }),
+      getDraft: vi.fn().mockResolvedValue(saved),
+      saveDraft: vi.fn(async (_id, fields) => ({
+        ...saved,
+        ...fields,
+        revision: "new",
+      })),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Drafts" }),
+    );
+    const composer = await screen.findByLabelText("Add a note");
+    await waitFor(() => expect(composer).toHaveValue(saved.body));
+    expect(screen.getByLabelText("Sender name")).toHaveValue("Maya");
+    expect(screen.getByLabelText("Message timestamp")).toHaveValue(
+      saved.timestamp,
+    );
+    expect(
+      screen.getByRole("button", { name: "Remove outline.txt" }),
+    ).toBeVisible();
+    fireEvent.change(composer, { target: { value: "New draft text  " } });
+    await waitFor(() =>
+      expect(api.saveDraft).toHaveBeenCalledWith(
+        chat.id,
+        expect.objectContaining({
+          body: "New draft text  ",
+          keepAttachmentIds: ["attachment"],
+          revision: "saved",
+        }),
+        [],
+      ),
+    );
+    await chooseMessageAction(user, "Edit message");
+    expect(screen.getByLabelText("Edit message")).toHaveValue(
+      "Existing message",
+    );
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByLabelText("Add a note")).toHaveValue("New draft text  ");
+    expect(
+      screen.getByRole("button", { name: "Remove outline.txt" }),
+    ).toBeVisible();
+  });
+
+  it("expands ordered rail shortcuts and keeps a manual Alert independent of message attention", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "flag",
+      title: "Flagged",
+      accent: "ocean",
+      createdAt: 1,
+      updatedAt: 1,
+      latestAttentionAt: 1,
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      setChatAlert: vi.fn(async (_id, enabled) => ({ manualAlert: enabled })),
+    });
+    render(<App api={api} />);
+    const open = await screen.findByRole("button", { name: "Open Flagged" });
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Flagged" }),
+    );
+    const shortcuts = within(
+      screen.getByRole("group", { name: "Shortcuts for Flagged" }),
+    );
+    expect(
+      shortcuts
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual([
+      "Alert Flagged",
+      "Pin Flagged",
+      "Archive Flagged",
+      "Delete Flagged",
+    ]);
+    await user.click(shortcuts.getByRole("button", { name: "Alert Flagged" }));
+    expect(api.setChatAlert).toHaveBeenCalledWith("flag", true);
+    expect(open).toHaveAccessibleDescription(/Manual alert/);
+    await user.keyboard("{Escape}");
+    expect(
+      screen.queryByRole("group", { name: "Shortcuts for Flagged" }),
+    ).toBeNull();
+    expect(open).toHaveAccessibleDescription(/Manual alert/);
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Flagged" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Alert Flagged", pressed: true }),
+    );
+    expect(open).toHaveAccessibleDescription(/Earlier attention/);
+    expect(open).not.toHaveAccessibleDescription(/Manual alert/);
+  });
+
+  it.each(["touch", "pen"])(
+    "keeps the project title target stable when %s focuses it before activation",
+    async (pointerType) => {
+      const user = userEvent.setup();
+      const chat = {
+        id: "pointer",
+        title: "Pointer project",
+        accent: "ocean",
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      });
+      render(<App api={api} />);
+      const title = await screen.findByRole("button", {
+        name: "Open Pointer project",
+      });
+
+      fireEvent.pointerDown(title, { pointerType });
+      act(() => title.focus());
+      expect(
+        screen.queryByRole("group", { name: "Shortcuts for Pointer project" }),
+      ).toBeNull();
+      fireEvent.pointerUp(title, { pointerType });
+      fireEvent.click(title);
+      await waitFor(() => expect(api.getChat).toHaveBeenCalledWith(chat.id));
+      expect(await screen.findByLabelText("Add a note")).toBeVisible();
+
+      act(() => title.focus());
+      await user.tab();
+      await user.tab({ shift: true });
+      expect(
+        screen.getByRole("group", { name: "Shortcuts for Pointer project" }),
+      ).toBeVisible();
+      await user.keyboard("{Escape}");
+
+      const disclosure = screen.getByRole("button", {
+        name: "Shortcuts for Pointer project",
+      });
+      fireEvent.pointerDown(disclosure, { pointerType });
+      act(() => disclosure.focus());
+      fireEvent.pointerUp(disclosure, { pointerType });
+      fireEvent.click(disclosure);
+      expect(
+        screen.getByRole("button", { name: "Alert Pointer project" }),
+      ).toHaveFocus();
+    },
+  );
+
+  it("dismisses mouse shortcuts after opening the project or setting its Alert", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "mouse",
+      title: "Mouse project",
+      accent: "ocean",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("hover: hover"),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    try {
+      render(
+        <App
+          api={createApi({
+            listChats: vi.fn().mockResolvedValue([chat]),
+            getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+            setChatAlert: vi.fn(async (_id, enabled) => ({
+              manualAlert: enabled,
+            })),
+          })}
+        />,
+      );
+      const title = await screen.findByRole("button", {
+        name: "Open Mouse project",
+      });
+      const shortcuts = () =>
+        screen.queryByRole("group", { name: "Shortcuts for Mouse project" });
+      await user.click(title);
+      await user.unhover(title);
+      expect(shortcuts()).toBeNull();
+      await user.hover(title);
+      const alert = within(shortcuts()!).getByRole("button", {
+        name: "Alert Mouse project",
+      });
+      await user.click(alert);
+      expect(alert).toHaveAttribute("aria-pressed", "true");
+      await user.unhover(alert);
+      expect(shortcuts()).toBeNull();
+      expect(title).toHaveAccessibleDescription(/Manual alert/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("confirms the clicked rail project and preserves the other project's draft through cancel, failure and delete", async () => {
+    const user = userEvent.setup();
+    const current = {
+      id: "current",
+      title: "Current",
+      accent: "moss",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const target = { ...current, id: "target", title: "Remove me" };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([current, target]),
+      getChat: vi.fn().mockResolvedValue({ ...current, notes: [] }),
+      deleteChat: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Try again"))
+        .mockResolvedValue(undefined),
+    });
+    const confirm = vi
+      .spyOn(window, "confirm")
+      .mockReturnValueOnce(false)
+      .mockReturnValue(true);
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Current" }),
+    );
+    await user.type(screen.getByLabelText("Add a note"), "Keep this draft");
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Remove me" }),
+    );
+    const remove = screen.getByRole("button", { name: "Delete Remove me" });
+    await user.click(remove);
+    expect(confirm).toHaveBeenCalledWith(
+      'Delete "Remove me" and all of its subthreads, messages and files?',
+    );
+    expect(api.deleteChat).not.toHaveBeenCalled();
+    await user.click(remove);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Try again");
+    await user.click(remove);
+    expect(api.deleteChat).toHaveBeenLastCalledWith("target");
+    expect(screen.queryByRole("button", { name: "Open Remove me" })).toBeNull();
+    expect(screen.getByLabelText("Add a note")).toHaveValue("Keep this draft");
+    expect(screen.getByRole("button", { name: "Projects" })).toHaveFocus();
+  });
+
+  it("focuses the first shortcut from reverse Tab and retains it while another row is hovered", async () => {
+    const user = userEvent.setup();
+    const root = {
+      id: "a",
+      title: "First",
+      accent: "moss",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const next = { ...root, id: "b", title: "Second" };
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("hover: hover"),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    try {
+      render(
+        <App
+          api={createApi({
+            listChats: vi.fn().mockResolvedValue([root, next]),
+          })}
+        />,
+      );
+      await screen.findByRole("button", { name: "Open Second" });
+      act(() => screen.getByRole("button", { name: "Archive" }).focus());
+      await user.tab({ shift: true });
+      expect(
+        screen.getByRole("button", { name: "Shortcuts for Second" }),
+      ).toHaveFocus();
+      await user.keyboard("{Enter}");
+      const alert = screen.getByRole("button", { name: "Alert Second" });
+      expect(alert).toHaveFocus();
+      await user.hover(screen.getByRole("button", { name: "Open First" }));
+      expect(alert).toBeVisible();
+      expect(alert).toHaveFocus();
+      await user.tab();
+      expect(screen.getByRole("button", { name: "Pin Second" })).toHaveFocus();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("holds family deletion while a subthread is created from a child", async () => {
+    const root = {
+      id: "lock-root",
+      title: "Family",
+      accent: "moss",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const source = {
+      ...root,
+      id: "lock-child",
+      projectId: root.id,
+      title: "Child",
+    };
+    const created = { ...source, id: "new-child", title: "New child" };
+    const creation = deferred<typeof created>();
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([root, source]),
+      getChat: vi
+        .fn()
+        .mockResolvedValueOnce({ ...root, notes: [] })
+        .mockResolvedValueOnce({ ...source, notes: [] }),
+      createSubthread: vi.fn().mockReturnValue(creation.promise),
+    });
+    render(<App api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open Family" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Child" }));
+    await screen.findByRole("heading", { name: "Family / Child" });
+    fireEvent.click(screen.getByRole("button", { name: "New subthread" }));
+    fireEvent.change(screen.getByLabelText("Subthread name"), {
+      target: { value: "New child" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create subthread" }));
+    expect(api.createSubthread).toHaveBeenCalledOnce();
+    for (const name of ["Family", "Child"]) {
+      const row = screen
+        .getByRole("button", { name: `Open ${name}` })
+        .closest("li")!;
+      expect(
+        row.querySelector('[data-project-action="delete"]'),
+      ).toBeDisabled();
+    }
+    await act(async () => creation.resolve(created));
+    expect(
+      await screen.findByRole("heading", { name: "Family / New child" }),
+    ).toBeVisible();
+  });
+
+  it("blocks child creation during root deletion and preserves navigation into Settings", async () => {
+    const root = {
+      id: "lock-root",
+      title: "Family",
+      accent: "moss",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const child = {
+      ...root,
+      id: "lock-child",
+      projectId: root.id,
+      title: "Child",
+    };
+    const deletion = deferred<void>();
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([root, child]),
+      getChat: vi
+        .fn()
+        .mockResolvedValueOnce({ ...root, notes: [] })
+        .mockResolvedValueOnce({ ...child, notes: [] }),
+      deleteChat: vi.fn().mockReturnValue(deletion.promise),
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open Family" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Child" }));
+    await screen.findByRole("heading", { name: "Family / Child" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Shortcuts for Family" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete Family" }));
+    expect(
+      screen.getByRole("button", { name: "New subthread" }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await act(async () => deletion.resolve());
+    expect(screen.getByRole("heading", { name: "General" })).toBeVisible();
+    expect(api.createSubthread).not.toHaveBeenCalled();
+  });
 
   it.each([false, true])(
     "mobile navigation preserves a newer attachment focus (moved: %s)",
@@ -216,8 +724,10 @@ describe("personal project chat workspace", () => {
     );
     await user.click(screen.getByRole("button", { name: "Search messages" }));
     await user.type(screen.getByRole("searchbox"), "hotel");
-    await screen.findByRole("button", { name: "Open message in history" });
-    await user.click(screen.getByRole("button", { name: "Edit message" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Matching messages")).toHaveTextContent("1"),
+    );
+    await chooseMessageAction(user, "Edit message");
     await user.clear(screen.getByRole("textbox", { name: "Edit message" }));
     await user.type(
       screen.getByRole("textbox", { name: "Edit message" }),
@@ -243,6 +753,91 @@ describe("personal project chat workspace", () => {
         screen.getByRole("region", { name: "Search saves messages" }),
       ).getByText("Train tickets"),
     ).toBeVisible();
+  });
+
+  it("renders soft lines within prose and preserves Markdown block structure", async () => {
+    const chat = {
+      id: "breaks",
+      title: "Breaks",
+      accent: "ocean",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const body =
+      "one\n**two**  \nthree\n\nfour\n\n- first\n  second\n\n```\na\nb\n```";
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({
+        ...chat,
+        notes: [{ id: "note", chatId: chat.id, body, createdAt: 1 }],
+      }),
+    });
+    const user = userEvent.setup();
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Breaks" }),
+    );
+    const article = await screen.findByRole("article");
+    expect(article.querySelectorAll("p:first-child br")).toHaveLength(2);
+    expect(article.querySelectorAll(".note-body > p")).toHaveLength(2);
+    expect(article.querySelectorAll(".note-body li br")).toHaveLength(1);
+    expect(article.querySelector("pre code")?.textContent).toBe("a\nb\n");
+  });
+
+  it("toggles a single nested task and preserves the unfinished composer", async () => {
+    const chat = {
+      id: "tasks",
+      title: "Tasks",
+      accent: "ocean",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const body = "> - [ ] Repeat\n>   1. [X] **Repeat**\n\n`- [ ] literal`";
+    const note = {
+      id: "note",
+      chatId: chat.id,
+      body,
+      sender: "Maya",
+      createdAt: 1,
+    };
+    const updated = { ...note, body: body.replace("[X]", "[ ]") };
+    const firstSave = deferred<typeof note>();
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+      updateNote: vi
+        .fn()
+        .mockReturnValueOnce(firstSave.promise)
+        .mockRejectedValueOnce(new Error("Could not save checkbox.")),
+    });
+    const user = userEvent.setup();
+    render(<App api={api} />);
+    await user.click(await screen.findByRole("button", { name: "Open Tasks" }));
+    const draft = screen.getByLabelText("Add a note");
+    await user.type(draft, "Unsent");
+    const tasks = within(await screen.findByRole("article")).getAllByRole(
+      "checkbox",
+      { name: "Repeat" },
+    );
+    expect(tasks).toHaveLength(2);
+    tasks[1].focus();
+    await user.keyboard(" ");
+    await waitFor(() =>
+      expect(api.updateNote).toHaveBeenCalledWith(chat.id, note.id, {
+        body: updated.body,
+        expectedBody: body,
+      }),
+    );
+    expect(tasks[1]).not.toBeChecked();
+    expect(tasks[1]).toHaveAttribute("aria-disabled", "true");
+    await act(async () => firstSave.resolve(updated));
+    expect(tasks[0]).not.toBeChecked();
+    expect(draft).toHaveValue("Unsent");
+    await user.click(tasks[0]);
+    const failure = await screen.findByText("Could not save checkbox.");
+    expect(failure).toBeVisible();
+    expect(failure.closest(".message-body-viewport")).toBeNull();
+    expect(tasks[0]).not.toBeChecked();
   });
 
   it("searches loaded messages with compact icon controls and opens a result in history", async () => {
@@ -325,17 +920,14 @@ describe("personal project chat workspace", () => {
       "hotel",
     );
     expect(screen.getByLabelText("Matching messages")).toHaveTextContent("1");
-    expect(
-      screen
-        .getByRole("button", { name: "Open message in history" })
-        .closest("article"),
-    ).toBeNull();
-    await user.click(
-      screen.getByRole("button", { name: "Open message in history" }),
-    );
+    await chooseMessageAction(user, "Open message in history");
     await waitFor(() =>
       expect(document.activeElement).toHaveAttribute("data-note-id", "n3"),
     );
+    expect(document.querySelectorAll("[data-search-destination]")).toHaveLength(
+      1,
+    );
+    expect(document.activeElement).toHaveAttribute("data-search-destination");
     expect(screen.getAllByRole("article")).toHaveLength(3);
     expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Add a note")).toHaveValue("Keep my draft");
@@ -495,8 +1087,9 @@ describe("personal project chat workspace", () => {
     vi.useFakeTimers();
     try {
       fireEvent.click(
-        screen.getAllByRole("button", { name: "Edit message" })[0],
+        screen.getAllByRole("button", { name: "More message actions" })[0],
       );
+      fireEvent.click(screen.getByRole("menuitem", { name: "Edit message" }));
       expect(composer).toHaveAttribute("data-readonly-highlight", "true");
       act(() => vi.advanceTimersByTime(500));
       expect(composer).toHaveAttribute("data-readonly-highlight", "true");
@@ -506,8 +1099,9 @@ describe("personal project chat workspace", () => {
       act(() => vi.advanceTimersByTime(300));
       expect(composer).not.toHaveAttribute("data-readonly-highlight", "true");
       fireEvent.click(
-        screen.getAllByRole("button", { name: "Delete message" })[0],
+        screen.getAllByRole("button", { name: "More message actions" })[0],
       );
+      fireEvent.click(screen.getByRole("menuitem", { name: "Delete message" }));
       expect(composer).toHaveAttribute("data-readonly-highlight", "true");
     } finally {
       vi.useRealTimers();
@@ -568,8 +1162,11 @@ describe("personal project chat workspace", () => {
     ).toBeVisible();
     expect(api.copyExample).toHaveBeenCalledExactlyOnceWith("weekend-trip", 3);
     expect(screen.queryByText(/Read-only example/)).not.toBeInTheDocument();
+    await user.click(
+      screen.getAllByRole("button", { name: "More message actions" })[0],
+    );
     expect(
-      screen.getAllByRole("button", { name: "Edit message" })[0],
+      screen.getByRole("menuitem", { name: "Edit message" }),
     ).not.toHaveAttribute("aria-disabled");
   });
 
@@ -587,9 +1184,7 @@ describe("personal project chat workspace", () => {
         name: "Open example 🇳🇱 Trip to Amsterdam",
       }),
     );
-    await user.click(
-      screen.getByRole("button", { name: "Settings. Local only." }),
-    );
+    await user.click(screen.getByRole("button", { name: "Settings" }));
     await act(async () => pending.resolve(getExample("weekend-trip")!));
     expect(screen.getByRole("heading", { name: "General" })).toBeVisible();
   });
@@ -658,6 +1253,22 @@ describe("personal project chat workspace", () => {
     expect(api.getChat).toHaveBeenCalledWith("created");
   });
 
+  it("saves the message time preference from General", async () => {
+    const user = userEvent.setup();
+    const api = createApi();
+    render(<App api={api} />);
+    await user.click(await screen.findByRole("button", { name: /^Settings/ }));
+    const toggle = screen.getByRole("checkbox", {
+      name: "Always show message time",
+    });
+    expect(toggle).toBeChecked();
+    await user.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(api.updatePreferences).toHaveBeenCalledWith({
+      alwaysShowMessageTime: false,
+    });
+  });
+
   it("shows General settings and lets the user hide the Examples group", async () => {
     localStorage.clear();
     const user = userEvent.setup();
@@ -665,9 +1276,7 @@ describe("personal project chat workspace", () => {
     expect(
       await screen.findByRole("button", { name: "Examples" }),
     ).toBeVisible();
-    await user.click(
-      screen.getByRole("button", { name: "Settings. Local only." }),
-    );
+    await user.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("heading", { name: "General" })).toBeVisible();
     const toggle = screen.getByRole("checkbox", { name: "Show examples" });
     expect(toggle).toBeChecked();
@@ -717,8 +1326,7 @@ describe("personal project chat workspace", () => {
       await user.click(
         await screen.findByRole("button", { name: "Open File drops" }),
       );
-      if (editing)
-        await user.click(screen.getByRole("button", { name: "Edit message" }));
+      if (editing) await chooseMessageAction(user, "Edit message");
       const draft = screen.getByRole("textbox", {
         name: editing ? "Edit message" : "Add a note",
       });
@@ -997,9 +1605,20 @@ describe("personal project chat workspace", () => {
     );
     await user.click(screen.getByRole("button", { name: "Edit" }));
     await user.type(screen.getByLabelText("Project name"), " draft");
-    const button = screen.getByRole("button", { name: "Archive project" });
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Failed archive" }),
+    );
+    const button = screen.getByRole("button", {
+      name: "Archive Failed archive",
+    });
     await user.click(button);
-    for (const name of ["Save changes", "Delete project", "Pin Failed archive"])
+    expect(
+      screen
+        .getByRole("button", { name: "Open Failed archive" })
+        .closest("li")
+        ?.querySelector('[data-project-action="pin"]'),
+    ).toBeDisabled();
+    for (const name of ["Save changes", "Delete Failed archive"])
       expect(screen.getByRole("button", { name })).toBeDisabled();
     await act(async () => pending.reject(new Error("Try again")));
     expect(button).toHaveFocus();
@@ -1046,6 +1665,9 @@ describe("personal project chat workspace", () => {
     );
     await user.type(screen.getByLabelText("Add a note"), "Keep my draft");
     await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Restore race" }),
+    );
+    await user.click(
       screen.getByRole("button", { name: "Restore Restore race from archive" }),
     );
     fireEvent(window, new Event("focus"));
@@ -1087,6 +1709,11 @@ describe("personal project chat workspace", () => {
         .mockResolvedValueOnce({ archivedAt: null, pinnedAt: null }),
     });
     render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Shortcuts for Retry restore",
+      }),
+    );
     const button = await screen.findByRole("button", {
       name: "Restore Retry restore from archive",
     });
@@ -1103,7 +1730,7 @@ describe("personal project chat workspace", () => {
     ).toHaveLength(0);
   });
 
-  it("archives only from settings and preserves unsaved fields through both settings actions", async () => {
+  it("keeps Save changes last in Edit and preserves its fields while using rail shortcuts", async () => {
     const user = userEvent.setup();
     const chat = {
       id: "archive",
@@ -1126,26 +1753,44 @@ describe("personal project chat workspace", () => {
     await user.click(
       await screen.findByRole("button", { name: "Open Archive journey" }),
     );
-    expect(
-      screen.queryByRole("button", { name: "Archive project" }),
-    ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = within(screen.getByRole("main", { name: "Edit project" }));
+    expect(
+      editor.queryByRole("button", { name: /Archive|Restore|Delete/ }),
+    ).not.toBeInTheDocument();
+    const lastField = editor.getByRole("checkbox", {
+      name: "Collapse long messages by default",
+    });
+    lastField.focus();
+    await user.tab();
+    expect(editor.getByRole("button", { name: "Save changes" })).toHaveFocus();
     await user.clear(screen.getByLabelText("Project name"));
     await user.type(screen.getByLabelText("Project name"), "Unsaved name");
-    await user.click(screen.getByRole("button", { name: "Archive project" }));
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Archive journey" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Archive Archive journey" }),
+    );
     expect(api.setChatArchived).toHaveBeenCalledWith("archive", true);
     expect(screen.getByRole("button", { name: "Archive" })).toHaveAttribute(
       "aria-expanded",
       "true",
     );
     expect(
-      screen.getByRole("button", { name: "Restore project" }),
+      screen.getByRole("button", {
+        name: "Restore Archive journey from archive",
+      }),
     ).toHaveFocus();
     expect(screen.getByLabelText("Project name")).toHaveValue("Unsaved name");
     expect(
       screen.queryByRole("button", { name: "Pin Archive journey" }),
     ).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Restore project" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "Restore Archive journey from archive",
+      }),
+    );
     expect(api.setChatArchived).toHaveBeenLastCalledWith("archive", false);
     expect(
       within(screen.getByRole("region", { name: "Archive" })).queryAllByRole(
@@ -1155,7 +1800,7 @@ describe("personal project chat workspace", () => {
     ).toHaveLength(0);
     expect(screen.getByLabelText("Project name")).toHaveValue("Unsaved name");
     expect(
-      screen.getByRole("button", { name: "Archive project" }),
+      screen.getByRole("button", { name: "Archive Archive journey" }),
     ).toHaveFocus();
   });
 
@@ -1178,11 +1823,18 @@ describe("personal project chat workspace", () => {
         setChatArchived: vi.fn().mockReturnValue(pending.promise),
       });
       render(<App api={api} />);
-      const restore = await screen.findByRole("button", {
+      if (collapsed)
+        await user.click(
+          await screen.findByRole("button", { name: "Projects" }),
+        );
+      await user.click(
+        await screen.findByRole("button", {
+          name: "Shortcuts for Archive journey",
+        }),
+      );
+      const restore = screen.getByRole("button", {
         name: "Restore Archive journey from archive",
       });
-      if (collapsed)
-        await user.click(screen.getByRole("button", { name: "Projects" }));
       await user.click(restore);
       expect(restore).toBeDisabled();
       await act(async () =>
@@ -1197,7 +1849,7 @@ describe("personal project chat workspace", () => {
       ).toHaveLength(0);
       expect(
         screen.getByRole("button", {
-          name: collapsed ? "Projects" : "Pin Archive journey",
+          name: collapsed ? "Projects" : "Archive Archive journey",
         }),
       ).toHaveFocus();
     },
@@ -1278,7 +1930,7 @@ describe("personal project chat workspace", () => {
     expect(screen.queryByRole("button", { name: "Open Other" })).toBeNull();
     await user.click(
       screen.getByRole("button", {
-        name: "Settings. Local only.",
+        name: "Settings",
       }),
     );
     await user.click(screen.getByRole("button", { name: "Back to projects" }));
@@ -1381,9 +2033,7 @@ describe("personal project chat workspace", () => {
     expect(screen.queryByText("No link")).toBeNull();
     expect(screen.queryByText("https://code.example")).toBeNull();
     const first = screen.getAllByRole("article")[0].closest("li")!;
-    await user.click(
-      within(first).getByRole("button", { name: "Edit message" }),
-    );
+    await chooseMessageAction(user, "Edit message", first);
     await user.clear(screen.getByRole("textbox", { name: "Edit message" }));
     await user.type(
       screen.getByRole("textbox", { name: "Edit message" }),
@@ -1918,11 +2568,14 @@ describe("personal project chat workspace", () => {
       });
       render(<App api={api} />);
 
-      const pin = await screen.findByRole("button", { name: "Pin Alpha" });
-      const header = screen.getByRole("button", {
+      const header = await screen.findByRole("button", {
         name: "Pinned",
       });
       if (collapsed) await user.click(header);
+      await user.click(
+        await screen.findByRole("button", { name: "Shortcuts for Alpha" }),
+      );
+      const pin = screen.getByRole("button", { name: "Pin Alpha" });
       await user.click(pin);
       expect(api.setChatPinned).toHaveBeenCalledWith("alpha", true);
       expect(screen.getByRole("button", { name: "Open Alpha" })).toBeEnabled();
@@ -1930,7 +2583,7 @@ describe("personal project chat workspace", () => {
 
       await act(async () => pinRequest.resolve({ pinnedAt: 123 }));
       const pinnedControl = document.querySelector(
-        '[data-project-pin-id="alpha"]',
+        '[data-project-row="alpha"] [data-project-action="pin"]',
       );
       expect(pinnedControl).toHaveAttribute("aria-pressed", "true");
       await waitFor(() =>
@@ -1979,6 +2632,9 @@ describe("personal project chat workspace", () => {
       expect(getChat).toHaveBeenCalledTimes(2);
     });
 
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Alpha" }),
+    );
     await user.click(screen.getByRole("button", { name: "Pin Alpha" }));
     expect(screen.getByRole("button", { name: "Pin Alpha" })).toHaveAttribute(
       "aria-pressed",
@@ -2015,7 +2671,10 @@ describe("personal project chat workspace", () => {
     });
     render(<App api={api} />);
 
-    const pin = await screen.findByRole("button", { name: "Pin Alpha" });
+    await user.click(
+      await screen.findByRole("button", { name: "Shortcuts for Alpha" }),
+    );
+    const pin = screen.getByRole("button", { name: "Pin Alpha" });
     await user.click(pin);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Database busy");
@@ -2039,6 +2698,7 @@ describe("personal project chat workspace", () => {
       accent: "coral" as const,
       enabledLabels: ["todo"] as ["todo"],
       collapseLongMessages: true,
+      manualAlert: false,
       createdAt: now - 3_000,
       updatedAt: now - 1_000,
       pinnedAt: null,
@@ -2092,9 +2752,7 @@ describe("personal project chat workspace", () => {
     )
       .getByText("Remove me")
       .closest("li")!;
-    await user.click(
-      within(removeMessage).getByRole("button", { name: "Delete message" }),
-    );
+    await chooseMessageAction(user, "Delete message", removeMessage);
     await waitFor(() => expect(api.deleteNote).toHaveBeenCalled());
     await user.click(screen.getByRole("button", { name: "Open Beta" }));
 
@@ -2116,6 +2774,7 @@ describe("personal project chat workspace", () => {
       accent: "coral" as const,
       enabledLabels: ["todo"] as ["todo"],
       collapseLongMessages: true,
+      manualAlert: false,
       createdAt: now - 2_000,
       updatedAt: now - 1_000,
       pinnedAt: null,
@@ -2362,13 +3021,33 @@ describe("personal project chat workspace", () => {
       screen.getByRole("dialog", { name: "Create project" }),
     ).toBeVisible();
     await user.type(screen.getByLabelText("Project name"), "Launch");
-    await user.click(screen.getByRole("radio", { name: "Coral" }));
+    const picker = screen.getByRole("group", { name: "Accent" });
+    expect(
+      within(picker)
+        .getAllByRole("radio")
+        .map((input) => input.getAttribute("aria-label")),
+    ).toEqual([
+      "Coral",
+      "Amber",
+      "Moss",
+      "Ocean",
+      "Iris",
+      "Slate",
+      "Guava",
+      "Honey",
+      "Jade",
+      "Lagoon",
+      "Orchid",
+      "Periwinkle",
+    ]);
+    expect(within(picker).getByRole("radio", { name: "Coral" })).toBeChecked();
+    await user.click(within(picker).getByRole("radio", { name: "Guava" }));
     await user.click(screen.getByRole("button", { name: "Create project" }));
 
     await waitFor(() =>
       expect(api.createChat).toHaveBeenCalledWith({
         title: "Launch",
-        accent: "coral",
+        accent: "coral-gradient",
       }),
     );
     expect(screen.getByRole("heading", { name: "Launch" })).toBeVisible();
@@ -2384,6 +3063,7 @@ describe("personal project chat workspace", () => {
       title: "Discovery",
       accent: "moss" as const,
       collapseLongMessages: true,
+      manualAlert: false,
       createdAt: 1,
       updatedAt: 1,
     };
@@ -2433,7 +3113,7 @@ describe("personal project chat workspace", () => {
     ).toBeVisible();
   });
 
-  it("shows save failures beside the top actions and preserves edits for retry", async () => {
+  it("shows save failures beside the bottom Save button and preserves edits for retry", async () => {
     const user = userEvent.setup();
     const chat = {
       id: "chat-1",
@@ -2459,15 +3139,15 @@ describe("personal project chat workspace", () => {
     const name = screen.getByLabelText("Project name");
     await user.clear(name);
     await user.type(name, "Research");
-    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    const save = screen.getByRole("button", { name: "Save changes" });
+    await user.click(save);
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Database busy");
-    expect(
-      alert.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(save).toHaveAccessibleDescription("Database busy");
+    expect(alert.nextElementSibling).toBe(save);
     expect(name).toHaveValue("Research");
-    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await user.click(save);
     expect(
       await screen.findByRole("heading", { name: "Research" }),
     ).toBeVisible();
@@ -2515,6 +3195,65 @@ describe("personal project chat workspace", () => {
       }),
       collapseLongMessages: true,
     });
+  });
+
+  it("displays and removes a carried label alongside a differently marked local label of the same name", async () => {
+    const user = userEvent.setup();
+    const local = {
+      id: "custom-00000000-0000-4000-8000-000000000001",
+      name: "Review",
+      symbol: "🍎",
+      enabled: true,
+      builtin: false,
+      position: 7,
+    };
+    const carried = {
+      ...local,
+      id: "custom-00000000-0000-4000-8000-000000000002",
+      symbol: "📎",
+      enabled: false,
+    };
+    const chat = {
+      id: "chat",
+      title: "Launch",
+      accent: "ocean",
+      labelDefinitions: [...defaultProjectLabels(), local],
+      enabledLabels: [local.id],
+      createdAt: 100,
+      updatedAt: 200,
+    };
+    const note = {
+      id: "note",
+      body: "Copied message",
+      chatId: "chat",
+      sender: null,
+      createdAt: 200,
+      labels: [carried.id],
+      labelSnapshots: [carried],
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({ ...chat, notes: [note] }),
+      setNoteLabel: vi.fn().mockResolvedValue([]),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Launch" }),
+    );
+    const row = within((await screen.findByText(note.body)).closest("li")!);
+    expect(row.getByRole("listitem")).toHaveTextContent("📎Review");
+    await user.click(row.getByRole("button", { name: "Change labels" }));
+    expect(row.getByRole("checkbox", { name: "Review" })).not.toBeChecked();
+    const applied = row.getByRole("checkbox", { name: "Review (inactive)" });
+    expect(applied).toBeChecked();
+    await user.click(applied);
+    expect(api.setNoteLabel).toHaveBeenCalledWith(
+      "chat",
+      "note",
+      carried.id,
+      false,
+    );
+    await waitFor(() => expect(row.queryByRole("listitem")).toBeNull());
   });
 
   it("shows, changes, and filters multiple labels with inactive assignments retained", async () => {
@@ -2576,13 +3315,35 @@ describe("personal project chat workspace", () => {
       within(within(message).getByLabelText("Message actions"))
         .getAllByRole("button")
         .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["Change labels", "More message actions"]);
+    const more = within(message).getByRole("button", {
+      name: "More message actions",
+    });
+    more.focus();
+    await user.keyboard("{Enter}");
+    const actions = within(message).getByRole("menu", {
+      name: "More message actions",
+    });
+    expect(
+      within(actions)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
     ).toEqual([
-      "Change labels",
+      "Select messages",
       "Continue in subthread",
       "Copy message",
       "Edit message",
       "Delete message",
     ]);
+    expect(
+      within(actions).getByRole("menuitem", { name: "Select messages" }),
+    ).toHaveFocus();
+    await user.keyboard("{End}");
+    expect(
+      within(actions).getByRole("menuitem", { name: "Delete message" }),
+    ).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(more).toHaveFocus();
     await user.click(
       within(message).getByRole("button", { name: "Change labels" }),
     );
@@ -2595,6 +3356,11 @@ describe("personal project chat workspace", () => {
     expect(
       within(message).queryByRole("checkbox", { name: "Question" }),
     ).toBeNull();
+    // Mobile WebKit focuses the enclosing row between pointerdown and click.
+    act(() => message.focus());
+    expect(
+      within(message).getByRole("group", { name: "Message labels" }),
+    ).toBeVisible();
     await user.click(within(message).getByRole("checkbox", { name: "Pin" }));
 
     await waitFor(() =>
@@ -2737,7 +3503,11 @@ describe("personal project chat workspace", () => {
       .spyOn(HTMLElement.prototype, "getBoundingClientRect")
       .mockImplementation(function (this: HTMLElement) {
         if (this.textContent === "Visible reference") return rect(40, 20);
-        if (this.textContent === "Clipped reference") return rect(240, 20);
+        if (
+          this.textContent === "Clipped reference" ||
+          this.getAttribute("aria-label") === "Clipped task"
+        )
+          return rect(240, 20);
         return originalRect.call(this);
       });
     try {
@@ -2748,6 +3518,7 @@ describe("personal project chat workspace", () => {
         accent: "ocean" as const,
         enabledLabels: ["todo"] as "todo"[],
         collapseLongMessages: true,
+        manualAlert: false,
         createdAt: 100,
         updatedAt: 200,
       };
@@ -2759,7 +3530,7 @@ describe("personal project chat workspace", () => {
             {
               id: "note-1",
               chatId: "chat-1",
-              body: "[Visible reference](https://example.com/visible)\n\nFirst paragraph\n\n[Clipped reference](https://example.com/clipped)",
+              body: "[Visible reference](https://example.com/visible)\n\nFirst paragraph\n\n[Clipped reference](https://example.com/clipped)\n\n- [ ] Clipped task",
               createdAt: 200,
               labels: [],
             },
@@ -2786,6 +3557,10 @@ describe("personal project chat workspace", () => {
         "message-body-viewport--collapsed",
       );
       expect(visibleLink).not.toHaveAttribute("tabindex");
+      const clippedTask = screen.getByRole("checkbox", {
+        name: "Clipped task",
+      });
+      expect(clippedTask).toHaveAttribute("tabindex", "-1");
       expect(clippedLink).toHaveAttribute("tabindex", "-1");
       expect(clippedLink).not.toHaveAttribute("aria-disabled");
 
@@ -2797,9 +3572,10 @@ describe("personal project chat workspace", () => {
         "message-body-viewport--collapsed",
       );
       expect(visibleLink).not.toHaveAttribute("tabindex");
+      expect(clippedTask).not.toHaveAttribute("tabindex");
       expect(clippedLink).not.toHaveAttribute("tabindex");
 
-      await user.click(screen.getByRole("button", { name: "Edit message" }));
+      await chooseMessageAction(user, "Edit message");
       await user.click(screen.getByRole("button", { name: "Cancel" }));
       expect(screen.getByRole("button", { name: "Show less" })).toHaveAttribute(
         "aria-expanded",
@@ -2838,6 +3614,7 @@ describe("personal project chat workspace", () => {
         accent: "ocean" as const,
         enabledLabels: ["todo"] as "todo"[],
         collapseLongMessages: true,
+        manualAlert: false,
         createdAt: 100,
         updatedAt: 200,
       };
@@ -2915,6 +3692,7 @@ describe("personal project chat workspace", () => {
         accent: "ocean" as const,
         enabledLabels: ["todo"] as "todo"[],
         collapseLongMessages: true,
+        manualAlert: false,
         createdAt: 100,
         updatedAt: 200,
       };
@@ -3052,6 +3830,7 @@ describe("personal project chat workspace", () => {
         accent: "ocean" as const,
         enabledLabels: ["todo"] as "todo"[],
         collapseLongMessages: true,
+        manualAlert: false,
         createdAt: 100,
         updatedAt: 200,
       };
@@ -3164,7 +3943,7 @@ describe("personal project chat workspace", () => {
     expect(screen.getByRole("button", { name: "Pin 0" })).toBeVisible();
   });
 
-  it("deletes the active project from the inline edit workspace", async () => {
+  it("deletes the active project through its rail shortcut", async () => {
     const user = userEvent.setup();
     const chat = {
       id: "chat-1",
@@ -3185,7 +3964,10 @@ describe("personal project chat workspace", () => {
       await screen.findByRole("button", { name: "Open Delivery" }),
     );
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    await user.click(screen.getByRole("button", { name: "Delete project" }));
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Delivery" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Delete Delivery" }));
 
     expect(api.deleteChat).toHaveBeenCalledWith("chat-1");
     expect(
@@ -3196,7 +3978,7 @@ describe("personal project chat workspace", () => {
     ).toBeVisible();
   });
 
-  it("keeps the inline project editor open for cancelled and failed deletes", async () => {
+  it("keeps the inline project editor open for cancelled and failed rail deletes", async () => {
     const user = userEvent.setup();
     const chat = {
       id: "chat-1",
@@ -3221,13 +4003,16 @@ describe("personal project chat workspace", () => {
       await screen.findByRole("button", { name: "Open Delivery" }),
     );
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    await user.click(screen.getByRole("button", { name: "Delete project" }));
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Delivery" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Delete Delivery" }));
 
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(api.deleteChat).not.toHaveBeenCalled();
     expect(screen.getByRole("main", { name: "Edit project" })).toBeVisible();
 
-    await user.click(screen.getByRole("button", { name: "Delete project" }));
+    await user.click(screen.getByRole("button", { name: "Delete Delivery" }));
 
     expect(api.deleteChat).toHaveBeenCalledWith("chat-1");
     expect(await screen.findByRole("alert")).toHaveTextContent("Delete failed");
@@ -3328,7 +4113,7 @@ describe("personal project chat workspace", () => {
       await user.click(
         await screen.findByRole("button", { name: "Open Delivery" }),
       );
-      await user.click(screen.getByRole("button", { name: "Edit message" }));
+      await chooseMessageAction(user, "Edit message");
       const editor = screen.getByRole("textbox", { name: "Edit message" });
       await user.clear(editor);
       await user.type(editor, "Revised message");
@@ -3425,9 +4210,7 @@ describe("personal project chat workspace", () => {
       await user.clear(composer);
 
       const noteItem = screen.getByRole("article").closest("li")!;
-      await user.click(
-        within(noteItem).getByRole("button", { name: "Edit message" }),
-      );
+      await chooseMessageAction(user, "Edit message", noteItem);
       expect(screen.getByRole("textbox", { name: "Edit message" })).toHaveStyle(
         { height: "120px" },
       );
@@ -3709,7 +4492,7 @@ describe("personal project chat workspace", () => {
       "This formatting would exceed the 10,000-character message limit.",
     );
 
-    await user.click(screen.getByRole("button", { name: "Edit message" }));
+    await chooseMessageAction(user, "Edit message");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -3817,7 +4600,9 @@ describe("personal project chat workspace", () => {
     expect(screen.queryByText("draft.pdf")).not.toBeInTheDocument();
   });
 
-  it("opens settings as a rail mode and exports from the main workspace", async () => {
+  it("opens settings as a rail mode and exports from the main workspace", async ({
+    onTestFinished,
+  }) => {
     const user = userEvent.setup();
     const api = createApi({
       exportDatabase: vi.fn().mockResolvedValue(
@@ -3828,13 +4613,23 @@ describe("personal project chat workspace", () => {
     });
     const createObjectURL = vi.fn(() => "blob:threadstr-export");
     const revokeObjectURL = vi.fn();
-    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
-      this: HTMLAnchorElement,
-    ) {
-      expect(this.download).toMatch(
-        /^threadstr-\d{4}-\d{2}-\d{2}\.on-track-backup$/,
-      );
+    vi.stubGlobal(
+      "URL",
+      class extends URL {
+        static createObjectURL = createObjectURL;
+        static revokeObjectURL = revokeObjectURL;
+      },
+    );
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        expect(this.download).toMatch(
+          /^threadstr-\d{4}-\d{2}-\d{2}\.on-track-backup$/,
+        );
+      });
+    onTestFinished(() => {
+      click.mockRestore();
+      vi.unstubAllGlobals();
     });
     render(<App api={api} />);
 
@@ -4170,15 +4965,12 @@ describe("personal project chat workspace", () => {
     expect(
       within(participant).getByRole("button", { name: "Change labels" }),
     ).toBeVisible();
-    expect(
-      within(participant).getByRole("button", { name: "Copy message" }),
-    ).toBeVisible();
-    expect(
-      within(participant).getByRole("button", { name: "Edit message" }),
-    ).toBeVisible();
-    expect(
-      within(participant).getByRole("button", { name: "Delete message" }),
-    ).toBeVisible();
+    await user.click(
+      within(participant).getByRole("button", { name: "More message actions" }),
+    );
+    for (const name of ["Copy message", "Edit message", "Delete message"]) {
+      expect(within(participant).getByRole("menuitem", { name })).toBeVisible();
+    }
     expect(document.querySelector(".message-avatar")).toBeNull();
 
     const mayaNames = screen.getAllByText("Maya Chen", {
@@ -4240,9 +5032,7 @@ describe("personal project chat workspace", () => {
     );
 
     const participant = screen.getByText("Participant update").closest("li")!;
-    await user.click(
-      within(participant).getByRole("button", { name: "Edit message" }),
-    );
+    await chooseMessageAction(user, "Edit message", participant);
     expect(screen.getByRole("textbox", { name: "Sender name" })).toHaveValue(
       "Maya Chen",
     );
@@ -4263,14 +5053,13 @@ describe("personal project chat workspace", () => {
       "Omar Haddad",
     );
 
-    await user.click(
-      within(participant).getByRole("button", { name: "Edit message" }),
-    );
+    await chooseMessageAction(user, "Edit message", participant);
     await user.click(screen.getByRole("button", { name: "You" }));
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(updateNote).toHaveBeenLastCalledWith("chat-1", "note-1", {
       body: "Participant update",
+      expectedBody: "Participant update",
       sender: null,
       createdAt: 3_600_000,
       keepAttachmentIds: [],
@@ -4447,6 +5236,146 @@ describe("personal project chat workspace", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("previews a saved picture before opening its browser viewer and refreshes edited bytes", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat-1",
+      title: "Gallery",
+      accent: "slate",
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const file = {
+      id: "pic",
+      filename: "proof.PNG",
+      byteSize: 128,
+      modifiedAt: 2,
+      createdAt: 1,
+      mediaType: "application/octet-stream",
+      status: "available",
+    };
+    const note = {
+      id: "note-1",
+      chatId: chat.id,
+      body: "",
+      createdAt: 2,
+      attachments: [file],
+    };
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi
+        .fn()
+        .mockResolvedValueOnce({ ...chat, notes: [note] })
+        .mockResolvedValue({
+          ...chat,
+          notes: [{ ...note, attachments: [{ ...file, modifiedAt: 3 }] }],
+        }),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Gallery" }),
+    );
+    const trigger = await screen.findByRole("button", {
+      name: "View proof.PNG larger",
+    });
+    const image = trigger.querySelector("img")!;
+    expect(image.getAttribute("src")).toMatch(
+      /^\/api\/chats\/chat-1\/notes\/note-1\/attachments\/pic\/preview\?/,
+    );
+    fireEvent.load(image);
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "proof.PNG" });
+    expect(within(dialog).getByRole("img")).toHaveAttribute(
+      "src",
+      image.getAttribute("src"),
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(api.openAttachment).not.toHaveBeenCalled();
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("button", { name: "View proof.PNG larger" })
+          .querySelector("img"),
+      ).toHaveAttribute("src", expect.stringContaining("v=3-128-")),
+    );
+  });
+
+  it("bounds picture reads and keeps native actions available when a mixed attachment cannot preview", async () => {
+    const user = userEvent.setup();
+    const chat = {
+      id: "chat",
+      title: "Proofs",
+      accent: "slate",
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const attachments = [
+      "first.jpg",
+      "spec.pdf",
+      "second.png",
+      "third.jpeg",
+      "large.jpg",
+      "gone.png",
+    ].map((filename, i) => ({
+      id: String(i),
+      filename,
+      byteSize: i === 4 ? 13 * 1024 * 1024 : 512,
+      modifiedAt: 2,
+      createdAt: 1,
+      status: i === 5 ? "missing" : "available",
+      actions: {
+        open: i === 5 ? "unavailable" : "available",
+        reveal: "available",
+      },
+    }));
+    const api = createApi({
+      listChats: vi.fn().mockResolvedValue([chat]),
+      getChat: vi.fn().mockResolvedValue({
+        ...chat,
+        notes: [
+          {
+            id: "note-1",
+            chatId: chat.id,
+            body: "Print these",
+            createdAt: 2,
+            attachments,
+          },
+        ],
+      }),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Proofs" }),
+    );
+    const previews = screen.getAllByRole("button", {
+      name: /^View .+ larger$/,
+    });
+    expect(previews.map((el) => el.getAttribute("aria-label"))).toEqual([
+      "View first.jpg larger",
+      "View second.png larger",
+      "View third.jpeg larger",
+    ]);
+    const images = previews.map((el) => el.querySelector("img")!);
+    expect(images.filter((el) => el.hasAttribute("src"))).toHaveLength(2);
+    expect(screen.getByText("Image is too large to preview.")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Show gone.png in Folder" }),
+    ).toBeEnabled();
+    fireEvent.error(images[0]);
+    expect(screen.getByText("Image preview unavailable.")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Open first.jpg" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Show first.jpg in Folder" }),
+    ).toBeEnabled();
+    expect(images[2]).toHaveAttribute("src");
+    expect(api.openAttachment).not.toHaveBeenCalled();
+    expect(api.revealAttachment).not.toHaveBeenCalled();
   });
 
   it("renders attachment cards and filters history to messages with files", async () => {
@@ -4850,17 +5779,11 @@ describe("personal project chat workspace", () => {
     );
     const note = await screen.findByText("Original");
     const noteItem = note.closest("li")!;
-    await user.click(
-      within(noteItem).getByRole("button", { name: "Copy message" }),
-    );
+    await chooseMessageAction(user, "Copy message", noteItem);
     expect(writeText).toHaveBeenCalledWith("Original **message**");
-    expect(
-      within(noteItem).getByRole("button", { name: "Message copied" }),
-    ).toBeVisible();
+    expect(within(noteItem).getByText("Message copied")).toBeVisible();
 
-    await user.click(
-      within(noteItem).getByRole("button", { name: "Edit message" }),
-    );
+    await chooseMessageAction(user, "Edit message", noteItem);
     expect(screen.queryByRole("dialog", { name: "Edit message" })).toBeNull();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeVisible();
     expect(screen.queryByLabelText("Message timestamp")).toBeNull();
@@ -4885,6 +5808,7 @@ describe("personal project chat workspace", () => {
 
     expect(api.updateNote).toHaveBeenCalledWith("chat-1", "note-1", {
       body: "Revised **message**",
+      expectedBody: "Original **message**",
       createdAt: new Date(revisedTimestamp).getTime(),
       keepAttachmentIds: ["attachment-keep"],
       files: [newFile],
@@ -4892,11 +5816,10 @@ describe("personal project chat workspace", () => {
     expect(await screen.findByText("Revised")).toBeVisible();
 
     const updatedItem = screen.getByText("Revised").closest("li")!;
-    await user.click(
-      within(updatedItem).getByRole("button", { name: "Delete message" }),
-    );
+    await chooseMessageAction(user, "Delete message", updatedItem);
     expect(api.deleteNote).toHaveBeenCalledWith("chat-1", "note-1");
     expect(screen.queryByText("Revised")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Add a note" })).toHaveFocus();
   });
 
   it("keeps composer editing active for invalid timestamps and cancelled deletes", async () => {
@@ -4931,14 +5854,18 @@ describe("personal project chat workspace", () => {
       await screen.findByRole("button", { name: "Open Delivery" }),
     );
     const noteItem = screen.getByText("Original message").closest("li")!;
-    await user.click(
-      within(noteItem).getByRole("button", { name: "Delete message" }),
-    );
+    await chooseMessageAction(user, "Delete message", noteItem);
     expect(api.deleteNote).not.toHaveBeenCalled();
 
-    await user.click(
-      within(noteItem).getByRole("button", { name: "Edit message" }),
-    );
+    vi.mocked(window.confirm).mockReturnValueOnce(true);
+    vi.mocked(api.deleteNote).mockRejectedValueOnce(new Error("Database busy"));
+    await chooseMessageAction(user, "Delete message", noteItem);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Database busy");
+    expect(
+      within(noteItem).getByRole("button", { name: "More message actions" }),
+    ).toHaveFocus();
+
+    await chooseMessageAction(user, "Edit message", noteItem);
     expect(screen.queryByLabelText("Message timestamp")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Choose timestamp" }));
     await user.clear(screen.getByLabelText("Message timestamp"));
@@ -4984,9 +5911,7 @@ describe("personal project chat workspace", () => {
       await screen.findByRole("button", { name: "Open Delivery" }),
     );
     const noteItem = screen.getByText("Original message").closest("li")!;
-    await user.click(
-      within(noteItem).getByRole("button", { name: "Copy message" }),
-    );
+    await chooseMessageAction(user, "Copy message", noteItem);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The message could not be copied.",
@@ -5019,6 +5944,7 @@ describe("personal project chat workspace", () => {
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
       collapseLongMessages: true,
+      manualAlert: false,
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
@@ -5058,6 +5984,7 @@ describe("personal project chat workspace", () => {
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
       collapseLongMessages: true,
+      manualAlert: false,
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
@@ -5114,6 +6041,7 @@ describe("personal project chat workspace", () => {
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
       collapseLongMessages: true,
+      manualAlert: false,
       createdAt: 1,
       updatedAt: 3,
       pinnedAt: null,
@@ -5152,9 +6080,7 @@ describe("personal project chat workspace", () => {
     const noteItem = (
       await within(screen.getByRole("main")).findByText("Remove me")
     ).closest("li")!;
-    await user.click(
-      within(noteItem).getByRole("button", { name: "Delete message" }),
-    );
+    await chooseMessageAction(user, "Delete message", noteItem);
     await user.click(screen.getByRole("button", { name: "Open Beta" }));
     expect(await screen.findByRole("heading", { name: "Beta" })).toBeVisible();
 
@@ -5178,6 +6104,7 @@ describe("personal project chat workspace", () => {
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
       collapseLongMessages: true,
+      manualAlert: false,
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
@@ -5206,7 +6133,10 @@ describe("personal project chat workspace", () => {
 
     await user.click(await screen.findByRole("button", { name: "Open Alpha" }));
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    await user.click(screen.getByRole("button", { name: "Delete project" }));
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Alpha" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Delete Alpha" }));
     await user.click(screen.getByRole("button", { name: "Open Beta" }));
     expect(await screen.findByRole("heading", { name: "Beta" })).toBeVisible();
 
@@ -5224,6 +6154,7 @@ describe("personal project chat workspace", () => {
       accent: "coral" as const,
       enabledLabels: ["todo", "milestone"] as ("todo" | "milestone")[],
       collapseLongMessages: true,
+      manualAlert: false,
       createdAt: 1,
       updatedAt: 2,
       pinnedAt: null,
@@ -5458,22 +6389,18 @@ it("offers continuation between labels and copy and creates an empty named subth
   fireEvent.click(
     await screen.findByRole("button", { name: "Open Website redesign" }),
   );
-  const actions = (
-    await screen.findByRole("button", { name: "Copy message" })
-  ).closest(".message-actions")!;
+  const more = await screen.findByRole("button", {
+    name: "More message actions",
+  });
+  const actions = more.closest(".message-actions") as HTMLElement;
   expect(
-    within(actions as HTMLElement)
+    within(actions)
       .getAllByRole("button")
       .map((button) => button.getAttribute("aria-label")),
-  ).toEqual([
-    "Change labels",
-    "Continue in subthread",
-    "Copy message",
-    "Edit message",
-    "Delete message",
-  ]);
+  ).toEqual(["Change labels", "More message actions"]);
+  fireEvent.click(more);
   fireEvent.click(
-    screen.getByRole("button", { name: "Continue in subthread" }),
+    screen.getByRole("menuitem", { name: "Continue in subthread" }),
   );
   fireEvent.change(screen.getByRole("textbox", { name: "Subthread name" }), {
     target: { value: "Navigation" },
@@ -5489,11 +6416,14 @@ it("offers continuation between labels and copy and creates an empty named subth
   expect(screen.getByText("Subthread from")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   expect(
-    screen.queryByRole("group", { name: "Project accent" }),
+    screen.queryByRole("group", { name: "Accent" }),
   ).not.toBeInTheDocument();
   expect(
-    screen.getByRole("button", { name: "Delete subthread" }),
-  ).toBeInTheDocument();
+    within(screen.getByRole("main", { name: "Edit subthread" })).queryByRole(
+      "button",
+      { name: /Delete|Archive|Restore/ },
+    ),
+  ).not.toBeInTheDocument();
 });
 
 it("preserves edits typed during navigation and clears cached work after replacement", async () => {
@@ -5504,6 +6434,7 @@ it("preserves edits typed during navigation and clears cached work after replace
     accent: "ocean" as const,
     enabledLabels: [],
     collapseLongMessages: true,
+    manualAlert: false,
     archivedAt: null,
     pinnedAt: null,
     latestAttentionAt: null,
@@ -5692,12 +6623,413 @@ it("updates the open child origin when its source deletion finishes after naviga
     await screen.findByRole("button", { name: "Open Source project" }),
   );
   fireEvent.click(
-    await screen.findByRole("button", { name: "Delete message" }),
+    await screen.findByRole("button", { name: "More message actions" }),
   );
+  fireEvent.click(screen.getByRole("menuitem", { name: "Delete message" }));
   fireEvent.click(screen.getByRole("button", { name: "Open Continued topic" }));
   await screen.findByRole("heading", {
     name: "Source project / Continued topic",
   });
   await act(async () => deletion.resolve());
   expect(screen.getByText(/Original message deleted/)).toBeInTheDocument();
+});
+
+describe("bulk message actions", () => {
+  const source: import("../domain/types.js").Chat = {
+    id: "main",
+    title: "Source",
+    accent: "ocean",
+    enabledLabels: [],
+    collapseLongMessages: true,
+    archivedAt: null,
+    pinnedAt: null,
+    manualAlert: false,
+    latestAttentionAt: null,
+    nextAttentionAt: null,
+    createdAt: 10,
+    updatedAt: 20,
+  };
+  const destination = {
+    ...source,
+    id: "child",
+    title: "Launch",
+    projectId: source.id,
+  };
+  const messages = ["Checklist", "Readiness"].map((body, i) => ({
+    id: "note-" + i,
+    chatId: source.id,
+    body,
+    sender: null,
+    labels: [],
+    attachments: [],
+    createdAt: 10 + i,
+  }));
+  async function openSelection(api: ApiClient) {
+    const user = userEvent.setup();
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Source" }),
+    );
+    const draft = await screen.findByRole("textbox", { name: "Add a note" });
+    await user.type(draft, "Unsent draft");
+    await chooseMessageAction(
+      user,
+      "Select messages",
+      screen.getByText("Checklist").closest("li")!,
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Select message: Checklist" }),
+    ).toBeChecked();
+    await user.click(
+      screen.getByRole("checkbox", { name: "Select message: Readiness" }),
+    );
+    return user;
+  }
+  function batchApi(overrides: Partial<ApiClient> = {}) {
+    return createApi({
+      listChats: vi.fn().mockResolvedValue([source, destination]),
+      getChat: vi.fn(async (id) => ({
+        ...(id === source.id ? source : destination),
+        notes: id === source.id ? messages : [],
+      })),
+      batchNotes: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    });
+  }
+  it("exports through a message’s More menu and restores focus and draft", async () => {
+    const user = userEvent.setup();
+    const api = batchApi();
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Source" }),
+    );
+    await user.type(
+      await screen.findByRole("textbox", { name: "Add a note" }),
+      "private draft",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Select messages" }),
+    ).not.toBeInTheDocument();
+    const row = screen.getByText("Readiness").closest("li")!;
+    await chooseMessageAction(user, "Select messages", row);
+    const selected = within(row).getByRole("checkbox", {
+      name: "Select message: Readiness",
+    });
+    expect(selected).toHaveFocus();
+    expect(selected).toBeChecked();
+    await user.click(selected);
+    expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
+    await user.click(selected);
+    await user.click(screen.getByRole("button", { name: "Export" }));
+    const preview = await screen.findByLabelText("Exact export text");
+    expect(preview.textContent).toContain("# Source");
+    expect(preview.textContent).toContain("Readiness");
+    expect(preview.textContent).not.toMatch(/Checklist|private draft/);
+    await user.click(screen.getByRole("radio", { name: /Plain text/ }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Exact export text").textContent).toMatch(
+        /^Source\n/,
+      ),
+    );
+    const copy = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockRejectedValueOnce(new Error("denied"));
+    await user.click(screen.getByRole("button", { name: "Copy text" }));
+    const manual = await screen.findByRole("textbox", {
+      name: "Exact export text",
+    });
+    expect(manual).toHaveFocus();
+    expect((manual as HTMLTextAreaElement).selectionEnd).toBe(
+      (manual as HTMLTextAreaElement).value.length,
+    );
+    await user.click(screen.getByRole("button", { name: "Copy text" }));
+    expect(copy).toHaveBeenLastCalledWith(
+      (manual as HTMLTextAreaElement).value,
+    );
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "Export" })).toHaveFocus();
+    expect(
+      screen.getByRole("checkbox", { name: "Select message: Readiness" }),
+    ).toBeChecked();
+    await user.keyboard("{Escape}");
+    expect(
+      within(row).getByRole("button", { name: "More message actions" }),
+    ).toHaveFocus();
+    expect(screen.getByRole("textbox", { name: "Add a note" })).toHaveValue(
+      "private draft",
+    );
+    expect(api.batchNotes).not.toHaveBeenCalled();
+  });
+  it("ignores a stale copy denial after switching formats and copying again", async () => {
+    const user = await openSelection(batchApi());
+    await user.click(screen.getByRole("button", { name: "Export" }));
+    await screen.findByLabelText("Exact export text");
+    const pending = deferred<void>();
+    vi.spyOn(navigator.clipboard, "writeText")
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValueOnce(undefined);
+    await user.click(screen.getByRole("button", { name: "Copy text" }));
+    await user.click(screen.getByRole("radio", { name: /Plain text/ }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Exact export text").textContent).toMatch(
+        /^Source\n/,
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Copy text" }));
+    expect(await screen.findByText("Text copied.")).toBeVisible();
+    await act(async () => pending.reject(new Error("denied")));
+    expect(screen.getByText("Text copied.")).toBeVisible();
+    expect(
+      screen.queryByRole("textbox", { name: "Exact export text" }),
+    ).toBeNull();
+  });
+  it("closes export when a selected body changes under the same ID", async () => {
+    const api = batchApi();
+    const user = await openSelection(api);
+    await user.click(screen.getByRole("button", { name: "Export" }));
+    await screen.findByLabelText("Exact export text");
+    vi.mocked(api.getChat).mockResolvedValue({
+      ...source,
+      notes: [{ ...messages[0], body: "Changed" }, messages[1]],
+    });
+    act(() => window.dispatchEvent(new Event("focus")));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Messages changed. Review your selection.",
+    );
+    expect(screen.queryByRole("button", { name: "Copy text" })).toBeNull();
+    expect(screen.getByText("2 selected")).toBeVisible();
+  });
+  it("selects inclusive Shift ranges in visible history order and keeps earlier choices", async () => {
+    const user = userEvent.setup();
+    const notes = [6, 1, 3, 2, 0, 5, 4].map((i) => ({
+      ...messages[0],
+      id: String(i),
+      createdAt: 100 + i,
+      body: i === 4 ? "[Review](https://example.com)" : `Message ${i}`,
+      labels: i === 2 ? [] : ["pin"],
+    }));
+    const api = batchApi({
+      getChat: vi.fn().mockResolvedValue({ ...source, notes }),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Source" }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Pin 6" }));
+    await chooseMessageAction(
+      user,
+      "Select messages",
+      screen.getByText("Message 0").closest("li")!,
+    );
+    const history = within(
+      screen.getByRole("region", { name: "Source messages" }),
+    );
+    const checkbox = (i: number) =>
+      history.getByRole("checkbox", { name: `Select message: Message ${i}` });
+    const checked = () =>
+      history
+        .getAllByRole("checkbox", { checked: true })
+        .map((item) => item.getAttribute("data-select-note"));
+    await user.keyboard("{Shift>}");
+    await user.click(checkbox(3));
+    await user.click(checkbox(1).closest("label")!);
+    await user.keyboard("{/Shift}");
+    expect(checked()).toEqual(["0", "1", "3"]);
+    await user.click(checkbox(6));
+    await user.keyboard("{Shift>}");
+    await user.click(history.getByRole("link", { name: "Review" }));
+    expect(checked()).toEqual(["0", "1", "3", "6"]);
+    await user.click(
+      history.getByRole("link", { name: "Review" }).closest("li")!,
+    );
+    await user.keyboard("{/Shift}");
+    expect(checked()).toEqual(["0", "1", "3", "4", "5", "6"]);
+    await user.click(checkbox(1));
+    await user.click(checkbox(3));
+    checkbox(0).focus();
+    await user.keyboard("{Shift>}[Space]{/Shift}");
+    expect(checked()).toEqual(["0", "1", "3", "4", "5", "6"]);
+  });
+  it("selects all messages in the active filter and submits only those messages", async () => {
+    const user = userEvent.setup();
+    const notes = [
+      ...messages,
+      { ...messages[0], id: "other", body: "Other" },
+    ].map((note) => ({ ...note, labels: note.id === "other" ? [] : ["pin"] }));
+    const api = batchApi({
+      getChat: vi.fn().mockResolvedValue({ ...source, notes }),
+    });
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Source" }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Pin 2" }));
+    await chooseMessageAction(
+      user,
+      "Select messages",
+      screen.getByText("Checklist").closest("li")!,
+    );
+    await user.click(screen.getByRole("button", { name: "Select all" }));
+    expect(screen.getByText("2 selected")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    expect(screen.queryByRole("button", { name: "Select all" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Delete 2 messages" }));
+    expect(api.batchNotes).toHaveBeenCalledWith(source.id, {
+      action: "delete",
+      noteIds: ["note-0", "note-1"],
+    });
+    expect(screen.getByRole("button", { name: "Pin 0" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+  it("reports oversized range and Select all attempts without partially selecting a batch", () => {
+    const ids = Array.from({ length: 1001 }, (_, i) => `note-${i}`);
+    const visible = new Set(ids);
+    const ref = { current: null };
+    const { result } = renderHook(() => useMessageSelection(ref, ref, visible));
+    act(() => result.current.begin(messages[0]));
+    act(() => result.current.toggle(ids[1000], true));
+    expect([...result.current.selected]).toEqual([ids[0]]);
+    expect(result.current.error).toMatch(/1,001.*1,000/);
+    act(() => result.current.toggle(ids[10], true));
+    expect(result.current.selected.size).toBe(11);
+    expect(result.current.error).toBe("");
+    act(() => result.current.selectAll());
+    expect(result.current.selected.size).toBe(11);
+    expect(result.current.error).toMatch(/1,001.*1,000/);
+    act(() => result.current.toggle(ids[999], true));
+    expect(result.current.selected.size).toBe(1000);
+  });
+  it("restores the selection entry reading position when cancelling after scrolling", async () => {
+    const user = userEvent.setup();
+    render(<App api={batchApi()} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Source" }),
+    );
+    const history = await screen.findByRole("region", {
+      name: "Source messages",
+    });
+    const rows = Array.from(
+      history.querySelectorAll<HTMLElement>(".message-row"),
+    );
+    vi.spyOn(history, "getBoundingClientRect").mockImplementation(
+      () => ({ top: 0, bottom: 200, height: 200 }) as DOMRect,
+    );
+    rows.forEach((row, index) =>
+      vi.spyOn(row, "getBoundingClientRect").mockImplementation(
+        () =>
+          ({
+            top: index * 200 - history.scrollTop,
+            bottom: (index + 1) * 200 - history.scrollTop,
+            height: 200,
+          }) as DOMRect,
+      ),
+    );
+    await act(async () => {
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve()),
+      );
+    });
+    history.scrollTop = 36;
+    await chooseMessageAction(user, "Select messages", rows[0]);
+    history.scrollTop = 240;
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(history.scrollTop).toBe(36);
+  });
+  it("keeps selections and the draft across the workspace picker and copies to a subthread", async () => {
+    const api = batchApi();
+    const user = await openSelection(api);
+    await user.click(screen.getByRole("button", { name: "Move" }));
+    const move = screen.getByRole("main", { name: "Move messages" });
+    expect(
+      within(move).getByRole("button", { name: "Move 2 messages" }),
+    ).toBeDisabled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await user.click(
+      within(move).getByRole("button", { name: "Back to messages" }),
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Select message: Readiness" }),
+    ).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Copy" }));
+    const picker = screen.getByRole("main", { name: "Copy messages" });
+    await user.type(within(picker).getByRole("searchbox"), "Source / Launch");
+    await user.click(
+      within(picker).getByRole("button", { name: "Source / Launch" }),
+    );
+    await user.click(
+      within(picker).getByRole("button", { name: "Copy 2 messages" }),
+    );
+    expect(api.batchNotes).toHaveBeenCalledWith("main", {
+      action: "copy",
+      destinationChatId: "child",
+      noteIds: ["note-0", "note-1"],
+    });
+    expect(screen.getByRole("textbox", { name: "Add a note" })).toHaveValue(
+      "Unsent draft",
+    );
+    expect(screen.getByText("Checklist")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Open destination" }));
+    expect(
+      await screen.findByRole("heading", { name: "Source / Launch" }),
+    ).toBeVisible();
+  });
+  it("returns a changed delete confirmation to the remaining visible selection after a refresh", async () => {
+    const refreshed = deferred<import("../domain/types.js").ChatDetail>();
+    const api = batchApi();
+    vi.mocked(api.getChat)
+      .mockImplementationOnce(
+        async () =>
+          ({
+            ...source,
+            notes: messages,
+          }) as import("../domain/types.js").ChatDetail,
+      )
+      .mockReturnValueOnce(refreshed.promise);
+    const user = await openSelection(api);
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    act(() => window.dispatchEvent(new Event("focus")));
+    await act(async () =>
+      refreshed.resolve({
+        ...source,
+        notes: [messages[1]],
+      }),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Delete 2 messages" }),
+    ).toBeNull();
+    expect(screen.getByText("1 selected")).toBeVisible();
+    expect(
+      screen.getByRole("checkbox", { name: "Select message: Readiness" }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Select message: Readiness" }),
+    ).toHaveFocus();
+    expect(api.batchNotes).not.toHaveBeenCalled();
+  });
+  it("confirms delete in the selection bar, retains the batch on failure and removes it on retry", async () => {
+    const api = batchApi({
+      batchNotes: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Try again"))
+        .mockResolvedValue(undefined),
+    });
+    const user = await openSelection(api);
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    const confirm = screen.getByRole("button", { name: "Delete 2 messages" });
+    expect(screen.getByText(/Delete 2 messages from Source/)).toBeVisible();
+    expect(api.batchNotes).not.toHaveBeenCalled();
+    await user.click(confirm);
+    expect(await screen.findByText("Try again")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Delete 2 messages" }));
+    expect(api.batchNotes).toHaveBeenLastCalledWith("main", {
+      action: "delete",
+      noteIds: ["note-0", "note-1"],
+    });
+    expect(screen.queryByText("Readiness")).toBeNull();
+    expect(screen.getByRole("textbox", { name: "Add a note" })).toHaveValue(
+      "Unsent draft",
+    );
+  });
 });

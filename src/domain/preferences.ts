@@ -21,6 +21,7 @@ export const preferencesSchema = z
   .object({
     theme: z.enum(THEMES),
     showExamples: z.boolean(),
+    alwaysShowMessageTime: z.boolean(),
     collapsedSections: collapsedSchema,
     initialized: z.boolean(),
   })
@@ -30,6 +31,7 @@ export const preferenceInputSchema = z
   .object({
     theme: z.enum(THEMES).optional(),
     showExamples: z.boolean().optional(),
+    alwaysShowMessageTime: z.boolean().optional(),
     collapsedSections: collapsedSchema.partial().optional(),
   })
   .strict();
@@ -37,6 +39,7 @@ export type PreferenceInput = z.infer<typeof preferenceInputSchema>;
 export const DEFAULT_PREFERENCES: WorkspacePreferences = {
   theme: "light",
   showExamples: true,
+  alwaysShowMessageTime: true,
   initialized: false,
   collapsedSections: {
     Pinned: false,

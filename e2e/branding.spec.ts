@@ -11,7 +11,15 @@ for (const theme of ["light", "neutral", "dark"] as const) {
     });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(localApp.url);
-    await expect(page).toHaveTitle("threadstr");
+    await expect(page).toHaveTitle("Threadstr | Private project tracker");
+    const iconPath = "/branding/threadstr-thr-circle-dark.svg";
+    await expect(page.locator('link[rel="icon"]')).toHaveAttribute(
+      "href",
+      iconPath,
+    );
+    const icon = await request.get(localApp.url + iconPath);
+    expect(icon.ok()).toBe(true);
+    expect(icon.headers()["content-type"]).toContain("image/svg+xml");
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
     await expect(
       page.getByRole("button", { name: "Open example 🇳🇱 Trip to Amsterdam" }),

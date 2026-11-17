@@ -1,4 +1,13 @@
+import { DraftRepository } from "./drafts.js";
 import { randomUUID } from "node:crypto";
+import {
+  copyNote,
+  detachNoteOrigins,
+  moveNote,
+  BatchContentsChangedError,
+  type PreparedAttachment,
+} from "./batch-notes.js";
+import { storedAccent, type AccentStyle } from "./project-accent.js";
 import {
   insertProjectLabel,
   readProjectLabels,
@@ -7,6 +16,7 @@ import {
   InvalidLabelConfigurationError,
 } from "./project-labels.js";
 import type { LabelConfiguration, ProjectLabel } from "../../domain/labels.js";
+import { readNoteLabelFields } from "./message-label-transfer.js";
 import type Database from "better-sqlite3";
 
 import type {
@@ -20,13 +30,16 @@ import type {
 import {
   PERMANENT_LABELS,
   type Accent,
+  type AccentFamily,
   type ConfigurableLabel,
+  type BatchNotesInput,
   type Label,
 } from "../../domain/validation.js";
 
 interface ChatRow {
   project_id: string | null;
-  effective_accent: Accent;
+  effective_accent: AccentFamily;
+  effective_accent_style: AccentStyle;
   origin_id: string | null;
   source_chat_id: string | null;
   source_note_id: string | null;
@@ -34,11 +47,11 @@ interface ChatRow {
   source_note_position_id: string | null;
   id: string;
   title: string;
-  accent: Accent;
   created_at: number;
   updated_at: number;
   archived_at: number | null;
   pinned_at: number | null;
+  manual_alert: 0 | 1;
   collapse_long_messages: 0 | 1;
   label_configuration_revision: number;
 }
@@ -78,7 +91,10 @@ function toChat(
   return {
     id: row.id,
     title: row.title,
-    accent: row.effective_accent,
+    accent:
+      row.effective_accent_style === "gradient"
+        ? `${row.effective_accent}-gradient`
+        : row.effective_accent,
     projectId: row.project_id,
     origin:
       row.origin_id == null
@@ -102,6 +118,7 @@ function toChat(
     updatedAt: row.updated_at,
     archivedAt: row.archived_at,
     pinnedAt: row.pinned_at,
+    manualAlert: row.manual_alert === 1,
     ...summary,
   };
 }
@@ -129,7 +146,7 @@ function toStoredAttachment(row: NoteAttachmentRow): StoredNoteAttachment {
 function toNote(
   row: NoteRow,
   attachments: NoteAttachment[] = [],
-  labels: Label[] = [],
+  labelFields: Pick<Note, "labels" | "labelSnapshots"> = { labels: [] },
 ): Note {
   return {
     id: row.id,
@@ -137,7 +154,7 @@ function toNote(
     body: row.body,
     sender: row.sender,
     createdAt: row.created_at,
-    labels,
+    ...labelFields,
     attachments,
   };
 }
@@ -147,6 +164,8 @@ export class ArchivedProjectPinError extends Error {
     super("Restore this project before pinning it.");
   }
 }
+
+export class NoteBodyConflictError extends Error {}
 
 export class InvalidAttachmentSelectionError extends Error {
   constructor() {
@@ -162,6 +181,7 @@ export class InvalidSubthreadError extends Error {
 }
 
 const CHAT_SELECT = `SELECT chats.*, COALESCE(root.accent, chats.accent) AS effective_accent,
+  COALESCE(root.accent_style, chats.accent_style) AS effective_accent_style,
   origin.chat_id AS origin_id, origin.source_chat_id, origin.source_note_id,
   COALESCE(source_note.created_at, origin.source_note_created_at) AS source_note_created_at, origin.source_note_position_id
   FROM chats LEFT JOIN chats AS root ON root.id = chats.project_id
@@ -169,7 +189,10 @@ const CHAT_SELECT = `SELECT chats.*, COALESCE(root.accent, chats.accent) AS effe
   LEFT JOIN notes AS source_note ON source_note.id = origin.source_note_id`;
 
 export class SqliteChatRepository {
-  constructor(private readonly database: Database.Database) {}
+  readonly drafts: DraftRepository;
+  constructor(private readonly database: Database.Database) {
+    this.drafts = new DraftRepository(database);
+  }
 
   createChat(input: {
     id: string;
@@ -180,10 +203,10 @@ export class SqliteChatRepository {
     const create = this.database.transaction(() => {
       this.database
         .prepare(
-          `INSERT INTO chats (id, title, accent, created_at, updated_at)
-           VALUES (@id, @title, @accent, @now, @now)`,
+          `INSERT INTO chats (id, title, accent, accent_style, created_at, updated_at)
+           VALUES (@id, @title, @accent, @accent_style, @now, @now)`,
         )
-        .run(input);
+        .run({ ...input, ...storedAccent(input.accent) });
       seedProjectLabels(this.database, input.id);
     });
     create();
@@ -211,14 +234,14 @@ export class SqliteChatRepository {
         throw new InvalidSubthreadError();
       this.database
         .prepare(
-          `INSERT INTO chats (id, title, accent, created_at, updated_at, project_id, collapse_long_messages)
-        VALUES (@id, @title, @accent, @now, @now, @projectId, @collapseLongMessages)`,
+          `INSERT INTO chats (id, title, accent, accent_style, created_at, updated_at, project_id, collapse_long_messages)
+        VALUES (@id, @title, @accent, @accent_style, @now, @now, @projectId, @collapseLongMessages)`,
         )
         .run({
           id: input.id,
           title: input.title,
           now: input.now,
-          accent: root.accent,
+          ...storedAccent(root.accent),
           projectId: root.id,
           collapseLongMessages: Number(root.collapseLongMessages),
         });
@@ -304,17 +327,22 @@ export class SqliteChatRepository {
           `UPDATE chats
            SET title = COALESCE(@title, title),
                accent = COALESCE(@accent, accent),
+               accent_style = COALESCE(@accent_style, accent_style),
                collapse_long_messages = COALESCE(
                  @collapseLongMessages,
                  collapse_long_messages
                ),
-               updated_at = CASE WHEN (@title IS NOT NULL AND @title != title) OR (@accent IS NOT NULL AND @accent != accent) OR (@collapseLongMessages IS NOT NULL AND @collapseLongMessages != collapse_long_messages) THEN @now ELSE updated_at END
+               updated_at = CASE WHEN (@title IS NOT NULL AND @title != title)
+                 OR (@accent IS NOT NULL AND (@accent != accent OR @accent_style != accent_style))
+                 OR (@collapseLongMessages IS NOT NULL AND @collapseLongMessages != collapse_long_messages) THEN @now ELSE updated_at END
            WHERE id = @id`,
         )
         .run({
           id,
           title: input.title ?? null,
-          accent: input.accent ?? null,
+          ...(input.accent === undefined
+            ? { accent: null, accent_style: null }
+            : storedAccent(input.accent)),
           collapseLongMessages:
             input.collapseLongMessages === undefined
               ? null
@@ -350,6 +378,14 @@ export class SqliteChatRepository {
     });
 
     return update() ? this.getChat(id, input.now) : undefined;
+  }
+
+  setChatAlert(id: string, manualAlert: boolean): boolean {
+    return (
+      this.database
+        .prepare("UPDATE chats SET manual_alert = ? WHERE id = ?")
+        .run(Number(manualAlert), id).changes > 0
+    );
   }
 
   setChatPinned(
@@ -404,8 +440,8 @@ export class SqliteChatRepository {
         .prepare(
           `SELECT note_attachments.storage_path
            FROM note_attachments
-           INNER JOIN notes ON notes.id = note_attachments.note_id
-           WHERE notes.chat_id = ? OR notes.chat_id IN (SELECT id FROM chats WHERE project_id = ?)
+           LEFT JOIN notes ON notes.id = note_attachments.note_id
+           WHERE COALESCE(notes.chat_id,note_attachments.draft_chat_id) IN (SELECT id FROM chats WHERE id = ? OR project_id = ?)
            ORDER BY note_attachments.storage_path`,
         )
         .pluck()
@@ -469,9 +505,7 @@ export class SqliteChatRepository {
     });
 
     const row = append();
-    return row
-      ? toNote(row, this.listAttachments(row.id), this.listNoteLabels(row.id))
-      : undefined;
+    return row ? toNote(row, this.listAttachments(row.id)) : undefined;
   }
 
   listNotes(chatId: string): Note[] {
@@ -496,7 +530,7 @@ export class SqliteChatRepository {
          FROM note_attachments
          INNER JOIN notes ON notes.id = note_attachments.note_id
          WHERE notes.chat_id = ?
-         ORDER BY note_attachments.created_at ASC, note_attachments.id ASC`,
+         ORDER BY note_attachments.position IS NULL, note_attachments.position, note_attachments.created_at ASC, note_attachments.id ASC`,
       )
       .all(chatId) as NoteAttachmentRow[];
     const attachmentsByNote = new Map<string, StoredNoteAttachment[]>();
@@ -505,11 +539,10 @@ export class SqliteChatRepository {
       current.push(toStoredAttachment(row));
       attachmentsByNote.set(row.note_id, current);
     }
-    const labelsByNote = this.listLabelsForNotes(rows.map((row) => row.id));
+    const labelsByNote = readNoteLabelFields(this.database, "chat", chatId);
     return rows.map((row) => ({
-      ...toNote(row),
+      ...toNote(row, [], labelsByNote.get(row.id)),
       attachments: attachmentsByNote.get(row.id) ?? [],
-      labels: labelsByNote.get(row.id) ?? [],
     }));
   }
 
@@ -518,6 +551,7 @@ export class SqliteChatRepository {
     noteId: string,
     input: {
       body?: string;
+      expectedBody?: string;
       sender?: string | null;
       createdAt?: number;
       now: number;
@@ -538,6 +572,12 @@ export class SqliteChatRepository {
         .prepare("SELECT * FROM notes WHERE id = ? AND chat_id = ?")
         .get(noteId, chatId) as NoteRow | undefined;
       if (!existing) return undefined;
+      if (
+        input.expectedBody !== undefined &&
+        existing.body !== input.expectedBody
+      ) {
+        throw new NoteBodyConflictError();
+      }
       const existingAttachments = this.listStoredAttachments(noteId);
       if (input.keepAttachmentIds !== undefined) {
         const existingAttachmentIds = new Set(
@@ -623,7 +663,9 @@ export class SqliteChatRepository {
           note: toNote(
             result.row,
             this.listAttachments(result.row.id),
-            this.listNoteLabels(result.row.id),
+            readNoteLabelFields(this.database, "note", result.row.id).get(
+              result.row.id,
+            ),
           ),
           removedStoragePaths: result.removedStoragePaths,
         }
@@ -638,15 +680,7 @@ export class SqliteChatRepository {
       const storagePaths = this.listStoredAttachments(noteId).map(
         (attachment) => attachment.storagePath,
       );
-      // Capture the latest source date before the FK clears its live reference.
-      this.database
-        .prepare(
-          `UPDATE subthread_origins SET
-        source_note_created_at = (SELECT created_at FROM notes WHERE id = ? AND chat_id = ?),
-        source_note_position_id = ?
-        WHERE source_note_id = ? AND source_chat_id = ?`,
-        )
-        .run(noteId, chatId, noteId, noteId, chatId);
+      detachNoteOrigins(this.database, chatId, [noteId]);
       const result = this.database
         .prepare("DELETE FROM notes WHERE id = ? AND chat_id = ?")
         .run(noteId, chatId);
@@ -656,6 +690,95 @@ export class SqliteChatRepository {
     });
 
     return remove();
+  }
+
+  private selectedNoteIds(
+    chatId: string,
+    input: BatchNotesInput,
+  ): string[] | undefined {
+    if (
+      input.action !== "delete" &&
+      (input.destinationChatId === chatId ||
+        !this.database
+          .prepare("SELECT 1 FROM chats WHERE id = ?")
+          .get(input.destinationChatId))
+    )
+      return undefined;
+    const ids = this.database
+      .prepare(
+        `SELECT id FROM notes WHERE chat_id = ?
+      AND id IN (SELECT value FROM json_each(?)) ORDER BY created_at, id`,
+      )
+      .pluck()
+      .all(chatId, JSON.stringify(input.noteIds)) as string[];
+    return ids.length && ids.length === input.noteIds.length ? ids : undefined;
+  }
+
+  attachmentsForCopy(
+    chatId: string,
+    input: BatchNotesInput,
+  ): StoredNoteAttachment[] | undefined {
+    const ids = this.selectedNoteIds(chatId, input);
+    return ids?.flatMap((id) => this.listStoredAttachments(id));
+  }
+
+  batchNotes(
+    chatId: string,
+    input: BatchNotesInput,
+    newId: () => string,
+    prepared: ReadonlyMap<string, PreparedAttachment>,
+  ): string[] | undefined {
+    return this.database
+      .transaction(() => {
+        const encodedIds = JSON.stringify(input.noteIds);
+        const ids = this.selectedNoteIds(chatId, input);
+        if (!ids) return undefined;
+        if (input.action !== "copy")
+          detachNoteOrigins(this.database, chatId, ids);
+
+        if (input.action === "delete") {
+          const paths = this.database
+            .prepare(
+              "SELECT storage_path FROM note_attachments WHERE note_id IN (SELECT value FROM json_each(?))",
+            )
+            .pluck()
+            .all(encodedIds) as string[];
+          this.database
+            .prepare(
+              "DELETE FROM notes WHERE chat_id = ? AND id IN (SELECT value FROM json_each(?))",
+            )
+            .run(chatId, encodedIds);
+          this.refreshChatActivity(chatId);
+          return paths;
+        }
+
+        const destination = input.destinationChatId;
+        if (input.action === "copy") {
+          // IDs break equal-time ties in history. Assign fresh IDs in that order.
+          const newIds = ids.map(() => newId()).sort();
+          let consumed = 0;
+          ids.forEach((id, index) => {
+            const files = this.listStoredAttachments(id);
+            consumed += files.length;
+            copyNote(
+              this.database,
+              id,
+              destination,
+              newIds[index],
+              files,
+              prepared,
+            );
+          });
+          if (consumed !== prepared.size) throw new BatchContentsChangedError();
+        } else {
+          for (const id of ids)
+            moveNote(this.database, chatId, destination, id);
+          this.refreshChatActivity(chatId);
+        }
+        this.refreshChatActivity(destination);
+        return [];
+      })
+      .immediate();
   }
 
   setNoteLabel(
@@ -691,8 +814,16 @@ export class SqliteChatRepository {
         this.database
           .prepare("DELETE FROM note_labels WHERE note_id = ? AND label = ?")
           .run(noteId, label);
+        this.database
+          .prepare(
+            "DELETE FROM note_label_snapshots WHERE note_id = ? AND label = ?",
+          )
+          .run(noteId, label);
       }
-      return this.listNoteLabels(noteId);
+      return (
+        readNoteLabelFields(this.database, "note", noteId).get(noteId)
+          ?.labels ?? []
+      );
     });
     return change();
   }
@@ -762,7 +893,7 @@ export class SqliteChatRepository {
         `SELECT *
          FROM note_attachments
          WHERE note_id = ?
-         ORDER BY created_at ASC, id ASC`,
+         ORDER BY position IS NULL, position, created_at ASC, id ASC`,
       )
       .all(noteId) as NoteAttachmentRow[];
     return rows.map(toAttachment);
@@ -773,7 +904,7 @@ export class SqliteChatRepository {
       .prepare(
         `SELECT * FROM note_attachments
          WHERE note_id = ?
-         ORDER BY created_at ASC, id ASC`,
+         ORDER BY position IS NULL, position, created_at ASC, id ASC`,
       )
       .all(noteId) as NoteAttachmentRow[];
     return rows.map(toStoredAttachment);
@@ -825,28 +956,5 @@ export class SqliteChatRepository {
     return new Map(
       chatIds.map((id) => [id, readProjectLabels(this.database, id)]),
     );
-  }
-
-  private listNoteLabels(noteId: string): Label[] {
-    return this.listLabelsForNotes([noteId]).get(noteId) ?? [];
-  }
-
-  private listLabelsForNotes(noteIds: string[]): Map<string, Label[]> {
-    const result = new Map<string, Label[]>();
-    if (noteIds.length === 0) return result;
-    const placeholders = noteIds.map(() => "?").join(", ");
-    const rows = this.database
-      .prepare(
-        `SELECT n.note_id, n.label FROM note_labels n JOIN project_labels p ON p.chat_id=n.chat_id AND p.id=n.label
-         WHERE n.note_id IN (${placeholders}) ORDER BY p.position`,
-      )
-      .all(...noteIds) as Array<{ note_id: string; label: Label }>;
-    for (const noteId of noteIds) {
-      const selected = new Set(
-        rows.filter((row) => row.note_id === noteId).map((row) => row.label),
-      );
-      result.set(noteId, [...selected]);
-    }
-    return result;
   }
 }

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
-import { isAbsolute } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 const WINDOWS_PRIVATE_DIRECTORY = `
 $ErrorActionPreference = 'Stop'
@@ -31,8 +31,30 @@ export function ensurePrivateDirectory(path: string): string {
   if (!stat.isDirectory() || stat.isSymbolicLink())
     throw new Error("Unsafe private directory.");
   if (process.platform === "win32") {
+    const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT;
+    if (!systemRoot || !isAbsolute(systemRoot))
+      throw new Error(
+        "Could not locate the system Windows PowerShell installation.",
+      );
+    const powershellHome = join(
+      systemRoot,
+      "System32",
+      "WindowsPowerShell",
+      "v1.0",
+    );
+    // PowerShell initializes module discovery before the ACL script can isolate
+    // it. Use the same system-only startup environment as command discovery.
+    const environment = Object.fromEntries(
+      Object.entries(process.env).filter(
+        ([key]) =>
+          !["psmodulepath", "winpsmodulepath"].includes(key.toLowerCase()),
+      ),
+    );
+    environment.PSModulePath = join(powershellHome, "Modules");
+    environment.WinPSModulePath = environment.PSModulePath;
+    environment.ON_TRACK_PRIVATE_DIRECTORY = path;
     const result = spawnSync(
-      "powershell.exe",
+      join(powershellHome, "powershell.exe"),
       [
         "-NoLogo",
         "-NoProfile",
@@ -45,7 +67,7 @@ export function ensurePrivateDirectory(path: string): string {
         shell: false,
         encoding: "utf8",
         timeout: 15_000,
-        env: { ...process.env, ON_TRACK_PRIVATE_DIRECTORY: path },
+        env: environment,
       },
     );
     if (

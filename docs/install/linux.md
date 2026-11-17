@@ -1,9 +1,7 @@
 # Install threadstr on Linux
 
-> **Release guidance:** the latest published release is
-> [threadstr v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1),
-> with `thr` and the `ontrack` compatibility alias. The `latest` downloads include
-> the uninstall commands below, available since v0.1.0.
+The installer downloads the [latest release](https://github.com/satankov/on-track/releases/latest)
+and provides the `thr` command and its `ontrack` compatibility alias.
 
 ## Quick setup — one command
 
@@ -22,7 +20,7 @@ threadstr, and opens your browser. The server runs in the background, so you can
 close Terminal. Git, a system Node installation, and administrator access are
 not required.
 
-Target: x64 Linux with glibc; Alpine and ARM64 are not included. Platform verification is still pending.
+The managed installer targets x64 Linux with glibc. Alpine Linux and ARM64 are unsupported.
 Internet access and `bash`, `curl`, `tar`, `unzip`, `zipinfo`, `mktemp`, and
 `shasum` or `sha256sum` are required. Setup reports any missing tools.
 
@@ -41,7 +39,7 @@ for logs and updating to a specific version.
 ### Install a specific version
 
 Use the exact tag of an already published release with installer assets. Replace
-`vX.Y.Z` below with that tag; the placeholder is not a selected next version:
+`vX.Y.Z` below with that tag.
 
 ```sh
 release_tag=vX.Y.Z
@@ -125,12 +123,14 @@ For startup, download, or update problems, see [troubleshooting](README.md#if-so
 The retained legacy data and runtime names are deliberate; see
 [compatibility guidance](../compatibility.md).
 
-## Uninstall (next release)
+<a id="uninstall-next-release"></a>
+
+## Uninstall
 
 Run `thr uninstall` to remove the managed app and private Node/npm dependencies
 while keeping your projects. Run `thr uninstall --delete-data` to also delete
 projects and attachments after reviewing the printed paths and confirming.
 Export a backup first if you need to keep that data.
 
-See [uninstall and manual removal](README.md#uninstall-next-release) for retained
+See [uninstall and manual removal](README.md#uninstall) for retained
 files, recovery, noninteractive options, and manual source installations.

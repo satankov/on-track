@@ -61,10 +61,10 @@ remain separate desktop evidence.
 
 ## Prepare a version
 
-The current candidate is **v0.2.0** on `release/v0.2.0`; see
-[plan 0035](plans/0035-v0.2.0-release-preparation.md). v0.1.1 remains the latest
-published release. Open the candidate PR for CI, then wait for required checks
-and maintainer confirmation before merging or tagging it.
+The v0.2.1 candidate is on `release/v0.2.1`, based on the v0.2.0 tag.
+The [changelog](../CHANGELOG.md) lists the changes and the backup needed for a
+return to v0.2.0. The [compatibility guide](compatibility.md) records the
+database schema, backup format, and managed installation identifiers.
 
 1. Start a release branch from current `main` and choose an unused stable
    `X.Y.Z`. In the commands below, set `release_version` to that chosen value.
@@ -156,11 +156,10 @@ verification gate prevents publication. An interrupted upload/publication can
 leave a draft; inspect it before retrying rather than overwriting assets blindly.
 Never move or reuse a published version tag; fix the issue in a new version.
 
-README and platform guides disclose experimental installation and the next-release
-branding boundary. After publication, update the current-release notice. Verify publication includes `install.sh` and `install.ps1`;
-commands cannot work before those assets exist. Download the complete installer
-successfully before executing it. Remove experimental wording only after the
-deferred installation/platform validation passes in the next release.
+After publication, verify that the [installation guide](install/README.md)
+and its platform links lead to the published `install.sh` and `install.ps1`
+assets. Keep the installer’s experimental status in the installation guides
+until the outstanding clean-machine and platform checks pass.
 
 ## Rollback and incident response
 
@@ -184,9 +183,7 @@ usable after the corresponding assets are published.
 
 ## threadstr transition release gate
 
-Version 0.0.9 introduced threadstr and `thr`;
-[v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1) is the latest published release.
-The next candidate is v0.2.0; preparation does not publish it.
+Version 0.0.9 introduced threadstr and `thr`.
 Preserve the `on-track-vX.Y.Z.zip` asset pattern, repository URLs, bootstrap tokens,
 manifest protocol, and managed compatibility floor `0.0.7`. Published v0.0.8
 clients require these identities. See [compatibility](compatibility.md) and

@@ -18,6 +18,11 @@ test("restores database preferences before React, after clearing storage and res
     )
     .toBe("dark");
   await page.getByRole("button", { name: "General", exact: true }).click();
+  const showTime = page.getByRole("checkbox", {
+    name: "Always show message time",
+  });
+  await expect(showTime).toBeChecked();
+  await showTime.uncheck();
   await page.getByRole("checkbox", { name: "Show Examples" }).uncheck();
   await page
     .getByRole("button", { name: "Back to projects", exact: true })
@@ -43,6 +48,12 @@ test("restores database preferences before React, after clearing storage and res
   await expect(
     page.getByRole("button", { name: "Open example 🇳🇱 Trip to Amsterdam" }),
   ).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(showTime).not.toBeChecked();
+  await page
+    .getByRole("button", { name: "Back to projects", exact: true })
+    .click();
 
   const fresh = await browser.newContext();
   try {
@@ -72,6 +83,67 @@ test("restores database preferences before React, after clearing storage and res
   });
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(page.locator("html")).toHaveAttribute("data-theme", "neutral");
+});
+
+test("reveals a message time on demand without moving its bubble", async ({
+  page,
+  request,
+  localApp,
+  isMobile,
+}) => {
+  const project = await request.post(`${localApp.url}/api/chats`, {
+    data: { title: "Message clock", accent: "ocean" },
+  });
+  const { id } = await project.json();
+  const note = await request.post(`${localApp.url}/api/chats/${id}/notes`, {
+    multipart: {
+      body: "A message with a send time.",
+      createdAt: "1654000000000",
+    },
+  });
+  expect(note.ok()).toBe(true);
+  const saved = await request.patch(`${localApp.url}/api/preferences`, {
+    data: { alwaysShowMessageTime: false },
+  });
+  expect(saved.ok()).toBe(true);
+  await page.goto(localApp.url);
+  await page
+    .getByRole("button", { name: "Open Message clock", exact: true })
+    .click();
+  const row = page.locator(".message-row");
+  const time = row.locator("time");
+  const bubble = row.locator(".message-bubble");
+  await expect(time).toHaveAttribute(
+    "datetime",
+    new Date(1654000000000).toISOString(),
+  );
+  await expect(time).toHaveCSS("opacity", "0");
+  const initial = await bubble.boundingBox();
+  if (isMobile) {
+    await bubble.tap();
+  } else {
+    await bubble.hover();
+    await expect(time).toHaveCSS("opacity", "1");
+    await page.mouse.move(0, 0);
+    await expect(time).toHaveCSS("opacity", "0");
+    await row.getByRole("button", { name: "Change labels" }).focus();
+    await page.keyboard.press("Tab");
+    await expect(
+      row.getByRole("button", { name: "More message actions" }),
+    ).toBeFocused();
+  }
+  await expect(time).toHaveCSS("opacity", "1");
+  expect(await bubble.boundingBox()).toEqual(initial);
+
+  await page
+    .getByRole("button", { name: "Search messages", exact: true })
+    .click();
+  await page.getByRole("searchbox").fill("send time");
+  await page.getByRole("checkbox", { name: "Project", exact: true }).check();
+  await expect(page.locator(".project-search-result time")).toHaveCSS(
+    "opacity",
+    "1",
+  );
 });
 
 test("creates five compact custom labels, combines filters and retains disabled assignments", async ({

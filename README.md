@@ -1,55 +1,51 @@
-<h1>
+<h1 align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="branding/threadstr/v1/wordmark/threadstr-wordmark-on-dark.svg">
-    <img src="branding/threadstr/v1/wordmark/threadstr-wordmark-on-light.svg" alt="threadstr" width="240">
+    <img src="branding/threadstr/v1/wordmark/threadstr-wordmark-on-light.svg" alt="threadstr" width="300">
   </picture>
 </h1>
 
-**Your projects, remembered like a chat — private on your own computer.**
+<p align="center"><strong>A personal project notebook that reads like a chat.</strong></p>
 
-threadstr is an open-source personal project notebook. Keep notes, decisions,
-plans, and files together in a familiar chat-style timeline, so you can pick up
-where you left off. Use it for work projects, a side project, or your next trip.
+<p align="center">
+  Works offline on macOS, Windows, and Linux · <a href="LICENSE">Apache 2.0</a>
+</p>
 
-> **Early alpha.** Expect rough edges and keep backups. Avoid irreplaceable
-> information or make backups until stable release.
+<p align="center">
+  <a href="docs/install/README.md"><strong>Install threadstr</strong></a> ·
+  <a href="docs/USER_GUIDE.md">User guide</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a> ·
+  <a href="https://t.me/threadstr_app"><strong>Telegram community</strong></a>
+</p>
 
-Current release: **[v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1)**.
-See the [changelog](CHANGELOG.md) for changes and upgrade limitations.
-This checkout prepares **v0.2.0**, adding project subthreads, project-wide search,
-and a compact sidebar. The candidate is not yet published; the installation
-commands below still select the latest published release.
+![Selecting Pin and Spot together narrows Photo walk to pinned shooting locations.](docs/screenshots/labels-and-filters.webp)
 
-## See it in action
+![The Drying rack subthread in Print studio links back to the note that started the conversation.](docs/screenshots/project-subthreads.webp)
 
-**A project’s notes and plans, together in one timeline.**
+![Field notes and a recording decision appear together in the Sound atlas project timeline.](docs/screenshots/project-chat.webp)
 
-![A personal workspace with pinned projects, Amsterdam trip notes, decisions, and a checklist in the light theme](docs/screenshots/amsterdam-overview.png)
+![A Ridge survey note displays the attached East Spur trail map directly in the conversation.](docs/screenshots/files-in-context.webp)
 
-**Keep related files beside the conversation.**
-
-![Amsterdam arrival notes, Maya's saved places, and a packing list kept beside their messages in the dark theme](docs/screenshots/amsterdam-files.png)
-
-**Filter the timeline to focus on what needs doing.**
-
-![Amsterdam checklists and upcoming tasks filtered by Todo in the neutral theme](docs/screenshots/amsterdam-todos.png)
+![Searching for “madder” in Weaving room highlights the matching words in dye notes.](docs/screenshots/keyword-search.webp)
 
 ## What you can do
 
 - **Keep a notebook for each project.** Capture progress, decisions, and context
-  in a chronological thread; pin active projects and archive finished ones.
+  in a chronological thread. Pin active projects and archive finished ones.
 - **Write rich notes.** Use Markdown, checklists, tables, links, and dated plans.
 - **Find what matters.** Mark important notes and filter by labels, files, or links.
-- **Keep files in context.** Attach local files and open supported files in your
-  usual applications to edit them.
+- **Keep files in context.** See attached JPEG and PNG pictures as you read a
+  thread. Select a picture for a larger view, or use Open to edit a supported
+  file in its usual application.
 - **Take your work with you.** Export all or selected projects with their files,
   then restore them or import independent copies.
-- **Define actors.** Even though this is a personal threads, you can display
-  information as if it were sent by someone else (a friend or your boss).
+- **Attribute a note to someone.** Use the Sender field to record who made a
+  suggestion or decision, such as a teammate or a friend.
 
 ## Ultra Quick start
 
-Prompt your AI agent:
+Give your AI agent this request.
 
 ```
 Install this tool https://github.com/satankov/on-track
@@ -57,7 +53,10 @@ Install this tool https://github.com/satankov/on-track
 
 ## Quick start
 
-**macOS / Linux** — run in Terminal:
+This checkout prepares **v0.2.1**. The installers below select the latest
+published release. See the [changelog](CHANGELOG.md) for changes and upgrade guidance.
+
+On **macOS or Linux**, run this command in Terminal.
 
 ```sh
 curl -fsSL \
@@ -67,7 +66,7 @@ curl -fsSL \
 
 Setup downloads the required runtime, builds the app, and starts it in the
 background. Open the address it prints in your browser. You can then close the
-terminal; no preinstalled Node.js or Git is needed.
+terminal. The installer supplies Node.js and works without Git.
 
 **Windows** — follow the [PowerShell quick start](docs/install/windows.md).
 
@@ -77,20 +76,23 @@ Managed installation is experimental. See the detailed guides for
 
 ## Run, stop, and update
 
-After managed setup, open a new terminal:
+After managed setup, use these commands in a new terminal.
 
-| Command         | What it does                                                                                      |
-| --------------- | ------------------------------------------------------------------------------------------------- |
-| `thr run`       | Start threadstr and open your browser                                                             |
-| `thr stop`      | Stop the local server; your projects stay saved                                                   |
-| `thr status`    | Show the server status and local address                                                          |
-| `thr logs`      | Show recent diagnostics                                                                           |
-| `thr uninstall` | Remove app and dependencies, keep projects. Delete all (even files) `thr uninstall --delete-data` |
-| `thr update`    | Install the latest stable release and restart                                                     |
+| Command         | What it does                                               |
+| --------------- | ---------------------------------------------------------- |
+| `thr run`       | Start threadstr and open your browser                      |
+| `thr stop`      | Stop the local server and keep your projects saved         |
+| `thr status`    | Show the server status and local address                   |
+| `thr logs`      | Show recent diagnostics                                    |
+| `thr uninstall` | Remove the app and its dependencies while keeping projects |
+| `thr update`    | Install the latest stable release and restart              |
 
-Closing the browser does not stop the server. After a reboot, run `thr run`
-again. Before updating, save drafts and export a backup; refresh browser tabs
-when the update finishes. Use `thr --help` for options.
+To remove projects and attachments as well, use `thr uninstall --delete-data`
+and review the paths before confirming.
+
+The server keeps running when you close the browser. After a reboot, run
+`thr run` again. Before updating, preserve drafts and export a backup. Refresh
+your browser tabs when the update finishes. Use `thr --help` for options.
 
 The `ontrack` alias remains supported. See [updates and existing installations](docs/install/README.md#transition-from-on-track)
 for custom paths, version-specific updates, and compatibility details.
@@ -99,32 +101,33 @@ for custom paths, version-specific updates, and compatibility details.
 
 Home includes **Check releases**, which contacts GitHub only when clicked. It
 shows recent stable releases and copyable instructions for the running managed
-or manual installation. Commands run in your terminal; Home does not install
-updates. Results are cached in memory for five minutes. Project content is never
-sent in a release check; GitHub receives ordinary connection metadata.
+or manual installation. Run the commands in your terminal to update. Results
+are cached in memory for five minutes. GitHub receives ordinary connection
+metadata. Your project content stays on your computer.
 
 The help area links to the guides and source repository. **Report a bug — coming
-soon** reserves space for future in-app reporting; it does not collect or send
-anything. Normal project use remains offline.
+soon** marks a planned feature. To report a bug today, use the
+[issue tracker](https://github.com/satankov/on-track/issues).
 
 ## Platforms and your data
 
-Runs on **macOS, Windows, and Linux**, with the interface in your existing web
-browser. One-time local setup is required; there is no separate desktop interface
-or browser extension to install.
+Run threadstr on **macOS, Windows, and Linux**. After a one-time local setup,
+open the workspace in your existing web browser.
 
 **Your data lives on your computer, and you own it.** Notes and attachments stay
 in a local application-data folder, separate from the app itself. There are no
 accounts, analytics, or cloud sync, and threadstr does not upload your project
-data. Normal use works offline; installation and explicit updates download
+data. Normal use works offline. Installation and explicit updates download
 software.
 
-Use **Settings → Backups** to export your projects and files. See the
+The database, attachments, and backup files are unencrypted. Use
+**Settings → Backups** to export your projects and files. See the
 [user guide](docs/USER_GUIDE.md#where-your-data-lives) for storage locations,
 backup options, and limits.
 
 ## Guides and community
 
+[Telegram community](https://t.me/threadstr_app) ·
 [User guide](docs/USER_GUIDE.md) · [Installation](docs/install/README.md) ·
 [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) ·
 [Changelog](CHANGELOG.md) · [Report an issue](https://github.com/satankov/on-track/issues)

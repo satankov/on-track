@@ -1,9 +1,10 @@
 import { expect, test } from "./fixtures.js";
 
-test("archive settings and sidebar restoration preserve projects across restart and backup", async ({
+test("rail archive and restore preserve projects across restart and backup", async ({
   page,
   request,
   localApp,
+  isMobile,
 }, testInfo) => {
   const response = await request.post(`${localApp.url}/api/chats`, {
     data: { title: "Completed launch", accent: "ocean" },
@@ -14,28 +15,47 @@ test("archive settings and sidebar restoration preserve projects across restart 
   });
   await request.put(`${localApp.url}/api/chats/${chat.id}/pin`);
   await page.goto(localApp.url);
-  await page.getByRole("button", { name: "Open Completed launch" }).click();
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
-  await page.getByLabel("Project name").fill("Unsaved title");
-  await page
-    .getByRole("button", { name: "Archive project", exact: true })
-    .click();
-  const restoreSettings = page.getByRole("button", {
-    name: "Restore project",
+  const openRow = page.getByRole("button", {
+    name: "Open Completed launch",
     exact: true,
   });
-  await expect(restoreSettings).toBeEnabled();
-  await expect(restoreSettings).toBeFocused();
-  await expect(page.getByLabel("Project name")).toHaveValue("Unsaved title");
+  const disclosure = page.getByRole("button", {
+    name: "Shortcuts for Completed launch",
+  });
+  const archiveRow = page.getByRole("button", {
+    name: "Archive Completed launch",
+    exact: true,
+  });
+  const restoreRow = page.getByRole("button", {
+    name: "Restore Completed launch from archive",
+  });
+  async function revealShortcuts() {
+    if (isMobile) {
+      if ((await disclosure.getAttribute("aria-expanded")) !== "true")
+        await disclosure.tap();
+    } else {
+      await openRow.hover();
+    }
+  }
+
+  await revealShortcuts();
+  await archiveRow.click();
+  const archiveSection = page.getByRole("region", {
+    name: "Archive",
+    exact: true,
+  });
+  await expect(
+    archiveSection.getByRole("button", { name: "Open Completed launch" }),
+  ).toBeVisible();
+  await revealShortcuts();
   for (const theme of ["light", "neutral", "dark"]) {
     await page.evaluate(
       (value) => (document.documentElement.dataset.theme = value),
       theme,
     );
-    await page.waitForTimeout(250);
+    await expect(restoreRow).toBeInViewport();
     await page.screenshot({
-      path: testInfo.outputPath(`archive-settings-${theme}.png`),
-      fullPage: true,
+      path: testInfo.outputPath(`archive-rail-${theme}.png`),
     });
     expect(
       await page.evaluate(
@@ -43,67 +63,18 @@ test("archive settings and sidebar restoration preserve projects across restart 
       ),
     ).toBe(true);
   }
-  if (testInfo.project.name === "desktop-chromium") {
+  if (!isMobile) {
     await page.emulateMedia({
-      reducedMotion: "reduce",
       forcedColors: "active",
+      reducedMotion: "reduce",
     });
-    await expect(restoreSettings).toHaveCSS("transition-duration", "0s");
-    await restoreSettings.focus();
+    await restoreRow.focus();
+    await expect(restoreRow).toHaveCSS("transition-duration", "0s");
     await page.screenshot({
       path: testInfo.outputPath("archive-forced-colors.png"),
-      fullPage: true,
     });
     await page.emulateMedia({ forcedColors: "none" });
-    await page.setViewportSize({ width: 960, height: 900 });
-    await page
-      .getByLabel("Project name")
-      .fill(
-        "A long project title that must stay usable when the settings actions wrap",
-      );
-    await page.screenshot({
-      path: testInfo.outputPath("archive-settings-medium.png"),
-      fullPage: true,
-    });
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.evaluate(() => (document.documentElement.style.zoom = "2"));
-    await restoreSettings.scrollIntoViewIfNeeded();
-    const box = await restoreSettings.boundingBox();
-    expect(box!.x).toBeGreaterThanOrEqual(0);
-    expect(box!.x + box!.width).toBeLessThanOrEqual(1440);
-    const panel = await page.locator(".project-edit-form").boundingBox();
-    for (const action of await page
-      .locator(
-        ".project-edit-actions button, .project-lifecycle-actions button",
-      )
-      .all()) {
-      const actionBox = await action.boundingBox();
-      expect(actionBox!.x + actionBox!.width).toBeLessThanOrEqual(
-        panel!.x + panel!.width,
-      );
-    }
-    await page.screenshot({
-      path: testInfo.outputPath("archive-settings-200-percent.png"),
-      fullPage: true,
-    });
-    await page.evaluate(() => (document.documentElement.style.zoom = ""));
   }
-  await restoreSettings.click();
-  await expect(
-    page.getByRole("button", { name: "Archive project", exact: true }),
-  ).toBeEnabled();
-  await page
-    .getByRole("button", { name: "Archive project", exact: true })
-    .click();
-  await expect(restoreSettings).toBeEnabled();
-  await page
-    .getByRole("button", { name: "Back to project", exact: true })
-    .click();
-  await expect(
-    page
-      .locator(".message-list")
-      .getByText("Keep the launch decisions.", { exact: true }),
-  ).toBeVisible();
 
   const backup = await request.post(`${localApp.url}/api/database/export`, {
     data: { selection: "all" },
@@ -118,9 +89,7 @@ test("archive settings and sidebar restoration preserve projects across restart 
   expect(restored.ok(), await restored.text()).toBe(true);
   await localApp.restart();
   await page.goto(localApp.url);
-  const restoreRow = page.getByRole("button", {
-    name: "Restore Completed launch from archive",
-  });
+  await revealShortcuts();
   await expect(restoreRow).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Pin Completed launch" }),
@@ -130,12 +99,14 @@ test("archive settings and sidebar restoration preserve projects across restart 
   await page
     .getByRole("button", { name: "Archive", exact: true })
     .press("Enter");
+  await revealShortcuts();
   await restoreRow.focus();
   await page.screenshot({
     path: testInfo.outputPath("archive-rail.png"),
     fullPage: true,
   });
   await page.getByRole("button", { name: "Projects", exact: true }).click();
+  await revealShortcuts();
   await restoreRow.focus();
   await restoreRow.press("Enter");
   await expect(restoreRow).toHaveCount(0);
@@ -148,6 +119,7 @@ test("archive settings and sidebar restoration preserve projects across restart 
   await page
     .getByRole("button", { name: "Projects", exact: true })
     .press("Enter");
+  await revealShortcuts();
   await expect(
     page.getByRole("button", { name: "Pin Completed launch" }),
   ).toHaveAttribute("aria-pressed", "false");

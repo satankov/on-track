@@ -1,3 +1,4 @@
+import { rewindToSchema11 } from "../test/legacy-database.js";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -149,6 +150,7 @@ describe("project subthreads", () => {
       body: "Keep existing text",
       sender: "Maya",
     });
+    rewindToSchema11(database);
     database.exec(
       "DROP TABLE subthread_origins; DROP INDEX chats_project_idx; ALTER TABLE chats DROP COLUMN project_id; DELETE FROM __drizzle_migrations WHERE created_at>=1793364000000; UPDATE app_metadata SET schema_version=9;",
     );
@@ -206,6 +208,7 @@ describe("project subthreads", () => {
       sourceNoteId: deletedNote.id,
     });
     service.deleteNote(root.id, deletedNote.id);
+    rewindToSchema11(database);
     database.exec(`ALTER TABLE subthread_origins DROP COLUMN source_note_created_at;
       ALTER TABLE subthread_origins DROP COLUMN source_note_position_id;
       DELETE FROM __drizzle_migrations WHERE created_at > 1793364000000;

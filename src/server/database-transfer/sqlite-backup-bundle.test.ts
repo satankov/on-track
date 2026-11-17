@@ -1,4 +1,10 @@
-import { rewindToSchema7 } from "../../test/legacy-database.js";
+import {
+  rewindToSchema7,
+  rewindToSchema11,
+  rewindToSchema12,
+  rewindToSchema13,
+  rewindToSchema14,
+} from "../../test/legacy-database.js";
 import { insertProjectLabel, seedProjectLabels } from "../db/project-labels.js";
 import { readPreferences, writePreferences } from "../db/preferences.js";
 import { DEFAULT_PREFERENCES } from "../../domain/preferences.js";
@@ -21,6 +27,7 @@ import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  ManagedAttachmentStore,
   ManagedAttachmentChangedError,
   ManagedAttachmentUnavailableError,
 } from "../attachments/managed-attachment-store.js";
@@ -30,12 +37,13 @@ import {
   SqliteBackupBundleValidationError,
   createSqliteBackupBundle,
   prepareSqliteBackupBundle,
+  readBackupProjects,
   validatePreparedSqliteBackupDatabase,
   validatePreparedSqliteBackupRestore,
   validateSqliteBackupBundle,
 } from "./sqlite-backup-bundle.js";
 import { ManagedRestoreCoordinator } from "./restore-journal.js";
-import { applyBundledMigrations, openDatabase } from "../db/database.js";
+import { openDatabase } from "../db/database.js";
 import { mergePreparedProjects } from "./project-import.js";
 
 describe("SQLite backup bundle", () => {
@@ -111,6 +119,327 @@ describe("SQLite backup bundle", () => {
     },
   );
 
+  it.each([11, 12, 13, 14])(
+    "restores schema %i projects with the original plain accent and note attachment",
+    async (version) => {
+      sourceDatabase.exec(
+        "UPDATE workspace_preferences SET theme='dark', initialized=1",
+      );
+      const store = new ManagedAttachmentStore(directory);
+      const legacyFile = store.create({
+        attachmentId: "old-file",
+        filename: "old.txt",
+        content: Buffer.from("existing bytes"),
+      });
+      insertAttachment(sourceDatabase, {
+        ...legacyFile,
+        id: "old-file",
+        filename: "old.txt",
+      });
+      const bundlePath = join(directory, "v0.2.0.on-track-backup");
+      await createSqliteBackupBundle({
+        sourceDatabase,
+        destinationPath: bundlePath,
+        attachmentStore: store,
+      });
+      mutateBundle(bundlePath, (legacy) => {
+        if (version === 14) rewindToSchema14(legacy);
+        else if (version === 13) rewindToSchema13(legacy);
+        else if (version === 12) rewindToSchema12(legacy);
+        else rewindToSchema11(legacy);
+        legacy
+          .prepare("UPDATE _on_track_bundle SET schema_version=?")
+          .run(version);
+      });
+      expect(validateSqliteBackupBundle(bundlePath).schemaVersion).toBe(
+        version,
+      );
+      const prepared = prepareSqliteBackupBundle({
+        bundlePath,
+        workspace: createRestoreWorkspace(directory, "v020"),
+      });
+      const candidate = new Database(prepared.candidateDatabasePath);
+      try {
+        expect(
+          candidate.prepare("SELECT accent, accent_style FROM chats").get(),
+        ).toEqual({ accent: "ocean", accent_style: "plain" });
+        const savedFile = candidate
+          .prepare(
+            "SELECT id,note_id,draft_chat_id,storage_path FROM note_attachments",
+          )
+          .get() as { storage_path: string };
+        expect(savedFile).toMatchObject({
+          id: "old-file",
+          note_id: "note-a",
+          draft_chat_id: null,
+        });
+        expect(
+          new ManagedAttachmentStore(prepared.candidateDataDirectory)
+            .read(savedFile.storage_path)
+            .content.toString(),
+        ).toBe("existing bytes");
+        expect(readPreferences(candidate)).toMatchObject({
+          theme: "dark",
+          alwaysShowMessageTime: true,
+        });
+        expect(
+          candidate.prepare("SELECT manual_alert FROM chats").pluck().all(),
+        ).toEqual([0]);
+        expect(
+          candidate.prepare("SELECT body FROM notes").pluck().all(),
+        ).toEqual(["Plan"]);
+      } finally {
+        candidate.close();
+      }
+    },
+  );
+
+  it.each(["all", "selected"] as const)(
+    "restores draft text, pickers and ordered files in their owning project from a %s backup",
+    async (scope) => {
+      sourceDatabase.exec(`
+        INSERT INTO chats(id,title,accent,created_at,updated_at,project_id) VALUES
+          ('child','Child','ocean',2,2,'chat-a'), ('excluded','Excluded','moss',1,1,NULL);
+        INSERT INTO conversation_drafts(chat_id,revision,body,sender,timestamp,sender_open,timestamp_open) VALUES
+          ('child','90407dec-4a84-40fb-bb06-2a620ef5ee53','  unfinished  ',' Niki ','2026-11-17T09:13',1,1),
+          ('excluded','4f68fea4-f731-480c-91b4-07d22c5976be','other draft','','',0,0);
+      `);
+      for (const id of ["child", "excluded"])
+        seedProjectLabels(sourceDatabase, id);
+      const store = new ManagedAttachmentStore(directory);
+      const saveFile = sourceDatabase.prepare(`INSERT INTO note_attachments
+        (id,draft_chat_id,position,filename,media_type,storage_path,byte_size,modified_at,created_at)
+        VALUES (?,?,?,?,'text/plain',?,?,?,1)`);
+      for (const [id, chat, position] of [
+        ["second", "child", 1],
+        ["first", "child", 0],
+        ["private", "excluded", 0],
+      ] as const) {
+        const filename = id + ".txt";
+        const file = store.create({
+          attachmentId: id,
+          filename,
+          content: Buffer.from(id + " bytes"),
+        });
+        saveFile.run(
+          id,
+          chat,
+          position,
+          filename,
+          file.storagePath,
+          file.byteSize,
+          file.modifiedAt,
+        );
+      }
+
+      const bundlePath = join(directory, "drafts.on-track-backup");
+      const manifest = await createSqliteBackupBundle({
+        sourceDatabase,
+        destinationPath: bundlePath,
+        attachmentStore: store,
+        selection: scope === "all" ? "all" : ["chat-a"],
+      });
+      expect(manifest.attachmentCount).toBe(scope === "all" ? 3 : 2);
+      expect(
+        readBackupProjects(bundlePath, manifest.schemaVersion),
+      ).toContainEqual(
+        expect.objectContaining({
+          id: "chat-a",
+          messageCount: 1,
+          attachmentCount: 2,
+        }),
+      );
+      const prepared = prepareSqliteBackupBundle({
+        bundlePath,
+        selection: ["chat-a"],
+        workspace: createRestoreWorkspace(directory, "drafts"),
+      });
+      expect(prepared.manifest.attachmentCount).toBe(2);
+      function checkDraft(
+        db: Database.Database,
+        chat: string,
+        fileStore: ManagedAttachmentStore,
+      ) {
+        const row = db
+          .prepare("SELECT * FROM conversation_drafts WHERE chat_id=?")
+          .get(chat) as { revision: string };
+        expect(row).toMatchObject({
+          body: "  unfinished  ",
+          sender: " Niki ",
+          sender_open: 1,
+          timestamp: "2026-11-17T09:13",
+          timestamp_open: 1,
+        });
+        const files = db
+          .prepare(
+            "SELECT id, filename, storage_path FROM note_attachments WHERE draft_chat_id=? ORDER BY position",
+          )
+          .all(chat) as {
+          id: string;
+          filename: string;
+          storage_path: string;
+        }[];
+        expect(files.map((file) => file.filename)).toEqual([
+          "first.txt",
+          "second.txt",
+        ]);
+        expect(
+          files.map((file) =>
+            fileStore.read(file.storage_path).content.toString(),
+          ),
+        ).toEqual(["first bytes", "second bytes"]);
+        return files.map((file) => file.id);
+      }
+      const candidate = new Database(prepared.candidateDatabasePath, {
+        readonly: true,
+      });
+      try {
+        expect(
+          candidate
+            .prepare("SELECT chat_id FROM conversation_drafts WHERE body != ''")
+            .pluck()
+            .all(),
+        ).toEqual(["child"]);
+        expect(
+          candidate
+            .prepare(
+              "SELECT revision FROM conversation_drafts WHERE chat_id='child'",
+            )
+            .pluck()
+            .get(),
+        ).not.toBe("90407dec-4a84-40fb-bb06-2a620ef5ee53");
+        expect(
+          checkDraft(
+            candidate,
+            "child",
+            new ManagedAttachmentStore(prepared.candidateDataDirectory),
+          ),
+        ).toEqual(["first", "second"]);
+      } finally {
+        candidate.close();
+      }
+      mergePreparedProjects({
+        database: sourceDatabase,
+        candidateDatabasePath: prepared.candidateDatabasePath,
+        candidateDataDirectory: prepared.candidateDataDirectory,
+        dataDirectory: directory,
+        now: 1,
+      });
+      const copiedId = sourceDatabase
+        .prepare("SELECT id FROM chats WHERE title='Child' AND id!='child'")
+        .pluck()
+        .get() as string;
+      const copy = checkDraft(sourceDatabase, copiedId, store);
+      expect(copy).toHaveLength(2);
+      expect(copy.some((id) => id === "first" || id === "second")).toBe(false);
+      expect(checkDraft(sourceDatabase, "child", store)).toEqual([
+        "first",
+        "second",
+      ]);
+      expect(
+        new Set(
+          sourceDatabase
+            .prepare(
+              "SELECT revision FROM conversation_drafts WHERE body != ''",
+            )
+            .pluck()
+            .all(),
+        ).size,
+      ).toBe(3);
+    },
+  );
+
+  it.each([
+    ["timestamp", "UPDATE conversation_drafts SET timestamp='later'"],
+    [
+      "revision",
+      "UPDATE conversation_drafts SET revision='xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'",
+    ],
+    [
+      "sent note identity",
+      "UPDATE notes SET id='90407dec-4a84-40fb-bb06-2a620ef5ee53'",
+    ],
+    [
+      "duplicate draft revision",
+      `INSERT INTO conversation_drafts SELECT 'chat-a',revision,body,sender,timestamp,sender_open,timestamp_open FROM conversation_drafts WHERE chat_id='private'`,
+    ],
+  ])(
+    "validates an excluded conversation's draft %s before preparing a selected import",
+    async (_field, mutation) => {
+      sourceDatabase.exec(`INSERT INTO chats(id,title,accent,created_at,updated_at) VALUES('private','Private','moss',1,1);
+      INSERT INTO conversation_drafts(chat_id,revision,body,sender,timestamp,sender_open,timestamp_open)
+      VALUES('private','90407dec-4a84-40fb-bb06-2a620ef5ee53','text','','',0,0)`);
+      seedProjectLabels(sourceDatabase, "private");
+      const path = join(directory, "invalid-draft.on-track-backup");
+      await createSqliteBackupBundle({
+        sourceDatabase,
+        destinationPath: path,
+        attachmentStore: { read: vi.fn() },
+      });
+      mutateBundle(path, (db) => db.exec(mutation));
+      expect(() =>
+        prepareSqliteBackupBundle({
+          bundlePath: path,
+          selection: ["chat-a"],
+          workspace: createRestoreWorkspace(directory, "bad-draft"),
+        }),
+      ).toThrow(/draft/i);
+    },
+  );
+
+  it("preserves message-only labels in selected backup, replacement, and independent merge", async () => {
+    const id = "custom-914ca7cb-3c2e-4eb6-b350-b5be7c604673";
+    sourceDatabase
+      .prepare(
+        "INSERT INTO note_label_snapshots(note_id,label,name,symbol,position) VALUES('note-a',?,'Review','🪴',0)",
+      )
+      .run(id);
+    const bundlePath = join(directory, "snapshots.on-track-backup");
+    await createSqliteBackupBundle({
+      sourceDatabase,
+      destinationPath: bundlePath,
+      attachmentStore: { read: vi.fn() },
+      selection: ["chat-a"],
+    });
+    const prepared = prepareSqliteBackupBundle({
+      bundlePath,
+      workspace: createRestoreWorkspace(directory, "snapshots"),
+    });
+    const candidate = new Database(prepared.candidateDatabasePath, {
+      readonly: true,
+    });
+    try {
+      expect(
+        candidate.prepare("SELECT * FROM note_label_snapshots").all(),
+      ).toEqual([
+        {
+          note_id: "note-a",
+          label: id,
+          name: "Review",
+          symbol: "🪴",
+          position: 0,
+        },
+      ]);
+    } finally {
+      candidate.close();
+    }
+    mergePreparedProjects({
+      database: sourceDatabase,
+      candidateDatabasePath: prepared.candidateDatabasePath,
+      candidateDataDirectory: prepared.candidateDataDirectory,
+      dataDirectory: directory,
+      now: 200,
+    });
+    expect(
+      sourceDatabase
+        .prepare(
+          "SELECT name,symbol FROM note_label_snapshots WHERE note_id!='note-a' AND label!=?",
+        )
+        .all(id),
+    ).toEqual([{ name: "Review", symbol: "🪴" }]);
+    expect(sourceDatabase.pragma("foreign_key_check")).toEqual([]);
+  });
+
   it("migrates schema-10 backup provenance into persistent history anchors", async () => {
     sourceDatabase.exec(`INSERT INTO chats(id,title,accent,created_at,updated_at,project_id) VALUES('child','Child','ocean',2,2,'chat-a');
       INSERT INTO subthread_origins(chat_id,source_chat_id,source_note_id) VALUES('child','chat-a','note-a');`);
@@ -121,14 +450,15 @@ describe("SQLite backup bundle", () => {
       destinationPath: bundlePath,
       attachmentStore: { read: vi.fn() },
     });
-    mutateBundle(bundlePath, (legacy) =>
+    mutateBundle(bundlePath, (legacy) => {
+      rewindToSchema11(legacy);
       legacy.exec(`
       ALTER TABLE subthread_origins DROP COLUMN source_note_created_at;
       ALTER TABLE subthread_origins DROP COLUMN source_note_position_id;
       DELETE FROM __drizzle_migrations WHERE created_at > 1793364000000;
       UPDATE app_metadata SET schema_version=10;
-      UPDATE _on_track_bundle SET schema_version=10;`),
-    );
+      UPDATE _on_track_bundle SET schema_version=10;`);
+    });
     expect(validateSqliteBackupBundle(bundlePath).schemaVersion).toBe(10);
     const prepared = prepareSqliteBackupBundle({
       bundlePath,
@@ -162,6 +492,7 @@ describe("SQLite backup bundle", () => {
       attachmentStore: { read: vi.fn() },
     });
     mutateBundle(bundlePath, (legacy) => {
+      rewindToSchema11(legacy);
       legacy.exec(`DROP TABLE subthread_origins; DROP INDEX chats_project_idx;
         ALTER TABLE chats DROP COLUMN project_id;
         DELETE FROM __drizzle_migrations WHERE created_at > 1793269712711;
@@ -192,7 +523,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata")
           .pluck()
           .get(),
-      ).toBe(11);
+      ).toBe(15);
       expect(candidate.pragma("foreign_key_check")).toEqual([]);
     } finally {
       candidate.close();
@@ -267,7 +598,11 @@ describe("SQLite backup bundle", () => {
               "INSERT INTO __drizzle_migrations(hash,created_at) VALUES(?,?)",
             )
             .run(preferenceMigration.hash, preferenceMigration.created_at);
-          writePreferences(legacy, sourcePreferences);
+          legacy
+            .prepare(
+              "UPDATE workspace_preferences SET theme=?, initialized=1 WHERE id=1",
+            )
+            .run(sourcePreferences.theme);
         }
         legacy
           .prepare("UPDATE _on_track_bundle SET schema_version=?")
@@ -296,7 +631,7 @@ describe("SQLite backup bundle", () => {
             .prepare("SELECT schema_version FROM app_metadata")
             .pluck()
             .get(),
-        ).toBe(11);
+        ).toBe(15);
       } finally {
         candidate.close();
       }
@@ -306,10 +641,17 @@ describe("SQLite backup bundle", () => {
   it.each([
     "UPDATE workspace_preferences SET theme='invalid'",
     "UPDATE workspace_preferences SET initialized=2",
+    "UPDATE workspace_preferences SET always_show_message_time=2",
+    "UPDATE chats SET manual_alert=2 WHERE id='chat-b'",
+    "UPDATE chats SET accent_style='unknown' WHERE id='chat-b'",
     "UPDATE project_labels SET name_key='wrong' WHERE chat_id='chat-b' AND id='todo'",
     "UPDATE project_labels SET position=99 WHERE chat_id='chat-b' AND id='todo'",
     "UPDATE project_labels SET name='123456789',name_key='123456789' WHERE chat_id='chat-b' AND builtin=0",
     "UPDATE project_labels SET symbol='ab' WHERE chat_id='chat-b' AND builtin=0",
+    "UPDATE note_label_snapshots SET name=char(7)",
+    "UPDATE note_label_snapshots SET symbol='ab'",
+    "UPDATE note_label_snapshots SET position=1.5",
+    "UPDATE note_label_snapshots SET label='custom-00000000-0000-4000-8000-000000000001'",
   ])(
     "rejects hostile preference/label metadata before excluding projects: %s",
     async (sql) => {
@@ -325,6 +667,8 @@ describe("SQLite backup bundle", () => {
         position: 7,
         builtin: false,
       });
+      sourceDatabase.exec(`INSERT INTO notes(id,chat_id,body,created_at) VALUES('note-b','chat-b','Private',1);
+        INSERT INTO note_label_snapshots(note_id,label,name,symbol,position) VALUES('note-b','custom-00000000-0000-4000-8000-000000000002','Review','🪴',0)`);
       const bundlePath = join(directory, "hostile.on-track-backup");
       await createSqliteBackupBundle({
         sourceDatabase,
@@ -380,7 +724,7 @@ describe("SQLite backup bundle", () => {
     );
     expect(manifest).toEqual({
       formatVersion: 1,
-      schemaVersion: 11,
+      schemaVersion: 15,
       createdAt: 1_725_000_100_000,
       attachmentCount: 1,
       totalBytes: 12,
@@ -1427,7 +1771,7 @@ describe("SQLite backup bundle", () => {
     });
 
     expect(validateSqliteBackupBundle(bundlePath)).toMatchObject({
-      schemaVersion: 11,
+      schemaVersion: 15,
     });
     const prepared = prepareSqliteBackupBundle({
       bundlePath,
@@ -1565,7 +1909,7 @@ describe("SQLite backup bundle", () => {
     });
 
     expect(validateSqliteBackupBundle(bundlePath)).toMatchObject({
-      schemaVersion: 11,
+      schemaVersion: 15,
     });
     const prepared = prepareSqliteBackupBundle({
       bundlePath,
@@ -1650,7 +1994,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(11);
+      ).toBe(15);
       expect(
         candidate
           .prepare("SELECT sender FROM notes WHERE id = 'note-a'")
@@ -1704,7 +2048,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(11);
+      ).toBe(15);
       expect(
         candidate
           .prepare(
@@ -1825,7 +2169,7 @@ describe("SQLite backup bundle", () => {
           .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
           .pluck()
           .get(),
-      ).toBe(11);
+      ).toBe(15);
       expect(
         candidate
           .prepare("SELECT pinned_at FROM chats WHERE id = 'chat-a'")
@@ -2023,7 +2367,9 @@ describe("SQLite backup bundle", () => {
   });
 });
 
-function createMetadataOnlySchemaV2Database(
+// Change the current schema after migrations so a table rebuild cannot heal the
+// deliberately missing constraint before export validates the fixture.
+function createMetadataOnlyCurrentDatabase(
   path: string,
   options: {
     attachmentForeignKey?: boolean;
@@ -2031,123 +2377,37 @@ function createMetadataOnlySchemaV2Database(
     fakeMetadataChecks?: boolean;
     includeChecks?: boolean;
     uniqueStoragePath?: boolean;
-  } = {},
+  },
 ): Database.Database {
-  const omitChecks =
-    options.includeChecks === false || options.fakeMetadataChecks === true;
-  const attachmentForeignKey =
-    options.attachmentForeignKey === false
-      ? ""
-      : ", FOREIGN KEY (note_id) REFERENCES notes(id) ON UPDATE NO ACTION ON DELETE CASCADE";
-  const storagePathUnique = options.uniqueStoragePath === false ? "" : "UNIQUE";
-  const database = new Database(path);
-  database.pragma("foreign_keys = ON");
-  database.transaction(() => {
-    database.exec(`
-    CREATE TABLE __drizzle_migrations (
-      id SERIAL PRIMARY KEY,
-      hash TEXT NOT NULL,
-      created_at numeric
+  const database = openDatabase(path);
+  if (options.attachmentIndexColumns) {
+    database.exec(
+      "DROP INDEX note_attachments_note_idx; CREATE INDEX note_attachments_note_idx ON note_attachments(id)",
     );
-    CREATE TABLE app_metadata (
-      id INTEGER PRIMARY KEY NOT NULL,
-      schema_version INTEGER NOT NULL${omitChecks ? "" : ", CONSTRAINT app_metadata_single_row CHECK (app_metadata.id = 1), CONSTRAINT app_metadata_version_positive CHECK (app_metadata.schema_version >= 1)"}
-    );
-    CREATE TABLE chats (
-      id TEXT PRIMARY KEY NOT NULL,
-      title TEXT NOT NULL,
-      accent TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL${omitChecks ? "" : ", CONSTRAINT chats_title_length CHECK (length(trim(chats.title)) BETWEEN 1 AND 80), CONSTRAINT chats_accent_allowed CHECK (accent IN ('coral', 'amber', 'moss', 'ocean', 'iris', 'slate'))"}
-    );
-    CREATE INDEX chats_activity_idx ON chats(updated_at, id);
-    CREATE TABLE notes (
-      id TEXT PRIMARY KEY NOT NULL,
-      chat_id TEXT NOT NULL,
-      body TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (chat_id) REFERENCES chats(id) ON UPDATE NO ACTION ON DELETE CASCADE${omitChecks ? "" : ", CONSTRAINT notes_body_length CHECK (length(notes.body) <= 10000)"}
-    );
-    CREATE INDEX notes_chat_history_idx ON notes(chat_id, created_at, id);
-    CREATE TABLE note_attachments (
-      id TEXT PRIMARY KEY NOT NULL,
-      note_id TEXT NOT NULL,
-      filename TEXT NOT NULL,
-      media_type TEXT NOT NULL,
-      storage_path TEXT NOT NULL ${storagePathUnique},
-      byte_size INTEGER NOT NULL,
-      modified_at INTEGER NOT NULL,
-      created_at INTEGER NOT NULL${attachmentForeignKey}${omitChecks ? "" : ", CONSTRAINT note_attachments_filename_length CHECK (length(trim(note_attachments.filename)) BETWEEN 1 AND 255), CONSTRAINT note_attachments_media_type_length CHECK (length(trim(note_attachments.media_type)) BETWEEN 1 AND 255), CONSTRAINT note_attachments_storage_path_length CHECK (length(note_attachments.storage_path) BETWEEN 1 AND 1024), CONSTRAINT note_attachments_byte_size_nonnegative CHECK (note_attachments.byte_size >= 0), CONSTRAINT note_attachments_modified_at_nonnegative CHECK (note_attachments.modified_at >= 0)"}
-    );
-    CREATE INDEX note_attachments_note_idx
-      ON note_attachments(${options.attachmentIndexColumns ?? "note_id, created_at, id"});
-    INSERT INTO app_metadata (id, schema_version) VALUES (1, 2);
-    INSERT INTO __drizzle_migrations (id, hash, created_at)
-      VALUES (1, 'schema-v2', 1788270000000);
-    INSERT INTO chats (id, title, accent, created_at, updated_at)
-      VALUES ('chat-a', 'Roadmap', 'ocean', 1, 1);
-    INSERT INTO notes (id, chat_id, body, created_at)
-      VALUES ('note-a', 'chat-a', 'Plan', 1);
-  `);
-  })();
-  return database;
-}
-
-function createMetadataOnlyCurrentDatabase(
-  path: string,
-  options: Parameters<typeof createMetadataOnlySchemaV2Database>[1] = {},
-): Database.Database {
-  const omitChecks =
-    options.includeChecks === false || options.fakeMetadataChecks === true;
-  const database = createMetadataOnlySchemaV2Database(path, options);
-  database.transaction(() => {
-    database.exec(`
-    CREATE TABLE chat_enabled_labels (
-      chat_id TEXT NOT NULL,
-      label TEXT NOT NULL,
-      PRIMARY KEY(chat_id, label),
-      FOREIGN KEY (chat_id) REFERENCES chats(id) ON UPDATE NO ACTION ON DELETE CASCADE,
-      CONSTRAINT chat_enabled_labels_label_allowed CHECK(label IN ('todo', 'decision', 'open-question', 'risk', 'milestone'))
-    );
-    CREATE TABLE note_labels (
-      note_id TEXT NOT NULL,
-      label TEXT NOT NULL,
-      PRIMARY KEY(note_id, label),
-      FOREIGN KEY (note_id) REFERENCES notes(id) ON UPDATE NO ACTION ON DELETE CASCADE,
-      CONSTRAINT note_labels_label_allowed CHECK(label IN ('pin', 'attention', 'todo', 'decision', 'open-question', 'risk', 'milestone'))
-    );
-    INSERT INTO chat_enabled_labels (chat_id, label) VALUES
-      ('chat-a', 'todo'), ('chat-a', 'milestone');
-    ALTER TABLE chats ADD COLUMN pinned_at INTEGER${omitChecks ? "" : " CONSTRAINT chats_pinned_at_nonnegative CHECK (pinned_at IS NULL OR pinned_at >= 0)"};
-    ALTER TABLE chats ADD COLUMN collapse_long_messages INTEGER DEFAULT 1 NOT NULL${omitChecks ? "" : " CONSTRAINT chats_collapse_long_messages_boolean CHECK (collapse_long_messages IN (0, 1))"};
-    ALTER TABLE notes ADD COLUMN sender TEXT${omitChecks ? "" : " CONSTRAINT notes_sender_length CHECK (sender IS NULL OR (sender = trim(sender, ' ' || char(9) || char(10) || char(11) || char(12) || char(13) || char(160) || char(5760) || char(8192) || char(8193) || char(8194) || char(8195) || char(8196) || char(8197) || char(8198) || char(8199) || char(8200) || char(8201) || char(8202) || char(8232) || char(8233) || char(8239) || char(8287) || char(12288) || char(65279)) AND length(sender) BETWEEN 1 AND 80))"};
-    ALTER TABLE chats ADD COLUMN archived_at INTEGER${omitChecks ? "" : " CONSTRAINT chats_archive_valid CHECK (archived_at IS NULL OR (typeof(archived_at) = 'integer' AND archived_at >= 0 AND archived_at <= 9007199254740991 AND pinned_at IS NULL))"};
-    UPDATE app_metadata SET schema_version = 7 WHERE id = 1;
-    INSERT INTO __drizzle_migrations (id, hash, created_at)
-      VALUES (2, 'schema-v3', 1788356400000);
-  `);
-    const trusted = new Database(":memory:");
-    try {
-      applyBundledMigrations(trusted);
-      const migrations = trusted
-        .prepare(
-          "SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at, hash",
-        )
-        .all() as Array<{ hash: string; created_at: number }>;
-      database.exec("DELETE FROM __drizzle_migrations");
-      const insert = database.prepare(
-        "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
+  } else if (options.uniqueStoragePath === false) {
+    database.exec("DROP INDEX note_attachments_storage_path_unique");
+  } else if (options.attachmentForeignKey === false) {
+    const definitions = database
+      .prepare(
+        "SELECT sql FROM sqlite_schema WHERE tbl_name='note_attachments' AND sql IS NOT NULL ORDER BY type DESC",
+      )
+      .pluck()
+      .all() as string[];
+    database.exec("DROP TABLE note_attachments");
+    for (const definition of definitions) {
+      database.exec(
+        definition
+          .split("\n")
+          .filter((line) => !line.includes("REFERENCES `notes`"))
+          .join("\n"),
       );
-      for (const migration of migrations.filter(
-        (migration) => migration.created_at <= 1789027200000,
-      )) {
-        insert.run(migration.hash, migration.created_at);
-      }
-    } finally {
-      trusted.close();
     }
-  })();
-  applyBundledMigrations(database);
+  } else {
+    database.exec(`DROP TABLE app_metadata;
+      CREATE TABLE app_metadata (id INTEGER PRIMARY KEY NOT NULL, schema_version INTEGER NOT NULL
+      ${options.fakeMetadataChecks ? ", CONSTRAINT app_metadata_version_positive CHECK (1)" : ""});
+      INSERT INTO app_metadata(id,schema_version) VALUES(1,15);`);
+  }
   return database;
 }
 

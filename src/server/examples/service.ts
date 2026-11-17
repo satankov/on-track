@@ -1,4 +1,5 @@
 import { projectLabels, labelNameKey } from "../../domain/labels.js";
+import { storedAccent } from "../db/project-accent.js";
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { ExampleDetail } from "../../domain/examples.js";
@@ -43,11 +44,12 @@ export function copyExample(
         id,
         project_id: null,
         title,
-        accent: example.accent,
+        ...storedAccent(example.accent),
         created_at: now,
         updated_at: Math.max(...example.notes.map((n) => n.createdAt)),
         pinned_at: null,
         archived_at: null,
+        manual_alert: 0,
         collapse_long_messages: example.collapseLongMessages ? 1 : 0,
       },
     ],
@@ -75,7 +77,9 @@ export function copyExample(
         label,
       })),
     ),
+    drafts: [],
     attachments: [],
+    labelSnapshots: [],
     origins: [],
   };
   const published: string[] = [];
@@ -93,6 +97,8 @@ export function copyExample(
         records.attachments.push({
           id: attachmentId,
           note_id: noteIds.get(note.id)!,
+          draft_chat_id: null,
+          position: null,
           filename: file.filename,
           media_type: file.mediaType,
           storage_path: result.storagePath,

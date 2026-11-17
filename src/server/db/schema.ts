@@ -38,10 +38,12 @@ export const chats = sqliteTable(
       .notNull()
       .default(0),
     accent: text("accent").notNull(),
+    accentStyle: text("accent_style").notNull().default("plain"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     pinnedAt: integer("pinned_at"),
     archivedAt: integer("archived_at"),
+    manualAlert: integer("manual_alert").notNull().default(0),
     collapseLongMessages: integer("collapse_long_messages", {
       mode: "boolean",
     })
@@ -57,7 +59,12 @@ export const chats = sqliteTable(
       "chats_title_length",
       sql`length(trim(${table.title})) BETWEEN 1 AND 80`,
     ),
+    check("chats_manual_alert_boolean", sql`${table.manualAlert} IN (0,1)`),
     check("chats_accent_allowed", sql.raw(accentCheck)),
+    check(
+      "chats_accent_style_allowed",
+      sql`${table.accentStyle} IN ('plain', 'gradient')`,
+    ),
     check(
       "chats_pinned_at_nonnegative",
       sql`${table.pinnedAt} IS NULL OR ${table.pinnedAt} >= 0`,
@@ -127,13 +134,38 @@ export const subthreadOrigins = sqliteTable(
   ],
 );
 
+export const conversationDrafts = sqliteTable(
+  "conversation_drafts",
+  {
+    chatId: text("chat_id")
+      .primaryKey()
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    revision: text("revision").notNull(),
+    body: text("body").notNull(),
+    sender: text("sender").notNull(),
+    timestamp: text("timestamp").notNull(),
+    senderOpen: integer("sender_open").notNull(),
+    timestampOpen: integer("timestamp_open").notNull(),
+  },
+  (table) => [
+    check(
+      "draft_bounds",
+      sql`length(${table.revision}) = 36 AND length(${table.body}) <= 10000 AND length(${table.sender}) <= 80 AND length(${table.timestamp}) <= 32 AND ${table.senderOpen} IN (0,1) AND ${table.timestampOpen} IN (0,1)`,
+    ),
+  ],
+);
+
 export const noteAttachments = sqliteTable(
   "note_attachments",
   {
     id: text("id").primaryKey(),
-    noteId: text("note_id")
-      .notNull()
-      .references(() => notes.id, { onDelete: "cascade" }),
+    draftChatId: text("draft_chat_id").references(
+      () => conversationDrafts.chatId,
+      { onDelete: "cascade" },
+    ),
+    position: integer("position"),
+    noteId: text("note_id").references(() => notes.id, { onDelete: "cascade" }),
     filename: text("filename").notNull(),
     mediaType: text("media_type").notNull(),
     storagePath: text("storage_path").notNull().unique(),
@@ -142,6 +174,15 @@ export const noteAttachments = sqliteTable(
     createdAt: integer("created_at").notNull(),
   },
   (table) => [
+    check(
+      "attachment_owner",
+      sql`(${table.noteId} IS NULL) <> (${table.draftChatId} IS NULL)`,
+    ),
+    check(
+      "attachment_position",
+      sql`(${table.noteId} IS NOT NULL AND ${table.position} IS NULL) OR (typeof(${table.position}) = 'integer' AND ${table.position} BETWEEN 0 AND 9)`,
+    ),
+    index("note_attachments_draft_idx").on(table.draftChatId, table.position),
     check(
       "note_attachments_filename_length",
       sql`length(trim(${table.filename})) BETWEEN 1 AND 255`,
@@ -222,11 +263,38 @@ export const noteLabels = sqliteTable(
   ],
 );
 
+export const noteLabelSnapshots = sqliteTable(
+  "note_label_snapshots",
+  {
+    noteId: text("note_id")
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    name: text("name").notNull(),
+    symbol: text("symbol"),
+    position: integer("position").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.noteId, table.label] }),
+    check(
+      "note_label_snapshots_custom_id",
+      sql`length(${table.label}) = 43 AND substr(${table.label},1,7) = 'custom-'`,
+    ),
+    check(
+      "note_label_snapshots_bounds",
+      sql`length(${table.name}) BETWEEN 1 AND 256 AND (${table.symbol} IS NULL OR length(${table.symbol}) BETWEEN 1 AND 64) AND typeof(${table.position}) = 'integer' AND ${table.position} BETWEEN 0 AND 9007199254740991`,
+    ),
+  ],
+);
+
 export const workspacePreferences = sqliteTable(
   "workspace_preferences",
   {
     id: integer("id").primaryKey(),
     theme: text("theme").notNull().default("light"),
+    alwaysShowMessageTime: integer("always_show_message_time")
+      .notNull()
+      .default(1),
     showExamples: integer("show_examples").notNull().default(1),
     collapsedPinned: integer("collapsed_pinned").notNull().default(0),
     collapsedProjects: integer("collapsed_projects").notNull().default(0),
@@ -235,6 +303,10 @@ export const workspacePreferences = sqliteTable(
     initialized: integer("initialized").notNull().default(0),
   },
   (table) => [
+    check(
+      "workspace_preferences_message_time_boolean",
+      sql`${table.alwaysShowMessageTime} IN (0,1)`,
+    ),
     check("workspace_preferences_single_row", sql`${table.id} = 1`),
     check(
       "workspace_preferences_theme",

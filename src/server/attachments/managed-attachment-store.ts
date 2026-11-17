@@ -47,10 +47,20 @@ export interface ManagedAttachmentFile extends ManagedAttachmentObservation {
   modifiedAt: number;
 }
 
+export interface StagedAttachmentCopy extends ManagedAttachmentFile {
+  verify(): void;
+}
+
 export interface ManagedAttachmentRead {
   content: Buffer;
   byteSize: number;
   modifiedAt: number;
+}
+
+interface NewManagedAttachment {
+  attachmentId: string;
+  filename: string;
+  content: Uint8Array;
 }
 
 export interface ManagedAttachmentStoreOptions {
@@ -167,11 +177,50 @@ export class ManagedAttachmentStore {
     }
   }
 
-  create(input: {
-    attachmentId: string;
-    filename: string;
-    content: Uint8Array;
-  }): ManagedAttachmentFile {
+  create(input: NewManagedAttachment): ManagedAttachmentFile {
+    return this.publish(input, 0o600);
+  }
+
+  copy(storagePath: string, attachmentId: string): StagedAttachmentCopy {
+    const opened = this.openManagedFile(storagePath);
+    const { content } = this.readOpened(opened);
+    // A copy must retain the managed filename and executable classification
+    // checked by the native-open policy, while staying owner-only.
+    const mode = (opened.mode & 0o111) === 0 ? 0o600 : 0o700;
+    const file = this.publish(
+      { attachmentId, filename: posix.basename(storagePath), content },
+      mode,
+    );
+    try {
+      const target = this.openManagedFile(file.storagePath);
+      closeSync(target.descriptor);
+      return { ...file, verify: this.copyVerifier(opened, target) };
+    } catch (error) {
+      this.remove(file.storagePath);
+      throw error;
+    }
+  }
+
+  private copyVerifier(source: OpenedManagedFile, target: OpenedManagedFile) {
+    return () => {
+      for (const expected of [source, target]) {
+        const current = this.openManagedFile(expected.storagePath);
+        closeSync(current.descriptor);
+        if (
+          !isSameFileIdentity(current.identity, expected.identity) ||
+          current.changedAt !== expected.changedAt ||
+          current.modifiedAtPrecise !== expected.modifiedAtPrecise ||
+          current.byteSize !== expected.byteSize
+        )
+          throw new ManagedAttachmentChangedError();
+      }
+    };
+  }
+
+  private publish(
+    input: NewManagedAttachment,
+    mode: number,
+  ): ManagedAttachmentFile {
     const namespace = requireGeneratedComponent(
       this.namespaceFactory(),
       "namespace",
@@ -217,7 +266,7 @@ export class ManagedAttachmentStore {
       fsyncSync(descriptor);
       closeSync(descriptor);
       descriptor = undefined;
-      chmodSync(temporaryPath, 0o600);
+      chmodSync(temporaryPath, mode);
 
       linkSync(temporaryPath, parsed.absolutePath);
       published = true;
@@ -248,10 +297,22 @@ export class ManagedAttachmentStore {
     }
   }
 
-  read(storagePath: string): ManagedAttachmentRead {
-    const opened = this.openManagedFile(storagePath);
+  read(
+    storagePath: string,
+    maximumBytes = this.maximumReadableBytes,
+  ): ManagedAttachmentRead {
+    return this.readOpened(this.openManagedFile(storagePath), maximumBytes);
+  }
+
+  private readOpened(
+    opened: OpenedManagedFile,
+    maximumBytes = this.maximumReadableBytes,
+  ): ManagedAttachmentRead {
     try {
-      if (opened.byteSize > this.maximumReadableBytes) {
+      if (
+        opened.byteSize > this.maximumReadableBytes ||
+        opened.byteSize > maximumBytes
+      ) {
         throw new ManagedAttachmentTooLargeError(opened.byteSize);
       }
       const content = Buffer.alloc(opened.byteSize);

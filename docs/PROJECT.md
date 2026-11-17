@@ -15,38 +15,31 @@ recovery parts of that promise.
 
 ## Current phase
 
-[Version 0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1) is the
-latest published plaintext alpha release under Apache License 2.0. It includes
-the flat UI, intersecting history filters, database-backed preferences, custom
-project labels, and dependency security fixes, alongside the existing history
-controls, composer feedback, managed uninstall, and project search.
-threadstr and the primary `thr` CLI retain the `ontrack` compatibility alias.
-The managed compatibility floor remains `0.0.7`; installation remains
-experimental because clean OS/platform and published-upgrade evidence is incomplete.
+The v0.2.1 workspace builds on the v0.2.0 tag. threadstr runs locally under
+Apache License 2.0. Its database, attachments, and backups are unencrypted.
+Managed installations provide the `thr` CLI and the `ontrack` compatibility
+alias. The managed compatibility floor is `0.0.7`.
 
 ## Current objective
 
-The next release candidate includes the completed, locally verified UI trim in
-[plan 0033](plans/0033-release-candidate-ui-trim.md): title-only project rows with
-Attention indicators, “Question” display text, and simplified guidance/navigation.
-This UI trim is preserved alongside the completed, unreleased project-subthreads slice in
-[plan 0034](plans/0034-project-subthreads.md). Current source uses schema 11;
-published v0.1.1 remains schema 9. Backup format remains 1, with schema 3–10
-bundles migrated in validated staging. The v0.2.0 candidate is prepared on
-`release/v0.2.0`; it is not published. Release scope, verification, dependency
-disposition, and remaining gates are recorded in
+Deliver the [v0.2.1 workspace controls](plans/0036-v0.2.1-workspace-controls.md).
+Projects and subthreads gain an expandable shortcut strip and a persistent Alert.
+Messages use a Label and More toolbar and a workspace preference for time
+visibility. Schema 13 adds twelve project accent choices to the same persistence and backup
+flow. Messages can be selected together and copied, moved, deleted or [exported as Markdown or plain text](plans/0040-selected-message-export.md). Copy and
+Move retain every label, including custom names and symbols specific to the
+source conversation. Schema 14 preserves these on individual messages. Format 1
+supports legacy bundles from schemas 3–14. Schema 15 saves one outgoing draft
+per conversation, including its attached files and picker settings. Markdown task
+boxes can be checked in place, single newlines display as line breaks, and search
+briefly highlights the opened message. See [plan 0039](plans/0039-message-drafts-checklists-and-reading.md). The preceding release scope is in
 [plan 0035](plans/0035-v0.2.0-release-preparation.md).
-
-The candidate also includes compact project/subthread rows, full-width child
-hover states, a shared Attention/pin slot, count-free group headers, and centered
-filter shortcut guidance. [DESIGN.md](../DESIGN.md#project-rail) owns the current
-rail contract and its touch/keyboard behavior.
 
 The published v0.1.1 release includes the completed flat UI and design cookbook
 slice in [plan 0029](plans/0029-flat-ui-and-design-contract.md), plus intersecting
 history filters, database-backed preferences and custom project labels in
 [plan 0031](plans/0031-multi-filters-durable-preferences-custom-labels.md).
-The published release uses schema 9; current source advances to schema 11. Its canonical
+The v0.1.1 release used schema 9. The canonical
 standards are [DESIGN.md](../DESIGN.md), with an interactive reference under
 [branding/threadstr/ui](../branding/threadstr/ui/README.md). The Zod dependency
 fix for issue #72 and the static-serving and paired Vitest updates are published
@@ -66,8 +59,8 @@ real desktop behavior, accessibility, and live published-upgrade evidence remain
 separate validation requirements.
 
 Complete installation/platform and upgrade validation, retain the manual Node
-matrix and plaintext warnings, and record remaining evidence limits. Mobile
-remains a regression-protected alpha, not a dedicated design target.
+matrix and plaintext warnings, and record remaining evidence limits. Desktop is
+the primary design target. Browser tests cover the mobile layout.
 
 ## v0.0.1 outcome
 
@@ -185,7 +178,7 @@ remains a regression-protected alpha, not a dedicated design target.
   continuation links at the source date and keeps return navigation anchored there. Children inherit the root accent
   dynamically and own their labels, message-display setting, pin and archive
   state. Project selection reveals five indented children with Show all for the
-  remainder. Each child has its own Edit and delete controls. Search's Project
+  remainder. Each child has its own Edit form and sidebar shortcuts. Search's Project
   checkbox covers Main and every child from any conversation in the project.
   [ADR-0014](adr/0014-flat-project-subthreads.md) records ownership, provenance,
   and backup decisions. AI responses remain a distant product possibility with
@@ -232,8 +225,7 @@ remains a regression-protected alpha, not a dedicated design target.
   Pinned, Projects, and Archive headers remain visible when empty.
 - Pin and unpin projects in a stable sidebar section without changing their
   message-activity timestamps.
-- Archive projects from Edit project, then restore through settings or the
-  sidebar restore icon. Archiving clears the pin, preserves all content, and
+- Archive and restore projects from the shortcuts on their sidebar row. Archiving clears the pin, preserves all content, and
   leaves projects editable; restoration returns them to Projects.
 - Rename a project and select a restrained accent color.
 - Add multiline Markdown notes in deterministic chronological order.
@@ -274,7 +266,7 @@ remains a regression-protected alpha, not a dedicated design target.
 ## Near-term priorities
 
 1. Complete managed CLI installation and recovery gates, then prepare the next
-   alpha candidate with release review and the preserved platform-scoped manual
+   release candidate with review and the preserved platform-scoped manual
    Node 22.16/24 verification matrix.
 2. Continue hardening backup, restore, integrity checking, recovery, and
    conflict-free import semantics before users entrust irreplaceable data to the
@@ -295,7 +287,7 @@ offline history, deletion rules, recovery, and relay/discovery decisions. The
 current stable IDs, explicit migrations, and repository boundaries preserve
 options without pretending those choices are solved.
 
-## Non-goals for current plaintext alpha
+## Current non-goals
 
 Collaboration, accounts, cross-project or semantic search, encryption,
 NDA-safe claims, native installers, mobile apps, peer-to-peer sync, public
@@ -305,9 +297,8 @@ hosting, analytics, and telemetry.
 
 - A chat is a private project notebook, not a cooperative messenger.
 - Data is local by default and stored outside the Git checkout.
-- The sidebar footer uses only “Local only” beside Settings. Plaintext alpha
-  limitations remain documented in the README and backup settings; locality is
-  not encryption.
+- Settings is the sole action in the sidebar footer. The user guide and backup
+  settings explain the plaintext storage model.
 - Manual GitHub source installation supports Node.js 22 from 22.16.0 on macOS
   and Linux and Node.js 24 on Windows, macOS, and Linux. Managed CLI delivery
   adds a private pinned runtime and fixed source assets alongside that workflow;
@@ -343,9 +334,7 @@ Native uninstall validation is tracked in
 [issue #62](https://github.com/satankov/on-track/issues/62); history/composer
 assistive-technology validation is tracked in
 [issue #63](https://github.com/satankov/on-track/issues/63).
-[v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1) is the latest
-published release and includes the design and plan 0031 feature slices; see the
-[release procedure](RELEASING.md).
+The [release procedure](RELEASING.md) covers preparation and publication.
 Broader product priorities above remain strategy until scoped. Durable decisions
 live in `docs/adr/`; significant work lives in `docs/plans/`.
 
@@ -373,16 +362,19 @@ live in `docs/adr/`; significant work lives in `docs/plans/`.
   multipart advisory: its affected `saveRequestFiles()` API is unused, while
   application uploads use `request.parts()` and owned staging. Reassess that
   exposure before adopting another multipart API.
-- v0.0.4 deliberately does not restore v0.0.3/schema-2 backup bundles. Live
-  v0.0.3 databases still migrate at startup, and this compatibility break is
-  acceptable only under the current no-user alpha assumption.
+- Restoring a v0.0.3/schema-2 backup bundle has been unsupported since v0.0.4.
+  Live v0.0.3 databases still migrate at startup. The original compatibility
+  decision is recorded in [plan 0012](plans/0012-node-22-and-complexity-simplification.md).
 - Native command construction is tested for macOS, Windows, and Linux, but real
   OS dispatch has been manually reported only on one macOS host. Windows and
   Linux desktop integration remains unverified.
 - Browser file-drop regressions pass, but actual Finder-origin dragging and
   cancellation remain manually unverified; this is separate from native Open.
-- Managed uninstall is locally verified on disposable macOS/Node 22 fixtures;
-  native Windows/Linux and Node 24 dispatcher cleanup still require evidence.
+- Managed uninstall has passed on disposable macOS arm64 installations under
+  Node 22 and the pinned Node 24.14.0 runtime, including the two-process
+  dispatcher, default retention, and explicit deletion. The v0.2.0 native CI
+  runs also passed the uninstall smoke on Windows and Linux. Remaining native
+  recovery and cleanup checks are tracked in [issue #62](https://github.com/satankov/on-track/issues/62).
   It preserves unknown files and small ownership locks; only explicit
   `--delete-data` removes project content. See ADR-0012 and plan 0027.
 - Loopback HTTP narrows exposure but is still a trust boundary requiring Host,

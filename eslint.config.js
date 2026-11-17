@@ -13,6 +13,8 @@ export default tseslint.config(
       "dist/**",
       "drizzle/meta/**",
       "node_modules/**",
+      "**/on-track-backups/**",
+      "**/on-track-exports/**",
       "playwright-report/**",
       "test-results/**",
     ],

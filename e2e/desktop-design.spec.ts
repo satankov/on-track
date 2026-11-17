@@ -26,6 +26,130 @@ test("keeps every Appearance choice inside a constrained desktop workspace", asy
   }
 });
 
+test("keeps text entry borderless and primary actions visible in every theme", async ({
+  page,
+  request,
+  localApp,
+}) => {
+  await request.post(`${localApp.url}/api/chats`, {
+    data: { title: "Workspace controls", accent: "ocean-gradient" },
+  });
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: "Open Workspace controls" }).click();
+  await page.mouse.move(0, 0);
+  const header = page.locator(".chat-header");
+  const composer = page.locator(".composer");
+  const draft = page.getByRole("textbox", { name: "Add a note" });
+
+  await expect(page.getByText("Local only", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Settings", exact: true }),
+  ).toBeVisible();
+  for (const [selector, edge] of [
+    [".project-rail", "right"],
+    [".rail-header", "bottom"],
+    [".project-rail footer", "top"],
+    [".chat-header", "bottom"],
+  ] as const) {
+    await expect(page.locator(selector)).toHaveCSS(
+      `border-${edge}-width`,
+      "0px",
+    );
+  }
+  for (const selector of [
+    ".new-project-button",
+    ".settings-icon-button",
+    ".edit-project-button",
+    ".new-subthread-button",
+  ]) {
+    const button = page.locator(selector);
+    await expect(button).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(button).toHaveCSS("border-top-width", "0px");
+  }
+  for (const theme of ["light", "neutral", "dark"]) {
+    await page.evaluate((value) => {
+      document.documentElement.dataset.theme = value;
+    }, theme);
+    await expect(header).toHaveCSS(
+      "background-color",
+      await page
+        .locator(".history")
+        .evaluate((el) => getComputedStyle(el).backgroundColor),
+    );
+    await draft.fill("Visible send action");
+    await expect(draft).toBeFocused();
+    for (const field of [composer, draft]) {
+      await expect(field).toHaveCSS("outline-style", "none");
+      await expect(field).toHaveCSS("border-top-width", "0px");
+      await expect(field).toHaveCSS("box-shadow", "none");
+    }
+    const send = page.locator(".send-button");
+    await expect(send).toBeEnabled();
+    await expect(send).toHaveCSS("background-image", /linear-gradient/);
+    await expect(send).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(send).toHaveCSS("color", "rgb(255, 255, 255)");
+    await page
+      .getByRole("button", { name: "Search messages", exact: true })
+      .click();
+    const search = page.getByRole("searchbox", { name: "Search messages" });
+    await expect(search).toBeFocused();
+    for (const field of [page.locator(".project-search-field"), search]) {
+      await expect(field).toHaveCSS("outline-style", "none");
+      await expect(field).toHaveCSS("border-top-width", "0px");
+      await expect(field).toHaveCSS("box-shadow", "none");
+    }
+    await page.keyboard.press("Escape");
+  }
+  await page.getByRole("button", { name: "New project", exact: true }).click();
+  const title = page.getByLabel("Project name", { exact: true });
+  await expect(title).toBeFocused();
+  const picker = page.getByRole("group", { name: "Accent", exact: true });
+  const radios = picker.getByRole("radio");
+  await expect(radios).toHaveCount(12);
+  const names = [
+    "Coral",
+    "Amber",
+    "Moss",
+    "Ocean",
+    "Iris",
+    "Slate",
+    "Guava",
+    "Honey",
+    "Jade",
+    "Lagoon",
+    "Orchid",
+    "Periwinkle",
+  ];
+  for (const [index, name] of names.entries()) {
+    await expect(radios.nth(index)).toHaveAccessibleName(name);
+    await expect(picker.locator(".accent-swatch").nth(index)).toHaveCSS(
+      "background-image",
+      index < 6 ? "none" : /linear-gradient/,
+    );
+  }
+  await radios.nth(5).check();
+  await radios.nth(5).press("ArrowRight");
+  await expect(radios.nth(6)).toBeChecked();
+  await expect(picker.locator(".accent-selection-name")).toHaveText("Guava");
+  await expect(title).toHaveCSS("outline-style", "none");
+  await expect(title).toHaveCSS("border-top-width", "0px");
+  await title.fill("A second project");
+  const create = page.getByRole("button", {
+    name: "Create project",
+    exact: true,
+  });
+  await expect(create).toBeEnabled();
+  await expect(create).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(create).toHaveCSS("color", "rgb(255, 255, 255)");
+  await page.emulateMedia({ forcedColors: "active" });
+  await expect(picker.locator(".accent-swatch").nth(6)).toHaveCSS(
+    "background-image",
+    "none",
+  );
+  await expect(title).toHaveCSS("outline-style", "none");
+  await expect(title).toHaveCSS("border-top-width", "0px");
+});
+
 test("centers Create project in the entire desktop viewport", async ({
   page,
   localApp,

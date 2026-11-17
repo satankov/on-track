@@ -2,6 +2,7 @@ import {
   mkdtempSync,
   rmSync,
   readFileSync,
+  writeFileSync,
   unlinkSync,
   readdirSync,
 } from "node:fs";
@@ -15,6 +16,8 @@ import { openDatabase } from "../db/database.js";
 import { ManagedAttachmentStore } from "../attachments/managed-attachment-store.js";
 import { allocateImportedTitles } from "./project-import.js";
 import * as projectImport from "./project-import.js";
+import Database from "better-sqlite3";
+import { rewindToSchema14 } from "../../test/legacy-database.js";
 import { createV010Backup, V010_FILE } from "../../test/released-v010.js";
 
 let directory: string;
@@ -96,6 +99,66 @@ function importForm(backup: Buffer, options: unknown) {
   );
   return form;
 }
+
+it.each([14, 15])(
+  "rejects a stale first draft save after replacing with a schema-%i backup",
+  async (version) => {
+    const project = (
+      await app.inject({
+        method: "POST",
+        url: "/api/chats",
+        payload: { title: "Same conversation", accent: "ocean" },
+      })
+    ).json();
+    const url = `/api/chats/${project.id}/draft`;
+    const initial = (await app.inject(url)).json();
+    expect(initial.revision).toBeNull();
+    const backup = await app.inject({
+      method: "POST",
+      url: "/api/database/export",
+      payload: { selection: "all" },
+    });
+    expect(backup.statusCode).toBe(200);
+    const path = join(directory, "replacement.on-track-backup");
+    writeFileSync(path, backup.rawPayload);
+    if (version === 14) {
+      const db = new Database(path);
+      try {
+        rewindToSchema14(db);
+        db.exec("UPDATE _on_track_bundle SET schema_version=14");
+      } finally {
+        db.close();
+      }
+    }
+    const imported = await app.inject({
+      method: "PUT",
+      url: "/api/database/import",
+      headers: { "content-type": "application/octet-stream" },
+      payload: readFileSync(path),
+    });
+    expect(imported.statusCode, imported.body).toBe(204);
+
+    const form = new FormData();
+    form.set(
+      "draft",
+      JSON.stringify({
+        body: "from the old tab",
+        sender: "",
+        timestamp: "",
+        senderOpen: false,
+        timestampOpen: false,
+        keepAttachmentIds: [],
+        revision: initial.revision,
+      }),
+    );
+    const stale = await app.inject({ method: "PUT", url, payload: form });
+    expect(stale.statusCode, stale.body).toBe(409);
+    expect((await app.inject(url)).json()).toMatchObject({
+      body: "",
+      revision: expect.any(String),
+    });
+  },
+);
 
 it.each(["replace", "merge"] as const)(
   "imports a selected v0.1.0 schema-7 archive through %s and retains destination preferences after restart",
@@ -203,7 +266,7 @@ it.each(["replace", "merge"] as const)(
       try {
         expect(
           db.prepare("SELECT schema_version FROM app_metadata").pluck().get(),
-        ).toBe(11);
+        ).toBe(15);
         const paths = db
           .prepare("SELECT storage_path FROM note_attachments")
           .pluck()
@@ -742,6 +805,7 @@ it.each(["all", "selected"])(
       payload: {
         theme: "dark",
         showExamples: false,
+        alwaysShowMessageTime: false,
         collapsedSections: { Archive: true },
       },
     });
@@ -753,6 +817,7 @@ it.each(["all", "selected"])(
       })
     ).json();
     const url = `/api/chats/${project.id}`;
+    await app.inject({ method: "PUT", url: `${url}/alert` });
     const labels = project.labelDefinitions.map(
       (label: {
         id: string;
@@ -809,7 +874,11 @@ it.each(["all", "selected"])(
     await app.inject({
       method: "PATCH",
       url: "/api/preferences",
-      payload: { theme: "neutral", showExamples: true },
+      payload: {
+        theme: "neutral",
+        showExamples: true,
+        alwaysShowMessageTime: true,
+      },
     });
     const merged = await app.inject({
       method: "POST",
@@ -826,13 +895,17 @@ it.each(["all", "selected"])(
       (candidate: { id: string }) => candidate.id !== project.id,
     );
     const detail = (await app.inject(`/api/chats/${copy.id}`)).json();
+    expect(detail.manualAlert).toBe(true);
     const copiedLabel = detail.labelDefinitions.find(
       (label: { name: string }) => label.name === "Review",
     );
     expect(copiedLabel.id).not.toBe(custom.id);
     expect(detail.notes[0].labels).toEqual([copiedLabel.id]);
     expect(detail.labelConfigurationRevision).toBe(0);
-    expect((await app.inject("/api/preferences")).json().theme).toBe("neutral");
+    expect((await app.inject("/api/preferences")).json()).toMatchObject({
+      theme: "neutral",
+      alwaysShowMessageTime: true,
+    });
     const replaced = await app.inject({
       method: "POST",
       url: "/api/database/import",
@@ -847,6 +920,8 @@ it.each(["all", "selected"])(
     const preferences = (await app.inject("/api/preferences")).json();
     expect(preferences.theme).toBe(scope === "all" ? "dark" : "neutral");
     expect(preferences.initialized).toBe(true);
+    expect(preferences.alwaysShowMessageTime).toBe(scope !== "all");
+    expect((await app.inject(url)).json().manualAlert).toBe(true);
   },
 );
 
@@ -862,7 +937,7 @@ it.each([
       await app.inject({
         method: "POST",
         url: "/api/chats",
-        payload: { title: "Website", accent: "ocean" },
+        payload: { title: "Website", accent: "ocean-gradient" },
       })
     ).json();
     const other = (
@@ -910,6 +985,7 @@ it.each([
       url: `/api/chats/${root.id}/notes/${rootNote.id}`,
     });
     await app.inject({ method: "PUT", url: `/api/chats/${child.id}/archive` });
+    await app.inject({ method: "PUT", url: `/api/chats/${child.id}/alert` });
     const exported = await app.inject({
       method: "POST",
       url: "/api/database/export",
@@ -956,7 +1032,7 @@ it.each([
         chat.id !== other.id &&
         (mode === "replace" || chat.id !== root.id),
     );
-    expect(newRoot).toBeDefined();
+    expect(newRoot?.accent).toBe("ocean-gradient");
     const project = (
       await app.inject(`/api/chats/${newRoot.id}/project`)
     ).json();
@@ -972,6 +1048,8 @@ it.each([
       (chat: { id: string }) => chat.id === newRoot.id,
     );
     expect(copiedChild).toMatchObject({
+      accent: "ocean-gradient",
+      manualAlert: true,
       projectId: newRoot.id,
       origin: {
         sourceChatId: newRoot.id,

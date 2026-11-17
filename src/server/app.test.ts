@@ -1,4 +1,12 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  readSync,
+  symlinkSync,
+  rmSync,
+  truncateSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,6 +23,7 @@ import {
 } from "vitest";
 
 import { buildApp } from "./app.js";
+import { ManagedAttachmentStore } from "./attachments/managed-attachment-store.js";
 import { openDatabase } from "./db/database.js";
 import { MaintenanceGate } from "./database-transfer/maintenance-gate.js";
 import type { StagedUpload } from "./database-transfer/staged-upload.js";
@@ -40,6 +49,7 @@ describe("local project-chat API", () => {
   let directory: string;
   let app: FastifyInstance;
   let sequence: number;
+  let maintenanceGate: MaintenanceGate;
   let exportDirectoryCleanup: Mock<(path: string) => void>;
   let stagedUploadCleanup: Mock<(staged: StagedUpload) => void>;
   let nativeFileActions: NativeFileActions;
@@ -59,7 +69,9 @@ describe("local project-chat API", () => {
       open: vi.fn(async () => undefined),
       reveal: vi.fn(async () => undefined),
     };
+    maintenanceGate = new MaintenanceGate();
     app = buildApp({
+      maintenanceGate,
       database: openDatabase(join(directory, "on-track.sqlite")),
       databasePath: join(directory, "on-track.sqlite"),
       idFactory: () => `id-${++sequence}`,
@@ -73,6 +85,146 @@ describe("local project-chat API", () => {
   afterEach(async () => {
     await app.close();
     rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("rejects a stale conditional note body and retains metadata and files", async () => {
+    const chat = (
+      await app.inject({
+        method: "POST",
+        url: "/api/chats",
+        payload: { title: "Tasks", accent: "ocean" },
+      })
+    ).json();
+    const body = "- [ ] Write\n- [ ] Read";
+    const original = noteForm({ body, sender: "Frank", createdAt: 13 });
+    original.append("files", new File(["keep"], "keep.txt"));
+    const note = (
+      await app.inject({
+        method: "POST",
+        url: `/api/chats/${chat.id}/notes`,
+        payload: original,
+      })
+    ).json();
+    const url = `/api/chats/${chat.id}/notes/${note.id}`;
+    await app.inject({ method: "PUT", url: url + "/labels/pin" });
+    const save = (next: string, expectedBody = body) => {
+      const form = new FormData();
+      form.set("bodyChange", JSON.stringify({ body: next, expectedBody }));
+      return app.inject({ method: "PATCH", url, payload: form });
+    };
+    const first = body.replace("[ ]", "[x]");
+    expect((await save(first)).json()).toMatchObject({
+      body: first,
+      createdAt: 13,
+      sender: "Frank",
+      labels: ["pin"],
+      attachments: [{ id: note.attachments[0].id }],
+    });
+    expect((await save("older manual edit")).statusCode).toBe(409);
+    expect(
+      (await app.inject({ url: `/api/chats/${chat.id}` })).json().notes[0].body,
+    ).toBe(first);
+    expect((await save("corrected", ` ${first} `)).statusCode).toBe(409);
+    expect((await save("  corrected note  ", first)).json().body).toBe(
+      "corrected note",
+    );
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/database/export",
+          payload: { selection: "all" },
+        })
+      ).statusCode,
+    ).toBe(200);
+  });
+
+  it("copies, moves and deletes whole message selections across conversations", async () => {
+    const create = async (title: string) =>
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/chats",
+          payload: { title, accent: "ocean" },
+        })
+      ).json().id as string;
+    const source = await create("Source");
+    const target = await create("Target");
+    const add = async (body: string) =>
+      (
+        await app.inject({
+          method: "POST",
+          url: `/api/chats/${source}/notes`,
+          payload: noteForm({ body, sender: "Maya", createdAt: 420 }),
+        })
+      ).json().id as string;
+    const first = await add("First");
+    const second = await add("Second");
+    await app.inject({
+      method: "PUT",
+      url: `/api/chats/${source}/notes/${first}/labels/pin`,
+    });
+    const batch = (chatId: string, payload: Record<string, unknown>) =>
+      app.inject({
+        method: "POST",
+        url: `/api/chats/${chatId}/notes/batch`,
+        payload,
+      });
+    const notes = async (chatId: string) =>
+      (await app.inject({ url: `/api/chats/${chatId}` })).json().notes as {
+        id: string;
+        body: string;
+      }[];
+    const transfer = { noteIds: [second, first], destinationChatId: target };
+    expect(
+      (await batch(source, { action: "copy", ...transfer })).statusCode,
+    ).toBe(204);
+    const copies = await notes(target);
+    expect(copies).toMatchObject([
+      { body: "First", createdAt: 420, sender: "Maya", labels: ["pin"] },
+      { body: "Second", createdAt: 420, sender: "Maya", labels: [] },
+    ]);
+    expect(copies.map((n) => n.id)).not.toContain(first);
+    expect(await notes(source)).toHaveLength(2);
+    expect(
+      (await batch(source, { action: "move", ...transfer })).statusCode,
+    ).toBe(204);
+    expect(await notes(source)).toHaveLength(0);
+    expect((await notes(target)).map((n) => n.id)).toEqual(
+      expect.arrayContaining([first, second]),
+    );
+    expect(
+      (await batch(target, { action: "delete", noteIds: [first, second] }))
+        .statusCode,
+    ).toBe(204);
+    expect(await notes(target)).toEqual(copies);
+    expect(
+      (
+        await batch(target, {
+          action: "delete",
+          noteIds: [copies[0].id, first],
+        })
+      ).statusCode,
+    ).toBe(404);
+    expect(await notes(target)).toEqual(copies);
+    expect(
+      (
+        await batch(target, {
+          action: "move",
+          noteIds: [copies[0].id],
+          destinationChatId: target,
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await batch(target, {
+          action: "copy",
+          noteIds: [copies[0].id, copies[0].id],
+          destinationChatId: source,
+        })
+      ).statusCode,
+    ).toBe(400);
   });
 
   it("creates scoped subthreads and reads the same whole project from every conversation", async () => {
@@ -322,16 +474,57 @@ describe("local project-chat API", () => {
     ).toBe(400);
   });
 
+  it("sets a manual alert independently on each conversation without changing activity or Attention", async () => {
+    const root = (
+      await app.inject({
+        method: "POST",
+        url: "/api/chats",
+        payload: { title: "Root", accent: "ocean" },
+      })
+    ).json();
+    expect(root.manualAlert).toBe(false);
+    const child = (
+      await app.inject({
+        method: "POST",
+        url: `/api/chats/${root.id}/subthreads`,
+        payload: { title: "Child" },
+      })
+    ).json();
+    const url = `/api/chats/${child.id}`;
+    for (const method of ["PUT", "PUT", "DELETE"] as const) {
+      const response = await app.inject({ method, url: `${url}/alert` });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ manualAlert: method === "PUT" });
+      expect((await app.inject(url)).json()).toMatchObject({
+        manualAlert: method === "PUT",
+        latestAttentionAt: null,
+        updatedAt: child.updatedAt,
+      });
+      expect(
+        (await app.inject(`/api/chats/${root.id}`)).json().manualAlert,
+      ).toBe(false);
+    }
+    expect(
+      (await app.inject({ method: "PUT", url: "/api/chats/missing/alert" }))
+        .statusCode,
+    ).toBe(404);
+  });
+
   it("persists workspace preferences and lets the database win over stale browser initialization", async () => {
     const get = await app.inject({ method: "GET", url: "/api/preferences" });
     expect(get.statusCode).toBe(200);
-    expect(get.json()).toMatchObject({ theme: "light", initialized: false });
+    expect(get.json()).toMatchObject({
+      theme: "light",
+      initialized: false,
+      alwaysShowMessageTime: true,
+    });
     const initialized = await app.inject({
       method: "POST",
       url: "/api/preferences/initialize",
       payload: {
         theme: "dark",
         showExamples: false,
+        alwaysShowMessageTime: false,
         collapsedSections: { Projects: true },
       },
     });
@@ -339,6 +532,7 @@ describe("local project-chat API", () => {
       theme: "dark",
       initialized: true,
       showExamples: false,
+      alwaysShowMessageTime: false,
     });
     await app.inject({
       method: "POST",
@@ -356,6 +550,7 @@ describe("local project-chat API", () => {
     expect(saved).toMatchObject({
       theme: "dark",
       showExamples: false,
+      alwaysShowMessageTime: false,
       collapsedSections: {
         Projects: true,
         Archive: true,
@@ -376,6 +571,15 @@ describe("local project-chat API", () => {
           method: "PATCH",
           url: "/api/preferences",
           payload: { theme: "pink" },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: "/api/preferences",
+          payload: { alwaysShowMessageTime: "false" },
         })
       ).statusCode,
     ).toBe(400);
@@ -754,6 +958,210 @@ describe("local project-chat API", () => {
     });
 
     expect(attachment.statusCode).toBe(404);
+  });
+
+  describe("picture previews", () => {
+    const imageHeaders = {
+      "sec-fetch-site": "same-origin",
+      "sec-fetch-mode": "no-cors",
+      "sec-fetch-dest": "image",
+    };
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=",
+      "base64",
+    );
+
+    async function uploadPicture(filename = "picture.PNG") {
+      const chat = await app.inject({
+        method: "POST",
+        url: "/api/chats",
+        payload: { title: "Photos", accent: "moss" },
+      });
+      const form = new FormData();
+      form.append(
+        "files",
+        new File([new Uint8Array(png)], filename, {
+          type: "application/octet-stream",
+        }),
+      );
+      const note = await app.inject({
+        method: "POST",
+        url: `/api/chats/${chat.json().id}/notes`,
+        payload: form,
+      });
+      expect(note.statusCode).toBe(201);
+      const { id, attachments } = note.json();
+      const db = new Database(join(directory, "on-track.sqlite"), {
+        readonly: true,
+      });
+      try {
+        const row = db
+          .prepare("SELECT storage_path FROM note_attachments WHERE id = ?")
+          .get(attachments[0].id) as { storage_path: string };
+        return {
+          url: `/api/chats/${chat.json().id}/notes/${id}/attachments/${attachments[0].id}/preview`,
+          path: join(directory, row.storage_path),
+        };
+      } finally {
+        db.close();
+      }
+    }
+
+    it("serves the current, scoped image bytes with a verified media type", async () => {
+      const { url, path } = await uploadPicture();
+      const resource = await app.inject({ url, headers: imageHeaders });
+      expect(resource.statusCode).toBe(200);
+      expect(resource.rawPayload).toEqual(png);
+      expect(resource.headers).toMatchObject({
+        "content-type": "image/png",
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+        "cross-origin-resource-policy": "same-origin",
+      });
+      for (const segment of ["id-1", "id-2", "id-3"]) {
+        expect(
+          (
+            await app.inject({
+              url: url.replace(segment, "other"),
+              headers: imageHeaders,
+            })
+          ).statusCode,
+        ).toBe(404);
+      }
+      writeFileSync(path, "edited to plain text");
+      expect(
+        (await app.inject({ url, headers: imageHeaders })).statusCode,
+      ).toBe(415);
+      truncateSync(path, 12 * 1024 * 1024 + 1);
+      expect(
+        (await app.inject({ url, headers: imageHeaders })).statusCode,
+      ).toBe(413);
+      rmSync(path);
+      const missing = await app.inject({ url, headers: imageHeaders });
+      expect(missing.statusCode).toBe(409);
+      expect(missing.json()).toMatchObject({
+        code: "attachment_unavailable",
+        status: "missing",
+      });
+      expect(missing.body).not.toContain(directory);
+      expect(nativeFileActions.open).not.toHaveBeenCalled();
+    });
+
+    it("discards bytes when a picture changes while loading", async () => {
+      const { url, path } = await uploadPicture();
+      await app.close();
+      const databasePath = join(directory, "on-track.sqlite");
+      // Simulate an external editor writing into the open managed descriptor.
+      let edit = true;
+      const attachmentStore = new ManagedAttachmentStore(directory, {
+        descriptorRead: (...args) => {
+          const count = readSync(...args);
+          if (edit) {
+            edit = false;
+            writeFileSync(path, "external edit");
+          }
+          return count;
+        },
+      });
+      app = buildApp({
+        database: openDatabase(databasePath),
+        databasePath,
+        attachmentStore,
+      });
+      const response = await app.inject({ url, headers: imageHeaders });
+      expect(response.statusCode).toBe(409);
+      expect(response.json().code).toBe("preview_changed");
+      expect(response.body).not.toContain(directory);
+    });
+
+    it.runIf(process.platform !== "win32")(
+      "keeps unsafe managed files outside the preview",
+      async () => {
+        const { url, path } = await uploadPicture();
+        const other = join(directory, "other.png");
+        writeFileSync(other, png);
+        rmSync(path);
+        symlinkSync(other, path);
+        const response = await app.inject({ url, headers: imageHeaders });
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toMatchObject({
+          code: "attachment_unavailable",
+          status: "unsafe",
+        });
+        expect(response.body).not.toContain(directory);
+      },
+    );
+
+    it("defers picture reads during restore, then serves the image", async () => {
+      const { url } = await uploadPicture();
+      await maintenanceGate.runRestore(async () => {
+        const result = await app.inject({ url, headers: imageHeaders });
+        expect(result.statusCode).toBe(503);
+        expect(result.json().code).toBe("maintenance_busy");
+      });
+      expect(
+        (await app.inject({ url, headers: imageHeaders })).statusCode,
+      ).toBe(200);
+    });
+
+    it("bounds simultaneous picture responses and releases capacity after sending", async () => {
+      let release!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let outstanding = 0;
+      app.addHook("onSend", async (request, reply) => {
+        if (request.url.endsWith("/preview") && reply.statusCode === 200) {
+          outstanding++;
+          await hold;
+        }
+      });
+      const { url } = await uploadPicture();
+      const pending = Promise.all(
+        Array.from({ length: 8 }, () =>
+          app.inject({ url, headers: imageHeaders }),
+        ),
+      );
+      try {
+        await vi.waitFor(() => expect(outstanding).toBe(8));
+        const busy = await app.inject({ url, headers: imageHeaders });
+        expect(busy.statusCode).toBe(503);
+        expect(busy.json().code).toBe("preview_busy");
+      } finally {
+        release();
+      }
+      expect(
+        (await pending).every((response) => response.statusCode === 200),
+      ).toBe(true);
+      expect(
+        (await app.inject({ url, headers: imageHeaders })).statusCode,
+      ).toBe(200);
+    });
+
+    it("keeps ordinary file attachments outside the image resource", async () => {
+      const { url } = await uploadPicture("report.pdf");
+      expect(
+        (await app.inject({ url, headers: imageHeaders })).statusCode,
+      ).toBe(415);
+    });
+
+    it("requires a same-origin image request before resolving the attachment", async () => {
+      const url = "/api/chats/a/notes/b/attachments/c/preview";
+      for (const headers of [
+        {},
+        { ...imageHeaders, "sec-fetch-site": "none" },
+        { ...imageHeaders, "sec-fetch-site": "same-site" },
+        {
+          ...imageHeaders,
+          "sec-fetch-mode": "navigate",
+          "sec-fetch-dest": "document",
+        },
+        { ...imageHeaders, "sec-fetch-dest": "empty" },
+        { ...imageHeaders, "sec-fetch-mode": "cors" },
+      ]) {
+        expect((await app.inject({ url, headers })).statusCode).toBe(403);
+      }
+    });
   });
 
   it("opens and reveals scoped managed attachments through privileged routes", async () => {

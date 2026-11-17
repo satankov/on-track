@@ -1,3 +1,19 @@
+import {
+  isLocalFile,
+  useConversationDraft,
+  type ComposerFile,
+} from "./conversation-draft.js";
+import { PicturePreview } from "./PicturePreview.js";
+import { PictureLoadQueue } from "./picture-load-queue.js";
+import { useModalDialog } from "./useModalDialog.js";
+import {
+  MAX_PICTURE_PREVIEW_BYTES,
+  picturePreviewMediaType,
+} from "../domain/picture-preview.js";
+import { MessageExportWorkspace } from "./MessageExportWorkspace.js";
+import { selectedMessageSource } from "./message-export-source.js";
+import { useMessageSelection } from "./useMessageSelection.js";
+import { SharedMessageGradient } from "./SharedMessageGradient.js";
 import { ProjectSearchResults } from "./ProjectSearchResults.js";
 import { findProjectSearchResults } from "./project-search-results.js";
 import { labelDisplayName } from "./label-display.js";
@@ -22,7 +38,6 @@ import {
   type HistoryFilter,
 } from "./history-filters.js";
 import { HighlightText } from "./HighlightText.js";
-import { rehypeSearchHighlight } from "./search-highlight.js";
 import {
   HomeWorkspace,
   type WorkspacePlaceholderState,
@@ -35,11 +50,17 @@ import type {
   ExampleSummary,
   TimelineContent,
 } from "../domain/examples.js";
+import {
+  MessageDestinationPicker,
+  MessageSelectionBar,
+} from "./MessageBatchControls.js";
+import { MessagePopover } from "./MessagePopover.js";
 import { ExamplesSection, GeneralSettingsWorkspace } from "./Examples.js";
 import { useWorkspacePreferences } from "./useWorkspacePreferences.js";
 import type { RailSection } from "./preferences.js";
 import {
   Fragment,
+  useCallback,
   useContext,
   useEffect,
   useId,
@@ -50,11 +71,10 @@ import {
   type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactNode,
-  type RefObject,
 } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { MarkdownMessage } from "./MarkdownMessage.js";
 
 import { BackupSettingsWorkspace } from "./BackupSettingsWorkspace.js";
 import type {
@@ -65,11 +85,19 @@ import type { Chat, ChatDetail, Note } from "../domain/types.js";
 import {
   ACCENTS,
   PERMANENT_LABELS,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+  type BatchNotesInput,
   type Accent,
   type ConfigurableLabel,
   type Label,
 } from "../domain/validation.js";
-import { apiClient, type ApiClient } from "./api.js";
+import {
+  apiClient,
+  attachmentPath,
+  NoteBodyConflictError,
+  type ApiClient,
+} from "./api.js";
 import {
   applyMarkdownAction,
   MARKDOWN_TOOLS,
@@ -104,6 +132,12 @@ const ACCENT_NAMES: Record<Accent, string> = {
   ocean: "Ocean",
   iris: "Iris",
   slate: "Slate",
+  "coral-gradient": "Guava",
+  "amber-gradient": "Honey",
+  "moss-gradient": "Jade",
+  "ocean-gradient": "Lagoon",
+  "iris-gradient": "Orchid",
+  "slate-gradient": "Periwinkle",
 };
 
 const LABEL_MARKS: Partial<Record<Label, string>> = {
@@ -187,6 +221,7 @@ function chatFromDetail(detail: ChatDetail, now = Date.now()): Chat {
     updatedAt: detail.updatedAt,
     archivedAt: detail.archivedAt ?? null,
     pinnedAt: detail.pinnedAt ?? null,
+    manualAlert: detail.manualAlert,
     latestAttentionAt:
       attentionTimestamps.filter((timestamp) => timestamp <= now).at(-1) ??
       null,
@@ -296,20 +331,6 @@ function fileTypeLabel(filename: string, mediaType: string): string {
     ? filename.split(".").pop()?.toUpperCase()
     : "";
   return extension || mediaType.split("/").pop()?.toUpperCase() || "FILE";
-}
-
-function useModalDialog(): RefObject<HTMLDialogElement | null> {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  useLayoutEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog || typeof dialog.showModal !== "function") return;
-    dialog.removeAttribute("open");
-    // Let the native dialog move initial focus and remember its opener. React
-    // autoFocus would move it before showModal can capture the return target.
-    dialog.showModal();
-    return () => dialog.close();
-  }, []);
-  return dialogRef;
 }
 
 function isMobileViewport(): boolean {
@@ -429,7 +450,12 @@ function ProjectAccentPicker({
 }) {
   return (
     <fieldset className="accent-fieldset">
-      <legend>Project accent</legend>
+      <legend>
+        Accent{" "}
+        <span className="accent-selection-name" aria-hidden="true">
+          {ACCENT_NAMES[accent]}
+        </span>
+      </legend>
       <div className="accent-options">
         {ACCENTS.map((value) => (
           <label
@@ -643,16 +669,20 @@ function SubthreadForm({
   );
 }
 
+function confirmChatDeletion(chat: Chat): boolean {
+  const contents = chat.projectId
+    ? "messages and files"
+    : "subthreads, messages and files";
+  return window.confirm(`Delete "${chat.title}" and all of its ${contents}?`);
+}
+
 function ProjectEditWorkspace({
   chat,
   onBack,
   onSubmit,
-  onDelete,
-  onToggleArchived,
   mutationPending,
 }: {
   chat: ChatDetail;
-  onToggleArchived: () => Promise<void>;
   mutationPending: boolean;
   onBack: () => void;
   onSubmit: (input: {
@@ -661,7 +691,6 @@ function ProjectEditWorkspace({
     labelConfiguration: LabelConfiguration;
     collapseLongMessages: boolean;
   }) => Promise<void>;
-  onDelete: () => Promise<void>;
 }) {
   const isSubthread = Boolean(chat.projectId);
   const kind = isSubthread ? "subthread" : "project";
@@ -683,48 +712,13 @@ function ProjectEditWorkspace({
   const [collapseLongMessages, setCollapseLongMessages] = useState(
     chat.collapseLongMessages ?? true,
   );
-  const [error, setError] = useState<{
-    action: "save" | "archive" | "delete";
-    message: string;
-  } | null>(null);
+  const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [archiveStatus, setArchiveStatus] = useState("");
-  const archiveButton = useRef<HTMLButtonElement>(null);
-  const pendingArchiveFocus = useRef(false);
-  useLayoutEffect(() => {
-    if (!mutationPending && pendingArchiveFocus.current) {
-      pendingArchiveFocus.current = false;
-      archiveButton.current?.focus();
-    }
-  }, [mutationPending]);
-
-  async function handleArchive() {
-    setError(null);
-    setArchiveStatus("");
-    pendingArchiveFocus.current = true;
-    try {
-      await onToggleArchived();
-      setArchiveStatus(
-        chat.archivedAt == null
-          ? `${isSubthread ? "Subthread" : "Project"} moved to Archive.`
-          : `${isSubthread ? "Subthread" : "Project"} restored.`,
-      );
-    } catch (caught) {
-      setError({
-        action: "archive",
-        message: errorMessage(
-          caught,
-          "The project archive state could not be saved.",
-        ),
-      });
-    }
-  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setSaving(true);
-    setError(null);
+    setError("");
     try {
       setShowLabelErrors(true);
       const config = labelConfigurationSchema.safeParse(
@@ -741,32 +735,8 @@ function ProjectEditWorkspace({
         collapseLongMessages,
       });
     } catch (caught) {
-      setError({
-        action: "save",
-        message: errorMessage(caught, "The project could not be saved."),
-      });
+      setError(errorMessage(caught, "The project could not be saved."));
       setSaving(false);
-    }
-  }
-
-  async function handleDelete() {
-    if (
-      !window.confirm(
-        `Delete "${chat.title}" and all of its ${isSubthread ? "messages and files" : "subthreads, messages and files"}?`,
-      )
-    ) {
-      return;
-    }
-    setDeleting(true);
-    setError(null);
-    try {
-      await onDelete();
-    } catch (caught) {
-      setError({
-        action: "delete",
-        message: errorMessage(caught, "The project could not be deleted."),
-      });
-      setDeleting(false);
     }
   }
 
@@ -780,29 +750,15 @@ function ProjectEditWorkspace({
         className="project-edit-form project-settings-fields"
         onSubmit={handleSubmit}
       >
-        <div className="project-edit-actions">
-          <button
-            className="settings-back-button"
-            type="button"
-            aria-label="Back to project"
-            onClick={onBack}
-            disabled={saving || deleting || mutationPending}
-          >
-            <ArrowLeftIcon />
-          </button>
-          <button
-            className="button button-primary"
-            type="submit"
-            disabled={saving || deleting || mutationPending}
-          >
-            {saving ? "Saving…" : "Save changes"}
-          </button>
-        </div>
-        {error?.action === "save" && (
-          <p id="project-edit-error" role="alert" className="form-error">
-            {error.message}
-          </p>
-        )}
+        <button
+          className="settings-back-button"
+          type="button"
+          aria-label="Back to project"
+          onClick={onBack}
+          disabled={saving || mutationPending}
+        >
+          <ArrowLeftIcon />
+        </button>
         <div>
           <label className="field-label" htmlFor="project-edit-name">
             {isSubthread ? "Subthread name" : "Project name"}
@@ -829,7 +785,7 @@ function ProjectEditWorkspace({
           onChange={setLabelDrafts}
           glyph={(label) => <LabelGlyph label={label} />}
           showErrors={showLabelErrors}
-          disabled={saving || deleting || mutationPending}
+          disabled={saving || mutationPending}
         />
         <fieldset
           className="project-message-display-fieldset"
@@ -850,46 +806,30 @@ function ProjectEditWorkspace({
             You can still expand or collapse each message.
           </p>
         </fieldset>
-        {error && error.action !== "save" && (
+        {error && (
           <p id="project-edit-error" role="alert" className="form-error">
-            {error.message}
+            {error}
           </p>
         )}
-        <p role="status" className="visually-hidden">
-          {archiveStatus}
-        </p>
-        <div className="project-lifecycle-actions">
-          <button
-            ref={archiveButton}
-            className="button button-quiet"
-            type="button"
-            onClick={handleArchive}
-            disabled={saving || deleting || mutationPending}
-            aria-busy={mutationPending || undefined}
-            aria-describedby={
-              error?.action === "archive"
-                ? "project-edit-error"
-                : "project-archive-help"
-            }
-          >
-            <ArchiveRestoreIcon />
-            {chat.archivedAt == null ? `Archive ${kind}` : `Restore ${kind}`}
-          </button>
-          <p id="project-archive-help" className="field-help">
-            Archiving keeps all messages and files.
-          </p>
-          <button
-            className="button button-danger"
-            type="button"
-            onClick={handleDelete}
-            disabled={saving || deleting || mutationPending}
-          >
-            <TrashIcon />
-            {deleting ? "Deleting…" : `Delete ${kind}`}
-          </button>
-        </div>
+        <button
+          className="button button-primary project-edit-save"
+          type="submit"
+          aria-describedby={error ? "project-edit-error" : undefined}
+          disabled={saving || mutationPending}
+        >
+          {saving ? "Saving…" : "Save changes"}
+        </button>
       </form>
     </main>
+  );
+}
+
+type RailAction = "alert" | "pin" | "archive" | "delete";
+
+function usesMouseHover(pointerType: string): boolean {
+  return (
+    pointerType === "mouse" &&
+    window.matchMedia?.("(hover: hover) and (pointer: fine)").matches === true
   );
 }
 
@@ -903,13 +843,12 @@ function ProjectRail({
   activeId,
   expandedProjects,
   onSelect,
-  onTogglePinned,
-  onRestore,
+  onAction,
   onTemporalBoundary,
   onCreate,
   onSettings,
   navigationDisabled,
-  pinErrors,
+  railErrors,
   projectMutationIds,
 }: {
   homeUtilities?: ReactNode;
@@ -921,17 +860,50 @@ function ProjectRail({
   activeId?: string;
   expandedProjects: ReadonlySet<string>;
   onSelect: (id: string) => void;
-  onTogglePinned: (chat: Chat) => void;
-  onRestore: (chat: Chat) => void;
+  onAction: (chat: Chat, action: RailAction, section: RailSection) => void;
   onTemporalBoundary: () => void;
   onCreate: () => void;
   onSettings: () => void;
   navigationDisabled: boolean;
-  pinErrors: Record<string, string>;
+  railErrors: Record<string, string>;
   projectMutationIds: ReadonlySet<string>;
 }) {
   const [showAll, setShowAll] = useState<ReadonlySet<string>>(() => new Set());
   const [now, setNow] = useState(() => Date.now());
+  const [shortcutsId, setShortcutsId] = useState<string>();
+  const [hoveredRow, setHoveredRow] = useState<string>();
+  const focusShortcuts = useRef<string | undefined>(undefined);
+  const pointerFocus = useRef(false);
+  useEffect(() => {
+    // A Tab from elsewhere in the workspace can be the next entry into the rail.
+    const useKeyboardFocus = () => {
+      pointerFocus.current = false;
+    };
+    document.addEventListener("keydown", useKeyboardFocus, true);
+    return () =>
+      document.removeEventListener("keydown", useKeyboardFocus, true);
+  }, []);
+  useLayoutEffect(() => {
+    if (!shortcutsId || focusShortcuts.current !== shortcutsId) return;
+    focusShortcuts.current = undefined;
+    document
+      .getElementById(`shortcuts-${shortcutsId}`)
+      ?.querySelector<HTMLButtonElement>("button:enabled")
+      ?.focus();
+  }, [shortcutsId]);
+  useEffect(() => {
+    if (!shortcutsId) return;
+    function dismissOutside(event: PointerEvent) {
+      if (
+        !(event.target instanceof Element) ||
+        event.target.closest<HTMLElement>("[data-project-row]")?.dataset
+          .projectRow !== shortcutsId
+      )
+        setShortcutsId(undefined);
+    }
+    document.addEventListener("pointerdown", dismissOutside);
+    return () => document.removeEventListener("pointerdown", dismissOutside);
+  }, [shortcutsId]);
   const boundaryCallback = useRef(onTemporalBoundary);
   const handledTemporalKey = useRef("");
   const pinned = chats.filter(
@@ -1007,19 +979,81 @@ function ProjectRail({
     return () => window.removeEventListener("focus", refresh);
   }, [temporalKey]);
 
-  function renderRow(chat: Chat) {
+  function renderRow(chat: Chat, section: RailSection) {
     const attention = projectAttentionState(chat, now);
-    const error = pinErrors[chat.id];
+    const error = railErrors[chat.id];
     const isPinned = chat.pinnedAt != null;
     const isArchived = chat.archivedAt != null;
+    const rowKey = `${section}-${chat.id}`;
+    const open = shortcutsId === chat.id || hoveredRow === rowKey;
+    const visibleAttention = chat.manualAlert ? "today" : attention;
+    function revealOnFocus() {
+      if (!pointerFocus.current) setShortcutsId(chat.id);
+    }
+    const shortcutsLabel = `Shortcuts for ${chat.title}`;
+    const actionButton = (
+      action: RailAction,
+      name: string,
+      icon: ReactNode,
+      pressed?: boolean,
+    ) => (
+      <button
+        type="button"
+        className="project-shortcut"
+        data-project-action={action}
+        aria-label={name}
+        title={action === "pin" && pressed ? `Unpin ${chat.title}` : name}
+        aria-pressed={pressed}
+        aria-describedby={error ? errorId : undefined}
+        disabled={navigationDisabled || projectMutationIds.has(chat.id)}
+        onClick={() => onAction(chat, action, section)}
+      >
+        {icon}
+      </button>
+    );
     const statusId = `project-status-${chat.id}`;
-    const errorId = `project-pin-error-${chat.id}`;
+    const errorId = `project-action-error-${chat.id}`;
     return (
       <li
         className={`project-row ${chat.projectId ? "project-row--subthread" : ""} ${activeId === chat.id ? "project-row--active" : ""} ${error ? "project-row--error" : ""}`}
         data-accent={chat.accent}
         data-attention-state={attention}
+        data-project-row={chat.id}
+        data-shortcuts-open={open}
         key={chat.id}
+        onPointerEnter={(event) => {
+          if (usesMouseHover(event.pointerType)) setHoveredRow(rowKey);
+        }}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "mouse")
+            setHoveredRow((current) =>
+              current === rowKey ? undefined : current,
+            );
+        }}
+        onPointerDownCapture={(event) => {
+          // Touch and pen focus must not move the title before activation.
+          pointerFocus.current = true;
+          if (usesMouseHover(event.pointerType)) setShortcutsId(undefined);
+        }}
+        onBlur={(event) => {
+          if (
+            event.relatedTarget &&
+            !event.currentTarget.contains(event.relatedTarget)
+          )
+            setShortcutsId((current) =>
+              current === chat.id ? undefined : current,
+            );
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && open) {
+            event.currentTarget
+              .querySelector<HTMLButtonElement>(".project-item")
+              ?.focus();
+            setShortcutsId(undefined);
+            setHoveredRow(undefined);
+            event.stopPropagation();
+          }
+        }}
       >
         <button
           className={`project-item ${activeId === chat.id ? "project-item--active" : ""}`}
@@ -1035,6 +1069,7 @@ function ProjectRail({
           }
           aria-current={activeId === chat.id ? "page" : undefined}
           disabled={navigationDisabled}
+          onFocus={revealOnFocus}
           onClick={() => onSelect(chat.id)}
         >
           <span className="project-item-copy">
@@ -1047,35 +1082,69 @@ function ProjectRail({
             {error && <small>{error}</small>}
           </span>
         </button>
-        <button
-          className="project-pin-button"
-          data-project-pin-id={chat.id}
-          type="button"
-          aria-label={
+        <div
+          className="project-shortcuts"
+          role="group"
+          aria-label={shortcutsLabel}
+          id={`shortcuts-${chat.id}`}
+          onFocus={revealOnFocus}
+          hidden={!open}
+        >
+          {actionButton(
+            "alert",
+            `Alert ${chat.title}`,
+            <span
+              className={`attention-dot attention-dot--${chat.manualAlert ? "today" : "earlier"}`}
+              aria-hidden="true"
+            />,
+            Boolean(chat.manualAlert),
+          )}
+          {!isArchived &&
+            actionButton("pin", `Pin ${chat.title}`, <PinIcon />, isPinned)}
+          {actionButton(
+            "archive",
             isArchived
               ? `Restore ${chat.title} from archive`
-              : `Pin ${chat.title}`
-          }
-          title={isArchived ? "Restore project" : undefined}
-          aria-pressed={isArchived ? undefined : isPinned}
-          aria-describedby={error ? errorId : undefined}
-          disabled={navigationDisabled || projectMutationIds.has(chat.id)}
-          onClick={() => (isArchived ? onRestore(chat) : onTogglePinned(chat))}
+              : `Archive ${chat.title}`,
+            <ArchiveRestoreIcon />,
+          )}
+          {actionButton("delete", `Delete ${chat.title}`, <TrashIcon />)}
+        </div>
+        <button
+          type="button"
+          className="project-shortcuts-disclosure"
+          aria-label={shortcutsLabel}
+          aria-controls={`shortcuts-${chat.id}`}
+          aria-expanded={open}
+          disabled={navigationDisabled}
+          onClick={() => {
+            if (open) {
+              setShortcutsId(undefined);
+              setHoveredRow(undefined);
+            } else {
+              focusShortcuts.current = chat.id;
+              setShortcutsId(chat.id);
+            }
+          }}
         >
-          {isArchived ? <ArchiveRestoreIcon /> : <PinIcon />}
+          {visibleAttention && !open ? (
+            <span
+              className={`attention-dot attention-dot--${visibleAttention} project-attention-dot`}
+              aria-hidden="true"
+            />
+          ) : (
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M5 12h.1M12 12h.1M19 12h.1" strokeWidth="3.5" />
+            </svg>
+          )}
         </button>
-        {attention && (
-          <span
-            className={`attention-dot attention-dot--${attention} project-attention-dot project-attention-dot--${attention}`}
-            aria-hidden="true"
-          />
-        )}
         <span className="visually-hidden" id={statusId}>
           {isArchived
             ? "Archived project. "
             : isPinned
               ? "Pinned project. "
               : ""}
+          {chat.manualAlert && "Manual alert. "}
           {attention === "today"
             ? "Attention today."
             : attention === "earlier"
@@ -1128,8 +1197,8 @@ function ProjectRail({
               visible = [...visible.slice(0, 4), selected];
             return (
               <Fragment key={chat.id}>
-                {renderRow(chat)}
-                {expanded && visible.map(renderRow)}
+                {renderRow(chat, label)}
+                {expanded && visible.map((child) => renderRow(child, label))}
                 {expanded && children.length > 5 && (
                   <li className="subthread-disclosure-row">
                     <button
@@ -1224,15 +1293,11 @@ function ProjectRail({
       </nav>
 
       <footer className="local-footnote">
-        <span className="local-indicator" aria-hidden="true" />
-        <span className="local-footnote-copy">
-          <strong>Local only</strong>
-        </span>
         <button
           className="settings-icon-button"
           type="button"
           onClick={onSettings}
-          aria-label="Settings. Local only."
+          aria-label="Settings"
         >
           <SettingsIcon />
         </button>
@@ -1725,36 +1790,6 @@ function FolderIcon() {
   );
 }
 
-function MessageActionButton({
-  label,
-  children,
-  danger = false,
-  allowReadOnly = false,
-  onClick,
-}: {
-  label: string;
-  children: ReactNode;
-  danger?: boolean;
-  allowReadOnly?: boolean;
-  onClick: () => void;
-}) {
-  const explainReadOnly = useContext(ExampleReadOnlyContext);
-  const blocked = Boolean(explainReadOnly) && !allowReadOnly;
-  return (
-    <button
-      type="button"
-      aria-disabled={blocked || undefined}
-      aria-describedby={blocked ? "example-notice" : undefined}
-      className={`message-action ${danger ? "message-action--danger" : ""}`}
-      aria-label={label}
-      title={label}
-      onClick={blocked ? explainReadOnly : onClick}
-    >
-      {children}
-    </button>
-  );
-}
-
 function MessageLabels({ labels }: { labels: Label[] }) {
   const definitions = useContext(ProjectLabelContext);
   if (labels.length === 0) return null;
@@ -1802,13 +1837,8 @@ function MessageLabelPicker({
       definitions.find((item) => item.id === id) ?? { id, name: id },
     );
   const explainReadOnly = useContext(ExampleReadOnlyContext);
-  const [open, setOpen] = useState(false);
   const [busyLabel, setBusyLabel] = useState<Label>();
   const [error, setError] = useState("");
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const popoverRef = useRef<HTMLDivElement>(null);
-  const popoverId = useId();
   const appliedLabels = note.labels ?? [];
   const permanent = new Set<Label>(PERMANENT_LABELS);
   const availableLabels = definitions
@@ -1819,58 +1849,6 @@ function MessageLabelPicker({
         enabledLabels.includes(label as ConfigurableLabel) ||
         appliedLabels.includes(label),
     );
-
-  useEffect(() => {
-    if (!open) return;
-    const dismiss = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", dismiss);
-    return () => document.removeEventListener("mousedown", dismiss);
-  }, [open]);
-
-  useLayoutEffect(() => {
-    if (!open) return;
-    const trigger = triggerRef.current;
-    const popover = popoverRef.current;
-    const history = rootRef.current?.closest(".history");
-    if (!trigger || !popover || !history) return;
-    let horizontalShift = 0;
-    const position = () => {
-      const button = trigger.getBoundingClientRect();
-      const bounds = history.getBoundingClientRect();
-      const above = Math.max(0, button.top - Math.max(0, bounds.top) - 7);
-      const below = Math.max(
-        0,
-        Math.min(window.innerHeight, bounds.bottom) - button.bottom - 7,
-      );
-      const up = popover.scrollHeight > below && above > below;
-      popover.dataset.side = up ? "up" : "down";
-      popover.style.maxHeight = `${up ? above : below}px`;
-      const menu = popover.getBoundingClientRect();
-      const naturalLeft = menu.left - horizontalShift;
-      const leftEdge = Math.max(0, bounds.left) + 8;
-      const rightEdge = Math.min(window.innerWidth, bounds.right) - 8;
-      horizontalShift =
-        Math.max(leftEdge, Math.min(naturalLeft, rightEdge - menu.width)) -
-        naturalLeft;
-      popover.style.transform = `translateX(${horizontalShift}px)`;
-    };
-    position();
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? undefined
-        : new ResizeObserver(position);
-    observer?.observe(history);
-    observer?.observe(popover);
-    history.addEventListener("scroll", position);
-    window.addEventListener("resize", position);
-    return () => {
-      observer?.disconnect();
-      history.removeEventListener("scroll", position);
-      window.removeEventListener("resize", position);
-    };
-  }, [open]);
 
   async function changeLabel(label: Label, applied: boolean) {
     setBusyLabel(label);
@@ -1885,40 +1863,14 @@ function MessageLabelPicker({
   }
 
   return (
-    <div
-      className={`message-label-picker ${open ? "message-label-picker--open" : ""}`}
-      ref={rootRef}
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && open) {
-          event.preventDefault();
-          setOpen(false);
-          triggerRef.current?.focus();
-        }
-      }}
+    <MessagePopover
+      label="Change labels"
+      icon={<LabelIcon />}
+      onBlocked={explainReadOnly}
+      onOpen={() => setError("")}
     >
-      <button
-        ref={triggerRef}
-        type="button"
-        className="message-action"
-        aria-label="Change labels"
-        aria-disabled={Boolean(explainReadOnly) || undefined}
-        aria-describedby={explainReadOnly ? "example-notice" : undefined}
-        title="Change labels"
-        aria-expanded={open}
-        aria-controls={popoverId}
-        onClick={() => {
-          if (explainReadOnly) {
-            explainReadOnly();
-            return;
-          }
-          setOpen((current) => !current);
-          setError("");
-        }}
-      >
-        <LabelIcon />
-      </button>
-      {open && (
-        <div className="message-label-popover" id={popoverId} ref={popoverRef}>
+      {() => (
+        <>
           <fieldset>
             <legend>Message labels</legend>
             {availableLabels.map((label) => {
@@ -1953,54 +1905,96 @@ function MessageLabelPicker({
               {error}
             </p>
           )}
-        </div>
+        </>
       )}
-    </div>
+    </MessagePopover>
   );
 }
 
-const messageMarkdownComponents: Components = {
-  table: ({ node, ...props }) => {
-    void node;
-    return (
-      <div
-        className="message-table-scroll"
-        role="region"
-        aria-label="Scrollable table"
-        tabIndex={0}
-      >
-        <table {...props} />
-      </div>
-    );
-  },
-  a: ({ node, ...props }) => {
-    // The Markdown AST node is not a DOM attribute.
-    void node;
-    return props.href?.startsWith("#") ? (
-      <a {...props} />
-    ) : (
-      <a {...props} target="_blank" rel="noopener noreferrer" />
-    );
-  },
-};
-
-function MarkdownMessage({
-  body,
-  searchTerms,
+function MessageMoreActions({
+  copied,
+  onContinue,
+  onSelect,
+  onCopy,
+  onEdit,
+  onDelete,
+  onOpenInHistory,
 }: {
-  body: string;
-  searchTerms: string[];
+  copied: boolean;
+  onContinue?: () => void;
+  onSelect?: () => void;
+  onCopy: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onOpenInHistory?: () => void;
 }) {
-  if (!body.trim()) return null;
+  const explainReadOnly = useContext(ExampleReadOnlyContext);
+  const items = [
+    { label: "Select messages", icon: <CheckIcon />, action: onSelect },
+    {
+      label: "Continue in subthread",
+      icon: <SubthreadIcon />,
+      action: onContinue,
+      blocked: explainReadOnly,
+    },
+    { label: "Copy message", icon: <CopyIcon />, action: onCopy },
+    {
+      label: "Edit message",
+      icon: <EditIcon />,
+      action: onEdit,
+      blocked: explainReadOnly,
+    },
+    {
+      label: "Delete message",
+      icon: <TrashIcon />,
+      action: onDelete,
+      blocked: explainReadOnly,
+      danger: true,
+    },
+    { label: "Open message in history", action: onOpenInHistory },
+  ];
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[[rehypeSearchHighlight, { terms: searchTerms }]]}
-      skipHtml
-      components={messageMarkdownComponents}
-    >
-      {body}
-    </ReactMarkdown>
+    <>
+      <MessagePopover
+        label="More message actions"
+        menu
+        icon={
+          copied ? (
+            <CheckIcon />
+          ) : (
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 12h1m6.5 0h1m6.5 0h1" strokeWidth="3" />
+            </svg>
+          )
+        }
+      >
+        {() =>
+          items.map(
+            ({ label, icon, action, blocked, danger }) =>
+              action && (
+                <button
+                  key={label}
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  className={`message-menu-item ${danger ? "message-menu-item--danger" : ""}`}
+                  aria-disabled={blocked ? true : undefined}
+                  aria-describedby={blocked ? "example-notice" : undefined}
+                  onClick={blocked ?? action}
+                >
+                  {icon}
+                  {label}
+                </button>
+              ),
+          )
+        }
+      </MessagePopover>
+      {copied && (
+        <span className="visually-hidden" role="status">
+          Message copied
+        </span>
+      )}
+    </>
   );
 }
 
@@ -2010,15 +2004,17 @@ function syncClippedMessageFocus(
 ) {
   const clipBottom =
     bodyElement.getBoundingClientRect().top + MESSAGE_COLLAPSED_HEIGHT_PX;
-  for (const link of bodyElement.querySelectorAll<HTMLAnchorElement>("a")) {
+  for (const control of bodyElement.querySelectorAll<HTMLElement>(
+    "a, input[type=checkbox]",
+  )) {
     const clipped =
-      collapsed && link.getBoundingClientRect().bottom > clipBottom;
+      collapsed && control.getBoundingClientRect().bottom > clipBottom;
     if (clipped) {
-      link.dataset.messageClippedLink = "true";
-      link.tabIndex = -1;
-    } else if (link.dataset.messageClippedLink === "true") {
-      delete link.dataset.messageClippedLink;
-      link.removeAttribute("tabindex");
+      control.dataset.messageClippedControl = "true";
+      control.tabIndex = -1;
+    } else if (control.dataset.messageClippedControl === "true") {
+      delete control.dataset.messageClippedControl;
+      control.removeAttribute("tabindex");
     }
   }
   for (const table of bodyElement.querySelectorAll<HTMLDivElement>(
@@ -2041,7 +2037,9 @@ function CollapsibleMessageBody({
   body,
   searchTerms,
   collapseLongMessages,
+  onTaskChange,
 }: {
+  onTaskChange?: (body: string) => Promise<void>;
   body: string;
   searchTerms: string[];
   collapseLongMessages: boolean;
@@ -2051,6 +2049,26 @@ function CollapsibleMessageBody({
   const [isLong, setIsLong] = useState(false);
   const [expanded, setExpanded] = useState(!collapseLongMessages);
   const collapsed = isLong && !expanded;
+  const inFlight = useRef(false);
+  const [savingTask, setSavingTask] = useState<{
+    original: string;
+    updated: string;
+  }>();
+  const [taskError, setTaskError] = useState("");
+  async function changeTask(nextBody: string) {
+    if (!onTaskChange || inFlight.current) return;
+    inFlight.current = true;
+    setSavingTask({ original: body, updated: nextBody });
+    setTaskError("");
+    try {
+      await onTaskChange(nextBody);
+    } catch (caught) {
+      setTaskError(errorMessage(caught, "The task could not be saved."));
+    } finally {
+      inFlight.current = false;
+      setSavingTask(undefined);
+    }
+  }
 
   useLayoutEffect(() => {
     const bodyElement = bodyRef.current;
@@ -2092,9 +2110,19 @@ function CollapsibleMessageBody({
         }
       >
         <div className="message-body note-body" id={contentId} ref={bodyRef}>
-          <MarkdownMessage body={body} searchTerms={searchTerms} />
+          <MarkdownMessage
+            body={savingTask?.original === body ? savingTask.updated : body}
+            searchTerms={searchTerms}
+            pending={Boolean(savingTask)}
+            onChange={onTaskChange && changeTask}
+          />
         </div>
       </div>
+      {taskError && (
+        <p role="alert" className="attachment-action-error">
+          {taskError}
+        </p>
+      )}
       {isLong && (
         <button
           className="message-collapse-toggle"
@@ -2112,10 +2140,12 @@ function CollapsibleMessageBody({
 }
 
 function AttachmentList({
+  pictureLoads,
   note,
   searchTerms,
   onAction,
 }: {
+  pictureLoads: PictureLoadQueue;
   note: Note;
   searchTerms: string[];
   onAction: (
@@ -2125,9 +2155,22 @@ function AttachmentList({
   ) => Promise<void>;
 }) {
   const explainReadOnly = useContext(ExampleReadOnlyContext);
+  // A restored backup can reuse every ID, size and timestamp from an earlier visit.
+  const previewVisit = useId();
   const [busyAction, setBusyAction] = useState<string>();
   const [actionError, setActionError] = useState<string>();
   if (!note.attachments?.length) return null;
+
+  const candidates = note.attachments.filter(
+    (attachment) =>
+      !explainReadOnly &&
+      (attachment.status ?? "available") === "available" &&
+      picturePreviewMediaType(attachment.filename),
+  );
+  const multiplePictures =
+    candidates.filter(
+      (attachment) => attachment.byteSize <= MAX_PICTURE_PREVIEW_BYTES,
+    ).length > 1;
 
   async function runAction(attachmentId: string, action: "open" | "reveal") {
     if (explainReadOnly) {
@@ -2150,7 +2193,10 @@ function AttachmentList({
   }
 
   return (
-    <div className="attachment-list" aria-label="Message attachments">
+    <div
+      className={`attachment-list${multiplePictures ? " attachment-list--pictures" : ""}`}
+      aria-label="Message attachments"
+    >
       {note.attachments.map((attachment) => {
         const status = attachment.status ?? "available";
         const openCapability =
@@ -2172,11 +2218,29 @@ function AttachmentList({
         const openBusy = busyAction === `${attachment.id}:open`;
         const revealBusy = busyAction === `${attachment.id}:reveal`;
         const modifiedAt = attachment.modifiedAt ?? attachment.createdAt;
+        const picture = candidates.includes(attachment);
+        const oversized =
+          picture && attachment.byteSize > MAX_PICTURE_PREVIEW_BYTES;
+        const previewSource =
+          picture && !oversized
+            ? `${attachmentPath(note.chatId, note.id, attachment.id, "preview")}?v=${modifiedAt}-${attachment.byteSize}-${encodeURIComponent(previewVisit)}`
+            : undefined;
         return (
           <div className="attachment-card" key={attachment.id}>
-            <span className="attachment-type" aria-hidden="true">
-              {fileTypeLabel(attachment.filename, attachment.mediaType)}
-            </span>
+            {previewSource && (
+              <PicturePreview
+                key={previewSource + (multiplePictures ? ":compact" : "")}
+                compact={multiplePictures}
+                filename={attachment.filename}
+                source={previewSource}
+                queue={pictureLoads}
+              />
+            )}
+            {(!previewSource || !multiplePictures) && (
+              <span className="attachment-type" aria-hidden="true">
+                {fileTypeLabel(attachment.filename, attachment.mediaType)}
+              </span>
+            )}
             <span className="attachment-copy">
               <strong>
                 <HighlightText text={attachment.filename} terms={searchTerms} />
@@ -2203,6 +2267,11 @@ function AttachmentList({
                   `${formatFileSize(attachment.byteSize)} · ${formatAttachmentModifiedCompact(modifiedAt)}`
                 )}
               </small>
+              {oversized && (
+                <small className="attachment-status--warning">
+                  Image is too large to preview.
+                </small>
+              )}
             </span>
             <span className="attachment-actions">
               <button
@@ -2268,7 +2337,18 @@ function AttachmentList({
   );
 }
 
+type TimelinePosition = Pick<Note, "id" | "createdAt"> & {
+  positionId?: string;
+};
+
+function compareTimelinePosition(a: TimelinePosition, b: TimelinePosition) {
+  const aKey = a.positionId ?? a.id;
+  const bKey = b.positionId ?? b.id;
+  return a.createdAt - b.createdAt || (aKey < bKey ? -1 : aKey > bKey ? 1 : 0);
+}
+
 function MessageGroups({
+  gradient,
   notes,
   searchTerms,
   futureStartId,
@@ -2280,13 +2360,23 @@ function MessageGroups({
   onDeleteNote,
   onEditNote,
   onSetNoteLabel,
+  onTaskChange,
   onOpenInHistory,
   onContinue,
+  onStartSelection,
+  selected,
+  onToggleSelected,
+  selectionLocked,
   subthreads = [],
   showDetachedContinuations = true,
   onNavigate,
 }: {
+  gradient: boolean;
   onContinue?: (note: Note) => void;
+  onStartSelection?: (note: Note) => void;
+  selected?: ReadonlySet<string>;
+  onToggleSelected: (id: string, extendRange?: boolean) => void;
+  selectionLocked: boolean;
   subthreads?: Chat[];
   showDetachedContinuations?: boolean;
   onNavigate?: (
@@ -2309,8 +2399,11 @@ function MessageGroups({
   onDeleteNote: (note: Note) => void;
   onEditNote: (note: Note) => void;
   onSetNoteLabel: (note: Note, label: Label, applied: boolean) => Promise<void>;
+  onTaskChange?: (note: Note, body: string) => Promise<void>;
   onOpenInHistory?: (note: Note) => void;
 }) {
+  const definitions = useContext(ProjectLabelContext);
+  const [pictureLoads] = useState(() => new PictureLoadQueue());
   type Continuation = {
     id: string;
     createdAt: number;
@@ -2333,15 +2426,40 @@ function MessageGroups({
       }
     }
   }
-  entries.sort((a, b) => {
-    const aKey = "continuation" in a ? a.positionId : a.id;
-    const bKey = "continuation" in b ? b.positionId : b.id;
-    return (
-      a.createdAt - b.createdAt || (aKey < bKey ? -1 : aKey > bKey ? 1 : 0)
-    );
-  });
+  if (entries.length > notes.length) entries.sort(compareTimelinePosition);
+
+  function shiftRangeTarget(event: MouseEvent<HTMLElement>) {
+    if (!selected || selectionLocked || !event.shiftKey || event.button !== 0)
+      return;
+    const target = event.target;
+    if (
+      !(target instanceof Element) ||
+      target.closest(
+        "a, button, dialog, input, label, select, textarea, summary, [tabindex='0']",
+      )
+    )
+      return;
+    return target.closest<HTMLElement>(".message-row");
+  }
+
   return (
-    <div className="message-groups">
+    <SharedMessageGradient
+      active={gradient}
+      className="message-groups"
+      onMouseDown={(event) => {
+        // Shift-clicking text can otherwise also extend the browser's text selection.
+        if (shiftRangeTarget(event)) event.preventDefault();
+      }}
+      onClick={(event) => {
+        const row = shiftRangeTarget(event);
+        if (row?.dataset.noteId) {
+          row
+            .querySelector<HTMLElement>("[data-select-note]")
+            ?.focus({ preventScroll: true });
+          onToggleSelected(row.dataset.noteId, true);
+        }
+      }}
+    >
       {groupNotesByDay(entries).map((group) => {
         const futureStartIndex = group.notes.findIndex(
           (note) => note.id === futureStartId,
@@ -2391,7 +2509,14 @@ function MessageGroups({
                 const copied = copiedNoteId === note.id;
                 const participant = Boolean(note.sender);
                 return (
-                  <Fragment key={note.id}>
+                  <ProjectLabelContext.Provider
+                    key={note.id}
+                    value={
+                      note.labelSnapshots?.length
+                        ? definitions.concat(note.labelSnapshots)
+                        : definitions
+                    }
+                  >
                     {!futureStartsGroup && note.id === futureStartId && (
                       <li
                         key="future-boundary"
@@ -2413,102 +2538,106 @@ function MessageGroups({
                       data-note-id={note.id}
                       data-created-at={note.createdAt}
                       tabIndex={-1}
-                      className={`message-row ${onOpenInHistory ? "message-row--search" : ""} ${participant ? "message-row--participant" : "message-row--own"}`}
+                      data-selected={
+                        selected ? selected.has(note.id) : undefined
+                      }
+                      className={`message-row ${participant ? "message-row--participant" : "message-row--own"}`}
                       style={{ gridRow: noteIndex + 1 }}
                     >
-                      <div className="message-stack">
-                        <div className="message-context">
-                          <article className="message-bubble">
-                            {note.sender && (
-                              <p
-                                className="message-sender"
-                                data-sender-color={senderColor(note.sender)}
-                              >
-                                <HighlightText
-                                  text={note.sender}
-                                  terms={searchTerms}
-                                />
-                              </p>
-                            )}
-                            <AttachmentList
-                              searchTerms={searchTerms}
-                              note={note}
-                              onAction={onAttachmentAction}
-                            />
-                            <CollapsibleMessageBody
-                              searchTerms={searchTerms}
-                              key={String(collapseLongMessages)}
-                              body={note.body}
-                              collapseLongMessages={collapseLongMessages}
-                            />
-                            <footer className="message-footer">
-                              <MessageLabels labels={note.labels ?? []} />
-                              <time
-                                className="message-time"
-                                dateTime={new Date(
-                                  note.createdAt,
-                                ).toISOString()}
-                              >
-                                {formatMessageTime(note.createdAt)}
-                              </time>
-                            </footer>
-                          </article>
-                          {onOpenInHistory && (
-                            <button
-                              type="button"
-                              className="message-history-button"
-                              aria-label="Open message in history"
-                              title="Open in history"
-                              onClick={() => onOpenInHistory(note)}
-                            >
-                              <svg
-                                viewBox="0 0 24 24"
-                                aria-hidden="true"
-                                focusable="false"
-                              >
-                                <path d="m9 10-5 5 5 5M4 15h10a6 6 0 0 0 0-12h-2" />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
-                        <div
-                          className="message-actions"
-                          aria-label="Message actions"
-                        >
-                          <MessageLabelPicker
-                            note={note}
-                            enabledLabels={enabledLabels}
-                            onToggle={onSetNoteLabel}
+                      {selected && (
+                        <label className="message-selection-check">
+                          <input
+                            type="checkbox"
+                            data-select-note={note.id}
+                            aria-label={`Select message: ${note.body.trim().slice(0, 90) || note.attachments?.[0]?.filename || formatMessageTime(note.createdAt)}`}
+                            checked={selected.has(note.id)}
+                            disabled={selectionLocked}
+                            aria-keyshortcuts="Shift+Space"
+                            onChange={(event) =>
+                              onToggleSelected(
+                                note.id,
+                                "shiftKey" in event.nativeEvent &&
+                                  event.nativeEvent.shiftKey === true,
+                              )
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === " " && event.shiftKey) {
+                                event.preventDefault();
+                                if (!event.repeat)
+                                  onToggleSelected(note.id, true);
+                              }
+                            }}
                           />
-                          {onContinue && (
-                            <MessageActionButton
-                              label="Continue in subthread"
-                              onClick={() => onContinue(note)}
+                        </label>
+                      )}
+                      <div className="message-stack">
+                        <article className="message-bubble">
+                          {note.sender && (
+                            <p
+                              className="message-sender"
+                              data-sender-color={senderColor(note.sender)}
                             >
-                              <SubthreadIcon />
-                            </MessageActionButton>
+                              <HighlightText
+                                text={note.sender}
+                                terms={searchTerms}
+                              />
+                            </p>
                           )}
-                          <MessageActionButton
-                            allowReadOnly
-                            label={copied ? "Message copied" : "Copy message"}
-                            onClick={() => onCopyNote(note)}
+                          <AttachmentList
+                            pictureLoads={pictureLoads}
+                            searchTerms={searchTerms}
+                            note={note}
+                            onAction={onAttachmentAction}
+                          />
+                          <CollapsibleMessageBody
+                            searchTerms={searchTerms}
+                            key={String(collapseLongMessages)}
+                            body={note.body}
+                            onTaskChange={
+                              onTaskChange && !selected
+                                ? (body) => onTaskChange(note, body)
+                                : undefined
+                            }
+                            collapseLongMessages={collapseLongMessages}
+                          />
+                          <footer className="message-footer">
+                            <MessageLabels labels={note.labels ?? []} />
+                            <time
+                              className="message-time"
+                              dateTime={new Date(note.createdAt).toISOString()}
+                            >
+                              {formatMessageTime(note.createdAt)}
+                            </time>
+                          </footer>
+                        </article>
+                        {!selected && (
+                          <div
+                            className="message-actions"
+                            aria-label="Message actions"
                           >
-                            {copied ? <CheckIcon /> : <CopyIcon />}
-                          </MessageActionButton>
-                          <MessageActionButton
-                            label="Edit message"
-                            onClick={() => onEditNote(note)}
-                          >
-                            <EditIcon />
-                          </MessageActionButton>
-                          <MessageActionButton
-                            label="Delete message"
-                            danger
-                            onClick={() => onDeleteNote(note)}
-                          >
-                            <TrashIcon />
-                          </MessageActionButton>
-                        </div>
+                            <MessageLabelPicker
+                              note={note}
+                              enabledLabels={enabledLabels}
+                              onToggle={onSetNoteLabel}
+                            />
+                            <MessageMoreActions
+                              copied={copied}
+                              onContinue={
+                                onContinue && (() => onContinue(note))
+                              }
+                              onSelect={
+                                onStartSelection &&
+                                (() => onStartSelection(note))
+                              }
+                              onCopy={() => onCopyNote(note)}
+                              onEdit={() => onEditNote(note)}
+                              onDelete={() => onDeleteNote(note)}
+                              onOpenInHistory={
+                                onOpenInHistory && (() => onOpenInHistory(note))
+                              }
+                            />
+                          </div>
+                        )}
                       </div>
                       {subthreads
                         .filter(
@@ -2529,23 +2658,29 @@ function MessageGroups({
                           </div>
                         ))}
                     </li>
-                  </Fragment>
+                  </ProjectLabelContext.Provider>
                 );
               })}
             </ol>
           </section>
         );
       })}
-    </div>
+    </SharedMessageGradient>
   );
 }
 
 function ChatWorkspace({
+  alwaysShowMessageTime,
   chats = [],
   projectApi,
+  onBatchNotes,
   onNewSubthread,
+  subthreadBusy = false,
   onNavigate,
   navigationTarget,
+  onSearchDestinationOpened,
+  onOpenSearchResult,
+  onTaskChange,
   sendFeedback,
   exampleCopyAction,
   exampleError,
@@ -2560,6 +2695,9 @@ function ChatWorkspace({
   editingNote,
   editingAttachmentIds,
   pendingFiles,
+  draftNotice,
+  draftLocked = false,
+  uploadFailed = false,
   historyFilter,
   saving,
   senderOpen,
@@ -2585,15 +2723,21 @@ function ChatWorkspace({
   copiedNoteId,
   navigationDisabled,
 }: {
+  alwaysShowMessageTime: boolean;
   chats?: Chat[];
   projectApi?: Pick<ApiClient, "getProject">;
+  onBatchNotes?: (input: BatchNotesInput) => Promise<void>;
   onNewSubthread?: (sourceNoteId?: string) => void;
+  subthreadBusy?: boolean;
   onNavigate?: (
     chatId: string,
     noteId?: string,
     fallback?: ReadingPosition,
   ) => void;
-  navigationTarget?: ReadingPosition;
+  navigationTarget?: ReadingPosition & { fromSearch?: boolean };
+  onOpenSearchResult?: (chatId: string, noteId: string) => void;
+  onSearchDestinationOpened?: () => void;
+  onTaskChange?: (note: Note, body: string) => Promise<void>;
   sendFeedback?: SendFeedback;
   readingPositions: Map<string, ReadingPosition>;
   searchQueries: Map<string, string>;
@@ -2607,7 +2751,10 @@ function ChatWorkspace({
   error: string;
   editingNote?: Note;
   editingAttachmentIds: string[];
-  pendingFiles: File[];
+  pendingFiles: ComposerFile[];
+  draftNotice?: ReactNode;
+  draftLocked?: boolean;
+  uploadFailed?: boolean;
   historyFilter: HistoryFilter;
   saving: boolean;
   senderOpen: boolean;
@@ -2714,6 +2861,20 @@ function ChatWorkspace({
   );
   const searchToggleRef = useRef<HTMLButtonElement>(null);
   const searchId = useId();
+  const clearDestination = useRef<() => void>(() => {});
+  const highlightDestination = useCallback((row: HTMLElement) => {
+    clearDestination.current();
+    row.setAttribute("data-search-destination", "");
+    const timer = window.setTimeout(
+      () => row.removeAttribute("data-search-destination"),
+      900,
+    );
+    clearDestination.current = () => {
+      window.clearTimeout(timer);
+      row.removeAttribute("data-search-destination");
+    };
+  }, []);
+  useLayoutEffect(() => () => clearDestination.current(), []);
   const beforeFilterChange = useHistoryPosition(
     historyRef,
     detail.id,
@@ -2721,6 +2882,7 @@ function ChatWorkspace({
     readingPositions,
     Boolean(explainReadOnly),
     `${projectSearchActive ? "project:" : ""}${searchQuery.key}`,
+    highlightDestination,
   );
   useLayoutEffect(() => {
     if (!navigationTarget) return;
@@ -2732,17 +2894,16 @@ function ChatWorkspace({
         ...history.querySelectorAll<HTMLElement>("[data-note-id]"),
       ].find((item) => item.dataset.noteId === navigationTarget.noteId);
       row?.focus({ preventScroll: true });
+      if (navigationTarget.fromSearch) {
+        if (row) highlightDestination(row);
+        onSearchDestinationOpened?.();
+      }
     });
     return () => cancelAnimationFrame(frame);
-  }, [navigationTarget]);
+  }, [navigationTarget, highlightDestination, onSearchDestinationOpened]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   useSendFeedback(composerRef, historyRef, sendFeedback);
-  const fileDrop = useComposerFileDrop(
-    composerRef,
-    saving || Boolean(explainReadOnly),
-    onFilesSelected,
-  );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const markdownToolsId = useId();
   const senderToolsId = useId();
@@ -2782,18 +2943,50 @@ function ChatWorkspace({
   const searchMatches = searchNotes.filter((note) =>
     matchesSearch(searchDocuments.get(note.id)!, searchQuery),
   );
-  const visibleNotes = searchMatches.filter((note) => {
-    return historyFilter.every((filter) => {
-      if (filter === "attachments") return hasAttachments(note);
-      if (filter === "links") return linkedNoteIds.has(note.id);
-      return (note.labels ?? []).includes(filter.slice(6) as Label);
-    });
-  });
+  const visibleNotes = searchMatches
+    .filter((note) => {
+      return historyFilter.every((filter) => {
+        if (filter === "attachments") return hasAttachments(note);
+        if (filter === "links") return linkedNoteIds.has(note.id);
+        return (note.labels ?? []).includes(filter.slice(6) as Label);
+      });
+    })
+    .sort(compareTimelinePosition);
   const projectResults = useMemo(
     () => findProjectSearchResults(projectConversations, searchQuery),
     [projectConversations, searchQuery],
   );
   const visibleIds = new Set(visibleNotes.map((note) => note.id));
+  const workspaceRef = useRef<HTMLElement>(null);
+  const batch = useMessageSelection(
+    historyRef,
+    workspaceRef,
+    visibleIds,
+    onBatchNotes,
+    (selected) =>
+      selectedMessageSource(
+        detail.projectId
+          ? [root?.title ?? "Project", detail.title]
+          : [detail.title],
+        visibleNotes,
+        selected,
+        definitions,
+      ),
+  );
+  const canSelectMessages = Boolean(
+    onBatchNotes &&
+    !saving &&
+    !editingNote &&
+    !projectSearchActive &&
+    !searchQuery.error &&
+    visibleNotes.length,
+  );
+  const noticeDestination = batch.notice?.destination;
+  const fileDrop = useComposerFileDrop(
+    composerRef,
+    saving || draftLocked || Boolean(explainReadOnly) || Boolean(batch.stage),
+    onFilesSelected,
+  );
   const timelineNow = useTimelineNow(visibleNotes);
   const futureStartId = visibleNotes.find(
     (note) => note.createdAt > timelineNow,
@@ -3011,6 +3204,7 @@ function ChatWorkspace({
             "touch"),
       ),
     );
+    if (filterKey(next) !== historyKey) batch.clearOnFilter();
     beforeFilterChange(filterKey(next));
     onHistoryFilterChange(next);
   }
@@ -3029,6 +3223,7 @@ function ChatWorkspace({
   }
 
   function commitSearch(value: string) {
+    if (parseSearchQuery(value).key !== searchQuery.key) batch.clearOnFilter();
     beforeFilterChange(historyKey, parseSearchQuery(value).key);
     setSearchText(value);
   }
@@ -3039,6 +3234,8 @@ function ChatWorkspace({
   }
 
   function openSearch() {
+    batch.clearOnFilter();
+    clearDestination.current();
     const searchDraft = searchQueries.get(detail.id) ?? "";
     beforeFilterChange(historyKey, parseSearchQuery(searchDraft).key);
     setSearchText(searchDraft);
@@ -3046,6 +3243,7 @@ function ChatWorkspace({
   }
 
   function closeSearch() {
+    batch.clearOnFilter();
     beforeFilterChange(historyKey, "");
     setSearchOpen(false);
     searchToggleRef.current?.focus();
@@ -3063,11 +3261,45 @@ function ChatWorkspace({
 
   return (
     <ProjectLabelContext.Provider value={definitions}>
+      {batch.stage === "export" && batch.exportSource && (
+        <MessageExportWorkspace
+          source={batch.exportSource}
+          onBack={batch.back}
+          backIcon={<ArrowLeftIcon />}
+        />
+      )}
+      {(batch.stage === "copy" || batch.stage === "move") && (
+        <MessageDestinationPicker
+          key={batch.stage}
+          chats={chats}
+          sourceId={detail.id}
+          action={batch.stage}
+          count={batch.selected.size}
+          busy={batch.busy}
+          error={batch.error}
+          onBack={batch.back}
+          onConfirm={(destination) => void batch.submit(destination)}
+          backIcon={<ArrowLeftIcon />}
+        />
+      )}
       <main
+        ref={workspaceRef}
+        hidden={batch.isPicker}
+        onKeyDown={(event) => {
+          if (
+            event.key === "Escape" &&
+            batch.stage &&
+            !event.defaultPrevented
+          ) {
+            event.preventDefault();
+            if (batch.stage === "delete") batch.back();
+            else batch.cancel();
+          }
+        }}
         className={`workspace workspace-chat ${explainReadOnly ? "workspace-example" : ""} ${searchOpen ? "workspace-chat--search" : ""}`}
         data-accent={detail.accent}
       >
-        <header className="chat-header">
+        <header className="chat-header" inert={batch.busy}>
           <div className="chat-header-inner">
             <button
               className="back-button"
@@ -3129,7 +3361,7 @@ function ChatWorkspace({
                 type="button"
                 aria-label="New subthread"
                 title="New subthread"
-                disabled={navigationDisabled}
+                disabled={navigationDisabled || subthreadBusy}
                 onClick={() => onNewSubthread()}
               >
                 <SubthreadIcon />
@@ -3158,6 +3390,7 @@ function ChatWorkspace({
                       historyKey,
                       `${checked ? "project:" : ""}${searchQuery.key}`,
                     );
+                    batch.clearOnFilter();
                     setProjectScope(checked);
                   }
                 : undefined
@@ -3190,6 +3423,7 @@ function ChatWorkspace({
         )}
 
         <nav
+          inert={batch.busy}
           className="history-filter"
           aria-label="History filters"
           aria-describedby={filterHelpId}
@@ -3284,6 +3518,23 @@ function ChatWorkspace({
         <section
           ref={historyRef}
           className="history"
+          data-message-time={
+            alwaysShowMessageTime ? "always" : "on-interaction"
+          }
+          onPointerUp={(event) => {
+            if (alwaysShowMessageTime) return;
+            const touch = event.pointerType === "touch";
+            event.currentTarget.toggleAttribute(
+              "data-touch-interaction",
+              touch,
+            );
+            if (!touch || !(event.target instanceof Element)) return;
+            if (event.target.closest("button, a, input, label, [tabindex='0']"))
+              return;
+            event.target
+              .closest<HTMLElement>(".message-row")
+              ?.focus({ preventScroll: true });
+          }}
           tabIndex={-1}
           aria-label={`${detail.title} messages`}
         >
@@ -3358,7 +3609,7 @@ function ChatWorkspace({
                 visibleIds.has(result.note.id),
               )}
               query={searchQuery}
-              onOpen={(chatId, note) => onNavigate?.(chatId, note.id)}
+              onOpen={(chatId, note) => onOpenSearchResult?.(chatId, note.id)}
             />
           ) : projectSearchActive ? (
             <div className="no-notes">
@@ -3409,6 +3660,11 @@ function ChatWorkspace({
             </div>
           ) : (
             <MessageGroups
+              onStartSelection={canSelectMessages ? batch.begin : undefined}
+              selected={batch.stage ? batch.selected : undefined}
+              onToggleSelected={batch.toggle}
+              selectionLocked={batch.stage === "delete" || batch.busy}
+              gradient={detail.accent.endsWith("-gradient")}
               showDetachedContinuations={
                 !searchQuery.key && historyFilter.length === 0
               }
@@ -3416,7 +3672,9 @@ function ChatWorkspace({
                 (chat) => chat.origin?.sourceChatId === detail.id,
               )}
               onContinue={
-                onNewSubthread ? (note) => onNewSubthread(note.id) : undefined
+                onNewSubthread && !subthreadBusy
+                  ? (note) => onNewSubthread(note.id)
+                  : undefined
               }
               onNavigate={onNavigate}
               searchTerms={searchQuery.terms}
@@ -3430,6 +3688,7 @@ function ChatWorkspace({
               onDeleteNote={onDeleteNote}
               onEditNote={beginEditingNote}
               onSetNoteLabel={onSetNoteLabel}
+              onTaskChange={onTaskChange}
               onOpenInHistory={searchQuery.key ? openInHistory : undefined}
             />
           )}
@@ -3439,7 +3698,42 @@ function ChatWorkspace({
           historyRef={historyRef}
           contentKey={`${detail.id}:${historyKey}:${searchQuery.key}`}
         />
-        <footer className="composer-wrap">
+        {batch.stage && !batch.isPicker && (
+          <footer className="composer-wrap">
+            <MessageSelectionBar
+              count={batch.selected.size}
+              source={
+                detail.projectId
+                  ? `${root?.title ?? "Project"} / ${detail.title}`
+                  : detail.title
+              }
+              confirming={batch.stage === "delete"}
+              busy={batch.busy}
+              error={batch.error}
+              onSelectAll={batch.selectAll}
+              onAction={batch.choose}
+              onCancel={batch.stage === "delete" ? batch.back : batch.cancel}
+              onConfirm={() => void batch.submit()}
+            />
+          </footer>
+        )}
+        <footer className="composer-wrap" hidden={Boolean(batch.stage)}>
+          {batch.notice && (
+            <div className="message-batch-notice" role="status">
+              {batch.notice.text}
+              {noticeDestination &&
+                chats.some((chat) => chat.id === noticeDestination) && (
+                  <button
+                    type="button"
+                    className="button button-quiet"
+                    data-open-destination
+                    onClick={() => onNavigate?.(noticeDestination)}
+                  >
+                    Open destination
+                  </button>
+                )}
+            </div>
+          )}
           <SearchSaveStatus
             savedNoteId={sendFeedback?.savedNoteId}
             hidden={
@@ -3450,6 +3744,7 @@ function ChatWorkspace({
             }
           />
           {exampleError}
+          {draftNotice}
           {visibleComposerError && (
             <p role="alert" className="composer-error">
               Your note is still here. {visibleComposerError}
@@ -3498,7 +3793,7 @@ function ChatWorkspace({
             )}
             <fieldset
               className="composer-controls"
-              disabled={Boolean(explainReadOnly)}
+              disabled={Boolean(explainReadOnly) || draftLocked || saving}
             >
               {fileDrop.active && (
                 <div className="composer-drop-target" role="status">
@@ -3533,24 +3828,41 @@ function ChatWorkspace({
                         </button>
                       </span>
                     ))}
-                    {pendingFiles.map((file, index) => (
-                      <span
-                        className="pending-attachment"
-                        key={`${file.name}-${index}`}
-                      >
-                        <span>
-                          <strong>{file.name}</strong>
-                          <small>{formatFileSize(file.size)}</small>
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={`Remove ${file.name}`}
-                          onClick={() => onRemovePendingFile(index)}
+                    {pendingFiles.map((file, index) => {
+                      const name = isLocalFile(file)
+                        ? file.name
+                        : file.filename;
+                      const size = isLocalFile(file)
+                        ? file.size
+                        : file.byteSize;
+                      return (
+                        <span
+                          className="pending-attachment"
+                          key={isLocalFile(file) ? `${name}-${index}` : file.id}
                         >
-                          <XIcon />
-                        </button>
-                      </span>
-                    ))}
+                          <span>
+                            <strong>{name}</strong>
+                            <small>
+                              {!isLocalFile(file) && file.status !== "available"
+                                ? "File unavailable. Remove or reattach it."
+                                : formatFileSize(size)}
+                              {isLocalFile(file) &&
+                                !editingNote &&
+                                (uploadFailed
+                                  ? " · Upload pending"
+                                  : " · Saving…")}
+                            </small>
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={`Remove ${name}`}
+                            onClick={() => onRemovePendingFile(index)}
+                          >
+                            <XIcon />
+                          </button>
+                        </span>
+                      );
+                    })}
                   </div>
                 )}
                 {senderOpen && (
@@ -3711,19 +4023,21 @@ function ChatWorkspace({
                       M↓
                     </span>
                   </button>
-                  <input
-                    ref={fileInputRef}
-                    className="visually-hidden-file"
-                    tabIndex={-1}
-                    type="file"
-                    multiple
-                    aria-label="Attach files"
-                    onChange={(event) => {
-                      fileDrop.clearError();
-                      onFilesSelected(Array.from(event.target.files ?? []));
-                      event.target.value = "";
-                    }}
-                  />
+                  {!draftLocked && (
+                    <input
+                      ref={fileInputRef}
+                      className="visually-hidden-file"
+                      tabIndex={-1}
+                      type="file"
+                      multiple
+                      aria-label="Attach files"
+                      onChange={(event) => {
+                        fileDrop.clearError();
+                        onFilesSelected(Array.from(event.target.files ?? []));
+                        event.target.value = "";
+                      }}
+                    />
+                  )}
                   <button
                     className="composer-icon-button"
                     type="button"
@@ -3802,6 +4116,49 @@ function ChatWorkspace({
   );
 }
 
+function DraftNotice({
+  outgoing,
+}: {
+  outgoing: ReturnType<typeof useConversationDraft>;
+}) {
+  const { session, view } = outgoing;
+  if (!session) return null;
+  if (view.status === "error" || view.status === "conflict") {
+    const reload = view.status === "conflict" || !view.ready;
+    return (
+      <div className="composer-error" role="alert">
+        {view.message}{" "}
+        <button
+          type="button"
+          className="button button-quiet"
+          onClick={() => {
+            if (reload) void session.load(true);
+            else void session.flush().catch(() => {});
+          }}
+        >
+          {view.status === "conflict" ? "Use saved draft" : "Retry"}
+        </button>
+      </div>
+    );
+  }
+  const hasDraft =
+    view.body ||
+    view.files.length ||
+    view.senderOpen ||
+    view.timestampOpen ||
+    view.sender ||
+    view.timestamp;
+  return (
+    <span className="draft-save-status" role="status">
+      {view.status === "saving"
+        ? "Saving draft…"
+        : view.status === "saved" && hasDraft
+          ? "Draft saved"
+          : ""}
+    </span>
+  );
+}
+
 export function App({ api = apiClient }: { api?: ApiClient }) {
   const homeUpdates = useHomeUpdates(api);
   const [narrowHome, setNarrowHome] = useState(
@@ -3818,6 +4175,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     chats: [],
   });
   const { chats, active } = workspace;
+  const outgoing = useConversationDraft(api, active?.id);
   const [expandedProjects, setExpandedProjects] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -3825,9 +4183,15 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     chatId: string;
     sourceNoteId?: string;
   }>();
-  const [navigationTarget, setNavigationTarget] = useState<ReadingPosition>();
+  const [navigationTarget, setNavigationTarget] = useState<
+    ReadingPosition & { fromSearch?: boolean }
+  >();
   const [navigationRevision, setNavigationRevision] = useState(0);
-  const conversationDrafts = useRef(
+  const clearNavigationTarget = useCallback(
+    () => setNavigationTarget(undefined),
+    [],
+  );
+  const conversationSessions = useRef(
     new Map<
       string,
       {
@@ -3848,7 +4212,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [examplesError, setExamplesError] = useState("");
   const [examplesReload, setExamplesReload] = useState(0);
   const workspacePreferences = useWorkspacePreferences(api);
-  const { theme, showExamples, collapsedSections } =
+  const { theme, showExamples, collapsedSections, alwaysShowMessageTime } =
     workspacePreferences.preferences;
   const preferenceWarning = workspacePreferences.warning;
   const [copyingExample, setCopyingExample] = useState(false);
@@ -3899,24 +4263,44 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const pendingNoteMutations = useRef(0);
   const previewTail = useRef<Promise<unknown>>(Promise.resolve());
   const [pendingNoteCount, setPendingNoteCount] = useState(0);
-  const [pinErrors, setPinErrors] = useState<Record<string, string>>({});
+  const [railErrors, setRailErrors] = useState<Record<string, string>>({});
   const [projectMutationIds, setProjectMutationIds] = useState<
     ReadonlySet<string>
   >(() => new Set());
   const projectMutations = useRef(new Set<string>());
-  const pendingPinFocus = useRef<string | undefined>(undefined);
+  const pendingRailFocus = useRef<
+    { chat: Chat; action: RailAction; section: RailSection } | undefined
+  >(undefined);
   useLayoutEffect(() => {
-    const id = pendingPinFocus.current;
-    if (id === undefined || projectMutationIds.has(id)) return;
-    pendingPinFocus.current = undefined;
-    const control = [
-      ...document.querySelectorAll<HTMLButtonElement>("[data-project-pin-id]"),
-    ].find((button) => button.dataset.projectPinId === id);
-    const target = control?.closest("[hidden]")
-      ? control
-          .closest(".project-section")
-          ?.querySelector<HTMLButtonElement>(".rail-section-label")
-      : control;
+    const pending = pendingRailFocus.current;
+    if (!pending || projectMutationIds.has(pending.chat.id)) return;
+    pendingRailFocus.current = undefined;
+    const rows = [
+      ...document.querySelectorAll<HTMLElement>("[data-project-row]"),
+    ];
+    const row = rows.find(
+      (item) => item.dataset.projectRow === pending.chat.id,
+    );
+    const focused = document.activeElement;
+    if (focused && focused !== document.body && !row?.contains(focused)) return;
+    const parent = rows.find(
+      (item) => item.dataset.projectRow === pending.chat.projectId,
+    );
+    const action = row?.querySelector<HTMLButtonElement>(
+      `[data-project-action="${pending.action}"]`,
+    );
+    const fallback = row ?? parent;
+    const target =
+      action && !action.closest("[hidden]")
+        ? action
+        : fallback?.closest("[hidden]")
+          ? fallback
+              .closest(".project-section")
+              ?.querySelector<HTMLButtonElement>(".rail-section-label")
+          : (fallback?.querySelector<HTMLButtonElement>(".project-item") ??
+            document
+              .getElementById(`rail-${pending.section}`)
+              ?.closest("button"));
     target?.focus();
   }, [projectMutationIds]);
   const [searchQueries] = useState(() => new Map<string, string>());
@@ -3924,7 +4308,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     () => new Map<string, ReadingPosition>(),
   );
   const selectionRequest = useRef(0);
-  const pendingSelection = useRef<"example" | "project" | undefined>(undefined);
+  const pendingSelection = useRef<"example" | { chatId: string } | undefined>(
+    undefined,
+  );
   const copiedFocus = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
     if (active?.id !== copiedFocus.current || !copiedFocus.current) return;
@@ -3939,11 +4325,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const summaryRequest = useRef(0);
   const activeId = useRef<string | undefined>(undefined);
   const copyResetTimer = useRef<number | undefined>(undefined);
-  const newMessageSender = useRef("");
-  const newMessageSenderOpen = useRef(false);
   useLayoutEffect(() => {
     if (!active || example) return;
-    conversationDrafts.current.set(active.id, {
+    conversationSessions.current.set(active.id, {
       draft,
       sender: draftSender,
       timestamp: draftTimestamp,
@@ -4186,25 +4570,13 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           : "empty";
 
   function resetSenderComposer() {
-    newMessageSender.current = "";
-    newMessageSenderOpen.current = false;
     setDraftSender("");
     setComposerSenderOpen(false);
   }
 
-  function changeDraftSender(value: string) {
-    setDraftSender(value);
-    if (!editingNote) newMessageSender.current = value;
-  }
-
-  function changeSenderOpen(open: boolean) {
-    setComposerSenderOpen(open);
-    if (!editingNote) newMessageSenderOpen.current = open;
-  }
-
   function rememberConversation() {
     if (!active || example) return;
-    conversationDrafts.current.set(active.id, {
+    conversationSessions.current.set(active.id, {
       draft,
       sender: draftSender,
       timestamp: draftTimestamp,
@@ -4217,16 +4589,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     });
   }
   function restoreConversation(id: string) {
-    const saved = conversationDrafts.current.get(id);
+    const saved = conversationSessions.current.get(id);
     setDraft(saved?.draft ?? "");
     setDraftSender(saved?.sender ?? "");
     setDraftTimestamp(saved?.timestamp ?? "");
     setComposerSenderOpen(saved?.senderOpen ?? false);
     setComposerTimestampOpen(saved?.timestampOpen ?? false);
-    newMessageSender.current = saved?.editing ? "" : (saved?.sender ?? "");
-    newMessageSenderOpen.current = saved?.editing
-      ? false
-      : (saved?.senderOpen ?? false);
     setPendingFiles(saved?.files ?? []);
     setHistoryFilter(saved?.filter ?? []);
     setEditingNote(saved?.editing);
@@ -4236,10 +4604,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     id: string,
     noteId?: string,
     fallback?: ReadingPosition,
+    fromSearch = false,
   ) {
     if (savingNote || copyInProgress.current) return;
     rememberConversation();
-    pendingSelection.current = "project";
+    pendingSelection.current = { chatId: id };
     const request = ++selectionRequest.current;
     setMode("projects");
     setError("");
@@ -4254,7 +4623,12 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         ? detail.notes.find((note) => note.id === noteId)
         : undefined;
       const target = targetNote
-        ? { noteId: targetNote.id, createdAt: targetNote.createdAt, offset: 16 }
+        ? {
+            noteId: targetNote.id,
+            createdAt: targetNote.createdAt,
+            offset: 16,
+            fromSearch,
+          }
         : fallback;
       setNavigationTarget(target);
       if (noteId || fallback) {
@@ -4268,6 +4642,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ...current,
           active: {
             ...detail,
+            manualAlert: summary?.manualAlert ?? detail.manualAlert,
             archivedAt:
               summary?.archivedAt === undefined
                 ? detail.archivedAt
@@ -4317,39 +4692,47 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function createSubthread(title: string) {
     if (!subthreadSource) return;
     const source = subthreadSource;
-    rememberConversation();
-    activeMutationGeneration.current += 1;
-    summaryRequest.current += 1;
-    const chat = await api.createSubthread(source.chatId, {
-      title,
-      ...(source.sourceNoteId ? { sourceNoteId: source.sourceNoteId } : {}),
+    const conversation = chats.find((chat) => chat.id === source.chatId);
+    if (!conversation)
+      throw new Error("The source conversation is no longer available.");
+    // Creating from a child also changes its root's family membership.
+    const ids = conversation.projectId
+      ? [conversation.id, conversation.projectId]
+      : [conversation.id];
+    await runProjectMutation(ids, async () => {
+      rememberConversation();
+      const chat = await api.createSubthread(source.chatId, {
+        title,
+        ...(source.sourceNoteId ? { sourceNoteId: source.sourceNoteId } : {}),
+      });
+      selectionRequest.current += 1;
+      setExample(undefined);
+      setMode("projects");
+      setNavigationTarget(undefined);
+      setExpandedProjects((current) =>
+        new Set(current).add(chat.projectId ?? chat.id),
+      );
+      copiedFocus.current = chat.id;
+      setWorkspace((current) => ({
+        chats: sortChats([
+          ...current.chats.filter((item) => item.id !== chat.id),
+          chat,
+        ]),
+        active: { ...chat, notes: [] },
+      }));
+      restoreConversation(chat.id);
+      setSubthreadSource(undefined);
     });
-    activeMutationGeneration.current += 1;
-    summaryRequest.current += 1;
-    selectionRequest.current += 1;
-    setExample(undefined);
-    setMode("projects");
-    setNavigationTarget(undefined);
-    setExpandedProjects((current) =>
-      new Set(current).add(chat.projectId ?? chat.id),
-    );
-    copiedFocus.current = chat.id;
-    setWorkspace((current) => ({
-      chats: sortChats([
-        ...current.chats.filter((item) => item.id !== chat.id),
-        chat,
-      ]),
-      active: { ...chat, notes: [] },
-    }));
-    restoreConversation(chat.id);
-    setSubthreadSource(undefined);
   }
 
-  async function runProjectMutation(id: string, mutation: () => Promise<void>) {
-    if (projectMutations.current.has(id))
+  async function runProjectMutation(
+    ids: readonly string[],
+    mutation: () => Promise<void>,
+  ) {
+    if (ids.some((id) => projectMutations.current.has(id)))
       throw new Error("Wait for the current project change to finish.");
-    projectMutations.current.add(id);
-    setProjectMutationIds((current) => new Set(current).add(id));
+    for (const id of ids) projectMutations.current.add(id);
+    setProjectMutationIds(new Set(projectMutations.current));
     activeMutationGeneration.current += 1;
     summaryRequest.current += 1;
     try {
@@ -4357,96 +4740,75 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     } finally {
       activeMutationGeneration.current += 1;
       summaryRequest.current += 1;
-      projectMutations.current.delete(id);
-      setProjectMutationIds((current) => {
-        const next = new Set(current);
-        next.delete(id);
-        return next;
-      });
+      for (const id of ids) projectMutations.current.delete(id);
+      setProjectMutationIds(new Set(projectMutations.current));
     }
   }
 
   function clearProjectError(id: string) {
-    setPinErrors((current) => {
+    setRailErrors((current) => {
       const next = { ...current };
       delete next[id];
       return next;
     });
   }
 
-  async function toggleChatPinned(chat: Chat) {
+  async function applyChatAction(
+    chat: Chat,
+    action: Exclude<RailAction, "delete">,
+  ) {
+    const state =
+      action === "pin"
+        ? await api.setChatPinned(chat.id, chat.pinnedAt == null)
+        : action === "archive"
+          ? await api.setChatArchived(chat.id, chat.archivedAt == null)
+          : await api.setChatAlert(chat.id, !chat.manualAlert);
+    setWorkspace((current) => ({
+      active:
+        current.active?.id === chat.id
+          ? { ...current.active, ...state }
+          : current.active,
+      chats: sortChats(
+        current.chats.map((item) =>
+          item.id === chat.id ? { ...item, ...state } : item,
+        ),
+      ),
+    }));
+  }
+
+  async function runRailAction(
+    chat: Chat,
+    action: RailAction,
+    section: RailSection,
+  ) {
     if (projectMutations.current.has(chat.id)) return;
+    if (action === "delete" && !confirmChatDeletion(chat)) return;
     clearProjectError(chat.id);
+    const selection = selectionRequest.current;
     try {
-      await runProjectMutation(chat.id, async () => {
-        const state = await api.setChatPinned(chat.id, chat.pinnedAt == null);
-        setWorkspace((current) => ({
-          active:
-            current.active?.id === chat.id
-              ? { ...current.active, ...state }
-              : current.active,
-          chats: sortChats(
-            current.chats.map((item) =>
-              item.id === chat.id ? { ...item, ...state } : item,
-            ),
-          ),
-        }));
-        pendingPinFocus.current = chat.id;
+      await runProjectMutation([chat.id], async () => {
+        try {
+          if (action === "delete") await deleteChatUnlocked(chat.id);
+          else await applyChatAction(chat, action);
+        } finally {
+          if (selection === selectionRequest.current)
+            pendingRailFocus.current = { chat, action, section };
+        }
       });
     } catch (caught) {
-      setPinErrors((current) => ({
+      setRailErrors((current) => ({
         ...current,
-        [chat.id]: errorMessage(caught, "The project pin could not be saved."),
-      }));
-      pendingPinFocus.current = chat.id;
-    }
-  }
-
-  async function setChatArchived(
-    chat: Chat,
-    archived: boolean,
-    fromSidebar = false,
-  ) {
-    clearProjectError(chat.id);
-    await runProjectMutation(chat.id, async () => {
-      try {
-        const state = await api.setChatArchived(chat.id, archived);
-        setWorkspace((current) => ({
-          active:
-            current.active?.id === chat.id
-              ? { ...current.active, ...state }
-              : current.active,
-          chats: sortChats(
-            current.chats.map((item) =>
-              item.id === chat.id ? { ...item, ...state } : item,
-            ),
-          ),
-        }));
-      } finally {
-        if (fromSidebar) pendingPinFocus.current = chat.id;
-      }
-    });
-  }
-
-  async function restoreChat(chat: Chat) {
-    if (projectMutations.current.has(chat.id)) return;
-    try {
-      await setChatArchived(chat, false, true);
-    } catch (caught) {
-      setPinErrors((current) => ({
-        ...current,
-        [chat.id]: errorMessage(caught, "The project could not be restored."),
+        [chat.id]: errorMessage(
+          caught,
+          "The project change could not be saved.",
+        ),
       }));
     }
   }
 
   async function updateChat(input: Parameters<typeof updateChatUnlocked>[0]) {
     if (active)
-      await runProjectMutation(active.id, () => updateChatUnlocked(input));
-  }
-
-  async function deleteChat() {
-    if (active) await runProjectMutation(active.id, deleteChatUnlocked);
+      await runProjectMutation([active.id], () => updateChatUnlocked(input));
   }
 
   async function updateChatUnlocked(input: {
@@ -4469,8 +4831,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ...chat,
           notes: detail.notes.map((note) => ({
             ...note,
-            labels: note.labels.filter((id) =>
-              projectLabels(chat).some((label) => label.id === id),
+            labels: note.labels.filter(
+              (id) =>
+                projectLabels(chat).some((label) => label.id === id) ||
+                note.labelSnapshots?.some((label) => label.id === id),
             ),
           })),
         }),
@@ -4498,31 +4862,35 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     if (activeId.current === projectId) focusMobileBackButton();
   }
 
-  async function deleteChatUnlocked() {
-    if (!active) return;
-    const projectId = active.id;
-    const selectionAtStart = selectionRequest.current;
+  async function deleteChatUnlocked(projectId: string) {
     await api.deleteChat(projectId);
     const deletedIds = new Set(
       chats
         .filter((chat) => chat.id === projectId || chat.projectId === projectId)
         .map((chat) => chat.id),
     );
+    setSubthreadSource((current) =>
+      current && deletedIds.has(current.chatId) ? undefined : current,
+    );
     for (const id of deletedIds) {
       searchQueries.delete(id);
-      conversationDrafts.current.delete(id);
+      conversationSessions.current.delete(id);
+      outgoing.forget(id);
     }
     setReadingPositions((current) => {
       const next = new Map(current);
       for (const id of deletedIds) next.delete(id);
       return next;
     });
-    const navigationUnchanged = selectionRequest.current === selectionAtStart;
-    if (navigationUnchanged) selectionRequest.current += 1;
+    const pending = pendingSelection.current;
+    if (pending && pending !== "example" && deletedIds.has(pending.chatId)) {
+      selectionRequest.current += 1;
+      pendingSelection.current = undefined;
+    }
     activeMutationGeneration.current += 1;
     setWorkspace((current) => ({
       chats: current.chats
-        .filter((chat) => !deletedIds.has(chat.id))
+        .filter((chat) => chat.id !== projectId && chat.projectId !== projectId)
         .map((chat) =>
           chat.origin?.sourceChatId && deletedIds.has(chat.origin.sourceChatId)
             ? {
@@ -4550,7 +4918,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
               }
             : current.active,
     }));
-    if (navigationUnchanged) {
+    if (activeId.current && deletedIds.has(activeId.current)) {
       setDraft("");
       resetSenderComposer();
       setPendingFiles([]);
@@ -4560,24 +4928,30 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       setError("");
       setEditingNote(undefined);
       setEditingAttachmentIds([]);
-      setMode("projects");
+      setMode((current) => (current === "projectEdit" ? "projects" : current));
     }
   }
 
   async function appendNote() {
-    if (!active || (!draft.trim() && pendingFiles.length === 0) || savingNote)
+    if (!active || savingNote) return;
+    if (
+      editingNote
+        ? !draft.trim() && !pendingFiles.length && !editingAttachmentIds.length
+        : !outgoing.session ||
+          (!outgoing.view.body.trim() && !outgoing.view.files.length)
+    )
       return;
     const projectId = active.id;
     const submittedDraft = draft;
     const submittedSender = draftSender.trim();
     const submittedFiles = pendingFiles;
     const editing = editingNote;
-    const timestampValue = draftTimestamp;
+    const timestampValue = editing ? draftTimestamp : outgoing.view.timestamp;
     setSavingNote(true);
     setError("");
     try {
       const timestamp =
-        (editing || composerTimestampOpen) && timestampValue
+        (editing || outgoing.view.timestampOpen) && timestampValue
           ? fromDateTimeLocalValue(timestampValue)
           : undefined;
       if (editing) {
@@ -4593,19 +4967,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           keepAttachmentIds: editingAttachmentIds,
           files: submittedFiles,
         });
+        setEditingNote(undefined);
+        setEditingAttachmentIds([]);
         if (activeId.current === projectId)
           setSendFeedback({ projectId, attempt, savedNoteId: editing.id });
-        setDraftSender(newMessageSender.current);
-        setComposerSenderOpen(newMessageSenderOpen.current);
       } else {
         const attempt = ++sendAttempt.current;
         setSendFeedback({ projectId, attempt });
-        const note = await api.appendNote(projectId, {
-          body: submittedDraft,
-          ...(submittedSender ? { sender: submittedSender } : {}),
-          ...(timestamp === undefined ? {} : { createdAt: timestamp }),
-          ...(submittedFiles.length === 0 ? {} : { files: submittedFiles }),
-        });
+        const note = await outgoing.session!.send(timestamp);
         if (activeId.current === projectId)
           setSendFeedback({
             projectId,
@@ -4625,7 +4994,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
             projectId,
             (chat) => ({ ...chat, updatedAt: submittedUpdatedAt }),
             (detail) => {
-              const notes = sortNotes([...detail.notes, note]);
+              const notes = sortNotes([
+                ...detail.notes.filter((item) => item.id !== note.id),
+                note,
+              ]);
               return {
                 ...detail,
                 notes,
@@ -4635,7 +5007,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           ),
         );
       }
-      if (activeId.current === projectId) {
+      if (editing && activeId.current === projectId) {
         setDraft((current) => (current === submittedDraft ? "" : current));
         setPendingFiles((current) =>
           current === submittedFiles ? [] : current,
@@ -4645,7 +5017,11 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       }
     } catch (caught) {
       if (activeId.current === projectId) {
-        setError(errorMessage(caught, "The note could not be added."));
+        setError(
+          editing && caught instanceof NoteBodyConflictError
+            ? "This message changed in another window. Your unsaved edit is still here. Copy any changes you want to keep, then cancel and reopen the message to edit the latest version."
+            : errorMessage(caught, "The note could not be added."),
+        );
       }
     } finally {
       setSavingNote(false);
@@ -4653,8 +5029,6 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   }
 
   function startEditingNote(note: Note) {
-    newMessageSender.current = draftSender;
-    newMessageSenderOpen.current = composerSenderOpen;
     setEditingNote(note);
     setEditingAttachmentIds(
       note.attachments?.map((attachment) => attachment.id) ?? [],
@@ -4677,8 +5051,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setEditingNote(undefined);
     setEditingAttachmentIds([]);
     setDraft("");
-    setDraftSender(newMessageSender.current);
-    setComposerSenderOpen(newMessageSenderOpen.current);
+    resetSenderComposer();
     setPendingFiles([]);
     setDraftTimestamp("");
     setComposerTimestampOpen(false);
@@ -4717,6 +5090,25 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     }
   }
 
+  function attachToDraft(files: File[]) {
+    if (
+      outgoing.view.files.length + files.length >
+      MAX_ATTACHMENTS_PER_MESSAGE
+    ) {
+      setError(
+        `A message can have up to ${MAX_ATTACHMENTS_PER_MESSAGE} attachments.`,
+      );
+      return;
+    }
+    const oversized = files.find((file) => file.size > MAX_ATTACHMENT_BYTES);
+    if (oversized) {
+      setError(`${oversized.name} exceeds the 100 MiB attachment limit.`);
+      return;
+    }
+    setError("");
+    outgoing.session?.edit({ files: [...outgoing.view.files, ...files] });
+  }
+
   function addPendingFiles(files: File[]) {
     setPendingFiles((current) => [...current, ...files]);
   }
@@ -4738,15 +5130,62 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     input: {
       body: string;
       sender?: string | null;
-      createdAt: number;
+      createdAt?: number;
       keepAttachmentIds?: string[];
       files?: File[];
     },
   ) {
     if (!active) return;
     const projectId = active.id;
-    const updated = await api.updateNote(projectId, noteToUpdate.id, input);
+    const epoch = databaseEpoch.current;
+    const selection = selectionRequest.current;
+    const mutation = activeMutationGeneration.current;
+    let updated: Note;
+    try {
+      updated = await api.updateNote(projectId, noteToUpdate.id, {
+        ...input,
+        expectedBody: noteToUpdate.body,
+      });
+    } catch (caught) {
+      if (caught instanceof NoteBodyConflictError) {
+        const detail = await api.getChat(projectId);
+        if (
+          epoch === databaseEpoch.current &&
+          selection === selectionRequest.current &&
+          mutation === activeMutationGeneration.current
+        ) {
+          setWorkspace((current) =>
+            commitProjectUpdate(
+              current,
+              projectId,
+              () => chatFromDetail(detail),
+              () => detail,
+            ),
+          );
+        }
+      }
+      throw caught;
+    }
+    if (epoch !== databaseEpoch.current) return;
     activeMutationGeneration.current += 1;
+    if (input.createdAt === undefined) {
+      setWorkspace((current) =>
+        commitProjectUpdate(
+          current,
+          projectId,
+          (chat) => chat,
+          (detail) => ({
+            ...detail,
+            notes: detail.notes.map((note) =>
+              note.id === updated.id && note.body === noteToUpdate.body
+                ? { ...note, body: updated.body }
+                : note,
+            ),
+          }),
+        ),
+      );
+      return;
+    }
     const submittedNotes = sortNotes(
       active.notes.map((note) => (note.id === updated.id ? updated : note)),
     );
@@ -4770,8 +5209,6 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         },
       ),
     );
-    setEditingNote(undefined);
-    setEditingAttachmentIds([]);
   }
 
   async function runNoteMutation<T>(operation: () => Promise<T>): Promise<T> {
@@ -4791,10 +5228,42 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     if (!window.confirm("Delete this message?")) return;
     const projectId = active.id;
     const epoch = databaseEpoch.current;
-    await runNoteMutation(() => api.deleteNote(projectId, note.id));
+    try {
+      await runNoteMutation(() => api.deleteNote(projectId, note.id));
+    } catch (caught) {
+      if (epoch === databaseEpoch.current && activeId.current === projectId)
+        setError(errorMessage(caught, "The message could not be deleted."));
+      return;
+    }
     if (epoch !== databaseEpoch.current) return;
+    const focusedRow =
+      document.activeElement?.closest<HTMLElement>(".message-row");
+    if (
+      activeId.current === projectId &&
+      focusedRow?.dataset.noteId === note.id
+    ) {
+      const rows = [
+        ...(focusedRow
+          .closest(".history")
+          ?.querySelectorAll<HTMLElement>(".message-row") ?? []),
+      ];
+      const index = rows.indexOf(focusedRow);
+      const destination =
+        rows[index + 1] ??
+        rows[index - 1] ??
+        document.querySelector<HTMLElement>("[data-composer-textarea]");
+      destination?.focus({ preventScroll: true });
+    }
     activeMutationGeneration.current += 1;
-    const submittedNotes = active.notes.filter((item) => item.id !== note.id);
+    removeFromSource(active, [note]);
+  }
+
+  function removeFromSource(active: ChatDetail, removed: Note[]) {
+    const projectId = active.id;
+    const removedById = new Map(removed.map((note) => [note.id, note]));
+    const submittedNotes = active.notes.filter(
+      (item) => !removedById.has(item.id),
+    );
     const submittedUpdatedAt = chatActivityFromNotes(active, submittedNotes);
     const submittedDetail = {
       ...active,
@@ -4807,7 +5276,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         projectId,
         (chat) => mergeMessageSummary(chat, submittedDetail),
         (detail) => {
-          const notes = detail.notes.filter((item) => item.id !== note.id);
+          const notes = detail.notes.filter(
+            (item) => !removedById.has(item.id),
+          );
           return {
             ...detail,
             notes,
@@ -4815,8 +5286,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           };
         },
       );
-      next.chats = next.chats.map((chat) =>
-        chat.origin?.sourceNoteId === note.id
+      function detachSource<T extends Chat>(chat: T): T {
+        const sourceId = chat.origin?.sourceNoteId;
+        const note = sourceId && removedById.get(sourceId);
+        return note && chat.origin
           ? {
               ...chat,
               origin: {
@@ -4826,21 +5299,38 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
                 sourceNotePositionId: note.id,
               },
             }
-          : chat,
-      );
-      if (next.active?.origin?.sourceNoteId === note.id) {
-        next.active = {
-          ...next.active,
-          origin: {
-            ...next.active.origin,
-            sourceNoteId: null,
-            sourceNoteCreatedAt: note.createdAt,
-            sourceNotePositionId: note.id,
-          },
-        };
+          : chat;
       }
+      next.chats = next.chats.map(detachSource);
+      if (next.active) next.active = detachSource(next.active);
       return next;
     });
+  }
+
+  async function batchNotes(input: BatchNotesInput) {
+    if (!active || savingNote || pendingSelection.current)
+      throw new Error("Wait for the current change to finish.");
+    const source = active;
+    const ids =
+      input.action === "delete"
+        ? [source.id]
+        : [source.id, input.destinationChatId];
+    setSavingNote(true);
+    try {
+      await runProjectMutation(ids, () =>
+        runNoteMutation(() => api.batchNotes(source.id, input)),
+      );
+      if (input.action !== "copy") {
+        const removedIds = new Set(input.noteIds);
+        removeFromSource(
+          source,
+          source.notes.filter((note) => removedIds.has(note.id)),
+        );
+      }
+      refreshProjectSummaries();
+    } finally {
+      setSavingNote(false);
+    }
   }
 
   async function setNoteLabel(note: Note, label: Label, applied: boolean) {
@@ -4874,6 +5364,15 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   }
 
   async function exportDatabase(selection: ProjectSelection) {
+    const included =
+      selection === "all"
+        ? undefined
+        : new Set(
+            chats
+              .filter((chat) => selection.includes(chat.projectId ?? chat.id))
+              .map((chat) => chat.id),
+          );
+    await Promise.all(outgoing.flush(included));
     const blob = await api.exportDatabase(selection);
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -4913,10 +5412,14 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     invalidate();
     await workspacePreferences.pause();
     try {
+      // Drain local writes before changing databases. A previously rejected save
+      // cannot prevent a user-confirmed replacement or discard a local edit on merge.
+      await Promise.allSettled(outgoing.flush());
       const result = await api.importDatabase(file, options);
       invalidate();
       if (options.mode === "replace") {
-        conversationDrafts.current.clear();
+        conversationSessions.current.clear();
+        outgoing.clear();
         setExpandedProjects(new Set());
         setSubthreadSource(undefined);
         setNavigationTarget(undefined);
@@ -4934,8 +5437,8 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         setEditingNote(undefined);
         setEditingAttachmentIds([]);
         setCopiedNoteId(undefined);
-        setPinErrors({});
-        pendingPinFocus.current = undefined;
+        setRailErrors({});
+        pendingRailFocus.current = undefined;
         setError("");
       }
       try {
@@ -4966,9 +5469,9 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     if (savingNote || copyInProgress.current) return;
     rememberConversation();
     if (active) {
-      const saved = conversationDrafts.current.get(active.id);
+      const saved = conversationSessions.current.get(active.id);
       if (saved)
-        conversationDrafts.current.set(active.id, { ...saved, filter: [] });
+        conversationSessions.current.set(active.id, { ...saved, filter: [] });
     }
     const exampleSlug = example?.slug;
     setExample(undefined);
@@ -5086,8 +5589,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
               });
             } else void selectChat(id);
           }}
-          onTogglePinned={toggleChatPinned}
-          onRestore={restoreChat}
+          onAction={runRailAction}
           onTemporalBoundary={refreshProjectSummaries}
           onCreate={() => {
             selectionRequest.current++;
@@ -5102,7 +5604,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
             }
           }}
           navigationDisabled={savingNote || copyingExample}
-          pinErrors={pinErrors}
+          railErrors={railErrors}
           projectMutationIds={projectMutationIds}
         />
       )}
@@ -5115,6 +5617,10 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
         settingsSection === "general" ? (
           <GeneralSettingsWorkspace
             showExamples={showExamples}
+            alwaysShowMessageTime={alwaysShowMessageTime}
+            onMessageTimeChange={(alwaysShowMessageTime) =>
+              workspacePreferences.update({ alwaysShowMessageTime })
+            }
             onChange={updateExamplesVisibility}
             warning=""
           />
@@ -5140,6 +5646,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
       ) : example ? (
         <ExampleReadOnlyContext.Provider value={explainExampleReadOnly}>
           <ChatWorkspace
+            alwaysShowMessageTime={alwaysShowMessageTime}
             key={`${example.id}:${example.revision}`}
             detail={{ ...example, id: `${example.id}:${example.revision}` }}
             readingPositions={readingPositions}
@@ -5207,18 +5714,20 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           key={active.id}
           chat={active}
           mutationPending={projectMutationIds.has(active.id)}
-          onToggleArchived={() =>
-            setChatArchived(active, active.archivedAt == null)
-          }
           onBack={() => setMode("projects")}
           onSubmit={updateChat}
-          onDelete={deleteChat}
         />
       ) : active ? (
         <ChatWorkspace
+          alwaysShowMessageTime={alwaysShowMessageTime}
           key={`${active.id}:${navigationRevision}`}
           chats={chats}
           projectApi={api}
+          onBatchNotes={batchNotes}
+          subthreadBusy={
+            projectMutationIds.has(active.id) ||
+            projectMutationIds.has(active.projectId ?? active.id)
+          }
           onNewSubthread={(sourceNoteId) =>
             setSubthreadSource({ chatId: active.id, sourceNoteId })
           }
@@ -5226,23 +5735,42 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
             void selectChat(id, noteId, fallback)
           }
           navigationTarget={navigationTarget}
+          onSearchDestinationOpened={clearNavigationTarget}
+          onOpenSearchResult={(id, noteId) =>
+            void selectChat(id, noteId, undefined, true)
+          }
+          onTaskChange={(note, body) =>
+            runNoteMutation(() => updateNote(note, { body }))
+          }
           sendFeedback={
             sendFeedback?.projectId === active.id ? sendFeedback : undefined
           }
           readingPositions={readingPositions}
           searchQueries={searchQueries}
           detail={active}
-          draft={draft}
-          draftSender={draftSender}
-          draftTimestamp={draftTimestamp}
+          draft={editingNote ? draft : outgoing.view.body}
+          draftSender={editingNote ? draftSender : outgoing.view.sender}
+          draftTimestamp={
+            editingNote ? draftTimestamp : outgoing.view.timestamp
+          }
+          draftLocked={!editingNote && !outgoing.view.ready}
+          uploadFailed={
+            outgoing.view.status === "error" ||
+            outgoing.view.status === "conflict"
+          }
+          draftNotice={!editingNote && <DraftNotice outgoing={outgoing} />}
           error={error}
           editingNote={editingNote}
           editingAttachmentIds={editingAttachmentIds}
-          pendingFiles={pendingFiles}
+          pendingFiles={editingNote ? pendingFiles : outgoing.view.files}
           historyFilter={historyFilter}
           saving={savingNote}
-          senderOpen={composerSenderOpen}
-          timestampOpen={composerTimestampOpen}
+          senderOpen={
+            editingNote ? composerSenderOpen : outgoing.view.senderOpen
+          }
+          timestampOpen={
+            editingNote ? composerTimestampOpen : outgoing.view.timestampOpen
+          }
           onBack={backToProjects}
           onCustomize={() => setMode("projectEdit")}
           onCopyNote={copyNote}
@@ -5250,17 +5778,48 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
           onEditNote={startEditingNote}
           onCancelEditNote={cancelEditingNote}
           onDeleteNote={deleteNote}
-          onDraftChange={setDraft}
-          onDraftSenderChange={changeDraftSender}
-          onDraftTimestampChange={setDraftTimestamp}
-          onFilesSelected={addPendingFiles}
+          onDraftChange={
+            editingNote ? setDraft : (body) => outgoing.session?.edit({ body })
+          }
+          onDraftSenderChange={
+            editingNote
+              ? setDraftSender
+              : (sender) => outgoing.session?.edit({ sender })
+          }
+          onDraftTimestampChange={
+            editingNote
+              ? setDraftTimestamp
+              : (timestamp) => outgoing.session?.edit({ timestamp })
+          }
+          onFilesSelected={editingNote ? addPendingFiles : attachToDraft}
           onHistoryFilterChange={setHistoryFilter}
           onRemoveEditingAttachment={removeEditingAttachment}
-          onRemovePendingFile={removePendingFile}
+          onRemovePendingFile={
+            editingNote
+              ? removePendingFile
+              : (index) =>
+                  outgoing.session?.edit({
+                    files: outgoing.view.files.filter((_, i) => i !== index),
+                  })
+          }
           onSetNoteLabel={setNoteLabel}
           onSubmit={appendNote}
-          onSenderOpenChange={changeSenderOpen}
+          onSenderOpenChange={
+            editingNote
+              ? setComposerSenderOpen
+              : (senderOpen) => outgoing.session?.edit({ senderOpen })
+          }
           onToggleTimestamp={() => {
+            if (!editingNote) {
+              const timestampOpen = !outgoing.view.timestampOpen;
+              outgoing.session?.edit({
+                timestampOpen,
+                timestamp:
+                  outgoing.view.timestamp ||
+                  (timestampOpen ? toDateTimeLocalValue(Date.now()) : ""),
+              });
+              return;
+            }
             setComposerTimestampOpen((current) => {
               const next = !current;
               if (next && !draftTimestamp) {

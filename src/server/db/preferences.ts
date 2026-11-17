@@ -1,3 +1,4 @@
+import { CURRENT_SCHEMA_VERSION } from "./database.js";
 import type Database from "better-sqlite3";
 import {
   DEFAULT_PREFERENCES,
@@ -10,6 +11,7 @@ import {
 
 export function readPreferences(
   database: Database.Database,
+  schemaVersion = CURRENT_SCHEMA_VERSION,
 ): WorkspacePreferences {
   const row = database
     .prepare("SELECT * FROM workspace_preferences WHERE id = 1")
@@ -23,6 +25,10 @@ export function readPreferences(
   return preferencesSchema.parse({
     theme: row.theme,
     showExamples: boolean("show_examples"),
+    alwaysShowMessageTime:
+      schemaVersion >= 12
+        ? boolean("always_show_message_time")
+        : DEFAULT_PREFERENCES.alwaysShowMessageTime,
     initialized: boolean("initialized"),
     collapsedSections: {
       Pinned: boolean("collapsed_pinned"),
@@ -40,14 +46,15 @@ export function writePreferences(
   const p = preferencesSchema.parse(value);
   database
     .prepare(
-      `INSERT INTO workspace_preferences (id, theme, show_examples, collapsed_pinned, collapsed_projects, collapsed_archive, collapsed_examples, initialized)
-    VALUES (1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET theme=excluded.theme, show_examples=excluded.show_examples,
+      `INSERT INTO workspace_preferences (id, theme, show_examples, always_show_message_time, collapsed_pinned, collapsed_projects, collapsed_archive, collapsed_examples, initialized)
+    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET theme=excluded.theme, show_examples=excluded.show_examples, always_show_message_time=excluded.always_show_message_time,
     collapsed_pinned=excluded.collapsed_pinned, collapsed_projects=excluded.collapsed_projects, collapsed_archive=excluded.collapsed_archive,
     collapsed_examples=excluded.collapsed_examples, initialized=excluded.initialized`,
     )
     .run(
       p.theme,
       +p.showExamples,
+      +p.alwaysShowMessageTime,
       +p.collapsedSections.Pinned,
       +p.collapsedSections.Projects,
       +p.collapsedSections.Archive,

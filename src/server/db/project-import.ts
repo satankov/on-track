@@ -1,3 +1,4 @@
+import type { AccentStyle } from "./project-accent.js";
 import type { ProjectLabelRow } from "./project-labels.js";
 import type Database from "better-sqlite3";
 
@@ -6,9 +7,11 @@ export interface ImportedProject {
   title: string;
   project_id: string | null;
   accent: string;
+  accent_style: AccentStyle;
   created_at: number;
   updated_at: number;
   pinned_at: number | null;
+  manual_alert: number;
   archived_at: number | null;
   collapse_long_messages: number;
 }
@@ -21,7 +24,9 @@ export interface ImportedNote {
 }
 export interface ImportedAttachment {
   id: string;
-  note_id: string;
+  note_id: string | null;
+  draft_chat_id: string | null;
+  position: number | null;
   filename: string;
   media_type: string;
   storage_path: string;
@@ -33,6 +38,15 @@ export interface ImportedRecords {
   projects: ImportedProject[];
   notes: ImportedNote[];
   attachments: ImportedAttachment[];
+  drafts: Array<{
+    chat_id: string;
+    revision: string;
+    body: string;
+    sender: string;
+    timestamp: string;
+    sender_open: number;
+    timestamp_open: number;
+  }>;
   labelDefinitions: ProjectLabelRow[];
   origins: Array<{
     chat_id: string;
@@ -42,6 +56,13 @@ export interface ImportedRecords {
     source_note_position_id: string | null;
   }>;
   noteLabels: Array<{ note_id: string; chat_id: string; label: string }>;
+  labelSnapshots: Array<{
+    note_id: string;
+    label: string;
+    name: string;
+    symbol: string | null;
+    position: number;
+  }>;
 }
 export function readImportedRecords(
   source: Database.Database,
@@ -49,7 +70,7 @@ export function readImportedRecords(
   return {
     projects: source
       .prepare(
-        "SELECT id,title,accent,created_at,updated_at,pinned_at,archived_at,collapse_long_messages,project_id FROM chats ORDER BY project_id IS NOT NULL, id",
+        "SELECT id,title,accent,accent_style,created_at,updated_at,pinned_at,archived_at,manual_alert,collapse_long_messages,project_id FROM chats ORDER BY project_id IS NOT NULL, id",
       )
       .all() as ImportedProject[],
     notes: source
@@ -57,9 +78,14 @@ export function readImportedRecords(
         "SELECT id,chat_id,body,sender,created_at FROM notes ORDER BY id",
       )
       .all() as ImportedNote[],
+    drafts: source
+      .prepare(
+        "SELECT chat_id,revision,body,sender,timestamp,sender_open,timestamp_open FROM conversation_drafts",
+      )
+      .all() as ImportedRecords["drafts"],
     attachments: source
       .prepare(
-        "SELECT id,note_id,filename,media_type,storage_path,byte_size,modified_at,created_at FROM note_attachments ORDER BY id",
+        "SELECT id,note_id,draft_chat_id,position,filename,media_type,storage_path,byte_size,modified_at,created_at FROM note_attachments ORDER BY id",
       )
       .all() as ImportedAttachment[],
     labelDefinitions: source
@@ -73,6 +99,11 @@ export function readImportedRecords(
     noteLabels: source
       .prepare("SELECT note_id,chat_id,label FROM note_labels")
       .all() as ImportedRecords["noteLabels"],
+    labelSnapshots: source
+      .prepare(
+        "SELECT note_id,label,name,symbol,position FROM note_label_snapshots",
+      )
+      .all() as ImportedRecords["labelSnapshots"],
   };
 }
 export function insertImportedRecords(
@@ -80,13 +111,16 @@ export function insertImportedRecords(
   records: ImportedRecords,
 ): void {
   const project = database.prepare(
-    "INSERT INTO chats (id,title,accent,created_at,updated_at,pinned_at,archived_at,collapse_long_messages,project_id) VALUES (@id,@title,@accent,@created_at,@updated_at,@pinned_at,@archived_at,@collapse_long_messages,@project_id)",
+    "INSERT INTO chats (id,title,accent,accent_style,created_at,updated_at,pinned_at,archived_at,manual_alert,collapse_long_messages,project_id) VALUES (@id,@title,@accent,@accent_style,@created_at,@updated_at,@pinned_at,@archived_at,@manual_alert,@collapse_long_messages,@project_id)",
   );
   const note = database.prepare(
     "INSERT INTO notes (id,chat_id,body,sender,created_at) VALUES (@id,@chat_id,@body,@sender,@created_at)",
   );
+  const draft = database.prepare(
+    "INSERT INTO conversation_drafts(chat_id,revision,body,sender,timestamp,sender_open,timestamp_open) VALUES (@chat_id,@revision,@body,@sender,@timestamp,@sender_open,@timestamp_open)",
+  );
   const file = database.prepare(
-    "INSERT INTO note_attachments (id,note_id,filename,media_type,storage_path,byte_size,modified_at,created_at) VALUES (@id,@note_id,@filename,@media_type,@storage_path,@byte_size,@modified_at,@created_at)",
+    "INSERT INTO note_attachments (id,note_id,draft_chat_id,position,filename,media_type,storage_path,byte_size,modified_at,created_at) VALUES (@id,@note_id,@draft_chat_id,@position,@filename,@media_type,@storage_path,@byte_size,@modified_at,@created_at)",
   );
   const definition = database.prepare(
     "INSERT INTO project_labels (chat_id,id,name,name_key,symbol,enabled,position,builtin) VALUES (@chat_id,@id,@name,@name_key,@symbol,@enabled,@position,@builtin)",
@@ -97,15 +131,20 @@ export function insertImportedRecords(
   const origin = database.prepare(
     "INSERT INTO subthread_origins(chat_id,source_chat_id,source_note_id,source_note_created_at,source_note_position_id) VALUES(@chat_id,@source_chat_id,@source_note_id,@source_note_created_at,@source_note_position_id)",
   );
+  const snapshot = database.prepare(
+    "INSERT INTO note_label_snapshots(note_id,label,name,symbol,position) VALUES(@note_id,@label,@name,@symbol,@position)",
+  );
   database.transaction(() => {
     for (const row of [...records.projects].sort(
       (a, b) => Number(a.project_id !== null) - Number(b.project_id !== null),
     ))
       project.run(row);
     for (const row of records.notes) note.run(row);
+    for (const row of records.drafts) draft.run(row);
     for (const row of records.attachments) file.run(row);
     for (const row of records.labelDefinitions) definition.run(row);
     for (const row of records.noteLabels) label.run(row);
+    for (const row of records.labelSnapshots) snapshot.run(row);
     for (const row of records.origins) origin.run(row);
   })();
 }

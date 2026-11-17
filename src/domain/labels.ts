@@ -87,7 +87,7 @@ export function projectLabels(project: {
   );
 }
 
-const labelInputSchema = z
+export const projectLabelInputSchema = z
   .object({
     id: labelSchema.optional(),
     name: z
@@ -142,7 +142,7 @@ export const labelConfigurationSchema = z
       .min(0)
       .max(Number.MAX_SAFE_INTEGER - 1),
     labels: z
-      .array(labelInputSchema)
+      .array(projectLabelInputSchema)
       .min(7)
       .max(7 + MAX_CUSTOM_LABELS),
   })

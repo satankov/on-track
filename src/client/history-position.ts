@@ -74,6 +74,7 @@ export function useHistoryPosition(
   positions: Map<string, ReadingPosition>,
   startAtBeginning = false,
   searchKey = "",
+  onTargetFocused?: (row: HTMLElement) => void,
 ): (
   nextFilter: string,
   nextSearchKey?: string,
@@ -115,6 +116,7 @@ export function useHistoryPosition(
           (row) => row.dataset.noteId === target.noteId,
         );
         (row ?? history).focus({ preventScroll: true });
+        if (row) onTargetFocused?.(row);
       } else if (searchKey) history.scrollTop = 0;
       else if (leavingSearch && searchPositions.current.has(filter))
         restoreReadingPosition(history, searchPositions.current.get(filter));
@@ -148,7 +150,15 @@ export function useHistoryPosition(
       cancelAnimationFrame(frame);
       history.removeEventListener("scroll", save);
     };
-  }, [historyRef, projectId, positions, filter, startAtBeginning, searchKey]);
+  }, [
+    historyRef,
+    projectId,
+    positions,
+    filter,
+    startAtBeginning,
+    searchKey,
+    onTargetFocused,
+  ]);
 
   return (nextFilter, nextSearchKey = searchKey, target) => {
     if (!active.current) return;

@@ -55,20 +55,26 @@ the complete active palette, including inherited values, directly from CSS.
 | Structural separator `--line`       | #e8ebef | #3a4047 | #252b31 |
 | Strong separator `--line-strong`    | #d8dde3 | #626b76 | #444c56 |
 | Control boundary `--control-border` | #8a929c | #939eaa | #6e7a87 |
-| Focus `--focus`                     | #0b63ce | #8bb8ff | #8bb8ff |
+| Control focus `--focus`             | #0b63ce | #8bb8ff | #8bb8ff |
 | Primary action `--button-primary`   | #20242a | #1f66ad | #1f66ad |
 | Action text `--on-action`           | #ffffff | #ffffff | #ffffff |
 
 ### Accents and specialized surfaces
 
-- Six project identities: Coral, Amber, Moss, Ocean, Iris, Slate. `data-accent`
-  maps `--accent`, `--accent-action`, and `--attachment-surface`. Reuse these
-  mappings; never choose a seventh color ad hoc.
-- `--accent` is orientation/identity. `--accent-action` is the darker,
-  contrast-tested fill used with `--on-action`. They are deliberately different
-  in dark themes; a bright decorative accent is not a button background.
-- Own messages mix `--accent` into `--paper`: 36% in Light, 8% in Neutral/Dark.
-  Participant bubbles use `--paper` and sender-specific `--sender-*` text.
+- The single Accent picker lists Coral, Amber, Moss, Ocean, Iris and Slate, then
+  Guava, Honey, Jade, Lagoon, Orchid and Periwinkle. Both Create and Edit use
+  this order. The name beside Accent follows the checked swatch.
+- The first six use the original flat palette, with solid action fills and a
+  message tint mixed into paper at 36% in Light and 8% in Neutral and Dark.
+- Guava moves from apricot to rose, Honey from gold to copper, Jade from sage
+  to teal, Lagoon from teal to blue, Orchid from lavender to plum and
+  Periwinkle from powder blue to violet. Each conversation paints one 165° gradient
+  across the bounds of its outgoing bubbles, with the project tint at 47%.
+  Dates and replies interrupt the paint. Scrolling keeps the color anchored to
+  each message. Filtering and layout changes fit it to the rendered messages.
+  Project search fits each conversation separately. Composer actions use deeper
+  hues for white text. Swatches and the rail marker share the project hue.
+- Participant messages use solid paper in conversation history and search.
 - Message links and metadata use `--message-link` and `--message-muted`.
   Attachments use their own `--attachment-*` foreground, status, and surface
   pairs. Do not substitute generic muted text on a dark attachment inset.
@@ -130,11 +136,10 @@ reuse them inside those families rather than rounding every value globally.
 | Settings heading         | 28px above; align left edge with panels and backup feedback                   |
 | Settings sections        | 24px vertical margin; clear background on outer panel                         |
 | Edit form                | 24px top, 32px bottom; content width plus both gutters, capped at 100%        |
-| Edit top actions         | Back left / Save right; gap 8px; 28px below                                   |
+| Edit controls            | Back at the top left, Save changes at the bottom right after the fields       |
 | Field groups             | 24px between; label 8px above; help 8px below, inset 4px                      |
 | Group row                | min 48px, padding 10px 14px, gap 12px; natural height for wrapped text        |
 | Name / General row       | min or fixed height 50px as implemented                                       |
-| Lifecycle block          | 32px above; one vertical column; Archive, help, then Delete                   |
 | Messages                 | 18px between day groups; 10px date-to-list; 8px between messages              |
 | Bubble                   | padding 10px 12px 6px; max stack `min(760px,82%)`                             |
 
@@ -146,7 +151,8 @@ the requested adjustment is to the left margin.**
 ### Responsive rules
 
 - Above 760px keep the desktop sidebar/workspace model. At ≤960px message
-  actions stay visible below bubbles instead of relying on hover.
+  actions sit below the bubble. Devices with coarse pointers or no hover
+  keep those actions visible below the bubble at every width.
 - At ≤760px use the single-pane app; project detail hides the project rail.
   Settings navigation is horizontal, theme previews become one column, and
   **both settings gutters are 16px**. The triple desktop inset does not apply.
@@ -156,7 +162,7 @@ the requested adjustment is to the left margin.**
   when changing search or examples. Home's 1100px breakpoint is Home-specific.
 - Verify 1440×900, 1024×768, 390×844 and 320px-wide reflow. At 200% zoom, wrap
   labels/help and keep actions reachable. Local tables/code may scroll; the
-  document must not gain horizontal overflow. Mobile remains an alpha target.
+  document must not gain horizontal overflow.
 
 ## Elevation & Depth
 
@@ -165,24 +171,25 @@ separation, whitespace, and alignment. No decorative bright outline around a
 composer, participant bubble, message label, rail Add/Settings button, history
 arrow, label popup, or settings group. Never nest a cosmetic card behind a group.
 
-| Treatment                                  | Allowed use                                                      |
-| ------------------------------------------ | ---------------------------------------------------------------- |
-| No border / no shadow                      | Normal grouped settings, bubbles, composer, icon buttons, labels |
-| 1px `--line`                               | Structural rail/header/toolbar separators and table cells        |
-| 1px `--line-strong`                        | Existing compact sender/timestamp control boundaries             |
-| 1.5px `--muted`                            | Unchecked square checkbox; meaningful off-state affordance       |
-| 1px `--focus`, offset 1px                  | Keyboard focus and focused inputs; composer uses `:focus-within` |
-| `0 12px 34px` shadow at 22%                | Floating message-label popup only                                |
-| `0 20px 60px` shadow at 22%                | Create dialog only                                               |
-| Transparent → `--history`, 32px            | Composer's top fade; `pointer-events:none`; no black band        |
-| Transparent → `--message-surface`, 3.75rem | Collapsed message fade above Show more                           |
+| Treatment                       | Allowed use                                                                      |
+| ------------------------------- | -------------------------------------------------------------------------------- |
+| No border / no shadow           | Normal grouped settings, bubbles, composer, icon buttons, labels                 |
+| 1px `--line`                    | Composer toolbar separators and table cells                                      |
+| 1px `--line-strong`             | Existing compact sender/timestamp control boundaries                             |
+| 1.5px `--muted`                 | Unchecked square checkbox; meaningful off-state affordance                       |
+| 1px `--focus`, offset 1px       | Keyboard focus for non-text controls                                             |
+| `0 12px 34px` shadow at 22%     | Floating message action and label popups                                         |
+| `0 20px 60px` shadow at 22%     | Create dialog only                                                               |
+| Transparent → `--history`, 32px | Composer's top fade; `pointer-events:none`; no black band                        |
+| Content mask, final 3.75rem     | Collapsed message text fades into the underlying bubble gradient above Show more |
 
 Overlay backdrops use `--overlay` at 54% with 3px blur, applied once to the native
 `::backdrop`. The full-viewport dialog shell is transparent and resets native
 maximum dimensions so its content stays centered. Blur is an overlay
 exception, not a glass visual system for ordinary product surfaces.
-The future-message boundary is a separate full-width accent fade with a subtle
-top line. Preserve its chronological meaning; do not reuse it as decoration.
+The future-message boundary keeps its subtle top line and full-width fade.
+It starts with the project marker color, passes through the message tint,
+and ends on the history background.
 
 Keep the existing stacking relationships: normal content 0–2, composer 3,
 history arrows 4, global error 5, dialog backdrop 10, label popup 12 inside its
@@ -205,19 +212,19 @@ does not fix clipping or a parent stacking context.
 
 ## Shapes
 
-| Family                                           | Radius / size                                             |
-| ------------------------------------------------ | --------------------------------------------------------- |
-| Settings groups, fields, composer, theme preview | 12px                                                      |
-| Create dialog                                    | 16px; max-width 560px; padding `clamp(20px,4vw,32px)`     |
-| Standard buttons                                 | 8px; min-height 40px; horizontal padding 15px             |
-| Rail Add / Settings                              | 9px; 38×38px; visible keyboard focus                      |
-| History arrows                                   | Circle; 44×44px; 20px icon                                |
-| Checkbox                                         | 5px; 22×22px square inside a clickable row                |
-| Accent swatch                                    | Circle 28px; 44px target (min-width 32px at tight widths) |
-| Own bubble                                       | 14px 14px 5px 14px; participant: 14px 14px 14px 5px       |
-| Message-label popup                              | 9px; width 218px; padding 10px                            |
-| Text label                                       | Pill 999px; min-height 18px; padding 1px 6px              |
-| Attachment group / row                           | 10px / 7px                                                |
+| Family                                           | Radius / size                                          |
+| ------------------------------------------------ | ------------------------------------------------------ |
+| Settings groups, fields, composer, theme preview | 12px                                                   |
+| Create dialog                                    | 16px; max-width 560px; padding `clamp(20px,4vw,32px)`  |
+| Standard buttons                                 | 8px; min-height 40px; horizontal padding 15px          |
+| Rail Add / Settings                              | 9px; 38×38px; visible keyboard focus                   |
+| History arrows                                   | Circle; 44×44px; 20px icon                             |
+| Checkbox                                         | 5px; 22×22px square inside a clickable row             |
+| Accent swatch                                    | Circle 28px inside a 44px target; wrap at tight widths |
+| Own bubble                                       | 14px 14px 5px 14px; participant: 14px 14px 14px 5px    |
+| Message-label popup                              | 9px; width 218px; padding 10px                         |
+| Text label                                       | Pill 999px; min-height 18px; padding 1px 6px           |
+| Attachment group / row                           | 10px / 7px                                             |
 
 Radii are component families, not permission to round every wrapper. A new
 settings surface uses 12px; it does not get an arbitrary 18px radius.
@@ -228,14 +235,22 @@ may be smaller; verify target size/spacing and do not shrink them further.
 
 ### Project rail
 
-User-project rows show the title and existing pin/restore and Attention controls.
-No message preview or empty-message placeholder is rendered. Rows have a 40px
-minimum height (44px on narrow/touch layouts), with vertically centered titles.
-Attention and pin/restore share a centered right-hand slot; hovering or focusing
-the row replaces the dot with the action. Narrow/touch layouts keep the action
-visible and place Attention beside it. Preserve visible mutation errors and
-accessible Attention descriptions. The wordmark has no subtitle.
-Section headers show their name and disclosure chevron, without item counts.
+The rail header, footer and edge meet the surrounding surfaces without dividing lines.
+The footer contains the Settings icon. The conversation header shares the history surface.
+
+A project or child occupies one title row, at least 40px high (44px on narrow/touch layouts).
+Hover or keyboard focus reveals a trailing strip ordered **Alert, Pin/Unpin, Archive, Delete**.
+Use the shortcut disclosure on touch. Preserve title truncation and an independent title target.
+Archived conversations offer Restore in the Archive position. Keep the actions reachable
+while the pointer moves between them. On a hover-capable device, leaving the row
+closes mouse-revealed shortcuts, including after selecting the title or toggling an action.
+Keyboard users can tab across the actions and use Escape to dismiss.
+
+An enabled manual Alert uses the same red dot and soft halo as the Alert history filter,
+both at rest and in the expanded strip. The inactive shortcut uses the muted dot.
+Clearing it returns the row to its message-derived Attention state. Expose the meaning
+and current state in accessible text. Display mutation errors beside the affected row.
+Section headings contain their name and disclosure chevron. The wordmark stands alone.
 
 ### Settings and Edit project
 
@@ -245,9 +260,9 @@ and `.field-help`. Outer panels are transparent. No title echo, eyebrow, or
 introductory sentence explaining that this is the settings screen.
 
 - Edit has an accessible main landmark named Edit project, no visible duplicate
-  title. The Settings-style back arrow (accessible name “Back to project”) and
-  Save changes are first in DOM and at the top. The arrow stays left aligned.
-- Project accent: one horizontal swatch strip, native radios, visible check on
+  title. The Settings-style back arrow (accessible name “Back to project”) comes first,
+  at the top left. Save changes follows the last field at the bottom right.
+- Project accent: one wrapping swatch strip, native radios, visible check on
   selected swatch. Color names remain accessible, not printed beside every dot.
 - Project labels: one column, icon then name then right-aligned square checkbox.
   On = filled square with check; off = empty outlined square. No iPhone switch.
@@ -277,11 +292,8 @@ introductory sentence explaining that this is the settings screen.
   name remains unchanged for backup compatibility.
 - General uses the same row/checkbox. Backups keep left-side selection checkboxes
   because these are bulk selection lists, not setting switches.
-- Archive and Delete stay in one column, separated by the archive preservation
-  note and spacing. Delete retains critical color and explicit confirmation.
-- Save errors appear immediately under the top actions; lifecycle errors appear
-  beside those controls. Keep draft values and retry. Never hide a failure below
-  the fold while its initiating button is at the top.
+- Archive, Restore and Delete belong to the project or subthread’s rail shortcuts.
+  A save error appears beside the bottom submit button, with the draft ready to retry.
 - Create project reuses the same field/swatch treatment in a real modal dialog.
   Keep its accessible title, Cancel/Create actions, Escape and focus restoration.
   Place “More settings in Edit project.” in the action footer using `.field-help`,
@@ -300,17 +312,18 @@ introductory sentence explaining that this is the settings screen.
 
 ### Buttons, fields, and state
 
-One primary action per local action group. Use `.button-primary` for global
-actions and `.send-button`/`--accent-action` for project composition. Quiet actions
-use the existing flat settings variants. Destructive actions are labeled, not
-communicated by red alone. Maintain disabled semantics and prevent duplicate
-writes; progress labels use Saving… / Deleting… without changing control width
-unnecessarily. Do not remove controls to communicate loading.
+New project, Edit and Settings use transparent, borderless controls. Primary
+commands such as Save changes and Create use the theme’s primary fill and action
+text. The composer’s Add and Save buttons use the project’s accent-action fill.
+Attachment actions use their local surface and foreground pair. Preserve disabled,
+pressed and keyboard-focus states.
 
-New settings fields belong inside `.project-settings-fields` or an equivalent
-scoped shared family. Focus must remain visible after decorative borders are
-removed. Placeholders supplement real labels. Validation uses `role="alert"`
-and associated fields where applicable; success/status uses polite announcements.
+Text-entry fields use the native insertion caret to indicate focus. Keep their
+edges clear of borders, outlines and focus shadows, including the surrounding
+search and composer containers. Apply the same rule to names, custom labels,
+sender, timestamp and add/edit textareas. Buttons, checkboxes, swatches and other
+non-text controls retain visible keyboard focus. Associate validation errors
+with their fields and announce submission feedback near its action.
 
 ### Project subthreads
 
@@ -322,7 +335,8 @@ Show five active children, pins first, keeping the selected child visible;
 Show all expands in place. Preserve
 candidate title-only rows and Attention indicators.
 
-Child headers contain a muted clickable root, slash, and child title. Both titles
+Child headers contain a muted clickable root, slash, and child title. At 420px
+and below, Back and the title sit above the actions within the existing header height. Both titles
 have min-width:0, single-line overflow and independent ellipsis; actions stay
 visible. The root consumes at most 40% of available title space and short names
 remain adjacent. Use the same branch glyph in New subthread and message actions.
@@ -332,11 +346,10 @@ linked source, or Continued in a linked child. Never quote the source. Deleting 
 at the same date and history position; the child’s source link focuses that marker.
 Deleted source conversations receive explicit fallback text. Links retain visible keyboard focus.
 
-Message action order: Change labels, Continue in subthread, Copy message, Edit
-message, Delete message. Reuse compact icon controls and reserve 160px beside
-desktop bubbles for five actions. Keep focus/touch visibility and existing narrow
-layout behavior. Creation asks for a name only. Child Edit has all settings except
-accent, plus archive/delete. Search uses a native Project checkbox for whole-project
+Editable messages expose Label and More. Label opens the checkbox picker. In history,
+Select messages comes first in More. The remaining actions are Continue in subthread,
+Copy message, Edit, Delete and Open message in history where available. Reserve space for the two triggers on desktop and keep the
+actions reachable on narrow screens, by keyboard and by touch. Creation asks for a name only. Child Edit exposes name, labels and message display. Children inherit their project accent. Search uses a native Project checkbox for whole-project
 scope, including archived conversations. These new layout decisions target desktop.
 
 ### History filters
@@ -356,13 +369,49 @@ whole project even when the selected filters intersect.
 
 ### Message stream, composer, labels, attachments
 
+- In a message’s More menu, **Select messages** checks the invoking message and opens a selection bar
+  in the composer's place. Align native square checkboxes in one left gutter
+  for both senders. Shift-click or Shift+Space extends the selection from the
+  last picked message through the current message, inclusive. Select all picks
+  every message in the current filtered history. Show the count alongside
+  Select all, Cancel, Copy, Move, Export and Delete.
+  Keep the draft and reading position when returning from the destination
+  picker. Confirm deletion with the count and source conversation.
+- Export opens a flat review workspace with the Edit gutters, Back, format
+  radios and an optional Include message labels checkbox. Preview the exact text
+  on paper with persistent Copy text and Download actions. Back restores the
+  selection and reading position. Feedback and manual clipboard recovery stay inline.
+- Copy and Move use the Edit project's workspace layout. Keep Back, the
+  title and search field above a scrolling list, with the counted action
+  always visible below it. Use compact project rows matching the sidebar.
+  A disclosure chevron marks projects with available subthreads.
+  Clicking a project selects its main conversation and expands or collapses
+  its indented subthreads. The project row itself names that destination.
+  Choosing a subthread selects it instead. Search reveals matching subthreads.
+  Omit archived projects and their children, and archived subthreads in active
+  projects. Destination messages use the ordinary bubble,
+  sender, time, label chips and editing controls.
+
+- General’s **Always show message time** defaults on. When switched off, hovering
+  anywhere across a message row reveals its bottom-right time. Keyboard focus
+  within the row or a tap also reveals the time. Reserve its space to keep
+  labels and bubble geometry stable.
 - Own bubbles align right; participants align left with a sender label and
   neutral surface. Preserve readable Markdown, long-word wrapping, code/table
   scrolling, collapse/expand state, and complete copy/edit behavior.
+- Render a single Enter as a line break in Markdown prose. Task list items use
+  the same 22px square, 5px corners and checkmark as message selection.
+  Each native checkbox has the task text as its accessible name. A click,
+  tap, or Space saves the check. Keep clipped tasks outside the Tab order until
+  Show more reveals them. Read-only Examples and message selection disable edits.
 - Wrap Markdown tables in `.message-table-scroll`, a named keyboard-focusable
   region with local horizontal scrolling. Tables retain their content width;
   the bubble and its grid track stay within the message column. Collapsed content
   must not leave clipped links or table regions in the Tab order.
+- Align draft save status to the trailing edge of the composer in muted 0.68rem text.
+  Show “Draft saved” after the local write and file uploads finish. Unavailable
+  files identify themselves inside the existing attachment chips. Place a
+  retryable error directly above the composer.
 - Reuse the full-width composer input above its toolbar. Sender, Timestamp,
   Format share compact 46px helper rows and left alignment. Timestamp is a
   native datetime-local input, 34px tall, max 240px wide; no `margin-left:auto`.
@@ -380,11 +429,27 @@ whole project even when the selected filters intersect.
   a decorative card imply that a blocked native action is available.
   Wrap explanations instead of ellipsizing them. The visible file-picker button
   is the composer's attachment Tab stop; its hidden file input is not a second one.
+- Show a saved picture above its file row, centered and uncropped in a frame
+  up to 400 × 225px. A message with several pictures uses 96 × 72px thumbnails
+  beside the filenames, shrinking to 72 × 54px on narrow screens. Preserve file
+  order, intrinsic aspect ratio and the visible controls for each attachment.
+  Reserve frame space while loading. Clicking a picture opens a fitted modal
+  with its filename and a Close button. Escape returns focus to the picture.
+  Preserve the attachment's existing Open and Show in Folder capabilities when a
+  preview is unavailable.
 - Search defaults to the current conversation; Project includes Main and all
   children. Reuse the quiet compact field, counts,
   clear action, no-results feedback, and the existing highlight color pair.
-- Hover-only message actions must also appear on focus and touch layouts. Keep
-  state markers and counts readable without hover.
+  Search matches inside bubbles have a thin outline in the match text color so
+  they stay distinct on every project tint. Opening a result marks the
+  entire destination row with the message-selection fill and fades it out
+  within 900 ms. Keep its position and focus stable. Reduced motion shows
+  the same fill briefly without animation. Forced colors use the system highlight.
+- Hover anywhere across a message row to reveal Label and More, including the
+  empty space beside the bubble. A mouse-opened popup stays open while the
+  pointer moves across the row or into the popup. Leaving both dismisses the
+  popup and hides the hover toolbar. Keyboard navigation and touch also expose
+  the controls.
 
 ### Icons, branding, copy, accessibility
 
@@ -422,8 +487,7 @@ whole project even when the selected filters intersect.
 
 ### Legacy exceptions: do not copy into new UI
 
-The generic `.text-input`, `.file-input`, `.accent-option`, `.button-quiet`, and
-`.button-danger` still include older border/radius rules; current settings scope
+The generic `.file-input` and `.accent-option` still include older border/radius rules; current settings scope
 overrides them. `.settings-control-row` and old note-thread rules are not the
 canonical grouped settings/message recipe. The ≤430px accent grid rule does not
 control the newer flex swatches. Old opacity transitions are not a mandate for

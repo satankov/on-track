@@ -107,6 +107,24 @@ it("discards a failed preference intent when a newer value for that field saves"
   expect(result.current.warning).toBe("");
 });
 
+it("discards an older failed message time preference when a newer value for that field saves", async () => {
+  const api = apiFixture();
+  api.updatePreferences.mockRejectedValueOnce(new Error("Offline"));
+  const { result } = renderHook(() => useWorkspacePreferences(api));
+  await waitFor(() =>
+    expect(result.current.preferences.initialized).toBe(true),
+  );
+  act(() => {
+    result.current.update({ alwaysShowMessageTime: false });
+    result.current.update({ alwaysShowMessageTime: true });
+  });
+  await waitFor(() => expect(api.updatePreferences).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(result.current.preferences.alwaysShowMessageTime).toBe(true),
+  );
+  expect(result.current.warning).toBe("");
+});
+
 it("ignores older focus responses when they finish after a newer refresh", async () => {
   const api = apiFixture();
   const { result } = renderHook(() => useWorkspacePreferences(api));

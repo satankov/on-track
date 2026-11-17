@@ -154,7 +154,11 @@ export function mergePreparedProjects(options: {
       return {
         ...row,
         id: attachmentIds.get(row.id)!,
-        note_id: noteIds.get(row.note_id)!,
+        note_id: row.note_id === null ? null : noteIds.get(row.note_id)!,
+        draft_chat_id:
+          row.draft_chat_id === null
+            ? null
+            : projectIds.get(row.draft_chat_id)!,
         storage_path: file.storagePath,
         byte_size: observed.byteSize,
         modified_at: observed.modifiedAt,
@@ -172,6 +176,11 @@ export function mergePreparedProjects(options: {
         ...row,
         id: noteIds.get(row.id)!,
         chat_id: projectIds.get(row.chat_id)!,
+      })),
+      drafts: records.drafts.map((row) => ({
+        ...row,
+        chat_id: projectIds.get(row.chat_id)!,
+        revision: randomUUID(),
       })),
       attachments,
       labelDefinitions: records.labelDefinitions.map((row) => ({
@@ -194,6 +203,11 @@ export function mergePreparedProjects(options: {
         note_id: noteIds.get(row.note_id)!,
         chat_id: projectIds.get(row.chat_id)!,
         label: labelIds.get(JSON.stringify([row.chat_id, row.label]))!,
+      })),
+      labelSnapshots: records.labelSnapshots.map((row) => ({
+        ...row,
+        note_id: noteIds.get(row.note_id)!,
+        label: `custom-${randomUUID()}`,
       })),
     });
     committed = true;

@@ -1,3 +1,4 @@
+import { SharedMessageGradient } from "./SharedMessageGradient.js";
 import { useId } from "react";
 import type { Note } from "../domain/types.js";
 import { HighlightText } from "./HighlightText.js";
@@ -34,58 +35,63 @@ export function ProjectSearchResults({
               <span>{conversation.title}</span>
               {conversation.archivedAt != null && <span>Archived</span>}
             </div>
-            {group.map(({ note, excerpt }) => (
-              <article
-                key={note.id}
-                className="message-bubble project-search-result"
-                data-note-id={note.id}
-                data-chat-id={conversation.id}
-              >
-                {excerpt && (
-                  <p className="note-body project-search-result-body">
-                    <HighlightText text={excerpt} terms={query.terms} />
-                  </p>
-                )}
-                {(note.attachments ?? []).map((file) => (
-                  <p key={file.id} className="project-search-result-file">
-                    <HighlightText text={file.filename} terms={query.terms} />
-                  </p>
-                ))}
-                <footer className="project-search-result-footer">
-                  <span>
-                    <HighlightText
-                      text={note.sender || "You"}
-                      terms={query.terms}
-                    />
-                  </span>
-                  <time
-                    className="message-time"
-                    dateTime={new Date(note.createdAt).toISOString()}
-                  >
-                    {new Date(note.createdAt).toLocaleString(undefined, {
-                      dateStyle: "medium",
-                      timeStyle: "short",
-                    })}
-                  </time>
-                  <button
-                    type="button"
-                    className="message-history-button"
-                    aria-label="Open message in history"
-                    aria-describedby={contextId}
-                    title={`Open in ${conversation.title}`}
-                    onClick={() => onOpen(conversation.id, note)}
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                      focusable="false"
+            <SharedMessageGradient
+              active={conversation.accent.endsWith("-gradient")}
+            >
+              {group.map(({ note, excerpt }) => (
+                <article
+                  key={note.id}
+                  className="message-bubble project-search-result"
+                  data-note-id={note.id}
+                  data-chat-id={conversation.id}
+                  data-participant={note.sender ? true : undefined}
+                >
+                  {excerpt && (
+                    <p className="note-body project-search-result-body">
+                      <HighlightText text={excerpt} terms={query.terms} />
+                    </p>
+                  )}
+                  {(note.attachments ?? []).map((file) => (
+                    <p key={file.id} className="project-search-result-file">
+                      <HighlightText text={file.filename} terms={query.terms} />
+                    </p>
+                  ))}
+                  <footer className="project-search-result-footer">
+                    <span>
+                      <HighlightText
+                        text={note.sender || "You"}
+                        terms={query.terms}
+                      />
+                    </span>
+                    <time
+                      className="message-time"
+                      dateTime={new Date(note.createdAt).toISOString()}
                     >
-                      <path d="m9 10-5 5 5 5M4 15h10a6 6 0 0 0 0-12h-2" />
-                    </svg>
-                  </button>
-                </footer>
-              </article>
-            ))}
+                      {new Date(note.createdAt).toLocaleString(undefined, {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
+                    </time>
+                    <button
+                      type="button"
+                      className="message-history-button"
+                      aria-label="Open message in history"
+                      aria-describedby={contextId}
+                      title={`Open in ${conversation.title}`}
+                      onClick={() => onOpen(conversation.id, note)}
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <path d="m9 10-5 5 5 5M4 15h10a6 6 0 0 0 0-12h-2" />
+                      </svg>
+                    </button>
+                  </footer>
+                </article>
+              ))}
+            </SharedMessageGradient>
           </section>
         );
       })}

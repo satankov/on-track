@@ -1,10 +1,66 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { apiClient } from "./api.js";
+import { apiClient, NoteBodyConflictError } from "./api.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("browser API client", () => {
+  it("sends exact Markdown source and reports a conditional note conflict", async () => {
+    const rejected = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json(
+          { code: "note_body_conflict", message: "The message changed." },
+          { status: 409 },
+        ),
+      );
+    vi.stubGlobal("fetch", rejected);
+    const input = {
+      body: "> - [x] line\r\n  ",
+      expectedBody: "> - [ ] line\r\n  ",
+    };
+    await expect(
+      apiClient.updateNote("project", "note", input),
+    ).rejects.toBeInstanceOf(NoteBodyConflictError);
+    const init = rejected.mock.calls[0][1]!;
+    expect(
+      JSON.parse(String((init.body as FormData).get("bodyChange"))),
+    ).toEqual(input);
+  });
+
+  it("submits one scoped batch and distinguishes rejection from an unknown result", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        Response.json({ message: "Selection changed" }, { status: 409 }),
+      )
+      .mockRejectedValueOnce(new Error("Disconnected"))
+      .mockResolvedValueOnce(new Response("", { status: 502 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const input = {
+      action: "copy" as const,
+      noteIds: ["a", "b"],
+      destinationChatId: "other",
+    };
+    await apiClient.batchNotes("project/one", input);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/chats/project%2Fone/notes/batch",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      },
+    );
+    await expect(apiClient.batchNotes("source", input)).rejects.toThrow(
+      "Selection changed",
+    );
+    for (let i = 0; i < 2; i++)
+      await expect(apiClient.batchNotes("source", input)).rejects.toThrow(
+        "could not be confirmed",
+      );
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
   it("reads local Home info and explicitly posts an empty release check", async () => {
     const fetchMock = vi
       .fn()
@@ -221,6 +277,25 @@ describe("browser API client", () => {
     });
     expect(await exported.text()).toBe("SQLite format 3");
   });
+
+  it.each([
+    [true, "PUT"],
+    [false, "DELETE"],
+  ] as const)(
+    "saves manual alert %s to the targeted conversation",
+    async (enabled, method) => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(Response.json({ manualAlert: enabled }));
+      vi.stubGlobal("fetch", fetchMock);
+      expect(await apiClient.setChatAlert("project/one", enabled)).toEqual({
+        manualAlert: enabled,
+      });
+      expect(fetchMock).toHaveBeenCalledWith("/api/chats/project%2Fone/alert", {
+        method,
+      });
+    },
+  );
 
   it("pins and unpins projects through encoded project routes", async () => {
     const fetchMock = vi

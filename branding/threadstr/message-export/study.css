@@ -1,0 +1,259 @@
+[hidden] {
+  display: none !important;
+}
+.sheet {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.sheet-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding-bottom: 24px;
+}
+.sheet-head .settings-back-button {
+  margin: 0;
+}
+.sheet-head h1 {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.sheet-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 4px;
+  margin-inline: -4px;
+  flex: 1;
+}
+.output-options {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+}
+.sheet .formats {
+  margin-top: 0;
+  flex: 0 1 360px;
+}
+.format-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-radius: 12px;
+  background: var(--paper);
+  padding: 4px;
+}
+.format-row label {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  flex: 1 1 130px;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 0.84rem;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.format-row input {
+  margin: 0;
+  accent-color: var(--button-primary);
+  width: 18px;
+  height: 18px;
+}
+.format-row label:hover,
+.format-row label:has(:checked) {
+  background: var(--selection);
+}
+.format-row small,
+.file-name,
+#notice {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.format-row small {
+  margin-left: auto;
+}
+.label-toggle {
+  width: fit-content;
+  gap: 12px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+}
+.label-toggle input {
+  margin: 0;
+}
+.excerpt {
+  margin-top: 24px;
+}
+.preview-meta {
+  display: flex;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 8px;
+}
+.preview-meta h2 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.file-name {
+  display: inline-flex;
+  gap: 4px;
+  min-width: 0;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+.file-name svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+#preview,
+#manual-copy {
+  margin: 0;
+  padding: 24px 32px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: 12px;
+  background: var(--paper);
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1.52;
+  tab-size: 4;
+}
+#preview .doc-gap {
+  display: block;
+  height: 8px;
+  font-size: 0;
+  line-height: 0;
+}
+#preview .doc-gap:has(+ .doc-day) {
+  height: 24px;
+}
+#preview .doc-gap:has(+ .doc-byline) {
+  height: 16px;
+}
+#preview .doc-byline + .doc-gap {
+  height: 4px;
+}
+#preview .doc-title {
+  font-size: 1.12rem;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+#preview .doc-day {
+  font-weight: 650;
+}
+#preview .doc-byline {
+  font-weight: 650;
+}
+#preview .doc-detail,
+#preview .syntax {
+  color: var(--muted);
+}
+.sheet-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding-top: 12px;
+}
+#notice {
+  flex: 1 1 160px;
+}
+#notice:empty {
+  display: none;
+}
+.actions {
+  display: flex;
+  margin-left: auto;
+  gap: 8px;
+}
+.project-rail .project-item {
+  cursor: default;
+}
+#timeline {
+  display: grid;
+  gap: 18px;
+  max-width: var(--chat-column-width);
+  margin-inline: auto;
+}
+#timeline .message-day {
+  display: grid;
+  gap: 10px;
+}
+#timeline .message-list {
+  list-style: none;
+}
+#timeline .message-row {
+  min-width: 0;
+}
+#timeline .message-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+#timeline .note-body {
+  white-space: pre-line;
+}
+#draft textarea {
+  width: 100%;
+  padding: 12px;
+  resize: vertical;
+  border: 0;
+  background: var(--field);
+}
+@media (max-width: 760px) {
+  .sheet {
+    padding-block: 16px;
+  }
+  .sheet-head {
+    padding-bottom: 16px;
+  }
+  #preview,
+  #manual-copy {
+    padding: 16px;
+  }
+  .excerpt {
+    margin-top: 12px;
+  }
+}
+@media (max-height: 500px) {
+  .sheet {
+    padding-block: 4px;
+  }
+  .sheet-head,
+  .sheet-foot {
+    padding-block: 4px;
+  }
+}
+
+#manual-copy {
+  width: 100%;
+  min-height: 12rem;
+  resize: vertical;
+  color: var(--ink);
+  border: 0;
+}
+#timeline summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding: 6px 0;
+}

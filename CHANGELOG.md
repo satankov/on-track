@@ -6,6 +6,63 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-17
+
+### Added
+
+- Drafts autosave separately in each conversation, including attached files,
+  sender, and message time. Full backups and selected-project backups include drafts.
+- Toggle a Markdown task box directly in a saved message. Open a search result
+  in its original history to see the matching message briefly highlighted.
+- View saved JPEG and PNG attachments in the conversation. Select a picture for
+  a larger view. Messages with several pictures show thumbnails beside their filenames.
+- Use **More → Select messages** to copy, move, delete, or export several
+  messages together. Shift-click selects a range. **Select all** selects the
+  current filtered history. Copy and Move preserve times, senders, files, and
+  labels, including custom labels. Copies are independent.
+- Choose **Export** to preview the selected messages as Markdown or plain text,
+  then copy the text or download it. You can include labels. For messages with
+  attachments, the excerpt reports how many files were omitted.
+- Choose from twelve project accents, including six new gradients that run
+  across your messages in a conversation. Existing projects keep their original
+  solid color.
+- Use the shortcuts on a project or subthread to toggle Alert, pin, archive, or
+  delete it. Hover, focus, or tap to reveal the shortcuts. An enabled Alert
+  stays visible independently of message labels.
+
+### Changed
+
+- A single Enter in a message now renders a line break.
+- Message actions are grouped under **Label** and **More**. Message times are
+  visible by default. Turn off **Settings → General → Always show message time**
+  to reveal them on hover, focus, or tap.
+- The conversation header shares the history background. The workspace has
+  fewer dividers, flat rail and header controls, and no “Local only” footer.
+  Text fields show the caret without a focus border. Mouse-revealed shortcuts
+  and message options close when the pointer leaves. **Save changes** appears
+  below the edit fields. Archive and Delete are available in the rail.
+
+### Upgrading from v0.2.0
+
+- Export a backup **before updating** if you may need to return to v0.2.0.
+  Opening the workspace in v0.2.1 migrates its database from schema 11 to 15.
+  The migrations add alerts and message-time preferences, project accents,
+  transferred custom labels, and saved drafts. v0.2.0 cannot open the migrated
+  database. v0.2.1 reads format-1 backups from schemas 3 through 15.
+
+### Security
+
+- Update `@fastify/static` and the build and lint tools that use `glob` and
+  `minimatch`. The lockfile now resolves `glob` 14.0.6 and `minimatch` 11.0.9,
+  which include the fixes for [glob cancellation](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4)
+  and [minimatch pattern expansion](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+
+### Known limitations
+
+- The local database, attachments, and backups are unencrypted. See the
+  [storage and backup guide](docs/USER_GUIDE.md#where-your-data-lives) before
+  choosing what to keep in a project.
+
 ## [0.2.0] - 2026-11-02
 
 ### Added

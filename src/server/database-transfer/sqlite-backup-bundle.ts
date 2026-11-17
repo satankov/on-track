@@ -1,5 +1,6 @@
 import {
   labelConfigurationSchema,
+  projectLabelInputSchema,
   labelNameKey,
   isBuiltinLabel,
 } from "../../domain/labels.js";
@@ -9,7 +10,8 @@ import {
   DEFAULT_PREFERENCES,
   type WorkspacePreferences,
 } from "../../domain/preferences.js";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { draftFieldsSchema, sendDraftSchema } from "../../domain/drafts.js";
 import {
   chmodSync,
   closeSync,
@@ -44,7 +46,7 @@ import {
 import { readMigrationFiles } from "drizzle-orm/migrator";
 
 import {
-  ACCENTS,
+  ACCENT_FAMILIES,
   CONFIGURABLE_LABELS,
   LABELS,
   MAX_ATTACHMENTS_PER_MESSAGE,
@@ -62,13 +64,17 @@ import {
 
 export const SQL_ON_TRACK_BACKUP_APPLICATION_ID = 0x4f545242;
 export const SQL_ON_TRACK_BACKUP_FORMAT_VERSION = 1;
-export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 11;
+export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 15;
 const LEGACY_SCHEMA_MIGRATIONS: Readonly<
   Record<number, { migrationAt: number; migrationCount: number }>
 > = {
   3: { migrationAt: 1_788_356_400_000, migrationCount: 4 },
   4: { migrationAt: 1_788_516_961_034, migrationCount: 5 },
   5: { migrationAt: 1_788_523_044_823, migrationCount: 6 },
+  12: { migrationAt: 1794839960460, migrationCount: 13 },
+  14: { migrationAt: 1794908242511, migrationCount: 15 },
+  13: { migrationAt: 1794905488811, migrationCount: 14 },
+  11: { migrationAt: 1793608243633, migrationCount: 12 },
   10: { migrationAt: 1793364000000, migrationCount: 11 },
   9: { migrationAt: 1793269712711, migrationCount: 10 },
   8: { migrationAt: 1793269343386, migrationCount: 9 },
@@ -114,6 +120,7 @@ export interface CreateSqliteBackupBundleOptions {
 }
 
 export interface PrepareSqliteBackupBundleOptions {
+  mode?: "merge" | "replace";
   destinationPreferences?: WorkspacePreferences;
   selection?: ProjectSelection;
   bundlePath: string;
@@ -151,7 +158,9 @@ export class SqliteBackupBundleValidationError extends Error {
 
 interface AttachmentMetadataRow {
   id: string;
-  note_id: string;
+  note_id: string | null;
+  draft_chat_id?: string | null;
+  position?: number | null;
   filename: string;
   media_type: string;
   storage_path: string;
@@ -202,7 +211,7 @@ interface SchemaDescriptor {
 }
 
 const GENERATED_COMPONENT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-const ALLOWED_ACCENTS = new Set<string>(ACCENTS);
+const ALLOWED_ACCENTS = new Set<string>(ACCENT_FAMILIES);
 const SQLITE_MAGIC = Buffer.from("SQLite format 3\0", "binary");
 
 const BUNDLE_SCHEMA_OBJECTS = [
@@ -287,9 +296,7 @@ export async function createSqliteBackupBundle(
 
     const attachments = bundle
       .prepare(
-        `SELECT id, note_id, filename, media_type, storage_path,
-                byte_size, modified_at, created_at
-         FROM note_attachments
+        `SELECT * FROM note_attachments
          ORDER BY id`,
       )
       .all() as AttachmentMetadataRow[];
@@ -471,9 +478,7 @@ export function validateSqliteBackupBundle(
 
     const metadata = database
       .prepare(
-        `SELECT id, note_id, filename, media_type, storage_path,
-                byte_size, modified_at, created_at
-         FROM note_attachments
+        `SELECT * FROM note_attachments
          ORDER BY id`,
       )
       .all() as AttachmentMetadataRow[];
@@ -596,7 +601,7 @@ export function prepareSqliteBackupBundle(
     candidate.pragma("journal_mode = DELETE");
     const sourcePreferences =
       copiedManifest.schemaVersion >= 8
-        ? readPreferences(candidate)
+        ? readPreferences(candidate, copiedManifest.schemaVersion)
         : undefined;
     pruneProjects(
       candidate,
@@ -686,6 +691,7 @@ export function prepareSqliteBackupBundle(
     if (copiedManifest.schemaVersion !== SQL_ON_TRACK_BACKUP_SCHEMA_VERSION) {
       applyBundledMigrations(candidate);
     }
+    if (options.mode !== "merge") renewRestoredDraftRevisions(candidate);
     writePreferences(candidate, {
       ...(sourcePreferences?.initialized
         ? sourcePreferences
@@ -720,6 +726,21 @@ export function prepareSqliteBackupBundle(
   }
 }
 
+function renewRestoredDraftRevisions(database: Database.Database): void {
+  // Even an untouched conversation may have a browser tab holding revision null.
+  const renew = database.prepare(`INSERT INTO conversation_drafts
+    (chat_id,revision,body,sender,timestamp,sender_open,timestamp_open)
+    VALUES(?,?,'','','',0,0)
+    ON CONFLICT(chat_id) DO UPDATE SET revision=excluded.revision`);
+  const chats = database
+    .prepare("SELECT id FROM chats")
+    .pluck()
+    .all() as string[];
+  database.transaction(() => {
+    for (const chatId of chats) renew.run(chatId, randomUUID());
+  })();
+}
+
 function pruneProjects(
   database: Database.Database,
   input: ProjectSelection,
@@ -749,14 +770,22 @@ export function readBackupProjects(
   schemaVersion: number,
 ): BackupProject[] {
   const database = openReadOnlyDatabase(bundlePath);
+  const family =
+    schemaVersion >= 10
+      ? "IN (SELECT id FROM chats WHERE id = c.id OR project_id = c.id)"
+      : "= c.id";
+  const draftFiles =
+    schemaVersion >= 15
+      ? `+ (SELECT count(*) FROM note_attachments WHERE draft_chat_id ${family})`
+      : "";
   try {
     return database
       .prepare(
         `SELECT c.id, c.title, c.created_at AS createdAt,
       ${schemaVersion >= 4 ? "c.pinned_at" : "NULL"} AS pinnedAt,
       ${schemaVersion >= 7 ? "c.archived_at" : "NULL"} AS archivedAt,
-      (SELECT count(*) FROM notes n WHERE ${schemaVersion >= 10 ? "n.chat_id IN (SELECT id FROM chats WHERE id = c.id OR project_id = c.id)" : "n.chat_id = c.id"}) AS messageCount,
-      (SELECT count(*) FROM note_attachments a JOIN notes n ON a.note_id = n.id WHERE ${schemaVersion >= 10 ? "n.chat_id IN (SELECT id FROM chats WHERE id = c.id OR project_id = c.id)" : "n.chat_id = c.id"}) AS attachmentCount
+      (SELECT count(*) FROM notes n WHERE n.chat_id ${family}) AS messageCount,
+      (SELECT count(*) FROM note_attachments a JOIN notes n ON a.note_id = n.id WHERE n.chat_id ${family}) ${draftFiles} AS attachmentCount
       FROM chats c ${schemaVersion >= 10 ? "WHERE c.project_id IS NULL" : ""} ORDER BY c.title, c.id`,
       )
       .all() as BackupProject[];
@@ -913,23 +942,25 @@ function validateApplicationData(
     if (rows.length > 1 || rows.some((row) => row.id !== 1))
       throw validationError("Workspace preferences are invalid.");
     try {
-      readPreferences(database);
+      readPreferences(database, schemaVersion);
     } catch {
       throw validationError("Workspace preferences are invalid.");
     }
   }
   const chats = database
     .prepare(
-      `SELECT id, title, accent, created_at, updated_at${schemaVersion >= 4 ? ", pinned_at" : ""}${schemaVersion >= 5 ? ", collapse_long_messages" : ""}${schemaVersion >= 7 ? ", archived_at" : ""}
+      `SELECT id, title, accent, created_at, updated_at${schemaVersion >= 4 ? ", pinned_at" : ""}${schemaVersion >= 5 ? ", collapse_long_messages" : ""}${schemaVersion >= 7 ? ", archived_at" : ""}${schemaVersion >= 12 ? ", manual_alert" : ""}${schemaVersion >= 13 ? ", accent_style" : ""}
        FROM chats`,
     )
     .all() as Array<{
     id: unknown;
     title: unknown;
     accent: unknown;
+    accent_style?: unknown;
     created_at: unknown;
     updated_at: unknown;
     pinned_at?: unknown;
+    manual_alert?: unknown;
     archived_at?: unknown;
     collapse_long_messages?: unknown;
   }>;
@@ -946,8 +977,20 @@ function validateApplicationData(
     ) {
       throw validationError("Project metadata is invalid.");
     }
+    if (
+      schemaVersion >= 13 &&
+      chat.accent_style !== "plain" &&
+      chat.accent_style !== "gradient"
+    )
+      throw validationError("Project accent style is invalid.");
     requireNonnegativeSafeInteger(chat.created_at, "project creation time");
     requireNonnegativeSafeInteger(chat.updated_at, "project update time");
+    if (
+      schemaVersion >= 12 &&
+      chat.manual_alert !== 0 &&
+      chat.manual_alert !== 1
+    )
+      throw validationError("Project manual alert is invalid.");
     if (schemaVersion >= 4 && chat.pinned_at !== null) {
       requireNonnegativeSafeInteger(chat.pinned_at, "project pin time");
     }
@@ -1014,11 +1057,7 @@ function validateApplicationData(
   }
 
   const attachments = database
-    .prepare(
-      `SELECT id, note_id, filename, media_type, storage_path,
-              byte_size, modified_at, created_at
-       FROM note_attachments`,
-    )
+    .prepare(`SELECT * FROM note_attachments`)
     .all() as AttachmentMetadataRow[];
   for (const attachment of attachments) {
     validateAttachmentMetadata(attachment, limits);
@@ -1027,6 +1066,7 @@ function validateApplicationData(
     .prepare(
       `SELECT note_id
        FROM note_attachments
+       WHERE note_id IS NOT NULL
        GROUP BY note_id
        HAVING count(*) > ?
        LIMIT 1`,
@@ -1067,6 +1107,90 @@ function validateApplicationData(
   }
   if (schemaVersion >= 9) validateProjectLabelData(database);
   else validateLabelData(database);
+  if (schemaVersion >= 14) validateMessageLabelSnapshots(database);
+  if (schemaVersion >= 15) validateConversationDrafts(database);
+}
+
+function validateConversationDrafts(database: Database.Database): void {
+  const rows = database
+    .prepare("SELECT * FROM conversation_drafts")
+    .iterate() as Iterable<{
+    body: unknown;
+    sender: unknown;
+    timestamp: unknown;
+    revision: unknown;
+    sender_open: unknown;
+    timestamp_open: unknown;
+  }>;
+  for (const row of rows) {
+    if (
+      (row.sender_open !== 1 && row.sender_open !== 0) ||
+      (row.timestamp_open !== 1 && row.timestamp_open !== 0) ||
+      !sendDraftSchema.shape.revision.safeParse(row.revision).success ||
+      !draftFieldsSchema.safeParse({
+        body: row.body,
+        sender: row.sender,
+        timestamp: row.timestamp,
+        senderOpen: row.sender_open === 1,
+        timestampOpen: row.timestamp_open === 1,
+      }).success
+    )
+      throw validationError("Conversation draft metadata is invalid.");
+  }
+  if (
+    database
+      .prepare(
+        `SELECT revision FROM conversation_drafts GROUP BY revision HAVING count(*) > 1
+      UNION ALL SELECT revision FROM conversation_drafts JOIN notes ON notes.id=revision LIMIT 1`,
+      )
+      .get()
+  )
+    throw validationError("Conversation draft revision is invalid.");
+  // Within a draft, bounding and de-duplicating positions also caps the count.
+  if (
+    database
+      .prepare(
+        `SELECT 1 FROM note_attachments WHERE draft_chat_id IS NOT NULL
+      GROUP BY draft_chat_id, position HAVING count(*) > 1 LIMIT 1`,
+      )
+      .get()
+  )
+    throw validationError("Draft attachment ordering is invalid.");
+}
+
+function validateMessageLabelSnapshots(database: Database.Database): void {
+  const rows = database
+    .prepare(
+      `
+    SELECT s.label, s.name, s.symbol, s.position, p.id AS collision
+    FROM note_label_snapshots s JOIN notes n ON n.id=s.note_id
+    LEFT JOIN project_labels p ON p.chat_id=n.chat_id AND p.id=s.label
+  `,
+    )
+    .iterate() as Iterable<{
+    label: string;
+    name: string;
+    symbol: string | null;
+    position: number;
+    collision: string | null;
+  }>;
+  for (const row of rows) {
+    const result = projectLabelInputSchema.safeParse({
+      id: row.label,
+      name: row.name,
+      symbol: row.symbol,
+      enabled: false,
+    });
+    if (
+      !result.success ||
+      row.collision !== null ||
+      isBuiltinLabel(row.label) ||
+      row.name !== result.data.name ||
+      !Number.isSafeInteger(row.position) ||
+      row.position < 0
+    )
+      throw validationError("Message label metadata is invalid.");
+  }
 }
 
 /** Foreign keys establish existence; these checks establish project ownership. */
@@ -1549,13 +1673,24 @@ function validateAttachmentMetadata(
   row: AttachmentMetadataRow,
   limits: SqliteBackupBundleLimits,
 ): void {
+  const ownerId = row.note_id ?? row.draft_chat_id;
   if (
     typeof row.id !== "string" ||
     !GENERATED_COMPONENT.test(row.id) ||
-    typeof row.note_id !== "string" ||
-    !GENERATED_COMPONENT.test(row.note_id)
+    typeof ownerId !== "string" ||
+    !GENERATED_COMPONENT.test(ownerId) ||
+    (row.note_id != null && row.draft_chat_id != null)
   ) {
     throw validationError("An attachment ID is invalid.");
+  }
+  if (row.position != null || row.draft_chat_id != null) {
+    if (
+      !Number.isSafeInteger(row.position) ||
+      row.position == null ||
+      row.position < 0 ||
+      row.position >= MAX_ATTACHMENTS_PER_MESSAGE
+    )
+      throw validationError("Attachment ordering is invalid.");
   }
   if (
     typeof row.filename !== "string" ||

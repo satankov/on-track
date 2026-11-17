@@ -95,6 +95,7 @@ export const test = base.extend<{ resetPreferences: void }, WorkerFixtures>({
         data: {
           theme: "light",
           showExamples: true,
+          alwaysShowMessageTime: true,
           collapsedSections: {
             Pinned: false,
             Projects: false,
@@ -111,7 +112,9 @@ export const test = base.extend<{ resetPreferences: void }, WorkerFixtures>({
   localApp: [
     async ({ browserName }, use, workerInfo) => {
       void browserName;
-      const port = 4_310 + workerInfo.workerIndex;
+      const port =
+        Number(process.env.THREADSTR_E2E_PORT_BASE ?? 4_310) +
+        workerInfo.workerIndex;
       const dataDirectory = mkdtempSync(join(tmpdir(), "threadstr-e2e-"));
       let server = await startServer(port, dataDirectory);
       const app: LocalApp = {

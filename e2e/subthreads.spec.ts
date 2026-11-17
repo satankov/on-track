@@ -60,7 +60,7 @@ async function submitSubthread(page: Page, title: string) {
   await expect(page.locator(".chat-heading h1")).toContainText(title);
 }
 
-test("keeps child rows compact and full width with one centered Attention and pin slot", async ({
+test("keeps child rows compact with expandable shortcuts and independent manual Alert", async ({
   page,
   request,
   localApp,
@@ -102,8 +102,8 @@ test("keeps child rows compact and full width with one centered Attention and pi
   });
   const dot = row.locator(".project-attention-dot");
   await page.mouse.move(600, 10);
-  await parent.blur();
-  const parentBox = (await parent.boundingBox())!;
+  await expect(parent.locator("..").getByRole("group")).toBeHidden();
+  const parentBox = (await parent.locator("..").boundingBox())!;
   const rowBox = (await row.boundingBox())!;
   expect(rowBox.height).toBeLessThanOrEqual(44);
   expect(rowBox.x).toBe(parentBox.x);
@@ -116,29 +116,28 @@ test("keeps child rows compact and full width with one centered Attention and pi
         .evaluate((el) => getComputedStyle(el).fontWeight),
     ),
   ).toBeLessThan(600);
-  const dotBox = (await dot.boundingBox())!;
-  const pinBox = (await pin.boundingBox())!;
-  expect(
-    Math.abs(dotBox.y + dotBox.height / 2 - (rowBox.y + rowBox.height / 2)),
-  ).toBeLessThan(1);
-  expect(
-    Math.abs(dotBox.x + dotBox.width / 2 - (pinBox.x + pinBox.width / 2)),
-  ).toBeLessThan(1);
-  await expect(dot).toHaveCSS("opacity", "1");
-  await expect(pin).toHaveCSS("opacity", "0");
-  // Hover the indented gutter: it belongs to the same full-width row.
+  await expect(dot).toBeVisible();
+  await expect(pin).toBeHidden();
   await row.hover({ position: { x: 5, y: rowBox.height / 2 } });
-  await expect(pin).toHaveCSS("opacity", "1");
-  await expect(dot).toHaveCSS("opacity", "0");
+  await expect(pin).toBeVisible();
+  await expect(dot).toBeHidden();
   await page.mouse.move(600, 10);
-  await pin.focus();
-  await expect(dot).toHaveCSS("opacity", "0");
+  await page.keyboard.press("Tab");
+  await open.focus();
   await pin.press("Enter");
   await expect(pin).toHaveAttribute("aria-pressed", "true");
   await pin.press("Enter");
   await expect(pin).toHaveAttribute("aria-pressed", "false");
-  await pin.blur();
-  await expect(dot).toHaveCSS("opacity", "1");
+  const alert = row.getByRole("button", { name: `Alert ${child.title}` });
+  await alert.click();
+  await expect(alert).toHaveAttribute("aria-pressed", "true");
+  await expect(alert.locator(".attention-dot--today")).toBeVisible();
+  await page.mouse.move(600, 10);
+  await expect(alert).toBeHidden();
+  await expect(
+    row.locator(".project-shortcuts-disclosure .attention-dot--today"),
+  ).toBeVisible();
+  await expect(parent).not.toHaveAccessibleDescription(/Manual alert/);
   for (const theme of ["light", "neutral", "dark"]) {
     await page.evaluate((value) => {
       document.documentElement.dataset.theme = value;
@@ -193,15 +192,10 @@ test("creates empty subthreads, follows origins and keeps sibling settings and d
       .evaluateAll((buttons) =>
         buttons.map((button) => button.getAttribute("aria-label")),
       ),
-  ).toEqual([
-    "Change labels",
-    "Continue in subthread",
-    "Copy message",
-    "Edit message",
-    "Delete message",
-  ]);
+  ).toEqual(["Change labels", "More message actions"]);
+  await source.getByRole("button", { name: "More message actions" }).click();
   await source
-    .getByRole("button", { name: "Continue in subthread", exact: true })
+    .getByRole("menuitem", { name: "Continue in subthread", exact: true })
     .click();
   await submitSubthread(page, "Menu variants");
   await expect(page.locator(".message-row")).toHaveCount(0);
@@ -257,15 +251,14 @@ test("creates empty subthreads, follows origins and keeps sibling settings and d
   ).toBeVisible();
   await page
     .getByRole("button", { name: "Open Menu variants", exact: true })
-    .click();
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
+    .hover();
   const deleteButton = page.getByRole("button", {
-    name: "Delete subthread",
+    name: "Delete Menu variants",
     exact: true,
   });
   await deleteButton.scrollIntoViewIfNeeded();
   await page.screenshot({
-    path: testInfo.outputPath("subthread-edit-delete.png"),
+    path: testInfo.outputPath("subthread-rail-delete.png"),
   });
   page.once("dialog", (dialog) => dialog.dismiss());
   await deleteButton.click();
@@ -278,25 +271,34 @@ test("creates empty subthreads, follows origins and keeps sibling settings and d
   expect(
     (await request.get(`${localApp.url}/api/chats/${navigation.id}`)).ok(),
   ).toBe(true);
-  await page
+  const openNavigation = page.getByRole("button", {
+    name: "Open Navigation ideas",
+    exact: true,
+  });
+  const archiveNavigation = page.getByRole("button", {
+    name: "Archive Navigation ideas",
+    exact: true,
+  });
+  await openNavigation.hover();
+  await archiveNavigation.click();
+  const archiveSection = page.getByRole("region", {
+    name: "Archive",
+    exact: true,
+  });
+  await archiveSection
     .getByRole("button", { name: "Open Navigation ideas", exact: true })
-    .click();
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
+    .hover();
   await page
-    .getByRole("button", { name: "Archive subthread", exact: true })
-    .click();
-  await expect(
-    page.getByRole("button", {
+    .getByRole("button", {
       name: "Restore Navigation ideas from archive",
       exact: true,
-    }),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Restore subthread", exact: true })
+    })
     .click();
   await expect(
-    page.getByRole("button", { name: "Archive subthread", exact: true }),
-  ).toBeVisible();
+    archiveSection.getByRole("button", { name: "Open Navigation ideas" }),
+  ).toHaveCount(0);
+  await openNavigation.hover();
+  await expect(archiveNavigation).toBeVisible();
 });
 
 test("shows five flat children and searches the complete project from a continued subthread", async ({
@@ -380,6 +382,7 @@ test("shows five flat children and searches the complete project from a continue
     unrelated.id,
     "Entry plan should stay outside this search.",
   );
+  await page.clock.install();
   await page.goto(localApp.url);
   const rootRow = page.getByRole("button", {
     name: `Open ${rootTitle}`,
@@ -420,6 +423,16 @@ test("shows five flat children and searches the complete project from a continue
   await expect(page.locator(".project-search-results")).not.toContainText(
     unrelated.title,
   );
+  await page.emulateMedia({ reducedMotion: "reduce", forcedColors: "active" });
+  const systemHighlight = await page.evaluate(() => {
+    const swatch = document.createElement("span");
+    swatch.style.color = "Highlight";
+    swatch.style.forcedColorAdjust = "none";
+    document.body.append(swatch);
+    const color = getComputedStyle(swatch).color;
+    swatch.remove();
+    return color;
+  });
   const mainResult = page.locator(
     `.project-search-result[data-chat-id="${root.id}"]`,
   );
@@ -429,6 +442,17 @@ test("shows five flat children and searches the complete project from a continue
   await expect(
     page.locator(`.message-row[data-note-id="${rootNote.id}"]`),
   ).toBeFocused();
+  const destination = page.locator("[data-search-destination]");
+  await expect(destination).toHaveAttribute("data-note-id", rootNote.id);
+  await expect(destination).toHaveCSS("animation-name", "none");
+  await expect(destination).toHaveCSS("background-color", systemHighlight);
+  await expect(destination.locator(".message-bubble")).toHaveCSS(
+    "box-shadow",
+    "none",
+  );
+  await page.clock.fastForward(1000);
+  expect(await destination.count()).toBe(0);
+  await page.emulateMedia({ forcedColors: "none" });
   await expect(search).toHaveCount(0);
 
   await page
@@ -553,8 +577,9 @@ test("keeps continuation links at a deleted source date and navigates back after
   page.on("dialog", (dialog) => dialog.accept());
   const source = page.locator(`[data-note-id="${notes[1].id}"]`);
   await source.hover();
+  await source.getByRole("button", { name: "More message actions" }).click();
   await source
-    .getByRole("button", { name: "Delete message", exact: true })
+    .getByRole("menuitem", { name: "Delete message", exact: true })
     .click();
   const marker = page.locator(`[data-note-id="continuation:${child.id}"]`);
   await expect(marker).toContainText("Continued in Persistent topic");

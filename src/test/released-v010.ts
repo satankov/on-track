@@ -128,7 +128,9 @@ export function readV010Rows(sqlite: Database.Database) {
       .all(),
     notes: sqlite.prepare("SELECT * FROM notes ORDER BY id").all(),
     attachments: sqlite
-      .prepare("SELECT * FROM note_attachments ORDER BY id")
+      .prepare(
+        `SELECT id, note_id, filename, media_type, storage_path, byte_size, modified_at, created_at FROM note_attachments ORDER BY id`,
+      )
       .all(),
     labels: sqlite
       .prepare("SELECT note_id,label FROM note_labels ORDER BY note_id,label")

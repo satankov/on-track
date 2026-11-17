@@ -119,8 +119,9 @@ test("navigates history boundaries and paints accepted sends without changing sh
   const edited = page
     .locator(".history [data-note-id]")
     .filter({ hasText: "A thought captured in dark" });
+  await edited.getByRole("button", { name: "More message actions" }).click();
   await edited
-    .getByRole("button", { name: "Edit message", exact: true })
+    .getByRole("menuitem", { name: "Edit message", exact: true })
     .click();
   await page
     .getByRole("textbox", { name: "Edit message" })
@@ -245,7 +246,12 @@ test("creates, customizes, records, and reopens a private project thread", async
   await page.goto(localApp.url);
   await page.getByRole("button", { name: "New project" }).click();
   await page.getByLabel("Project name").fill(projectName);
-  await page.getByRole("radio", { name: "Ocean" }).check();
+  const picker = page.getByRole("group", { name: "Accent", exact: true });
+  await expect(picker.getByRole("radio")).toHaveCount(12);
+  await expect(
+    picker.getByRole("radio", { name: "Coral", exact: true }),
+  ).toBeChecked();
+  await picker.getByRole("radio", { name: "Ocean", exact: true }).check();
   await page.getByRole("button", { name: "Create project" }).click();
 
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
@@ -318,7 +324,11 @@ test("creates, customizes, records, and reopens a private project thread", async
 
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByLabel("Project name").fill(renamedProject);
-  await page.getByRole("radio", { name: "Iris" }).check();
+  await expect(picker.getByRole("radio")).toHaveCount(12);
+  await expect(
+    picker.getByRole("radio", { name: "Ocean", exact: true }),
+  ).toBeChecked();
+  await picker.getByRole("radio", { name: "Orchid", exact: true }).check();
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(
     page.getByRole("heading", { name: renamedProject }),
@@ -348,6 +358,10 @@ test("creates, customizes, records, and reopens a private project thread", async
       .locator(".message-list")
       .getByText("Ship the smallest useful workflow."),
   ).toBeVisible();
+  await expect(page.locator(".message-bubble").first()).toHaveCSS(
+    "background-image",
+    /linear-gradient/,
+  );
   await page.screenshot({
     path: testInfo.outputPath("workspace.png"),
     fullPage: true,
@@ -417,29 +431,23 @@ test("pins projects in a title-only rail with Attention status", async ({
     exact: true,
   });
   await expect(pinnedSection).toContainText(pinned.title);
-  await expect(
-    page.getByRole("button", { name: `Pin ${pinned.title}` }),
-  ).toHaveAttribute("aria-pressed", "true");
+  const openPinned = page.getByRole("button", { name: `Open ${pinned.title}` });
   const pinnedControl = page.getByRole("button", {
     name: `Pin ${pinned.title}`,
   });
-  await page.mouse.move(1, 1);
-  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  await expect(pinnedControl).toBeHidden();
   if (testInfo.project.name === "mobile-webkit") {
-    await expect(pinnedControl).toHaveCSS("opacity", "1");
-  } else {
-    await expect(pinnedControl).toHaveCSS("opacity", "0");
-    await pinnedControl.focus();
-    await expect(pinnedControl).toHaveCSS("opacity", "1");
-    await page.mouse.move(1, 1);
-    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
-    await expect(pinnedControl).toHaveCSS("opacity", "0");
     await page
-      .getByRole("button", { name: `Open ${pinned.title}` })
-      .locator("..")
-      .hover();
-    await expect(pinnedControl).toHaveCSS("opacity", "1");
+      .getByRole("button", { name: `Shortcuts for ${pinned.title}` })
+      .tap();
+  } else {
+    await openPinned.hover();
+    await expect(pinnedControl).toBeVisible();
+    await page.mouse.move(1, 1);
+    await expect(pinnedControl).toBeHidden();
+    await openPinned.focus();
   }
+  await expect(pinnedControl).toHaveAttribute("aria-pressed", "true");
   await expect(
     page.getByRole("button", { name: `Open ${current.title}` }).locator(".."),
   ).toHaveAttribute("data-attention-state", "today");
@@ -456,32 +464,51 @@ test("pins projects in a title-only rail with Attention status", async ({
   const currentPin = page.getByRole("button", {
     name: `Pin ${current.title}`,
   });
-  if (testInfo.project.name === "mobile-webkit") {
-    const dot = currentPin.locator("..").locator(".project-attention-dot");
-    await currentPin.focus();
-    await expect(dot).toHaveCSS("opacity", "1");
-    const dotBox = (await dot.boundingBox())!;
-    const pinBox = (await currentPin.boundingBox())!;
-    expect(dotBox.x + dotBox.width).toBeLessThan(pinBox.x);
-  }
+  const openCurrent = page.getByRole("button", {
+    name: `Open ${current.title}`,
+    exact: true,
+  });
+  if (testInfo.project.name === "mobile-webkit")
+    await page
+      .getByRole("button", { name: `Shortcuts for ${current.title}` })
+      .tap();
+  else await openCurrent.hover();
+  const alert = page.getByRole("button", {
+    name: `Alert ${current.title}`,
+    exact: true,
+  });
+  await alert.click();
+  await expect(alert).toHaveAttribute("aria-pressed", "true");
+  await expect(openCurrent).toHaveAccessibleDescription(/Manual alert/);
   await currentPin.click();
-  await expect(currentPin).toHaveAttribute("aria-pressed", "true");
-  await expect(currentPin).toBeFocused();
   await expect(pinnedSection).toContainText(current.title);
+  if (testInfo.project.name === "desktop-chromium") {
+    await page.mouse.move(600, 10);
+    await expect(currentPin).toBeHidden();
+    await openCurrent.hover();
+  } else await expect(currentPin).toBeFocused();
+  await expect(currentPin).toHaveAttribute("aria-pressed", "true");
   await currentPin.click();
-  await expect(currentPin).toHaveAttribute("aria-pressed", "false");
   await expect(
     page.getByRole("region", { name: "Projects", exact: true }),
   ).toContainText(current.title);
+  if (testInfo.project.name === "desktop-chromium") await openCurrent.hover();
+  await expect(currentPin).toHaveAttribute("aria-pressed", "false");
 
   await localApp.restart();
   await page.goto(localApp.url);
+  await openPinned.focus();
+  await expect(pinnedControl).toHaveAttribute("aria-pressed", "true");
+  await openCurrent.focus();
+  await expect(currentPin).toHaveAttribute("aria-pressed", "false");
+  await expect(alert).toHaveAttribute("aria-pressed", "true");
+  await alert.press("Escape");
+  await expect(alert).toBeHidden();
   await expect(
-    page.getByRole("button", { name: `Pin ${pinned.title}` }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    page.getByRole("button", { name: `Pin ${current.title}` }),
-  ).toHaveAttribute("aria-pressed", "false");
+    openCurrent
+      .locator("..")
+      .locator(".project-shortcuts-disclosure .attention-dot--today"),
+  ).toBeVisible();
   await expect(page.locator(".project-dot, .project-arrow")).toHaveCount(0);
 
   await page.screenshot({
@@ -498,7 +525,7 @@ test("collapses long messages using the persisted project default", async ({
   const suffix = `${viewportName(testInfo.project.name)}-${Date.now()}`;
   const project = await createProject(request, localApp.url, {
     title: `Long messages ${suffix}`,
-    accent: "ocean",
+    accent: "ocean-gradient",
   });
   const body = [
     "## Weekly research summary",
@@ -520,6 +547,10 @@ test("collapses long messages using the persisted project default", async ({
   const clippedLink = page.getByRole("link", { name: "Clipped reference" });
   await expect(showMore).toHaveAttribute("aria-expanded", "false");
   await expect(viewport).toHaveClass(/message-body-viewport--collapsed/);
+  await expect(page.locator(".message-row--own .message-bubble")).toHaveCSS(
+    "background-image",
+    /linear-gradient/,
+  );
   await expect(showMore).toHaveCSS("padding-left", "0px");
   await expect(showMore).toHaveCSS("border-radius", "0px");
   await showMore.hover();
@@ -614,8 +645,13 @@ test("keeps labels visible and attachments full width in wide messages", async (
 
   const message = page.locator(".message-row").last();
   await expect(message.locator(".attachment-card")).toHaveCount(2);
-  await message.hover();
-  await message.getByRole("button", { name: "Change labels" }).click();
+  const changeLabels = message.getByRole("button", { name: "Change labels" });
+  if (testInfo.project.name === "mobile-webkit") {
+    await changeLabels.tap();
+  } else {
+    await message.hover();
+    await changeLabels.click();
+  }
   const popover = message.locator(".message-label-popover");
   await expect(popover).toBeVisible();
   await message
@@ -922,6 +958,10 @@ test("attributes participant messages with the compact desktop sender control", 
 
   const participantRows = page.locator(".message-row--participant");
   await expect(participantRows).toHaveCount(3);
+  await expect(participantRows.first().locator(".message-bubble")).toHaveCSS(
+    "background-image",
+    "none",
+  );
   const participantPresentation = await page.evaluate(() => {
     const rows = [
       ...document.querySelectorAll<HTMLElement>(".message-row--participant"),
@@ -966,7 +1006,8 @@ test("attributes participant messages with the compact desktop sender control", 
     page.locator(".message-list").getByText("Omar's update"),
   ).toBeHidden();
 
-  await firstMaya.getByRole("button", { name: "Edit message" }).click();
+  await firstMaya.getByRole("button", { name: "More message actions" }).click();
+  await firstMaya.getByRole("menuitem", { name: "Edit message" }).click();
   await page.getByRole("button", { name: "You" }).click();
   await page.getByRole("button", { name: "Save" }).click();
   await expect(
@@ -1012,6 +1053,119 @@ test("attributes participant messages with the compact desktop sender control", 
     viewportWidth: window.innerWidth,
   }));
   expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.viewportWidth);
+});
+
+test("saves task checkboxes from the timeline and renders single-Enter line breaks", async ({
+  page,
+  request,
+  localApp,
+}) => {
+  const project = await createProject(request, localApp.url, {
+    title: "Reading notes",
+    accent: "moss",
+  });
+  const original =
+    "Packing\nRemember the tickets\n\n- [ ] Tickets\n  - [X] Tickets\n\n`- [ ] literal`";
+  const { id: noteId } = await addNote(
+    request,
+    localApp.url,
+    project.id,
+    original,
+    Date.now(),
+  );
+  const open = page.getByRole("button", { name: "Open Reading notes" });
+  await page.goto(localApp.url);
+  await open.click();
+  const article = page.getByRole("article");
+  await expect(article.locator("p").first().locator("br")).toHaveCount(1);
+  const tasks = article.getByRole("checkbox", { name: "Tickets" });
+  await expect(tasks).toHaveCount(2);
+  await expect(tasks.last()).toBeChecked();
+  const checkboxStyle = (input: Element) => {
+    const box = getComputedStyle(input);
+    const tick = getComputedStyle(input, "::after");
+    return {
+      appearance: box.appearance,
+      size: [box.width, box.height],
+      radius: box.borderRadius,
+      border: box.borderTop,
+      fill: box.backgroundColor,
+      tick: [tick.content, tick.borderBottom, tick.transform],
+    };
+  };
+  const more = page.getByRole("button", { name: "More message actions" });
+  await more.click();
+  await page.getByRole("menuitem", { name: "Select messages" }).click();
+  const selection = page.getByRole("checkbox", { name: /^Select message:/ });
+  const checkedStyle = await selection.evaluate(checkboxStyle);
+  await selection.uncheck();
+  const uncheckedStyle = await selection.evaluate(checkboxStyle);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(await tasks.first().evaluate(checkboxStyle)).toEqual(uncheckedStyle);
+  expect(await tasks.last().evaluate(checkboxStyle)).toEqual(checkedStyle);
+  const noteUrl = `${localApp.url}/api/chats/${project.id}/notes/${noteId}`;
+  const waitForSave = () =>
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" && response.url() === noteUrl,
+    );
+  await tasks.last().focus();
+  const keyboardSave = waitForSave();
+  await tasks.last().press("Space");
+  await expect(tasks.last()).not.toBeChecked();
+  expect((await keyboardSave).ok()).toBe(true);
+  const pointerSave = waitForSave();
+  await tasks.first().click();
+  expect((await pointerSave).ok()).toBe(true);
+  await expect(tasks.first()).toBeChecked();
+  const saved = await request.get(`${localApp.url}/api/chats/${project.id}`);
+  expect((await saved.json()).notes[0].body).toBe(
+    original.replace("- [ ] Tickets", "- [x] Tickets").replace("[X]", "[ ]"),
+  );
+  await page.reload();
+  await open.click();
+  await expect(tasks.first()).toBeChecked();
+  await expect(tasks.last()).not.toBeChecked();
+
+  // A second client changes the source while this page still has an old body.
+  const remoteBody = "- [ ] Changed elsewhere";
+  expect(
+    (await request.patch(noteUrl, { multipart: { body: remoteBody } })).ok(),
+  ).toBe(true);
+  await tasks.first().click();
+  await expect(article.getByRole("alert")).toContainText(
+    "changed in another window",
+  );
+  const refreshed = article.getByRole("checkbox", {
+    name: "Changed elsewhere",
+  });
+  await expect(refreshed).not.toBeChecked();
+
+  const edit = async () => {
+    await page.getByRole("button", { name: "More message actions" }).click();
+    await page.getByRole("menuitem", { name: "Edit message" }).click();
+  };
+  await edit();
+  const editor = page.getByLabel("Edit message", { exact: true });
+  await editor.fill("My unfinished edit");
+  expect(
+    (
+      await request.patch(noteUrl, {
+        multipart: { body: "- [x] Changed elsewhere" },
+      })
+    ).ok(),
+  ).toBe(true);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText(/Your unsaved edit is still here/)).toBeVisible();
+  await expect(editor).toHaveValue("My unfinished edit");
+  await expect(refreshed).toBeChecked();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await edit();
+  await expect(editor).toHaveValue("- [x] Changed elsewhere");
+  await editor.fill("- [x] Changed elsewhere\nMy unfinished edit");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(article).toContainText("My unfinished edit");
 });
 
 test("formats Markdown selections in a compact, responsive composer strip", async ({
@@ -1088,10 +1242,11 @@ test("formats Markdown selections in a compact, responsive composer strip", asyn
 
   if (testInfo.project.name === "mobile-webkit") {
     await page.setViewportSize({ width: 320, height: 720 });
+    await page.getByRole("button", { name: "More message actions" }).click();
     await expect(
-      page.getByRole("button", { name: /Edit message/ }),
+      page.getByRole("menuitem", { name: /Edit message/ }),
     ).toBeVisible();
-    await page.getByRole("button", { name: /Edit message/ }).click();
+    await page.getByRole("menuitem", { name: /Edit message/ }).click();
     await expect(
       page.getByRole("group", { name: "Markdown assistance" }),
     ).toBeVisible();
@@ -1403,7 +1558,8 @@ test("manages markdown messages and database backups from the UI", async ({
   ).toBeVisible();
 
   const note = page.locator(".message-row").first();
-  await note.getByRole("button", { name: "Edit message" }).click();
+  await note.getByRole("button", { name: "More message actions" }).click();
+  await note.getByRole("menuitem", { name: "Edit message" }).click();
   await page
     .getByRole("textbox", { name: "Edit message" })
     .fill("Revised **decision**");
@@ -1417,22 +1573,28 @@ test("manages markdown messages and database backups from the UI", async ({
   await expect(page.getByText("August 29, 2026")).toBeVisible();
 
   page.once("dialog", (dialog) => dialog.accept());
-  await note.getByRole("button", { name: "Delete message" }).click();
+  await note.getByRole("button", { name: "More message actions" }).click();
+  await note.getByRole("menuitem", { name: "Delete message" }).click();
   await expect(page.locator(".message-list").getByText("Revised")).toBeHidden();
 
   const bundledAttachmentPath = testInfo.outputPath("bundled-roadmap.txt");
   writeFileSync(bundledAttachmentPath, "bundle sidecar bytes");
   // Exercise export after a slow upload, when the composer still shows the file.
   await page.route(
-    `**/api/chats/${exportedProject.id}/notes`,
+    `**/api/chats/${exportedProject.id}/draft`,
     async (route) => {
-      if (route.request().method() === "POST") {
+      if (route.request().method() === "PUT") {
         await new Promise((resolve) => setTimeout(resolve, 750));
       }
       await route.continue();
     },
   );
-  await page.getByLabel("Attach files").setInputFiles(bundledAttachmentPath);
+  await page
+    .getByLabel("Attach files")
+    .setInputFiles([
+      bundledAttachmentPath,
+      "branding/threadstr/picture-previews/earthrise-proof.jpg",
+    ]);
   await page.getByLabel("Add a note").fill("Bundled attachment");
   await page.getByRole("button", { name: /Add note/ }).click();
   await expect(
@@ -1486,6 +1648,12 @@ test("manages markdown messages and database backups from the UI", async ({
     .click();
   await expect(page.getByText("bundled-roadmap.txt")).toBeVisible();
 
+  await expect(
+    page
+      .getByRole("button", { name: "View earthrise-proof.jpg larger" })
+      .locator("img"),
+  ).toHaveJSProperty("naturalWidth", 1280);
+
   const activeDatabase = new Database(
     join(localApp.dataDirectory, "on-track.sqlite"),
     { readonly: true, fileMustExist: true },
@@ -1515,6 +1683,198 @@ test("manages markdown messages and database backups from the UI", async ({
   } finally {
     activeDatabase.close();
   }
+});
+
+test("previews saved pictures inline and refreshes the larger view after an external edit", async ({
+  page,
+  localApp,
+  request,
+  isMobile,
+}, testInfo) => {
+  const project = await createProject(request, localApp.url, {
+    title: "Gallery proofs",
+    accent: "slate",
+  });
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: "Open " + project.title }).click();
+  const sampleBytes = readFileSync(
+    "branding/threadstr/picture-previews/earthrise-proof.jpg",
+  );
+  const portrait = Buffer.from(
+    await page.evaluate(() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1200;
+      canvas.height = 2400;
+      const context = canvas.getContext("2d")!;
+      context.fillStyle = "#726789";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/png").split(",")[1];
+    }),
+    "base64",
+  );
+  const attach = page.getByLabel("Attach files");
+  const save = page.getByRole("button", { name: /Add note/ });
+  const proof = {
+    name: "earthrise.jpg",
+    mimeType: "image/jpeg",
+    buffer: sampleBytes,
+  };
+  const receipts = localApp.nativeActionReceipts().length;
+  await attach.setInputFiles(proof);
+  await save.click();
+  const viewerButton = page.getByRole("button", {
+    name: "View earthrise.jpg larger",
+    exact: true,
+  });
+  const inline = viewerButton.locator("img");
+  await expect(inline).toHaveJSProperty("naturalWidth", 1280);
+  const wide = await viewerButton.boundingBox();
+  expect(wide!.width).toBeGreaterThan(120);
+  expect(wide!.width).toBeLessThanOrEqual(401);
+  await page.getByRole("button", { name: "Files 1", exact: true }).click();
+  await expect(inline).toHaveJSProperty("naturalHeight", 720);
+  if (isMobile) await viewerButton.tap();
+  else await viewerButton.press("Enter");
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("img")).toHaveJSProperty("naturalWidth", 1280);
+  if (isMobile) await dialog.getByRole("button", { name: /Close/ }).tap();
+  else await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  if (!isMobile) await expect(viewerButton).toBeFocused();
+  await page.reload();
+  await page.getByRole("button", { name: "Open " + project.title }).click();
+  await expect(inline).toHaveJSProperty("naturalHeight", 720);
+
+  const picture = {
+    name: "orientation.png",
+    mimeType: "image/png",
+    buffer: portrait,
+  };
+  const memo = {
+    name: "gallery-spec.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("portrait and print"),
+  };
+  await attach.setInputFiles([
+    picture,
+    memo,
+    { ...proof, name: "landscape.jpg" },
+  ]);
+  await save.click();
+  const mixed = page.locator(".message-row").filter({ hasText: memo.name });
+  const thumbs = mixed.getByRole("button", { name: /^View .+ larger$/ });
+  await expect(thumbs).toHaveCount(2);
+  await expect(thumbs.first().locator("img")).toHaveJSProperty(
+    "naturalHeight",
+    144,
+  );
+  await expect(thumbs.first().locator("img")).toHaveJSProperty(
+    "naturalWidth",
+    72,
+  );
+  await thumbs.first().click();
+  await expect(dialog.locator("img")).toHaveJSProperty("naturalHeight", 2400);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(thumbs.last().locator("img")).toHaveJSProperty(
+    "naturalWidth",
+    1280,
+  );
+  await expect(thumbs.last()).toBeEnabled();
+  expect((await thumbs.first().boundingBox())!.width).toBeLessThanOrEqual(97);
+  await expect(mixed.locator(".attachment-copy strong")).toHaveText([
+    picture.name,
+    memo.name,
+    "landscape.jpg",
+  ]);
+  await mixed.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: testInfo.outputPath("inline-picture-previews.png"),
+    animations: "disabled",
+  });
+
+  // A changed JPEG at the same managed path must reload the same record.
+  const stored = readAttachmentRow(
+    localApp.dataDirectory,
+    project.title,
+    proof.name,
+  );
+  const imagePath = join(localApp.dataDirectory, stored.storagePath);
+  writeFileSync(
+    imagePath,
+    readFileSync("branding/threadstr/picture-previews/earthrise-source.jpg"),
+  );
+  const edited = new Date(stored.modifiedAt + 5000);
+  utimesSync(imagePath, edited, edited);
+  await viewerButton.scrollIntoViewIfNeeded();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(inline).toHaveJSProperty("naturalWidth", 1200);
+  await expect(mixed.locator(".attachment-copy strong")).toHaveText([
+    picture.name,
+    memo.name,
+    "landscape.jpg",
+  ]);
+  const row = page.locator(".message-row").filter({ has: viewerButton });
+  await row.getByRole("button", { name: "More message actions" }).click();
+  await row.getByRole("menuitem", { name: "Select messages" }).click();
+  await expect(row.getByRole("checkbox")).toBeChecked();
+  await viewerButton.click();
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(row.getByRole("checkbox")).toBeChecked();
+  expect(localApp.nativeActionReceipts()).toHaveLength(receipts);
+});
+
+test("opens a saved picture in the owning subthread from project search", async ({
+  page,
+  localApp,
+  request,
+}) => {
+  const root = await createProject(request, localApp.url, {
+    title: "Gallery archive",
+    accent: "iris",
+  });
+  const base = localApp.url + "/api/chats/";
+  const child = await (
+    await request.post(base + root.id + "/subthreads", {
+      data: { title: "Original photographs" },
+    })
+  ).json();
+  await request.post(base + child.id + "/notes", {
+    multipart: {
+      body: "Lunar horizon",
+      files: {
+        name: "earthrise.jpg",
+        mimeType: "image/jpeg",
+        buffer: readFileSync(
+          "branding/threadstr/picture-previews/earthrise-source.jpg",
+        ),
+      },
+    },
+  });
+  await page.goto(localApp.url);
+  await page
+    .getByRole("button", { name: "Open " + root.title, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Search messages", exact: true })
+    .click();
+  await page
+    .getByRole("searchbox", { name: "Search messages" })
+    .fill("Lunar horizon");
+  await page.getByRole("checkbox", { name: "Project", exact: true }).check();
+  const result = page
+    .locator(".project-search-result")
+    .filter({ hasText: "earthrise.jpg" });
+  await result.getByRole("button", { name: "Open message in history" }).click();
+  const picture = page.getByRole("button", {
+    name: "View earthrise.jpg larger",
+  });
+  await expect(picture.locator("img")).toHaveJSProperty("naturalWidth", 1200);
+  await expect(page.locator(".chat-heading")).toContainText(
+    "Original photographs",
+  );
 });
 
 test("adds an attachment message and filters history by files", async ({
@@ -1778,10 +2138,9 @@ test("configures, applies, filters, and retains project message labels", async (
     page.getByRole("checkbox", { name: "Risk (inactive)" }),
   ).toBeChecked();
   await page.mouse.move(1, 1);
-  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
   await expect(page.locator(".message-actions").first()).toHaveCSS(
     "opacity",
-    "1",
+    testInfo.project.name === "mobile-webkit" ? "1" : "0",
   );
   await page.screenshot({
     path: testInfo.outputPath("labels-workspace.png"),
@@ -2226,12 +2585,18 @@ test("keeps keyboard focus when a project moves into a collapsed section", async
   });
   await pinnedHeader.click();
   await page
+    .getByRole("button", { name: `Open ${project.title}`, exact: true })
+    .focus();
+  await page
     .getByRole("button", { name: `Pin ${project.title}`, exact: true })
     .focus();
   await page.keyboard.press("Enter");
   await expect(pinnedHeader).toBeFocused();
   await projectsHeader.click();
   await pinnedHeader.click();
+  await page
+    .getByRole("button", { name: `Open ${project.title}`, exact: true })
+    .focus();
   await page
     .getByRole("button", { name: `Pin ${project.title}`, exact: true })
     .focus();
@@ -2281,7 +2646,8 @@ test("drops files into new and edited messages with a visible target", async ({
   await page.getByRole("button", { name: "Add note", exact: true }).click();
   const message = page.locator(".message-row");
   await expect(message.locator(".attachment-card")).toHaveCount(1);
-  await message.getByRole("button", { name: "Edit message" }).click();
+  await message.getByRole("button", { name: "More message actions" }).click();
+  await message.getByRole("menuitem", { name: "Edit message" }).click();
   const secondDrop = await page.evaluateHandle(() => {
     const transfer = new DataTransfer();
     transfer.items.add(
@@ -2406,8 +2772,9 @@ test("keeps full-width add and edit text above the composer toolbar", async ({
       height,
     );
     await textarea.fill("");
+    await page.getByRole("button", { name: "More message actions" }).click();
     await page
-      .getByRole("button", { name: "Edit message", exact: true })
+      .getByRole("menuitem", { name: "Edit message", exact: true })
       .click();
     await textarea.fill(eightLines);
     await expect(textarea).toHaveValue(eightLines);
@@ -2560,7 +2927,10 @@ test("keeps expanded edit controls reachable at 200 percent reflow", async ({
   await addNote(request, localApp.url, project.id, "Keep editing available");
   await page.goto(localApp.url);
   await page.getByRole("button", { name: `Open ${project.title}` }).click();
-  await page.getByRole("button", { name: "Edit message", exact: true }).click();
+  await page.getByRole("button", { name: "More message actions" }).click();
+  await page
+    .getByRole("menuitem", { name: "Edit message", exact: true })
+    .click();
   await page.getByRole("button", { name: /Show sender options/ }).click();
   await page.getByRole("textbox", { name: "Sender name" }).fill("Alex Morgan");
   await page
@@ -2653,6 +3023,104 @@ test("keeps expanded edit controls reachable at 200 percent reflow", async ({
   });
 });
 
+test("reveals message actions and time across the hovered row and dismisses them on exit", async ({
+  page,
+  request,
+  localApp,
+  isMobile,
+}) => {
+  test.skip(isMobile, "Exercises a hovering mouse and keyboard.");
+  const project = await createProject(request, localApp.url, {
+    title: "Message shortcuts",
+    accent: "moss",
+  });
+  await addNote(request, localApp.url, project.id, "A short message");
+  const reply = await request.post(
+    `${localApp.url}/api/chats/${project.id}/notes`,
+    {
+      multipart: { body: "A short reply", sender: "Maya" },
+    },
+  );
+  expect(reply.ok()).toBe(true);
+  const preferences = await request.patch(`${localApp.url}/api/preferences`, {
+    data: { alwaysShowMessageTime: false },
+  });
+  expect(preferences.ok()).toBe(true);
+  await page.goto(localApp.url);
+  await page.getByRole("button", { name: "Open Message shortcuts" }).click();
+  const row = page.locator(".message-row--own");
+  const neighbor = page.locator(".message-row--participant");
+  const toolbar = row.locator(".message-actions");
+  const time = row.locator("time");
+  const labels = row.getByRole("button", { name: "Change labels" });
+  const more = row.getByRole("button", { name: "More message actions" });
+  // The own message sits on the right, leaving this end of its row empty.
+  const hoverBesideMessage = () => row.hover({ position: { x: 2, y: 2 } });
+
+  for (const trigger of [labels, more]) {
+    await hoverBesideMessage();
+    await expect(toolbar).toHaveCSS("opacity", "1");
+    await expect(time).toHaveCSS("opacity", "1");
+    await expect(neighbor.locator(".message-actions")).toHaveCSS(
+      "opacity",
+      "0",
+    );
+    await expect(neighbor.locator("time")).toHaveCSS("opacity", "0");
+    await trigger.click();
+    const popup = row.locator(".message-label-popover, .message-more-menu");
+    await expect(popup).toBeVisible();
+    await hoverBesideMessage();
+    await expect(popup).toBeVisible();
+    await trigger.hover();
+    const buttonBox = (await trigger.boundingBox())!;
+    const popupBox = (await popup.boundingBox())!;
+    const entryY =
+      popupBox.y > buttonBox.y
+        ? popupBox.y + 1
+        : popupBox.y + popupBox.height - 1;
+    // Cross the gap at human pointer speeds before moving to an option.
+    const entryX = Math.min(
+      popupBox.x + popupBox.width - 1,
+      buttonBox.x + buttonBox.width + 30,
+    );
+    await page.mouse.move(entryX, entryY, { steps: 18 });
+    await popup.hover();
+    if (trigger === labels) {
+      const pin = popup.getByRole("checkbox", { name: "Pin", exact: true });
+      await pin.click();
+      await expect(pin).toBeChecked();
+    }
+    // The center of the neighbor's row is clear of its short, left-aligned reply.
+    await neighbor.hover();
+    await expect(popup).toHaveCount(0);
+    await expect(toolbar).toHaveCSS("opacity", "0");
+    await expect(time).toHaveCSS("opacity", "0");
+    await expect(neighbor.locator(".message-actions")).toHaveCSS(
+      "opacity",
+      "1",
+    );
+    await expect(neighbor.locator("time")).toHaveCSS("opacity", "1");
+  }
+
+  await more.click();
+  await more.click();
+  await page.mouse.move(0, 0);
+  await expect(toolbar).toHaveCSS("opacity", "0");
+  await expect(time).toHaveCSS("opacity", "0");
+
+  await labels.focus();
+  await page.keyboard.press("Tab");
+  await expect(more).toBeFocused();
+  await expect(toolbar).toHaveCSS("opacity", "1");
+  await expect(time).toHaveCSS("opacity", "1");
+  await page.keyboard.press("Enter");
+  await hoverBesideMessage();
+  await neighbor.hover();
+  await expect(row.getByRole("menu")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(more).toBeFocused();
+});
+
 test("keeps bottom message labels above the trigger without scrolling history", async ({
   page,
   localApp,
@@ -2695,7 +3163,8 @@ test("keeps bottom message labels above the trigger without scrolling history", 
   const topTrigger = page
     .getByRole("button", { name: "Change labels" })
     .first();
-  await topTrigger.click();
+  // Keyboard activation keeps the popup open when reflow moves it away from the pointer.
+  await topTrigger.press("Enter");
   const topMenu = (await popover.boundingBox())!;
   const topButton = (await topTrigger.boundingBox())!;
   expect(topMenu.y).toBeGreaterThanOrEqual(topButton.y + topButton.height);

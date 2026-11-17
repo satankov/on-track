@@ -4,8 +4,8 @@ Open [index.html](index.html) for the interactive visual reference. The normativ
 rules are in [DESIGN.md](../../../DESIGN.md). This accompanies the logo handoff;
 it is not an application route or a new design-system dependency.
 
-[Preview image](preview.png) shows the Dark palette section. The interactive
-page is authoritative for other themes and component states.
+The [palette preview](preview.png) shows outgoing messages, picker swatches and Add buttons for all twelve project accents in Light.
+Use the theme control in the cookbook to compare them in Neutral and Dark.
 
 ## View
 
@@ -31,7 +31,8 @@ app server and reads no project database.
   standards. The settings specimen omits the full sidebar and workspace gutter;
   the layout diagram and specification explain those separately.
 - Sample Save/Archive/Delete/Send actions only demonstrate feedback. Native
-  checkboxes/radios, Show more, focus, and the Create modal can be exercised.
+  checkboxes/radios, message actions and timestamps, rail shortcuts, Show more,
+  focus, and the Create modal can be exercised.
   This is not a replacement for testing the real React workflows.
 
 ## Maintain

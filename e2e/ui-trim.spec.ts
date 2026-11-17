@@ -65,8 +65,16 @@ test("keeps Question editable and its message tags intact across themes and refl
     await expect(
       message.locator('.message-label[data-label="open-question"]'),
     ).toHaveText("Question");
-    await page.getByRole("button", { name: /^Show sender options/ }).click();
-    await page.getByRole("textbox", { name: "Sender name" }).fill("Maya");
+    const sender = page.getByRole("textbox", { name: "Sender name" });
+    if (theme === "light") {
+      await page.getByRole("button", { name: /^Show sender options/ }).click();
+      await sender.fill("Maya");
+      await expect(
+        page.getByText("Draft saved", { exact: true }),
+      ).toBeVisible();
+    } else {
+      await expect(sender).toHaveValue("Maya");
+    }
     await page.screenshot({ path: testInfo.outputPath(`sender-${theme}.png`) });
     await page.getByRole("button", { name: "Edit", exact: true }).click();
     const back = page.getByRole("button", {
@@ -77,7 +85,6 @@ test("keeps Question editable and its message tags intact across themes and refl
       page.getByRole("textbox", { name: "Project name", exact: true }),
     ).toBeFocused();
     if (desktop) {
-      await page.keyboard.press("Shift+Tab");
       await page.keyboard.press("Shift+Tab");
       await expect(back).toBeFocused();
     }
@@ -105,9 +112,17 @@ test("keeps Question editable and its message tags intact across themes and refl
         exact: true,
       });
       await expect(back).toBeInViewport();
-      await expect(
-        page.getByRole("button", { name: "Save changes" }),
-      ).toBeInViewport();
+      const lastField = page.getByRole("checkbox", {
+        name: "Collapse long messages by default",
+      });
+      await lastField.focus();
+      await page.keyboard.press("Tab");
+      const save = page.getByRole("button", { name: "Save changes" });
+      await expect(save).toBeFocused();
+      await expect(save).toBeInViewport();
+      const fieldBox = (await lastField.boundingBox())!;
+      const saveBox = (await save.boundingBox())!;
+      expect(saveBox.y).toBeGreaterThan(fieldBox.y + fieldBox.height);
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth,
@@ -127,7 +142,6 @@ test("keeps Question editable and its message tags intact across themes and refl
     await expect(
       page.getByRole("textbox", { name: "Project name", exact: true }),
     ).toBeFocused();
-    await page.keyboard.press("Shift+Tab");
     await page.keyboard.press("Shift+Tab");
     await expect(
       page.getByRole("button", { name: "Back to project", exact: true }),

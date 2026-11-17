@@ -1,3 +1,10 @@
+import {
+  saveDraftSchema,
+  sendDraftSchema,
+  type ConversationDraft,
+} from "../domain/drafts.js";
+import { setImmediate as yieldToRequests } from "node:timers/promises";
+import type { PreparedAttachment } from "./db/batch-notes.js";
 import type {
   Chat,
   ChatDetail,
@@ -12,6 +19,7 @@ import type { Label } from "../domain/validation.js";
 import {
   MAX_ATTACHMENTS_PER_MESSAGE,
   MAX_ATTACHMENT_BYTES,
+  batchNotesSchema,
   createChatInputSchema,
   createSubthreadInputSchema,
   updateChatInputSchema,
@@ -23,17 +31,24 @@ import {
   type SqliteChatRepository,
 } from "./db/repository.js";
 import {
+  ManagedAttachmentChangedError,
+  ManagedAttachmentTooLargeError,
   ManagedAttachmentUnavailableError,
   type ManagedAttachmentStore,
 } from "./attachments/managed-attachment-store.js";
+import {
+  MAX_PICTURE_PREVIEW_BYTES,
+  picturePreviewMediaType,
+} from "../domain/picture-preview.js";
+import { inspectPicturePreview } from "./attachments/picture-preview.js";
 import { attachmentOpenPolicy } from "./attachment-open-policy.js";
 import type { NativeFileActions } from "./native-file-actions.js";
 import { NativeFileActionUnsupportedError } from "./native-file-actions.js";
 import { NativeFileActionFailedError } from "./native-file-actions.js";
 
 export class ProjectNotFoundError extends Error {
-  constructor() {
-    super("Project not found.");
+  constructor(message = "Project not found.") {
+    super(message);
   }
 }
 
@@ -59,6 +74,8 @@ export class AttachmentOpenBlockedError extends Error {
   }
 }
 
+export class AttachmentCopyError extends Error {}
+
 export type AttachmentStore = Pick<
   ManagedAttachmentStore,
   "create" | "observe" | "remove"
@@ -66,7 +83,10 @@ export type AttachmentStore = Pick<
   Partial<
     Pick<
       ManagedAttachmentStore,
-      "resolveAvailableTarget" | "resolveSafeContainingDirectory"
+      | "resolveAvailableTarget"
+      | "resolveSafeContainingDirectory"
+      | "copy"
+      | "read"
     >
   >;
 
@@ -86,6 +106,9 @@ const noteWriteAttachmentSchema = z
       message: "Attachment size does not match its content",
     },
   );
+
+export type DraftUploadPart =
+  { fields: unknown } | { file: z.input<typeof noteWriteAttachmentSchema> };
 
 const noteBodySchema = z.string().trim().max(10_000);
 const noteTimestampSchema = z
@@ -112,6 +135,7 @@ const appendNoteCommandSchema = z
 const updateNoteCommandSchema = z
   .object({
     body: noteBodySchema.optional(),
+    expectedBody: z.string().max(10_000).optional(),
     sender: senderSchema.nullable().optional(),
     createdAt: noteTimestampSchema.optional(),
     keepAttachmentIds: z
@@ -225,6 +249,12 @@ export class ChatService {
     return chat;
   }
 
+  setChatAlert(id: string, manualAlert: boolean): Pick<Chat, "manualAlert"> {
+    if (!this.repository.setChatAlert(id, manualAlert))
+      throw new ProjectNotFoundError();
+    return { manualAlert };
+  }
+
   setChatPinned(id: string, pinned: boolean): ProjectPinState {
     const state = this.repository.setChatPinned(id, pinned, this.clock());
     if (!state) throw new ProjectNotFoundError();
@@ -243,6 +273,98 @@ export class ChatService {
       throw new ProjectNotFoundError();
     }
     this.cleanup(result.storagePaths);
+  }
+
+  getDraft(chatId: string): ConversationDraft {
+    const draft = this.repository.drafts.read(chatId);
+    if (!draft) throw new ProjectNotFoundError();
+    return {
+      ...draft,
+      attachments: draft.attachments.map((file) => {
+        const observed = this.requireAttachmentStore().observe(
+          file.storagePath,
+        );
+        return {
+          id: file.id,
+          filename: file.filename,
+          status: observed.status,
+          byteSize: observed.byteSize ?? file.byteSize,
+        };
+      }),
+    };
+  }
+
+  async saveDraft(
+    chatId: string,
+    parts: AsyncIterable<DraftUploadPart>,
+  ): Promise<ConversationDraft> {
+    if (!this.repository.drafts.read(chatId)) throw new ProjectNotFoundError();
+    let fields: z.infer<typeof saveDraftSchema> | undefined;
+    const installed: ReturnType<ChatService["installAttachments"]> = [];
+    let removed: string[] | undefined;
+    try {
+      for await (const part of parts) {
+        if ("fields" in part) {
+          if (fields) throw new InvalidInputError();
+          fields = saveDraftSchema.parse(part.fields);
+        } else {
+          if (
+            installed.length + (fields?.keepAttachmentIds.length ?? 0) >=
+            MAX_ATTACHMENTS_PER_MESSAGE
+          )
+            throw new InvalidInputError();
+          const file = noteWriteAttachmentSchema.parse(part.file);
+          installed.push(...this.installAttachments([file], this.clock()));
+        }
+      }
+      if (
+        !fields ||
+        installed.length + fields.keepAttachmentIds.length >
+          MAX_ATTACHMENTS_PER_MESSAGE
+      )
+        throw new InvalidInputError();
+      removed = this.repository.drafts.save(chatId, fields, installed);
+      if (!removed) throw new ProjectNotFoundError();
+    } catch (error) {
+      this.cleanup(installed.map((file) => file.storagePath));
+      throw error;
+    }
+    this.cleanup(removed);
+    return this.getDraft(chatId);
+  }
+
+  sendDraft(chatId: string, input: unknown) {
+    const { revision, createdAt } = sendDraftSchema.parse(input);
+    const receipt = this.repository.drafts.consume(
+      chatId,
+      revision,
+      (draft) => {
+        const body = draft.body.trim();
+        if (!body && !draft.attachments.length) throw new InvalidInputError();
+        if (draft.timestampOpen && draft.timestamp && createdAt === undefined)
+          throw new InvalidInputError();
+        for (const file of draft.attachments) {
+          const observed = this.requireAttachmentStore().observe(
+            file.storagePath,
+          );
+          if (observed.status !== "available")
+            throw new AttachmentUnavailableError(observed.status);
+          if ((observed.byteSize ?? 0) > MAX_ATTACHMENT_BYTES)
+            throw new InvalidInputError();
+        }
+        this.repository.appendNote({
+          id: revision,
+          chatId,
+          body,
+          sender: draft.sender.trim() || null,
+          createdAt:
+            draft.timestampOpen && draft.timestamp ? createdAt : undefined,
+          now: this.clock(),
+        });
+      },
+    );
+    if (!receipt) throw new ProjectNotFoundError();
+    return { ...this.refreshedNote(chatId, revision), ...receipt };
   }
 
   appendNote(chatId: string, input: unknown): Note {
@@ -293,6 +415,7 @@ export class ChatService {
     try {
       result = this.repository.updateNote(chatId, noteId, {
         body: values.body,
+        expectedBody: values.expectedBody,
         sender: values.sender,
         createdAt: values.createdAt,
         now,
@@ -324,6 +447,78 @@ export class ChatService {
     this.cleanup(result.storagePaths);
   }
 
+  async batchNotes(chatId: string, input: unknown): Promise<void> {
+    const values = batchNotesSchema.parse(input);
+    if (values.action !== "delete" && values.destinationChatId === chatId)
+      throw new InvalidInputError();
+    const prepared = new Map<string, PreparedAttachment>();
+    try {
+      if (values.action === "copy") {
+        const files = this.repository.attachmentsForCopy(chatId, values);
+        if (!files)
+          throw new ProjectNotFoundError(
+            "The selected messages or conversation are no longer available.",
+          );
+        if (files.length) await this.prepareAttachmentCopies(files, prepared);
+      }
+      const removed = this.repository.batchNotes(
+        chatId,
+        values,
+        this.idFactory,
+        prepared,
+      );
+      if (!removed)
+        throw new ProjectNotFoundError(
+          "The selected messages or conversation are no longer available.",
+        );
+      this.cleanup(removed);
+    } catch (error) {
+      this.cleanup(Array.from(prepared.values(), (e) => e.target.storagePath));
+      throw error;
+    }
+  }
+
+  private async prepareAttachmentCopies(
+    files: StoredNoteAttachment[],
+    prepared: Map<string, PreparedAttachment>,
+  ) {
+    const store = this.requireAttachmentStore();
+    if (!store.copy)
+      throw new AttachmentCopyError(
+        "Managed attachment copying is unavailable.",
+      );
+    const ids = files.map(() => this.idFactory()).sort();
+    try {
+      for (const [i, source] of files.entries()) {
+        const copy = store.copy(source.storagePath, ids[i]);
+        prepared.set(source.id, {
+          source,
+          target: {
+            ...source,
+            storagePath: copy.storagePath,
+            id: ids[i],
+            byteSize: copy.byteSize,
+            modifiedAt: copy.modifiedAt,
+          },
+          verify: copy.verify,
+        });
+        await yieldToRequests();
+      }
+      for (const entry of prepared.values()) entry.verify();
+    } catch (error) {
+      if (error instanceof ManagedAttachmentUnavailableError)
+        throw new AttachmentUnavailableError(error.status);
+      if (
+        error instanceof ManagedAttachmentChangedError ||
+        error instanceof ManagedAttachmentTooLargeError
+      )
+        throw new AttachmentCopyError(error.message);
+      throw new AttachmentCopyError(
+        "A file could not be copied. Check available space and file access, then try again.",
+      );
+    }
+  }
+
   setNoteLabel(
     chatId: string,
     noteId: string,
@@ -335,6 +530,24 @@ export class ChatService {
     if (labels === undefined) throw new ProjectNotFoundError();
     if (labels === null) throw new InvalidInputError();
     return labels;
+  }
+
+  getPicturePreview(chatId: string, noteId: string, attachmentId: string) {
+    const attachment = this.requireScopedAttachment(
+      chatId,
+      noteId,
+      attachmentId,
+    );
+    if (!picturePreviewMediaType(attachment.filename)) return;
+    const store = this.requireAttachmentStore();
+    if (!store.read)
+      throw new Error("Managed attachment reads are unavailable.");
+    const { content } = store.read(
+      attachment.storagePath,
+      MAX_PICTURE_PREVIEW_BYTES,
+    );
+    const mediaType = inspectPicturePreview(content, attachment.filename);
+    if (mediaType) return { content, mediaType };
   }
 
   async openAttachment(
@@ -496,10 +709,12 @@ export class ChatService {
     modifiedAt: number;
     createdAt: number;
   }> {
+    // Reads order equal creation times by ID. Assign those IDs in upload order.
+    const ids = attachments.map(() => this.idFactory()).sort();
     const installed = [];
     try {
-      for (const attachment of attachments) {
-        const id = this.idFactory();
+      for (const [index, attachment] of attachments.entries()) {
+        const id = ids[index];
         const created = this.requireAttachmentStore().create({
           attachmentId: id,
           filename: attachment.filename,

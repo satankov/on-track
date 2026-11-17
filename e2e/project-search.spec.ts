@@ -18,9 +18,14 @@ test("search remains usable in read-only examples at narrow widths and 200 perce
   await toggle.click();
   const input = page.getByRole("searchbox");
   await input.fill("museum");
-  const context = page
-    .getByRole("button", { name: "Open message in history" })
+  await expect(page.locator(".message-body mark").first()).toBeVisible();
+  const more = page
+    .getByRole("button", { name: "More message actions" })
     .first();
+  await more.click();
+  const context = page.getByRole("menuitem", {
+    name: "Open message in history",
+  });
   await expect(context).toBeVisible();
   await expect(page.getByLabel("Add a note", { exact: true })).toBeDisabled();
   await expect(page.locator(".composer")).not.toHaveAttribute(
@@ -43,6 +48,8 @@ test("search remains usable in read-only examples at narrow widths and 200 perce
   });
   await toggle.click();
   await expect(input).toHaveValue("museum");
+  await expect(page.locator(".message-body mark").first()).toBeVisible();
+  await more.click();
   await expect(context).toBeVisible();
   await expect(input).toBeInViewport();
   expect((await input.boundingBox())!.width).toBeGreaterThan(300);
@@ -65,7 +72,7 @@ test("searches locally with a compact field, restores reading positions and open
   localApp,
 }, testInfo) => {
   const response = await request.post(`${localApp.url}/api/chats`, {
-    data: { title: "Search notebook", accent: "ocean" },
+    data: { title: "Search notebook", accent: "amber-gradient" },
   });
   const chat = await response.json();
   const ids: string[] = [];
@@ -91,6 +98,17 @@ test("searches locally with a compact field, restores reading positions and open
   await page.goto(localApp.url);
   await page.getByRole("button", { name: "Open Search notebook" }).click();
   await expect(page.locator(".message-row")).toHaveCount(24);
+  const target = page.locator(`[data-note-id="${ids[10]}"]`);
+  const restingColor = await target.evaluate(
+    (row) => getComputedStyle(row).backgroundColor,
+  );
+  await target.getByRole("button", { name: "More message actions" }).click();
+  await page.getByRole("menuitem", { name: "Select messages" }).click();
+  const selectionColor = await target.evaluate(
+    (row) => getComputedStyle(row).backgroundColor,
+  );
+  expect(selectionColor).not.toBe(restingColor);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   const history = page.locator(".history");
   await history.evaluate((el) => {
     el.scrollTop = 500;
@@ -98,6 +116,7 @@ test("searches locally with a compact field, restores reading positions and open
   const position = await history.evaluate((el) => el.scrollTop);
   const draft = page.getByLabel("Add a note");
   await draft.fill("Preserve this draft");
+  await expect(page.getByText("Draft saved", { exact: true })).toBeVisible();
   const toggle = page.getByRole("button", {
     name: "Search messages",
     exact: true,
@@ -112,43 +131,69 @@ test("searches locally with a compact field, restores reading positions and open
   await expect(page.locator(".message-row")).toHaveCount(2);
   await expect(page.getByLabel("Matching messages")).toHaveText("2");
   await expect(page.locator(".message-body mark")).toHaveCount(4);
-  const composerBox = (await page.locator(".composer").boundingBox())!;
+  const amberMatch = page
+    .locator(".message-row--own .message-body mark")
+    .first();
+  await expect(amberMatch).toHaveCSS("outline-style", "solid");
+  await expect(amberMatch).toHaveCSS("outline-width", "1px");
+  await expect(amberMatch).toHaveCSS(
+    "outline-color",
+    await amberMatch.evaluate((mark) => getComputedStyle(mark).color),
+  );
+  await expect(history).toHaveJSProperty("scrollTop", 0);
   for (const side of ["own", "participant"]) {
     const row = page.locator(`.message-row--${side}`).first();
-    const bubble = (await row.locator(".message-bubble").boundingBox())!;
-    const action = (await row
-      .locator(".message-history-button")
-      .boundingBox())!;
-    if (side === "own")
-      expect(action.x).toBeGreaterThan(bubble.x + bubble.width);
-    else expect(action.x + action.width).toBeLessThan(bubble.x);
-    expect(action.x).toBeGreaterThanOrEqual(composerBox.x - 1);
-    expect(action.x + action.width).toBeLessThanOrEqual(
-      composerBox.x + composerBox.width + 1,
-    );
+    const more = row.getByRole("button", { name: "More message actions" });
+    await more.click();
+    const action = page.getByRole("menuitem", {
+      name: "Open message in history",
+    });
+    await expect(action).toBeInViewport();
+    await action.press("Escape");
+    await expect(more).toBeFocused();
   }
+  await search.focus();
   await expect(page.locator(".project-search-field")).toHaveCSS(
-    "outline-width",
-    "1px",
+    "outline-style",
+    "none",
   );
   await expect(page.locator(".project-search-field")).toHaveCSS(
     "border-radius",
     "12px",
   );
   await draft.focus();
-  await expect(page.locator(".composer")).toHaveCSS("outline-width", "1px");
+  await expect(page.locator(".composer")).toHaveCSS("outline-style", "none");
   await expect(page.locator(".composer")).toHaveCSS("border-top-width", "0px");
   await search.focus();
   if (testInfo.project.name === "mobile-webkit") {
     const contextBox = await page
-      .getByRole("button", { name: "Open message in history" })
+      .getByRole("button", { name: "More message actions" })
       .first()
       .boundingBox();
     expect(contextBox!.width).toBeGreaterThanOrEqual(44);
     expect(contextBox!.height).toBeGreaterThanOrEqual(44);
   }
-  await expect(history).toHaveJSProperty("scrollTop", 0);
   expect(requests).toEqual([]);
+  const participantSurface = await page
+    .locator(".message-row--participant .message-bubble")
+    .evaluate((bubble) => getComputedStyle(bubble).backgroundColor);
+  const projectScope = page.getByRole("checkbox", {
+    name: "Project",
+    exact: true,
+  });
+  await projectScope.check();
+  const results = page.locator(".project-search-results");
+  await expect(results.locator(`[data-note-id="${ids[5]}"]`)).toHaveCSS(
+    "background-image",
+    /linear-gradient/,
+  );
+  const participantResult = results.locator(`[data-note-id="${ids[10]}"]`);
+  await expect(participantResult).toHaveCSS("background-image", "none");
+  await expect(participantResult).toHaveCSS(
+    "background-color",
+    participantSurface,
+  );
+  await projectScope.uncheck();
   const box = await page.locator(".project-search").boundingBox();
   const field = await search.boundingBox();
   expect(box!.height).toBeLessThanOrEqual(field!.height + 10);
@@ -182,11 +227,50 @@ test("searches locally with a compact field, restores reading positions and open
   ).toBeVisible();
   await page.getByRole("button", { name: "Search all messages" }).click();
   await expect(page.locator(".message-row")).toHaveCount(2);
-  const target = page.locator(`[data-note-id="${ids[10]}"]`);
-  await target.getByRole("button", { name: "Open message in history" }).click();
+  await target.getByRole("button", { name: "More message actions" }).click();
+  await page.getByRole("menuitem", { name: "Open message in history" }).click();
   await expect(search).toHaveCount(0);
   await expect(page.locator(".message-row")).toHaveCount(24);
   await expect(target).toBeFocused();
+  await expect(target).toHaveAttribute("data-search-destination", "");
+  await expect(page.locator("[data-search-destination]")).toHaveCount(1);
+  await expect(target.locator(".message-bubble")).toHaveCSS(
+    "box-shadow",
+    "none",
+  );
+  const fade = await target.evaluate((row) => {
+    const animation = row.getAnimations()[0];
+    if (!animation?.effect) throw new Error("Expected the message row to fade");
+    const duration = Number(animation.effect.getComputedTiming().duration);
+    animation.pause();
+    animation.currentTime = 0;
+    const start = getComputedStyle(row).backgroundColor;
+    animation.currentTime = duration * 0.75;
+    const fading = getComputedStyle(row).backgroundColor;
+    animation.play();
+    return { duration, start, fading };
+  });
+  // Browsers serialize the animated and static colors in different color spaces.
+  const [start, selection, fading] = await page.evaluate(
+    (colors) => {
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d")!;
+      return colors.map((color) => {
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        return Array.from(context.getImageData(0, 0, 1, 1).data);
+      });
+    },
+    [fade.start, selectionColor, fade.fading],
+  );
+  expect(start).toEqual(selection);
+  expect(fade.duration).toBeGreaterThan(0);
+  expect(fade.duration).toBeLessThanOrEqual(1000);
+  expect(fading[3]).toBeGreaterThan(0);
+  expect(fading[3]).toBeLessThan(start[3]);
+  await expect(target).not.toHaveAttribute("data-search-destination", "");
+  await expect(target).toHaveCSS("background-color", restingColor);
   await expect(target).toBeInViewport();
   await expect(draft).toHaveValue("Preserve this draft");
   await toggle.click();
@@ -201,14 +285,16 @@ test("searches locally with a compact field, restores reading positions and open
   await page.getByRole("button", { name: /Show sender options/ }).click();
   const sender = page.getByRole("textbox", { name: "Sender name" });
   await sender.focus();
-  await expect(sender).toHaveCSS("outline-width", "1px");
+  await expect(sender).toHaveCSS("outline-style", "none");
+  await expect(sender).toHaveCSS("border-top-width", "0px");
   await page.getByRole("button", { name: /Hide sender options/ }).click();
   await page
     .getByRole("button", { name: "Choose timestamp", exact: true })
     .click();
   const timestamp = page.getByLabel("Message timestamp");
   await timestamp.focus();
-  await expect(timestamp).toHaveCSS("outline-width", "1px");
+  await expect(timestamp).toHaveCSS("outline-style", "none");
+  await expect(timestamp).toHaveCSS("border-top-width", "0px");
   await page
     .getByRole("button", { name: "Hide timestamp", exact: true })
     .click();

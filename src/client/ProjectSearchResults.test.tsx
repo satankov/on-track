@@ -15,6 +15,7 @@ const conversation = (id: string, title: string, body: string): ChatDetail => ({
   createdAt: 1,
   updatedAt: 1,
   archivedAt: null,
+  manualAlert: false,
   pinnedAt: null,
   latestAttentionAt: null,
   nextAttentionAt: null,

@@ -2,18 +2,15 @@
 
 ## Status
 
-The published baseline is [v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1),
-with the primary `thr` CLI. It includes the security hardening and dependency
-patches recorded in [plan 0025](plans/0025-security-audit-response.md)
-and the history controls, composer feedback, and managed uninstall in
-[plan 0027](plans/0027-history-controls-send-feedback-and-uninstall.md), plus
-current-project keyword search in [plan 0028](plans/0028-project-keyword-search.md).
-Published database and backup schema is 9. Unreleased project subthreads advance
-the v0.2.0 candidate to schema 11; backup format remains 1. Release preparation
-and verification are tracked in [plan 0035](plans/0035-v0.2.0-release-preparation.md). See
-[ADR-0014](adr/0014-flat-project-subthreads.md) for the accepted ownership and
-provenance model and [plan 0034](plans/0034-project-subthreads.md) for delivery
-evidence. The managed compatibility floor remains `0.0.7`.
+The v0.2.1 workspace builds on the v0.2.0 subthread release tag.
+Schema 12 adds a checked boolean to each conversation for manual Alert and a
+checked boolean to workspace preferences for timestamp visibility. Both use
+the existing database and format-1 backup lifecycle. Schema 13 adds a checked plain or gradient finish alongside the six stored
+hues. The API exposes the selection as a single accent ID. Roots supply both
+values to their subthreads. Schema 14 adds note-owned custom label snapshots for
+messages copied or moved between conversations. The managed compatibility
+floor remains `0.0.7`. See [workspace controls](plans/0036-v0.2.1-workspace-controls.md)
+and [subthread ownership](adr/0014-flat-project-subthreads.md).
 The included flat UI/design-contract slice changes client UI, tests, and documentation
 only; see [plan 0029](plans/0029-flat-ui-and-design-contract.md). It changes no
 API, database, backup, dependency, or installation contract. The included
@@ -33,7 +30,7 @@ transition; [compatibility guidance](compatibility.md) inventories retained
 storage, environment, protocol, and distribution names. Platform validation
 remains incomplete; see [plan 0021](plans/0021-managed-install-and-cli.md).
 
-Current source also includes the unreleased
+The v0.2.0 baseline includes the
 [UI trim](plans/0033-release-candidate-ui-trim.md). It removes derived preview
 fields and queries from project summaries while retaining Attention scheduling;
 the “Question” label change is presentation-only. No database or backup migration
@@ -157,7 +154,7 @@ Uninstall retains ownership lock files on every platform. See [ADR-0012](adr/001
   a chat is active. A Markdown analysis helper reuses unified/remark-parse and GFM
   to derive readable keyword-search text and automatic Links filtering, using
   the renderer's URL policy without fetching destinations. Reading anchors live in the app
-  session. Sidebar disclosure state, Appearance, and Show examples persist in
+  session. Sidebar disclosures, Appearance, Show examples and Always show message time persist in
   the database singleton `workspace_preferences`. Partial writes are serialized;
   failed fields remain retryable, focus refreshes are ordered, and import pauses
   pending writes. Valid legacy browser values initialize an uninitialized database
@@ -335,6 +332,27 @@ ambiguous state, rolls pre-commit states back idempotently, and validates a
 committed database plus managed attachment path safety before deleting rollback
 state. Exact generated-namespace inventory validation runs before commit.
 
+The scoped `POST /api/chats/:chatId/notes/batch` endpoint copies, moves or deletes
+an explicit selection of message IDs. Copy creates independent managed files.
+Move retains the files and changes their conversation ownership through the
+message. Both retain sender, message time and relative order. The database
+commits the group together. Moving or deleting a source message keeps any
+existing continuation anchored in its source conversation.
+
+The browser can also export selected messages from one visible timeline as a
+readable Markdown or plain-text excerpt. It snapshots the selected bodies,
+sender, time, display labels, attachment counts and conversation title. A change
+to that snapshot closes the preview. A local worker formats large selections.
+Copy text and a browser download use the same preview string. The export uses
+client memory and has no server route or database writes.
+
+Built-in labels transfer by canonical ID. A custom label with the same name and
+symbol in the destination uses its local definition, including a disabled one.
+Otherwise, `note_label_snapshots` records the name and symbol on that message.
+Snapshots can be removed in the message label picker and survive another
+transfer, restart and selective backup. A transfer leaves the destination’s
+configured label slots available for the user.
+
 Message attachments are owner-only files under
 `attachments/v1/<generated-namespace>/<attachment-id>/<safe-filename>`.
 SQLite stores metadata, a unique repository-owned POSIX relative path, and
@@ -350,18 +368,26 @@ document/media allowlist; executable POSIX files remain blocked. Unknown types,
 launchers, archives, and legacy/macro-enabled Office files retain Show in Folder
 only. Allowed suffixes do not guarantee safe contents or default applications.
 Folder reveal remains independent. Browser focus refreshes attachment metadata
-after a user returns from an external application. Attachment bytes are not exposed by a
-browser download route.
+after a user returns from an external application. Saved JPEG and PNG pictures have
+a scoped, read-only image route bound to the owning conversation, note and file.
+The server requires a same-origin image subrequest, enforces a 12 MiB bound on
+the open file descriptor, checks the raster structure and limits the dimensions
+to 24 megapixels. It returns verified static image bytes with a fixed media type,
+same-origin resource policy and private, non-stored responses. The browser
+loads at most two inline pictures at once per history and downsizes originals
+over 2 megapixels in memory for display. Distant rows release image sources.
+The viewer uses the same protected source at original resolution. Other
+attachment bytes remain accessible through their existing native and backup workflows.
 
 All browser note creation and editing uses the same bounded multipart contract,
 whether or not files are attached. The client keeps project summaries and the
 active project detail in one canonical server-state value so mutations update
-both views atomically without duplicated synchronization branches. Dedicated
-idempotent pin routes patch only pin state; archive routes return only archive
-and pin state. The client excludes conflicting project mutations and invalidates
+both views atomically without duplicated synchronization branches. Project pin, archive and Alert mutations target an explicit conversation ID
+and update only their own state, with archiving also clearing the pin. The client excludes conflicting project mutations and invalidates
 stale reads at both request start and completion. The rail derives browser-local
 today/earlier Attention state and refreshes at the next future Attention time,
-local midnight, and browser focus.
+local midnight, and browser focus. A manual Alert takes visual precedence until
+cleared and does not change activity timestamps or message labels.
 
 Settings exports all or selected projects to a versioned SQLite
 `.on-track-backup` container, including
@@ -375,10 +401,9 @@ integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
 fresh managed paths, removes bundle payload tables, and compacts the current-
-schema candidate. Exact schema-10, schema-9, schema-8, schema-7, schema-6, schema-5, schema-4 development,
-and schema-3 v0.0.4 bundles are accepted through fixed legacy descriptors and migrated to schema 11
-only after copying into the staging workspace; older notes receive a null sender
-and all older projects receive null archive state.
+schema candidate. Schema 3–14 bundles are checked against their trusted legacy descriptors
+before migration to schema 15 in staging. Legacy projects adopt the plain finish. Older conversations start with manual
+Alert off. Older preference rows default to always displaying message time.
 It then uses the maintenance gate and
 restore journal to replace live state. Exact active-schema expectations come
 from a trusted in-memory database built with checked-in migrations; imported SQL
@@ -475,6 +500,17 @@ forgotten credentials, recovery, and cleanup of plaintext artifacts. Backup
 integrity, import conflict handling, recovery UX, and restore failure modes must
 be hardened before production-readiness claims.
 
+## Outgoing message drafts
+
+Schema 15 keys one outgoing draft by conversation. Draft attachments share the
+managed-file inventory, with exactly one owner and a stable display order.
+The composer serializes writes and sends an expected revision with each save.
+A send transaction creates the note, reassigns its files and rotates the draft
+revision. Replaying the submitted revision recovers the same message after a lost
+response. A stale save retains the local composer contents. Edit sessions use a
+separate in-memory buffer. Project-scoped backups carry draft text, picker states
+and attachment bytes. Merge remaps owners, and restore renews revision tokens.
+
 ## Project keyword search
 
 Search defaults to the loaded conversation. Project scope loads the root and all
@@ -485,8 +521,8 @@ message; `project-search-results.ts` builds these contextual results.
 then applies normalized literal substring AND matching across body, displayed
 sender, and filenames. It intersects existing filters and keeps chronological
 ordering within each conversation. Parsed-text caches belong to the mounted
-workspace; the App owns session-only last-query and composer-draft maps per conversation. Drafts include
-unsent files and edits; replacement import clears all cached work. Returning
+workspace. The App holds last queries and unfinished message edits in memory.
+Replacement import clears these caches. Returning
 through Home resets filters to All and retains the All reading anchor. Typing updates that map without rendering
 the timeline until the debounced query commits. Deletion/replacement clears the
 relevant memory. A rehype transform highlights rendered text nodes (including
@@ -496,14 +532,14 @@ no search query, index, or history enters an API, URL, persistent browser storag
 SQLite, or backups. The memory-only history-position hook isolates search anchors
 from ordinary All/filter navigation. Current-conversation results reuse original message rendering and actions;
 project-scope results open the owning conversation before mutation. The context
-action restores All and focuses the original message. Search introduces no persistent data. This is linear search over a fully
+action restores All, focuses the original message, and briefly highlights its whole row. Search introduces no persistent data. This is linear search over a fully
 loaded, unvirtualized project, not an architecture for unbounded histories.
 
 ## Critical user journeys
 
 - Create an empty independent subthread or continue from a message, follow source
   links, and branch again into a sibling while preserving independent settings
-  and session drafts.
+  and saved outgoing drafts.
 - Search the current conversation or enable Project to include Main and all
   children, including archives; combine with history filters and open a result
   in its owning conversation without losing the query or composer draft.

@@ -236,6 +236,7 @@ export async function registerDatabaseTransferRoutes(
         });
         const workspace = coordinator.createWorkspace();
         prepareSqliteBackupBundle({
+          mode,
           bundlePath: staged!.filePath,
           workspace,
           selection: input?.selection ?? "all",

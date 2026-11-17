@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Export selected messages · threadstr design study</title>
+    <link rel="icon" href="../v1/social/threadstr-thr-square-dark.svg" />
+    <link rel="stylesheet" href="../../../src/client/styles.css" />
+    <link rel="stylesheet" href="study.css" />
+    <script defer src="study.js"></script>
+  </head>
+  <body data-accent="ocean">
+    <div class="app-shell">
+      <aside
+        class="project-rail project-rail--detail-open"
+        aria-label="Example projects"
+      >
+        <div class="rail-header">
+          <div class="brand-mark">
+            <img
+              class="brand-wordmark brand-wordmark--light"
+              src="../v1/wordmark/threadstr-wordmark-on-light.svg"
+              alt="threadstr"
+            />
+            <img
+              class="brand-wordmark brand-wordmark--dark"
+              src="../v1/wordmark/threadstr-wordmark-on-dark.svg"
+              alt="threadstr"
+            />
+            <span class="brand-fallback">threadstr</span>
+          </div>
+        </div>
+        <div class="project-list">
+          <section class="project-section">
+            <div class="rail-section-label">Projects</div>
+            <ul class="project-items">
+              <li class="project-row">
+                <div class="project-item">
+                  <span class="project-item-copy"
+                    ><strong>Riverside Move</strong></span
+                  >
+                </div>
+              </li>
+              <li
+                class="project-row project-row--subthread project-row--active"
+              >
+                <div class="project-item" aria-current="true">
+                  <span class="project-item-copy"
+                    ><strong>Move day</strong></span
+                  >
+                </div>
+              </li>
+              <li class="project-row project-row--subthread">
+                <div class="project-item">
+                  <span class="project-item-copy"
+                    ><strong>Floor plan</strong></span
+                  >
+                </div>
+              </li>
+              <li class="project-row">
+                <div class="project-item">
+                  <span class="project-item-copy"
+                    ><strong>Reading notes</strong></span
+                  >
+                </div>
+              </li>
+            </ul>
+          </section>
+        </div>
+        <div class="local-footnote">
+          <span class="local-indicator"></span
+          ><span class="local-footnote-copy"><strong>Local only</strong></span>
+        </div>
+      </aside>
+      <main
+        id="export"
+        class="workspace settings-workspace project-edit-workspace"
+      >
+        <div class="project-edit-form project-settings-fields sheet">
+          <header class="sheet-head">
+            <button
+              class="settings-back-button"
+              id="back"
+              aria-label="Back to selected messages"
+              title="Back to selected messages"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19 12H5m6-6-6 6 6 6" />
+              </svg>
+            </button>
+            <h1 tabindex="-1" id="title">Export 3 messages</h1>
+          </header>
+          <div class="sheet-body">
+            <div class="output-options">
+              <fieldset class="formats">
+                <legend>Format</legend>
+                <div class="format-row">
+                  <label
+                    ><input
+                      type="radio"
+                      name="format"
+                      value="md"
+                      checked
+                    /><span>Markdown</span><small>.md</small></label
+                  >
+                  <label
+                    ><input type="radio" name="format" value="txt" /><span
+                      >Plain text</span
+                    ><small>.txt</small></label
+                  >
+                </div>
+              </fieldset>
+              <label class="project-label-option label-toggle"
+                ><span>Include message labels</span
+                ><input id="labels" type="checkbox"
+              /></label>
+            </div>
+            <section class="excerpt" aria-labelledby="preview-heading">
+              <div class="preview-meta">
+                <h2 id="preview-heading">Preview</h2>
+                <span class="file-name"
+                  ><svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M14 3H6v18h12V7l-4-4Zm0 0v5h4" /></svg
+                  ><span id="filename"></span
+                ></span>
+              </div>
+              <pre
+                id="preview"
+                tabindex="0"
+                aria-label="Exact export text"
+              ></pre>
+              <textarea
+                id="manual-copy"
+                rows="10"
+                readonly
+                hidden
+                aria-label="Exact export text for manual copy"
+              ></textarea>
+            </section>
+          </div>
+          <footer class="sheet-foot">
+            <span id="notice" role="status"></span>
+            <div class="actions">
+              <button type="button" class="button" id="copy">Copy text</button
+              ><button
+                type="button"
+                class="button button-primary"
+                id="download"
+              >
+                Download .md
+              </button>
+            </div>
+          </footer>
+        </div>
+      </main>
+      <main id="chat" class="workspace workspace-chat" hidden>
+        <header class="chat-header">
+          <div class="chat-header-inner">
+            <div class="chat-heading">
+              <p class="eyebrow">Project thread</p>
+              <h1 class="subthread-heading">
+                <span class="subthread-parent-title">Riverside Move</span
+                ><span class="subthread-title-separator"> / </span
+                ><span class="conversation-title">Move day</span>
+              </h1>
+            </div>
+          </div>
+        </header>
+        <aside class="history-filter" aria-label="Current history filter">
+          <div class="history-filter-button history-filter-button--active">
+            <span class="history-filter-label">All</span
+            ><span class="history-filter-count">5</span>
+          </div>
+        </aside>
+        <section class="history" id="history" aria-label="Message history">
+          <div id="timeline"></div>
+        </section>
+        <div class="composer-wrap">
+          <div
+            class="message-selection-bar"
+            id="selection"
+            role="group"
+            aria-label="Selected message actions"
+          >
+            <strong id="count" role="status"></strong>
+            <div class="message-selection-buttons">
+              <button id="all" class="button">Select all</button
+              ><button id="cancel" class="button">Cancel</button
+              ><button
+                class="button batch-transfer"
+                disabled
+                title="Outside this export study"
+              >
+                Copy</button
+              ><button
+                class="button batch-transfer"
+                disabled
+                title="Outside this export study"
+              >
+                Move</button
+              ><button class="button batch-transfer" id="open">Export</button
+              ><button
+                class="button batch-delete"
+                disabled
+                title="Outside this export study"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+          <div class="composer" id="draft" hidden>
+            <div class="composer-content">
+              <textarea rows="2" aria-label="Example message draft">
+Remind reception to return the key.</textarea>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

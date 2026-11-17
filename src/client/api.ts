@@ -1,3 +1,4 @@
+import type { ConversationDraft, DraftFields } from "../domain/drafts.js";
 import type {
   PreferenceInput,
   WorkspacePreferences,
@@ -22,6 +23,8 @@ import type {
   ImportResult,
   ProjectSelection,
 } from "../domain/database-transfer.js";
+export class NoteBodyConflictError extends Error {}
+
 export class ImportOutcomeUnknownError extends Error {
   constructor() {
     super(
@@ -31,13 +34,41 @@ export class ImportOutcomeUnknownError extends Error {
   }
 }
 import type {
+  BatchNotesInput,
   CreateChatInput,
   CreateNoteInput,
   UpdateChatInput,
   UpdateNoteInput,
 } from "../domain/validation.js";
 
+export type SaveDraftInput = DraftFields & {
+  revision: string | null;
+  keepAttachmentIds: string[];
+};
+export type SentDraft = Note & { draftRevision: string; replayed?: true };
+
+export class RequestError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
+}
+
 export interface ApiClient {
+  getDraft(id: string): Promise<ConversationDraft>;
+  saveDraft(
+    id: string,
+    input: SaveDraftInput,
+    files: File[],
+  ): Promise<ConversationDraft>;
+  sendDraft(
+    id: string,
+    revision: string,
+    createdAt?: number,
+  ): Promise<SentDraft>;
   getPreferences(): Promise<WorkspacePreferences>;
   initializePreferences(input: PreferenceInput): Promise<WorkspacePreferences>;
   updatePreferences(input: PreferenceInput): Promise<WorkspacePreferences>;
@@ -56,6 +87,10 @@ export interface ApiClient {
   createChat(input: CreateChatInput): Promise<Chat>;
   updateChat(id: string, input: UpdateChatInput): Promise<Chat>;
   setChatArchived(id: string, archived: boolean): Promise<ProjectArchiveState>;
+  setChatAlert(
+    id: string,
+    enabled: boolean,
+  ): Promise<Pick<Chat, "manualAlert">>;
   setChatPinned(id: string, pinned: boolean): Promise<ProjectPinState>;
   deleteChat(id: string): Promise<void>;
   appendNote(id: string, input: CreateNoteInput): Promise<Note>;
@@ -65,6 +100,7 @@ export interface ApiClient {
     input: UpdateNoteInput,
   ): Promise<Note>;
   deleteNote(chatId: string, noteId: string): Promise<void>;
+  batchNotes(chatId: string, input: BatchNotesInput): Promise<void>;
   setNoteLabel(
     chatId: string,
     noteId: string,
@@ -100,9 +136,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as {
       message?: string;
+      code?: string;
     } | null;
-    throw new Error(
+    if (response.status === 409 && payload?.code === "note_body_conflict")
+      throw new NoteBodyConflictError(payload.message);
+    throw new RequestError(
+      response.status,
       payload?.message ?? "The local service could not complete that request.",
+      payload?.code,
     );
   }
 
@@ -110,7 +151,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+const draftPath = (id: string) => `/api/chats/${encodeURIComponent(id)}/draft`;
+
 export const apiClient: ApiClient = {
+  getDraft: (id) => request(draftPath(id), { cache: "no-store" }),
+  saveDraft: (id, input, files) => {
+    const form = new FormData();
+    form.set("draft", JSON.stringify(input));
+    for (const file of files) form.append("files", file);
+    return request(draftPath(id), { method: "PUT", body: form });
+  },
+  sendDraft: (id, revision, createdAt) =>
+    request(`${draftPath(id)}/send`, {
+      method: "POST",
+      body: JSON.stringify({ revision, createdAt }),
+    }),
   getPreferences: () => request("/api/preferences", { cache: "no-store" }),
   initializePreferences: (input) =>
     request("/api/preferences/initialize", {
@@ -188,6 +243,13 @@ export const apiClient: ApiClient = {
         method: archived ? "PUT" : "DELETE",
       },
     ),
+  setChatAlert: (id, enabled) =>
+    request<Pick<Chat, "manualAlert">>(
+      `/api/chats/${encodeURIComponent(id)}/alert`,
+      {
+        method: enabled ? "PUT" : "DELETE",
+      },
+    ),
   setChatPinned: (id, pinned) =>
     request<ProjectPinState>(`/api/chats/${encodeURIComponent(id)}/pin`, {
       method: pinned ? "PUT" : "DELETE",
@@ -217,23 +279,47 @@ export const apiClient: ApiClient = {
       { method: "DELETE" },
     );
   },
+  batchNotes: async (chatId, input) => {
+    const unknown = () =>
+      new Error(
+        "The result could not be confirmed. Refresh and check your messages before trying again.",
+      );
+    let response: Response;
+    try {
+      response = await fetch(
+        `/api/chats/${encodeURIComponent(chatId)}/notes/batch`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        },
+      );
+    } catch {
+      throw unknown();
+    }
+    if (response.status === 204) return;
+    if (response.ok || response.status >= 500) throw unknown();
+    const payload = (await response.json().catch(() => null)) as {
+      message?: string;
+    } | null;
+    throw new Error(
+      payload?.message ?? "The selected messages could not be processed.",
+    );
+  },
   setNoteLabel: (chatId, noteId, label, applied) =>
     request<Label[]>(
       `/api/chats/${encodeURIComponent(chatId)}/notes/${encodeURIComponent(noteId)}/labels/${encodeURIComponent(label)}`,
       { method: applied ? "PUT" : "DELETE" },
     ),
   openAttachment: async (chatId, noteId, attachmentId) => {
-    await request<void>(
-      attachmentActionPath(chatId, noteId, attachmentId, "open"),
-      {
-        method: "POST",
-        body: "{}",
-      },
-    );
+    await request<void>(attachmentPath(chatId, noteId, attachmentId, "open"), {
+      method: "POST",
+      body: "{}",
+    });
   },
   revealAttachment: async (chatId, noteId, attachmentId) => {
     await request<void>(
-      attachmentActionPath(chatId, noteId, attachmentId, "reveal"),
+      attachmentPath(chatId, noteId, attachmentId, "reveal"),
       { method: "POST", body: "{}" },
     );
   },
@@ -293,7 +379,12 @@ export const apiClient: ApiClient = {
 
 function noteFormData(input: CreateNoteInput | UpdateNoteInput): FormData {
   const form = new FormData();
-  if (input.body !== undefined) form.set("body", input.body);
+  if ("expectedBody" in input && input.expectedBody !== undefined) {
+    form.set(
+      "bodyChange",
+      JSON.stringify({ body: input.body, expectedBody: input.expectedBody }),
+    );
+  } else if (input.body !== undefined) form.set("body", input.body);
   if (input.sender !== undefined) form.set("sender", input.sender ?? "");
   if (input.createdAt !== undefined) {
     form.set("createdAt", String(input.createdAt));
@@ -310,11 +401,11 @@ function noteFormData(input: CreateNoteInput | UpdateNoteInput): FormData {
   return form;
 }
 
-function attachmentActionPath(
+export function attachmentPath(
   chatId: string,
   noteId: string,
   attachmentId: string,
-  action: "open" | "reveal",
+  action: "open" | "reveal" | "preview",
 ): string {
   return `/api/chats/${encodeURIComponent(chatId)}/notes/${encodeURIComponent(noteId)}/attachments/${encodeURIComponent(attachmentId)}/${action}`;
 }
