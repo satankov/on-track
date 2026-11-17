@@ -68,9 +68,12 @@ the complete active palette, including inherited values, directly from CSS.
   message tint mixed into paper at 36% in Light and 8% in Neutral and Dark.
 - Guava moves from apricot to rose, Honey from gold to copper, Jade from sage
   to teal, Lagoon from teal to blue, Orchid from lavender to plum and
-  Periwinkle from powder blue to violet. Their 118° outgoing message gradients
-  put the project tint at 47%. Their composer actions use deeper versions for
-  white text. Swatches and the rail marker share the project hue.
+  Periwinkle from powder blue to violet. Each conversation paints one 165° gradient
+  across the bounds of its outgoing bubbles, with the project tint at 47%.
+  Dates and replies interrupt the paint. Scrolling keeps the color anchored to
+  each message. Filtering and layout changes fit it to the rendered messages.
+  Project search fits each conversation separately. Composer actions use deeper
+  hues for white text. Swatches and the rail marker share the project hue.
 - Participant messages use solid paper in conversation history and search.
 - Message links and metadata use `--message-link` and `--message-muted`.
   Attachments use their own `--attachment-*` foreground, status, and surface

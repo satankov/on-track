@@ -1,3 +1,4 @@
+import { SharedMessageGradient } from "./SharedMessageGradient.js";
 import { ProjectSearchResults } from "./ProjectSearchResults.js";
 import { findProjectSearchResults } from "./project-search-results.js";
 import { labelDisplayName } from "./label-display.js";
@@ -2291,6 +2292,7 @@ function AttachmentList({
 }
 
 function MessageGroups({
+  gradient,
   notes,
   searchTerms,
   futureStartId,
@@ -2308,6 +2310,7 @@ function MessageGroups({
   showDetachedContinuations = true,
   onNavigate,
 }: {
+  gradient: boolean;
   onContinue?: (note: Note) => void;
   subthreads?: Chat[];
   showDetachedContinuations?: boolean;
@@ -2363,7 +2366,7 @@ function MessageGroups({
     );
   });
   return (
-    <div className="message-groups">
+    <SharedMessageGradient active={gradient} className="message-groups">
       {groupNotesByDay(entries).map((group) => {
         const futureStartIndex = group.notes.findIndex(
           (note) => note.id === futureStartId,
@@ -2519,7 +2522,7 @@ function MessageGroups({
           </section>
         );
       })}
-    </div>
+    </SharedMessageGradient>
   );
 }
 
@@ -3413,6 +3416,7 @@ function ChatWorkspace({
             </div>
           ) : (
             <MessageGroups
+              gradient={detail.accent.endsWith("-gradient")}
               showDetachedContinuations={
                 !searchQuery.key && historyFilter.length === 0
               }
