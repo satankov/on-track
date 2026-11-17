@@ -21,17 +21,25 @@ release. See the [changelog](CHANGELOG.md) for changes and upgrade limitations.
 
 ## See it in action
 
-**A project’s notes and plans, together in one timeline.**
+**Project as a chat**
 
-![A personal workspace with pinned projects, Amsterdam trip notes, decisions, and a checklist in the light theme](docs/screenshots/amsterdam-overview.png)
+![The Sound atlas project keeps field notes, a reply about the pier, and a recording decision in one chat.](docs/screenshots/project-chat.webp)
 
-**Keep related files beside the conversation.**
+**Labels and filters**
 
-![Amsterdam arrival notes, Maya's saved places, and a packing list kept beside their messages in the dark theme](docs/screenshots/amsterdam-files.png)
+![The Photo walk project has Pin and Spot selected together to show pinned shooting locations.](docs/screenshots/labels-and-filters.webp)
 
-**Filter the timeline to focus on what needs doing.**
+**Project subthreads**
 
-![Amsterdam checklists and upcoming tasks filtered by Todo in the neutral theme](docs/screenshots/amsterdam-todos.png)
+![Drying rack has its own conversation in Print studio, with a link back to the source note.](docs/screenshots/project-subthreads.webp)
+
+**Files in context**
+
+![A Ridge survey note displays the attached East Spur trail map directly in the conversation.](docs/screenshots/files-in-context.webp)
+
+**Keyword search**
+
+![A search for “madder” in Weaving room highlights the word in matching dye notes.](docs/screenshots/keyword-search.webp)
 
 ## What you can do
 
