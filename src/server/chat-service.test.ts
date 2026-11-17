@@ -360,6 +360,38 @@ describe("managed attachment service lifecycle", () => {
     });
   });
 
+  it.each(["append", "edit"] as const)(
+    "preserves mixed attachment upload order on %s and reload",
+    (action) => {
+      const app = service();
+      ids.push("chat", "note", "file-z", "file-a", "file-m");
+      app.createChat({ title: "Prints", accent: "moss" });
+      const filenames = ["proof.jpg", "specs.pdf", "original.png"];
+      const attachments = filenames.map((filename) => ({
+        filename,
+        mediaType: "application/octet-stream",
+        byteSize: Buffer.byteLength(filename),
+        content: Buffer.from(filename),
+      }));
+      if (action === "edit") app.appendNote("chat", { body: "Print proof" });
+      const note =
+        action === "append"
+          ? app.appendNote("chat", { attachments })
+          : app.updateNote("chat", "note", { attachments });
+      expect(note.attachments!.map((file) => file.filename)).toEqual(filenames);
+      const reloaded = app.getChat("chat").notes[0].attachments!;
+      expect(reloaded.map((file) => [file.id, file.filename])).toEqual(
+        note.attachments!.map((file) => [file.id, file.filename]),
+      );
+      for (const file of reloaded) {
+        const managed = repository.getAttachment("chat", "note", file.id)!;
+        expect(store.read(managed.storagePath).content.toString()).toBe(
+          file.filename,
+        );
+      }
+    },
+  );
+
   it("uses the public append and update use cases for attachment writes", () => {
     ids.push("chat-a", "note-a", "attachment-a", "attachment-b");
     const chatService = service();

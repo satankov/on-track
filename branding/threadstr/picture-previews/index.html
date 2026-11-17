@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>threadstr · Picture previews</title>
+    <link rel="stylesheet" href="../../../src/client/styles.css" />
+    <style>
+      html,
+      body {
+        height: auto;
+        min-height: 100%;
+        overflow: auto;
+      }
+      body {
+        padding: clamp(12px, 5vw, 64px);
+      }
+      #picture-study {
+        max-width: 800px;
+        margin-inline: auto;
+        color: var(--ink);
+      }
+      #picture-study [hidden] {
+        display: none;
+      }
+      #picture-study .study-chat {
+        container-type: inline-size;
+        border-radius: 14px;
+        background: var(--history);
+        overflow: clip;
+      }
+      #picture-study .study-heading {
+        display: flex;
+        align-items: center;
+        min-height: 64px;
+        padding-inline: clamp(12px, 4%, 32px);
+        border-bottom: 1px solid var(--line);
+      }
+      #picture-study .study-history {
+        padding: 12px clamp(12px, 4%, 32px) 22px;
+      }
+      #picture-study .study-history,
+      #picture-study .message-list {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      #picture-study .study-history .message-date-separator {
+        margin: 0;
+      }
+      #picture-study .message-stack {
+        min-width: 0;
+      }
+      #picture-study .study-note {
+        width: 446px;
+      }
+      #picture-study .study-caption {
+        margin: 0;
+      }
+      #picture-study .study-image {
+        display: grid;
+        place-items: center;
+        position: relative;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 5px;
+        overflow: hidden;
+        grid-column: 1 / -1;
+        color: var(--attachment-ink);
+        background: color-mix(
+          in srgb,
+          var(--attachment-ink) 8%,
+          var(--attachment-surface)
+        );
+        cursor: zoom-in;
+      }
+      #picture-study .study-image img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: scale-down;
+      }
+      #picture-study .study-image:focus-visible {
+        outline: 2px solid var(--attachment-ink);
+        outline-offset: 2px;
+      }
+      #picture-study .study-expand {
+        position: absolute;
+        right: 6px;
+        bottom: 6px;
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        border-radius: 5px;
+        background: var(--attachment-surface);
+        color: var(--attachment-ink);
+      }
+      #picture-study .study-expand svg {
+        width: 15px;
+        height: 15px;
+      }
+      #picture-study .study-files--many .attachment-card {
+        grid-template-columns: 96px minmax(0, 1fr) auto;
+      }
+      #picture-study .study-files--many .study-image {
+        grid-column: 1;
+        width: 96px;
+        aspect-ratio: 4 / 3;
+      }
+      #picture-study .study-files--many .study-expand {
+        display: none;
+      }
+      #picture-study .study-files--many .attachment-type {
+        width: 38px;
+        justify-self: center;
+      }
+      #picture-study .study-files--many .study-image:hover .study-expand,
+      #picture-study
+        .study-files--many
+        .study-image:focus-visible
+        .study-expand {
+        display: grid;
+      }
+      #picture-study .study-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 14px 2px 4px;
+      }
+      #picture-study .study-control {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.76rem;
+        font-weight: 650;
+        color: var(--muted);
+      }
+      #picture-study .study-control select {
+        min-height: 32px;
+        padding: 3px 7px;
+        border: 1px solid var(--line-strong);
+        border-radius: 5px;
+        font: inherit;
+        color: var(--ink);
+        background: var(--paper);
+      }
+      #picture-study .study-notice {
+        font-size: 0.78rem;
+        margin: 10px 0 0;
+        color: var(--muted);
+      }
+      #picture-study .study-viewer {
+        width: max-content;
+        max-width: calc(100% - 24px);
+        max-height: calc(100dvh - 24px);
+        margin: auto;
+        padding: 10px;
+        color: var(--ink);
+        background: var(--paper);
+      }
+      #picture-study .study-viewer::backdrop {
+        background: color-mix(in srgb, var(--shadow-overlay) 70%, transparent);
+      }
+      #picture-study .study-viewer header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        padding: 0 0 8px 4px;
+      }
+      #picture-study .study-viewer h2 {
+        margin: 0;
+        font-size: 0.95rem;
+        overflow-wrap: anywhere;
+      }
+      #picture-study .study-viewer img {
+        display: block;
+        width: auto;
+        height: auto;
+        max-width: min(1040px, calc(100vw - 52px));
+        max-height: calc(100dvh - 104px);
+        margin: auto;
+        object-fit: contain;
+        border-radius: 5px;
+      }
+      #picture-study .study-viewer .button {
+        min-height: 36px;
+      }
+      @container (max-width: 600px) {
+        #picture-study .message-stack {
+          max-width: 100%;
+        }
+      }
+      @container (max-width: 390px) {
+        #picture-study .study-files--many .attachment-card {
+          grid-template-columns: 72px minmax(0, 1fr);
+        }
+        #picture-study .study-files--many .study-image {
+          width: 72px;
+        }
+        #picture-study .study-files--many .attachment-actions {
+          grid-column: 2;
+          justify-content: flex-start;
+        }
+        #picture-study .attachment-copy small {
+          white-space: normal;
+        }
+      }
+      @media (pointer: coarse) {
+        #picture-study .attachment-action,
+        #picture-study .study-viewer .button {
+          min-height: 44px;
+          min-width: 44px;
+        }
+        #picture-study .study-files--many .study-expand {
+          display: none;
+        }
+      }
+      @media (forced-colors: active) {
+        #picture-study :is(.study-image, .attachment-action, .study-viewer) {
+          border: 1px solid ButtonText;
+        }
+        #picture-study .study-image:focus-visible {
+          outline-color: Highlight;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="picture-study" data-accent="slate">
+      <section
+        class="study-chat"
+        data-accent="slate"
+        aria-label="Conversation mockup"
+      >
+        <header class="study-heading chat-heading">
+          <h1>Lunar print series</h1>
+        </header>
+        <div class="study-history message-day">
+          <p class="message-date-separator">November 17, 2026</p>
+          <ol class="message-list">
+            <li class="message-row message-row--participant">
+              <div class="message-stack">
+                <article class="message-bubble">
+                  <p class="message-sender" data-sender-color="iris">Maya</p>
+                  <div class="note-body">
+                    <p>Which print are we sending to the gallery?</p>
+                  </div>
+                  <footer class="message-footer">
+                    <time class="message-time">10:14</time>
+                  </footer>
+                </article>
+              </div>
+            </li>
+            <li class="message-row message-row--own">
+              <div class="message-stack study-note">
+                <article class="message-bubble">
+                  <div
+                    class="attachment-list"
+                    aria-label="Message attachments"
+                    data-files
+                  ></div>
+                  <div class="note-body">
+                    <p class="study-caption">
+                      The Earthrise proof. Keep the full lunar horizon in frame.
+                    </p>
+                  </div>
+                  <footer class="message-footer">
+                    <time class="message-time">10:16</time>
+                  </footer>
+                </article>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+      <div class="study-toolbar" role="group" aria-label="Mockup controls">
+        <label class="study-control"
+          >Example
+          <select data-scene>
+            <option value="single">One picture</option>
+            <option value="mixed">Several files</option>
+            <option value="missing">Missing picture</option>
+          </select>
+        </label>
+        <label class="study-control"
+          >Appearance
+          <select data-theme-picker>
+            <option value="light">Light</option>
+            <option value="neutral">Neutral</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+      </div>
+      <p class="study-notice" role="status" hidden></p>
+      <dialog
+        class="project-dialog study-viewer"
+        aria-labelledby="picture-viewer-name"
+      >
+        <header>
+          <h2 id="picture-viewer-name"></h2>
+          <button
+            type="button"
+            class="button button-quiet"
+            data-close
+            autofocus
+          >
+            Close
+          </button>
+        </header>
+        <img data-full-image alt="" />
+      </dialog>
+      <template data-row>
+        <div class="attachment-card">
+          <button
+            class="study-image cursor-interaction"
+            type="button"
+            aria-haspopup="dialog"
+          >
+            <img alt="" />
+            <span class="study-expand" aria-hidden="true"
+              ><svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5" /></svg
+            ></span>
+          </button>
+          <span class="attachment-type" aria-hidden="true"></span>
+          <span class="attachment-copy"><strong></strong><small></small></span>
+          <span class="attachment-actions">
+            <button
+              class="button button-primary attachment-action"
+              type="button"
+              data-action="open"
+              title="Open"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M14 4h6v6m0-6-9 9m7 0v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5"
+                />
+              </svg>
+            </button>
+            <button
+              class="button button-quiet attachment-action"
+              type="button"
+              data-action="reveal"
+              title="Show in Folder"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"
+                />
+              </svg>
+            </button>
+          </span>
+        </div>
+      </template>
+    </div>
+    <script>
+      (() => {
+        const root = document.getElementById("picture-study");
+        const one = (selector) => root.querySelector(selector);
+        const list = one("[data-files]");
+        const dialog = one("dialog");
+        const scene = one("[data-scene]");
+        const theme = one("[data-theme-picker]");
+        const notice = one(".study-notice");
+        const proof = {
+          name: "earthrise-proof.jpg",
+          type: "JPG",
+          size: "97 KB",
+          image: "earthrise-proof.jpg",
+          alt: "Coral Earthrise print beside a photograph of Earth above the lunar horizon.",
+        };
+        const source = {
+          name: "earthrise-source.jpg",
+          type: "JPG",
+          size: "62 KB",
+          image: "earthrise-source.jpg",
+          alt: "A blue and white Earth above the gray surface of the Moon.",
+        };
+        const notes = { name: "print-specs.pdf", type: "PDF", size: "28 KB" };
+        const scenes = {
+          single: [proof],
+          mixed: [proof, notes, source],
+          missing: [{ ...proof, missing: true }],
+        };
+        const captions = {
+          single: "The Earthrise proof. Keep the full lunar horizon in frame.",
+          mixed:
+            "The proof, print specs, and original photograph for the gallery.",
+          missing: "The Earthrise proof. Keep the full lunar horizon in frame.",
+        };
+        function closeViewer() {
+          dialog.close();
+        }
+        function showFile(file) {
+          const image = one("[data-full-image]");
+          one("#picture-viewer-name").textContent = file.name;
+          image.src = file.image;
+          image.alt = file.alt;
+          dialog.showModal();
+        }
+        function fileRow(file, many) {
+          const row = one("template").content.firstElementChild.cloneNode(true);
+          row.querySelector("strong").textContent = file.name;
+          const type = row.querySelector(".attachment-type");
+          type.textContent = file.type;
+          const detail = row.querySelector("small");
+          detail.textContent = file.missing
+            ? "⚠ File is missing."
+            : file.size + " · Nov 17, 10:12 AM";
+          if (file.missing) detail.classList.add("attachment-status--warning");
+          const button = row.querySelector(".study-image");
+          if (file.image && !file.missing) {
+            button.querySelector("img").src = file.image;
+            button.setAttribute("aria-label", "View " + file.name + " larger");
+            button.addEventListener("click", () => showFile(file));
+            if (many) type.remove();
+          } else button.remove();
+          for (const action of row.querySelectorAll("[data-action]")) {
+            const opens = action.dataset.action === "open";
+            action.setAttribute(
+              "aria-label",
+              opens ? "Open " + file.name : "Show " + file.name + " in Folder",
+            );
+            action.disabled = opens && Boolean(file.missing);
+            action.addEventListener("click", () => {
+              notice.hidden = false;
+              notice.textContent = file.missing
+                ? "In threadstr, Show in Folder opens the folder that held this picture."
+                : opens
+                  ? "In threadstr, Open launches " +
+                    file.name +
+                    " in its default app."
+                  : "In threadstr, Show in Folder reveals the managed copy of " +
+                    file.name +
+                    ".";
+            });
+          }
+          return row;
+        }
+        function draw() {
+          const many = scene.value === "mixed";
+          list.classList.toggle("study-files--many", many);
+          list.replaceChildren(
+            ...scenes[scene.value].map((file) => fileRow(file, many)),
+          );
+          one(".study-caption").textContent = captions[scene.value];
+          notice.hidden = true;
+        }
+        function setTheme() {
+          root.dataset.theme = theme.value;
+          document.documentElement.dataset.theme = theme.value;
+        }
+        one("[data-close]").addEventListener("click", closeViewer);
+        dialog.addEventListener("click", (event) => {
+          if (event.target !== dialog) return;
+          const box = dialog.getBoundingClientRect();
+          if (
+            event.clientX < box.left ||
+            event.clientX > box.right ||
+            event.clientY < box.top ||
+            event.clientY > box.bottom
+          )
+            closeViewer();
+        });
+        scene.addEventListener("change", draw);
+        theme.addEventListener("change", setTheme);
+        draw();
+        setTheme();
+      })();
+    </script>
+  </body>
+</html>

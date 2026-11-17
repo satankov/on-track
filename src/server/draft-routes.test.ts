@@ -115,6 +115,44 @@ describe("durable outgoing drafts", () => {
     expect((await put(null)).statusCode).toBe(409);
     expect((await put(reordered.revision)).statusCode).toBe(409);
   });
+  it("makes a draft picture available to the preview route only after sending", async () => {
+    const picture = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const form = new FormData();
+    form.set(
+      "draft",
+      JSON.stringify({ ...fields, revision: null, keepAttachmentIds: [] }),
+    );
+    form.append(
+      "files",
+      new Blob([new Uint8Array(picture)], { type: "image/png" }),
+      "draft.png",
+    );
+    const saved = await app.inject({
+      method: "PUT",
+      url: `/api/chats/${chatId}/draft`,
+      payload: form,
+    });
+    expect(saved.statusCode).toBe(200);
+    const { revision, attachments } = saved.json();
+    const preview = () =>
+      app.inject({
+        url: `/api/chats/${chatId}/notes/${revision}/attachments/${attachments[0].id}/preview`,
+        headers: {
+          "sec-fetch-site": "same-origin",
+          "sec-fetch-mode": "no-cors",
+          "sec-fetch-dest": "image",
+        },
+      });
+    expect((await preview()).statusCode).toBe(404);
+    expect((await send(revision)).statusCode).toBe(201);
+    const response = await preview();
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toBe("image/png");
+    expect(response.rawPayload).toEqual(picture);
+  });
   it("rejects stale updates, foreign files, excess files and unavailable attachments without losing the draft", async () => {
     const saved = await put(null, [], ["recover.txt"]);
     expect(saved.statusCode).toBe(200);

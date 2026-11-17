@@ -576,3 +576,11 @@ document.getElementById("cb-open-history").addEventListener("click", () => {
     900,
   );
 });
+
+const pictureViewer = document.querySelector("#cb-picture-viewer");
+document
+  .querySelector("#cb-picture-open")
+  .addEventListener("click", () => pictureViewer.showModal());
+document
+  .querySelector("#cb-picture-close")
+  .addEventListener("click", () => pictureViewer.close());

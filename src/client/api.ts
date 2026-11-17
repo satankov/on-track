@@ -312,17 +312,14 @@ export const apiClient: ApiClient = {
       { method: applied ? "PUT" : "DELETE" },
     ),
   openAttachment: async (chatId, noteId, attachmentId) => {
-    await request<void>(
-      attachmentActionPath(chatId, noteId, attachmentId, "open"),
-      {
-        method: "POST",
-        body: "{}",
-      },
-    );
+    await request<void>(attachmentPath(chatId, noteId, attachmentId, "open"), {
+      method: "POST",
+      body: "{}",
+    });
   },
   revealAttachment: async (chatId, noteId, attachmentId) => {
     await request<void>(
-      attachmentActionPath(chatId, noteId, attachmentId, "reveal"),
+      attachmentPath(chatId, noteId, attachmentId, "reveal"),
       { method: "POST", body: "{}" },
     );
   },
@@ -404,11 +401,11 @@ function noteFormData(input: CreateNoteInput | UpdateNoteInput): FormData {
   return form;
 }
 
-function attachmentActionPath(
+export function attachmentPath(
   chatId: string,
   noteId: string,
   attachmentId: string,
-  action: "open" | "reveal",
+  action: "open" | "reveal" | "preview",
 ): string {
   return `/api/chats/${encodeURIComponent(chatId)}/notes/${encodeURIComponent(noteId)}/attachments/${encodeURIComponent(attachmentId)}/${action}`;
 }

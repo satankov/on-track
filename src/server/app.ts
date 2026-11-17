@@ -41,6 +41,7 @@ import {
   SystemNativeFileActions,
   type NativeFileActions,
 } from "./native-file-actions.js";
+import { registerPicturePreviewRoute } from "./attachments/picture-preview-route.js";
 import { ManagedAttachmentStore } from "./attachments/managed-attachment-store.js";
 import {
   sanitizeAttachmentFilename,
@@ -559,6 +560,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
           false,
         ),
       ),
+  );
+
+  registerPicturePreviewRoute(app, (chatId, noteId, attachmentId) =>
+    maintenanceGate.runRead(() =>
+      service.getPicturePreview(chatId, noteId, attachmentId),
+    ),
   );
 
   void app.register(async (nativeApp) => {

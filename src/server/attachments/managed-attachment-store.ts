@@ -297,13 +297,22 @@ export class ManagedAttachmentStore {
     }
   }
 
-  read(storagePath: string): ManagedAttachmentRead {
-    return this.readOpened(this.openManagedFile(storagePath));
+  read(
+    storagePath: string,
+    maximumBytes = this.maximumReadableBytes,
+  ): ManagedAttachmentRead {
+    return this.readOpened(this.openManagedFile(storagePath), maximumBytes);
   }
 
-  private readOpened(opened: OpenedManagedFile): ManagedAttachmentRead {
+  private readOpened(
+    opened: OpenedManagedFile,
+    maximumBytes = this.maximumReadableBytes,
+  ): ManagedAttachmentRead {
     try {
-      if (opened.byteSize > this.maximumReadableBytes) {
+      if (
+        opened.byteSize > this.maximumReadableBytes ||
+        opened.byteSize > maximumBytes
+      ) {
         throw new ManagedAttachmentTooLargeError(opened.byteSize);
       }
       const content = Buffer.alloc(opened.byteSize);

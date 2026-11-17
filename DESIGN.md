@@ -424,6 +424,14 @@ whole project even when the selected filters intersect.
   a decorative card imply that a blocked native action is available.
   Wrap explanations instead of ellipsizing them. The visible file-picker button
   is the composer's attachment Tab stop; its hidden file input is not a second one.
+- Show a saved picture above its file row, centered and uncropped in a frame
+  up to 400 × 225px. A message with several pictures uses 96 × 72px thumbnails
+  beside the filenames, shrinking to 72 × 54px on narrow screens. Preserve file
+  order, intrinsic aspect ratio and the visible controls for each attachment.
+  Reserve frame space while loading. Clicking a picture opens a fitted modal
+  with its filename and a Close button. Escape returns focus to the picture.
+  Preserve the attachment's existing Open and Show in Folder capabilities when a
+  preview is unavailable.
 - Search defaults to the current conversation; Project includes Main and all
   children. Reuse the quiet compact field, counts,
   clear action, no-results feedback, and the existing highlight color pair.

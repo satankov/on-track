@@ -416,6 +416,30 @@ describe("managed attachment storage", () => {
     );
   });
 
+  it("applies a narrower per-read ceiling before reading any bytes", () => {
+    const store = new ManagedAttachmentStore(dataDirectory, {
+      maximumReadableBytes: 8,
+      descriptorRead: () => {
+        throw new Error("unexpected content read");
+      },
+    });
+    const created = store.create({
+      attachmentId: "file",
+      filename: "small.png",
+      content: Buffer.alloc(5),
+    });
+    expect(() => store.read(created.storagePath, 4)).toThrow(
+      ManagedAttachmentTooLargeError,
+    );
+    writeFileSync(
+      store.resolveAvailablePath(created.storagePath),
+      Buffer.alloc(9),
+    );
+    expect(() => store.read(created.storagePath, 10)).toThrow(
+      ManagedAttachmentTooLargeError,
+    );
+  });
+
   it("rejects a file that changes while its descriptor is being read", () => {
     let managedPath = "";
     let changed = false;

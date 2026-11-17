@@ -39,8 +39,9 @@ release. See the [changelog](CHANGELOG.md) for changes and upgrade limitations.
   in a chronological thread; pin active projects and archive finished ones.
 - **Write rich notes.** Use Markdown, checklists, tables, links, and dated plans.
 - **Find what matters.** Mark important notes and filter by labels, files, or links.
-- **Keep files in context.** Attach local files and open supported files in your
-  usual applications to edit them.
+- **Keep files in context.** See attached JPEG and PNG pictures as you read a
+  thread. Select a picture for a larger view, or use Open to edit a supported
+  file in its usual application.
 - **Take your work with you.** Export all or selected projects with their files,
   then restore them or import independent copies.
 - **Define actors.** Even though this is a personal threads, you can display

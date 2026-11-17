@@ -12,6 +12,9 @@ below `1.0.0`, releases may contain breaking changes.
   sender, and time. Schema 15 includes drafts in full and selected backups.
 - Toggle Markdown task boxes directly in a saved message. A single Enter now
   renders a line break. Opening a search result in history briefly highlights it.
+- See saved JPEG and PNG pictures directly in the message stream. Select a
+  picture for a larger in-browser view. Messages with several pictures show a
+  thumbnail beside each filename.
 
 - Use **More → Select messages** to copy, move or delete several messages.
   Shift-click selects a range, and **Select all** selects the current filtered
