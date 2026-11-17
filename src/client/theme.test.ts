@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { ACCENTS } from "../domain/validation.js";
+import { ACCENT_FAMILIES } from "../domain/validation.js";
 import { THEME_COLORS, THEME_STORAGE_KEY, THEMES, isTheme } from "./theme.js";
 
 const stylesheet = readFileSync(
@@ -69,15 +69,75 @@ function readThemeToken(theme: (typeof THEMES)[number], token: string): string {
   return readColorToken(themeBlock(theme), token);
 }
 
+const gradientTokens = [
+  "guava",
+  "honey",
+  "jade",
+  "lagoon",
+  "orchid",
+  "periwinkle",
+] as const;
+
 describe("accent accessibility", () => {
-  it.each(ACCENTS)("keeps white action text readable on %s", (accent) => {
-    const match = stylesheet.match(
-      new RegExp(`--${accent}-action:\\s*#([0-9a-f]{6})`, "i"),
+  it("shows each project's identity color in the accent picker", () => {
+    const swatch = stylesheet.match(
+      /\.project-settings-fields \.accent-swatch\s*\{([^}]+)\}/,
     );
-    expect(match, `Missing --${accent}-action CSS token`).not.toBeNull();
-    const ratio = 1.05 / (luminance(match![1]!) + 0.05);
-    expect(ratio).toBeGreaterThanOrEqual(4.5);
+    expect(swatch?.[1]).toContain("background: var(--swatch-fill)");
+    expect(swatch?.[1]).toContain("color: var(--swatch-ink)");
   });
+
+  it.each(THEMES)(
+    "keeps accent selections and Send readable in %s",
+    (theme) => {
+      const tokens = themeBlock(theme) + themeBlock("light");
+      for (const accent of gradientTokens) {
+        const tint = readColorToken(tokens, `${accent}-tint`);
+        const end = readColorToken(tokens, `${accent}-end`);
+        for (const stop of [
+          tint,
+          readColorToken(tokens, accent),
+          mixHex(end, tint, 0.75),
+        ]) {
+          expect(
+            contrastRatio(readColorToken(tokens, "swatch-check"), stop),
+            `Check mark on the ${theme} ${accent} swatch`,
+          ).toBeGreaterThanOrEqual(3);
+        }
+        for (const stop of [readColorToken(tokens, `${accent}-action`), end]) {
+          expect(
+            contrastRatio(readColorToken(tokens, "on-action"), stop),
+            `Send text on the ${theme} ${accent} gradient`,
+          ).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    },
+  );
+
+  it.each(THEMES)(
+    "keeps the original solid swatches, actions and messages readable in %s",
+    (theme) => {
+      const tokens = themeBlock(theme) + themeBlock("light");
+      const weight =
+        Number(tokens.match(/--plain-message-strength: ([\d.]+)%/)![1]) / 100;
+      for (const family of ACCENT_FAMILIES) {
+        const action = readColorToken(tokens, family + "-action");
+        expect(
+          contrastRatio(readColorToken(tokens, "on-action"), action),
+        ).toBeGreaterThanOrEqual(4.5);
+        const message = mixHex(
+          readColorToken(tokens, family),
+          readColorToken(tokens, "paper"),
+          weight,
+        );
+        for (const foreground of ["ink", "message-muted", "message-link"]) {
+          expect(
+            contrastRatio(readColorToken(tokens, foreground), message),
+          ).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    },
+  );
 
   it("uses the readable project accent for Send and the action palette for primary buttons", () => {
     expect(stylesheet).toMatch(
@@ -224,7 +284,7 @@ describe("appearance theme contract", () => {
   it.each(THEMES)(
     "keeps every stable sender-name color readable on participant messages in %s",
     (theme) => {
-      for (const accent of ACCENTS) {
+      for (const accent of ACCENT_FAMILIES) {
         expect(
           contrastRatio(
             readThemeToken(theme, `sender-${accent}`),
@@ -261,7 +321,7 @@ describe("appearance theme contract", () => {
       ).toBeGreaterThanOrEqual(3);
     }
 
-    for (const accent of ACCENTS) {
+    for (const accent of [...ACCENT_FAMILIES, ...gradientTokens]) {
       for (const background of ["selection", "paper"]) {
         expect(
           contrastRatio(
@@ -344,6 +404,45 @@ describe("appearance theme contract", () => {
     expect(attachmentCardRule?.groups?.body).toContain("border: 0");
   });
 
+  it.each(THEMES)(
+    "keeps dates readable over the future fade in %s",
+    (theme) => {
+      const fade = stylesheet.match(
+        /\.future-message-boundary-surface\s*\{([^}]+)\}/,
+      );
+      const stops = [
+        ...fade![1]!.matchAll(
+          /color-mix\(\s*in srgb,\s*var\(--accent(-tint)?\) var\((--future-(?:start|middle)-weight)\),\s*var\(--history\)\s*\)/g,
+        ),
+      ];
+      expect(stops).toHaveLength(2);
+      const tokens = themeBlock(theme) + themeBlock("light");
+      const history = readColorToken(tokens, "history");
+      const text = readColorToken(tokens, "muted");
+      for (const [selector, accents] of [
+        ["[data-accent]", ACCENT_FAMILIES],
+        ['[data-accent$="-gradient"]', gradientTokens],
+      ] as const) {
+        const rule = stylesheet.split(selector + " {")[1]!.split("}")[0]!;
+        for (const [, suffix = "", weightToken] of stops) {
+          const weight = rule.match(new RegExp(weightToken + ": ([\\d.]+)%"));
+          expect(weight).not.toBeNull();
+          for (const accent of accents) {
+            const color = readColorToken(
+              tokens,
+              accent + (accents === gradientTokens ? suffix : ""),
+            );
+            const background = mixHex(color, history, Number(weight![1]) / 100);
+            expect(
+              contrastRatio(text, background),
+              `${theme} ${accent}${suffix} fade`,
+            ).toBeGreaterThanOrEqual(4.5);
+          }
+        }
+      }
+    },
+  );
+
   it("uses a square full-width fade for future messages", () => {
     const historyRule = stylesheet.match(/\.history\s*\{(?<body>[^}]+)\}/);
     const futureSurfaceRule = stylesheet.match(
@@ -387,35 +486,14 @@ describe("appearance theme contract", () => {
     }
   });
 
-  it("gives Light messages a clearer project-colored surface", () => {
-    const root = themeBlock("light");
+  it("uses message-specific colors for bubble surfaces, metadata and links", () => {
     const bubbleRule = stylesheet.match(
       /\.message-bubble\s*\{(?<body>[^}]+)\}/,
     );
 
-    expect(root).toContain("--message-accent-strength: 36%");
     expect(bubbleRule?.groups?.body).toContain(
-      "var(--accent) var(--message-accent-strength)",
+      "var(--accent-tint) var(--message-tint-weight)",
     );
-
-    for (const accent of ACCENTS) {
-      const bubble = mixHex(
-        readThemeToken("light", accent),
-        readThemeToken("light", "paper"),
-        0.36,
-      );
-      expect(
-        contrastRatio(bubble, readThemeToken("light", "history")),
-        `Light --${accent} message against --history`,
-      ).toBeGreaterThanOrEqual(1.45);
-
-      for (const foreground of ["ink", "message-muted", "message-link"]) {
-        expect(
-          contrastRatio(readThemeToken("light", foreground), bubble),
-          `Light --${foreground} on --${accent} message`,
-        ).toBeGreaterThanOrEqual(4.5);
-      }
-    }
 
     expect(stylesheet).toMatch(
       /\.message-bubble \.note-body blockquote\s*\{[^}]*color:\s*var\(--message-muted\)/s,
@@ -428,10 +506,64 @@ describe("appearance theme contract", () => {
     );
   });
 
+  it.each(THEMES)("keeps project-colored messages readable in %s", (theme) => {
+    const tokens = themeBlock(theme) + themeBlock("light");
+    const strength = tokens.match(/--message-accent-strength:\s*([\d.]+)%/);
+    expect(strength, `Missing message tint in ${theme}`).not.toBeNull();
+    const tailWeight = tokens.match(/--message-end-strength:\s*([\d.]+)%/);
+    expect(
+      tailWeight,
+      `Missing gradient end strength in ${theme}`,
+    ).not.toBeNull();
+    const paper = readColorToken(tokens, "paper");
+    const labelTint = stylesheet.match(
+      /\.message-label\s*\{[^}]*background:\s*color-mix\(in srgb, var\(--message-muted\) ([\d.]+)%, transparent\)/,
+    );
+    expect(labelTint, "Missing message label tint").not.toBeNull();
+    const metadata = readColorToken(tokens, "message-muted");
+    for (const accent of gradientTokens) {
+      const bubble = mixHex(
+        readColorToken(tokens, `${accent}-tint`),
+        paper,
+        Number(strength![1]) / 100,
+      );
+      if (theme === "light") {
+        expect(
+          contrastRatio(bubble, readColorToken(tokens, "history")),
+          `Light --${accent} message against --history`,
+        ).toBeGreaterThanOrEqual(1.45);
+      }
+      const stops = [
+        mixHex(bubble, paper, 0.43),
+        bubble,
+        mixHex(
+          readColorToken(tokens, `${accent}-end`),
+          paper,
+          Number(tailWeight![1]) / 100,
+        ),
+      ];
+      for (const stop of stops) {
+        for (const foreground of ["ink", "message-muted", "message-link"]) {
+          expect(
+            contrastRatio(readColorToken(tokens, foreground), stop),
+            `${theme} --${foreground} on --${accent} message`,
+          ).toBeGreaterThanOrEqual(4.5);
+        }
+        expect(
+          contrastRatio(
+            metadata,
+            mixHex(metadata, stop, Number(labelTint![1]) / 100),
+          ),
+          `${theme} label text on --${accent} message`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
   it.each(THEMES)(
     "keeps project-colored attachment insets readable in %s",
     (theme) => {
-      for (const accent of ACCENTS) {
+      for (const accent of [...ACCENT_FAMILIES, ...gradientTokens]) {
         const surface = `attachment-${accent}`;
         expect(readThemeToken(theme, surface)).toMatch(/^[0-9a-f]{6}$/i);
         for (const foreground of [
@@ -452,11 +584,27 @@ describe("appearance theme contract", () => {
     },
   );
 
-  it.each(ACCENTS)(
-    "maps the %s project accent to its attachment surface",
-    (accent) => {
+  it.each(
+    ACCENT_FAMILIES.map(
+      (family, index) => [family, gradientTokens[index]] as const,
+    ),
+  )(
+    "maps the %s project to its identity, action, message and attachment colors",
+    (family, accent) => {
       const rule = stylesheet.match(
-        new RegExp(`\\[data-accent="${accent}"\\]\\s*\\{(?<body>[^}]+)\\}`),
+        new RegExp(
+          `\\[data-accent="${family}-gradient"\\]\\s*\\{(?<body>[^}]+)\\}`,
+        ),
+      );
+      expect(rule?.groups?.body).toContain(`--accent: var(--${accent})`);
+      expect(rule?.groups?.body).toContain(
+        `--accent-end: var(--${accent}-end)`,
+      );
+      expect(rule?.groups?.body).toContain(
+        `--accent-action: var(--${accent}-action)`,
+      );
+      expect(rule?.groups?.body).toContain(
+        `--accent-tint: var(--${accent}-tint)`,
       );
       expect(rule?.groups?.body).toContain(
         `--attachment-surface: var(--attachment-${accent})`,

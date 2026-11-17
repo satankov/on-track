@@ -16,13 +16,18 @@ export {
 } from "./labels.js";
 import { z } from "zod";
 
-export const ACCENTS = [
+export const ACCENT_FAMILIES = [
   "coral",
   "amber",
   "moss",
   "ocean",
   "iris",
   "slate",
+] as const;
+export type AccentFamily = (typeof ACCENT_FAMILIES)[number];
+export const ACCENTS = [
+  ...ACCENT_FAMILIES,
+  ...ACCENT_FAMILIES.map((family) => `${family}-gradient` as const),
 ] as const;
 
 export const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;

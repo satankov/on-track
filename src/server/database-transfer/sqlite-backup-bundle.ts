@@ -44,7 +44,7 @@ import {
 import { readMigrationFiles } from "drizzle-orm/migrator";
 
 import {
-  ACCENTS,
+  ACCENT_FAMILIES,
   CONFIGURABLE_LABELS,
   LABELS,
   MAX_ATTACHMENTS_PER_MESSAGE,
@@ -62,13 +62,14 @@ import {
 
 export const SQL_ON_TRACK_BACKUP_APPLICATION_ID = 0x4f545242;
 export const SQL_ON_TRACK_BACKUP_FORMAT_VERSION = 1;
-export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 12;
+export const SQL_ON_TRACK_BACKUP_SCHEMA_VERSION = 13;
 const LEGACY_SCHEMA_MIGRATIONS: Readonly<
   Record<number, { migrationAt: number; migrationCount: number }>
 > = {
   3: { migrationAt: 1_788_356_400_000, migrationCount: 4 },
   4: { migrationAt: 1_788_516_961_034, migrationCount: 5 },
   5: { migrationAt: 1_788_523_044_823, migrationCount: 6 },
+  12: { migrationAt: 1794839960460, migrationCount: 13 },
   11: { migrationAt: 1793608243633, migrationCount: 12 },
   10: { migrationAt: 1793364000000, migrationCount: 11 },
   9: { migrationAt: 1793269712711, migrationCount: 10 },
@@ -203,7 +204,7 @@ interface SchemaDescriptor {
 }
 
 const GENERATED_COMPONENT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-const ALLOWED_ACCENTS = new Set<string>(ACCENTS);
+const ALLOWED_ACCENTS = new Set<string>(ACCENT_FAMILIES);
 const SQLITE_MAGIC = Buffer.from("SQLite format 3\0", "binary");
 
 const BUNDLE_SCHEMA_OBJECTS = [
@@ -921,13 +922,14 @@ function validateApplicationData(
   }
   const chats = database
     .prepare(
-      `SELECT id, title, accent, created_at, updated_at${schemaVersion >= 4 ? ", pinned_at" : ""}${schemaVersion >= 5 ? ", collapse_long_messages" : ""}${schemaVersion >= 7 ? ", archived_at" : ""}${schemaVersion >= 12 ? ", manual_alert" : ""}
+      `SELECT id, title, accent, created_at, updated_at${schemaVersion >= 4 ? ", pinned_at" : ""}${schemaVersion >= 5 ? ", collapse_long_messages" : ""}${schemaVersion >= 7 ? ", archived_at" : ""}${schemaVersion >= 12 ? ", manual_alert" : ""}${schemaVersion >= 13 ? ", accent_style" : ""}
        FROM chats`,
     )
     .all() as Array<{
     id: unknown;
     title: unknown;
     accent: unknown;
+    accent_style?: unknown;
     created_at: unknown;
     updated_at: unknown;
     pinned_at?: unknown;
@@ -948,6 +950,12 @@ function validateApplicationData(
     ) {
       throw validationError("Project metadata is invalid.");
     }
+    if (
+      schemaVersion >= 13 &&
+      chat.accent_style !== "plain" &&
+      chat.accent_style !== "gradient"
+    )
+      throw validationError("Project accent style is invalid.");
     requireNonnegativeSafeInteger(chat.created_at, "project creation time");
     requireNonnegativeSafeInteger(chat.updated_at, "project update time");
     if (

@@ -2706,13 +2706,33 @@ describe("personal project chat workspace", () => {
       screen.getByRole("dialog", { name: "Create project" }),
     ).toBeVisible();
     await user.type(screen.getByLabelText("Project name"), "Launch");
-    await user.click(screen.getByRole("radio", { name: "Coral" }));
+    const picker = screen.getByRole("group", { name: "Accent" });
+    expect(
+      within(picker)
+        .getAllByRole("radio")
+        .map((input) => input.getAttribute("aria-label")),
+    ).toEqual([
+      "Coral",
+      "Amber",
+      "Moss",
+      "Ocean",
+      "Iris",
+      "Slate",
+      "Guava",
+      "Honey",
+      "Jade",
+      "Lagoon",
+      "Orchid",
+      "Periwinkle",
+    ]);
+    expect(within(picker).getByRole("radio", { name: "Coral" })).toBeChecked();
+    await user.click(within(picker).getByRole("radio", { name: "Guava" }));
     await user.click(screen.getByRole("button", { name: "Create project" }));
 
     await waitFor(() =>
       expect(api.createChat).toHaveBeenCalledWith({
         title: "Launch",
-        accent: "coral",
+        accent: "coral-gradient",
       }),
     );
     expect(screen.getByRole("heading", { name: "Launch" })).toBeVisible();
@@ -5858,7 +5878,7 @@ it("offers continuation between labels and copy and creates an empty named subth
   expect(screen.getByText("Subthread from")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   expect(
-    screen.queryByRole("group", { name: "Project accent" }),
+    screen.queryByRole("group", { name: "Accent" }),
   ).not.toBeInTheDocument();
   expect(
     within(screen.getByRole("main", { name: "Edit subthread" })).queryByRole(

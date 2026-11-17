@@ -38,6 +38,7 @@ export const chats = sqliteTable(
       .notNull()
       .default(0),
     accent: text("accent").notNull(),
+    accentStyle: text("accent_style").notNull().default("plain"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     pinnedAt: integer("pinned_at"),
@@ -60,6 +61,10 @@ export const chats = sqliteTable(
     ),
     check("chats_manual_alert_boolean", sql`${table.manualAlert} IN (0,1)`),
     check("chats_accent_allowed", sql.raw(accentCheck)),
+    check(
+      "chats_accent_style_allowed",
+      sql`${table.accentStyle} IN ('plain', 'gradient')`,
+    ),
     check(
       "chats_pinned_at_nonnegative",
       sql`${table.pinnedAt} IS NULL OR ${table.pinnedAt} >= 0`,

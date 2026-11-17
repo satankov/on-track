@@ -32,7 +32,26 @@ describe("chat input validation", () => {
   });
 
   it("rejects accents outside the stable token set", () => {
-    expect(ACCENTS).toHaveLength(6);
+    expect(ACCENTS).toEqual([
+      "coral",
+      "amber",
+      "moss",
+      "ocean",
+      "iris",
+      "slate",
+      "coral-gradient",
+      "amber-gradient",
+      "moss-gradient",
+      "ocean-gradient",
+      "iris-gradient",
+      "slate-gradient",
+    ]);
+    for (const accent of ACCENTS) {
+      expect(
+        createChatInputSchema.parse({ title: "Project", accent }).accent,
+      ).toBe(accent);
+      expect(updateChatInputSchema.parse({ accent }).accent).toBe(accent);
+    }
     expect(() =>
       createChatInputSchema.parse({ title: "Project", accent: "neon" }),
     ).toThrow();

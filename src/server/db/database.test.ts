@@ -1,6 +1,7 @@
 import {
   rewindToSchema7,
   rewindToSchema11,
+  rewindToSchema12,
 } from "../../test/legacy-database.js";
 import {
   createV010Database,
@@ -36,7 +37,7 @@ describe("SQLite project-chat persistence", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  it("upgrades forward-built v0.1.0 data to schema 12 without losing released state on restart", () => {
+  it("upgrades forward-built v0.1.0 data to schema 13 without losing released state on restart", () => {
     const released = createV010Database(join(directory, "released"), {
       missingAttachment: true,
     });
@@ -64,7 +65,7 @@ describe("SQLite project-chat persistence", () => {
           .prepare("SELECT schema_version FROM app_metadata")
           .pluck()
           .get(),
-      ).toBe(12);
+      ).toBe(13);
       expect(
         database
           .prepare("SELECT max(created_at) FROM __drizzle_migrations")
@@ -96,6 +97,53 @@ describe("SQLite project-chat persistence", () => {
       expect(database.pragma("integrity_check", { simple: true })).toBe("ok");
       expect(database.pragma("foreign_key_check")).toEqual([]);
     }
+  });
+
+  it("saves a finish change and inherits the project accent across restart", () => {
+    repository.createChat({
+      id: "project",
+      title: "Project",
+      accent: "ocean",
+      now: 1,
+    });
+    repository.createSubthread("project", {
+      id: "child",
+      title: "Child",
+      now: 2,
+    });
+    repository.appendNote({
+      id: "old-note",
+      chatId: "child",
+      body: "A saved message",
+      now: 2,
+    });
+    rewindToSchema12(database);
+    database.close();
+    database = openDatabase(join(directory, "on-track.sqlite"));
+    repository = new SqliteChatRepository(database);
+    expect(repository.getChat("child")?.accent).toBe("ocean");
+    expect(repository.listNotes("child")[0]?.body).toBe("A saved message");
+    expect(() =>
+      database.exec("UPDATE chats SET accent_style='unknown'"),
+    ).toThrow(/CHECK constraint/);
+    expect(
+      repository.updateChat("project", { accent: "ocean-gradient", now: 3 }),
+    ).toMatchObject({ accent: "ocean-gradient", updatedAt: 3 });
+    expect(
+      repository.updateChat("project", { accent: "ocean-gradient", now: 4 })
+        ?.updatedAt,
+    ).toBe(3);
+    expect(() =>
+      repository.updateChat("child", { accent: "moss-gradient", now: 5 }),
+    ).toThrow();
+    database.close();
+    database = openDatabase(join(directory, "on-track.sqlite"));
+    repository = new SqliteChatRepository(database);
+    expect(repository.getChat("child")?.accent).toBe("ocean-gradient");
+    expect(
+      repository.updateChat("project", { accent: "ocean", now: 6 })?.accent,
+    ).toBe("ocean");
+    expect(repository.getChat("child")?.accent).toBe("ocean");
   });
 
   it("upgrades a schema-11 conversation and enforces boolean workspace controls across restart", () => {
@@ -558,7 +606,7 @@ describe("SQLite project-chat persistence", () => {
         .prepare("SELECT schema_version FROM app_metadata WHERE id = 1")
         .pluck()
         .get(),
-    ).toBe(12);
+    ).toBe(13);
     expect(repository.getChat("chat-a")?.pinnedAt).toBeNull();
     expect(repository.getChat("chat-a")?.collapseLongMessages).toBe(true);
     expect(repository.listNotes("chat-a")).toMatchObject([

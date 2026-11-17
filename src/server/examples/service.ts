@@ -1,4 +1,5 @@
 import { projectLabels, labelNameKey } from "../../domain/labels.js";
+import { storedAccent } from "../db/project-accent.js";
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { ExampleDetail } from "../../domain/examples.js";
@@ -43,7 +44,7 @@ export function copyExample(
         id,
         project_id: null,
         title,
-        accent: example.accent,
+        ...storedAccent(example.accent),
         created_at: now,
         updated_at: Math.max(...example.notes.map((n) => n.createdAt)),
         pinned_at: null,

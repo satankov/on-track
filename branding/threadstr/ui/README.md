@@ -4,8 +4,8 @@ Open [index.html](index.html) for the interactive visual reference. The normativ
 rules are in [DESIGN.md](../../../DESIGN.md). This accompanies the logo handoff;
 it is not an application route or a new design-system dependency.
 
-[Preview image](preview.png) shows the Dark palette section. The interactive
-page is authoritative for other themes and component states.
+The [palette preview](preview.png) shows outgoing messages, picker swatches and Add buttons for all twelve project accents in Light.
+Use the theme control in the cookbook to compare them in Neutral and Dark.
 
 ## View
 

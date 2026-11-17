@@ -1,3 +1,4 @@
+import type { AccentStyle } from "./project-accent.js";
 import type { ProjectLabelRow } from "./project-labels.js";
 import type Database from "better-sqlite3";
 
@@ -6,6 +7,7 @@ export interface ImportedProject {
   title: string;
   project_id: string | null;
   accent: string;
+  accent_style: AccentStyle;
   created_at: number;
   updated_at: number;
   pinned_at: number | null;
@@ -50,7 +52,7 @@ export function readImportedRecords(
   return {
     projects: source
       .prepare(
-        "SELECT id,title,accent,created_at,updated_at,pinned_at,archived_at,manual_alert,collapse_long_messages,project_id FROM chats ORDER BY project_id IS NOT NULL, id",
+        "SELECT id,title,accent,accent_style,created_at,updated_at,pinned_at,archived_at,manual_alert,collapse_long_messages,project_id FROM chats ORDER BY project_id IS NOT NULL, id",
       )
       .all() as ImportedProject[],
     notes: source
@@ -81,7 +83,7 @@ export function insertImportedRecords(
   records: ImportedRecords,
 ): void {
   const project = database.prepare(
-    "INSERT INTO chats (id,title,accent,created_at,updated_at,pinned_at,archived_at,manual_alert,collapse_long_messages,project_id) VALUES (@id,@title,@accent,@created_at,@updated_at,@pinned_at,@archived_at,@manual_alert,@collapse_long_messages,@project_id)",
+    "INSERT INTO chats (id,title,accent,accent_style,created_at,updated_at,pinned_at,archived_at,manual_alert,collapse_long_messages,project_id) VALUES (@id,@title,@accent,@accent_style,@created_at,@updated_at,@pinned_at,@archived_at,@manual_alert,@collapse_long_messages,@project_id)",
   );
   const note = database.prepare(
     "INSERT INTO notes (id,chat_id,body,sender,created_at) VALUES (@id,@chat_id,@body,@sender,@created_at)",

@@ -72,7 +72,7 @@ test("searches locally with a compact field, restores reading positions and open
   localApp,
 }, testInfo) => {
   const response = await request.post(`${localApp.url}/api/chats`, {
-    data: { title: "Search notebook", accent: "ocean" },
+    data: { title: "Search notebook", accent: "amber-gradient" },
   });
   const chat = await response.json();
   const ids: string[] = [];
@@ -119,6 +119,15 @@ test("searches locally with a compact field, restores reading positions and open
   await expect(page.locator(".message-row")).toHaveCount(2);
   await expect(page.getByLabel("Matching messages")).toHaveText("2");
   await expect(page.locator(".message-body mark")).toHaveCount(4);
+  const amberMatch = page
+    .locator(".message-row--own .message-body mark")
+    .first();
+  await expect(amberMatch).toHaveCSS("outline-style", "solid");
+  await expect(amberMatch).toHaveCSS("outline-width", "1px");
+  await expect(amberMatch).toHaveCSS(
+    "outline-color",
+    await amberMatch.evaluate((mark) => getComputedStyle(mark).color),
+  );
   await expect(history).toHaveJSProperty("scrollTop", 0);
   for (const side of ["own", "participant"]) {
     const row = page.locator(`.message-row--${side}`).first();
@@ -153,6 +162,26 @@ test("searches locally with a compact field, restores reading positions and open
     expect(contextBox!.height).toBeGreaterThanOrEqual(44);
   }
   expect(requests).toEqual([]);
+  const participantSurface = await page
+    .locator(".message-row--participant .message-bubble")
+    .evaluate((bubble) => getComputedStyle(bubble).backgroundColor);
+  const projectScope = page.getByRole("checkbox", {
+    name: "Project",
+    exact: true,
+  });
+  await projectScope.check();
+  const results = page.locator(".project-search-results");
+  await expect(results.locator(`[data-note-id="${ids[5]}"]`)).toHaveCSS(
+    "background-image",
+    /linear-gradient/,
+  );
+  const participantResult = results.locator(`[data-note-id="${ids[10]}"]`);
+  await expect(participantResult).toHaveCSS("background-image", "none");
+  await expect(participantResult).toHaveCSS(
+    "background-color",
+    participantSurface,
+  );
+  await projectScope.uncheck();
   const box = await page.locator(".project-search").boundingBox();
   const field = await search.boundingBox();
   expect(box!.height).toBeLessThanOrEqual(field!.height + 10);

@@ -25,19 +25,20 @@
   --line: #e8ebef;
   --line-strong: #d8dde3;
   --control-border: #8a929c;
-  --message-accent-strength: 36%;
+  --message-accent-strength: 100%;
+  --message-end-strength: 35%;
   --message-muted: #44484d;
   --message-link: #064f9f;
   --attachment-ink: #ffffff;
   --attachment-muted: #dce2e8;
   --attachment-warning: #ffd4a8;
   --attachment-critical: #ffb4ab;
-  --attachment-coral: #63322f;
-  --attachment-amber: #5b421f;
-  --attachment-moss: #39492e;
-  --attachment-ocean: #294956;
-  --attachment-iris: #403853;
-  --attachment-slate: #354348;
+  --attachment-guava: #713d36;
+  --attachment-honey: #63491b;
+  --attachment-jade: #365338;
+  --attachment-lagoon: #205352;
+  --attachment-orchid: #514064;
+  --attachment-periwinkle: #354d66;
   --search-match: #f5d780;
   --search-match-ink: #17191c;
   --focus: #0b63ce;
@@ -50,26 +51,58 @@
   --warning: #7c4b25;
   --overlay: #272b31;
   --shadow-overlay: #000000;
+  --guava: #d96a56;
+  --honey: #b2811b;
+  --jade: #659558;
+  --lagoon: #168e86;
+  --orchid: #9873d0;
+  --periwinkle: #598bbb;
+  --guava-tint: #f6baa8;
+  --honey-tint: #f1c977;
+  --jade-tint: #b9d4a0;
+  --lagoon-tint: #9ed6cb;
+  --orchid-tint: #cebded;
+  --periwinkle-tint: #b5d0ed;
+  --guava-end: #b93974;
+  --honey-end: #b64c28;
+  --jade-end: #007c74;
+  --lagoon-end: #455db9;
+  --orchid-end: #a53e85;
+  --periwinkle-end: #6555a7;
+  --swatch-check: #16252b;
+  --sender-coral: #a44535;
+  --sender-amber: #805817;
+  --sender-moss: #3f7045;
+  --sender-ocean: #106a64;
+  --sender-iris: #754ba3;
+  --sender-slate: #3c6691;
+  --guava-action: #bc503c;
+  --honey-action: #90620c;
+  --jade-action: #457647;
+  --lagoon-action: #0c716b;
+  --orchid-action: #8057b4;
+  --periwinkle-action: #436e9b;
+  --chat-column-width: 1040px;
+  --history-filter-width: 128px;
+  --plain-message-strength: 36%;
+  --attachment-coral: #63322f;
+  --attachment-amber: #5b421f;
+  --attachment-moss: #39492e;
+  --attachment-ocean: #294956;
+  --attachment-iris: #403853;
+  --attachment-slate: #354348;
   --coral: #a94738;
   --amber: #8c5a12;
   --moss: #667d4d;
   --ocean: #33758c;
   --iris: #716591;
   --slate: #59666b;
-  --sender-coral: #9f3f35;
-  --sender-amber: #8c5a12;
-  --sender-moss: #506a34;
-  --sender-ocean: #24647a;
-  --sender-iris: #665386;
-  --sender-slate: #4f5f65;
   --coral-action: #a94738;
   --amber-action: #8c5a12;
   --moss-action: #667d4d;
   --ocean-action: #33758c;
   --iris-action: #716591;
   --slate-action: #59666b;
-  --chat-column-width: 1040px;
-  --history-filter-width: 128px;
 }
 
 :root[data-theme="neutral"] {
@@ -89,19 +122,20 @@
   --line: #3a4047;
   --line-strong: #626b76;
   --control-border: #939eaa;
-  --message-accent-strength: 8%;
-  --message-muted: #c4cbd3;
-  --message-link: #8bb8ff;
+  --message-accent-strength: 16%;
+  --message-end-strength: 48%;
+  --message-muted: #dbe1e8;
+  --message-link: #a6d0ff;
   --attachment-ink: #f4f6f8;
   --attachment-muted: #d0d6dd;
   --attachment-warning: #ffd4a8;
   --attachment-critical: #ffb4ab;
-  --attachment-coral: #643a36;
-  --attachment-amber: #594523;
-  --attachment-moss: #3c4a31;
-  --attachment-ocean: #2d4b57;
-  --attachment-iris: #433b55;
-  --attachment-slate: #39464b;
+  --attachment-guava: #67403a;
+  --attachment-honey: #5b461e;
+  --attachment-jade: #374f39;
+  --attachment-lagoon: #224e4c;
+  --attachment-orchid: #503e61;
+  --attachment-periwinkle: #354b62;
   --focus: #8bb8ff;
   --button-primary: #1f66ad;
   --button-primary-hover: #195690;
@@ -112,18 +146,31 @@
   --warning: #f0bd78;
   --overlay: #07090c;
   --shadow-overlay: #000000;
+  --guava: #ff9f87;
+  --honey: #f1c867;
+  --jade: #a3d58d;
+  --lagoon: #6dd6c6;
+  --orchid: #c2a1f7;
+  --periwinkle: #9ac5f1;
+  --sender-coral: #ff9f87;
+  --sender-amber: #f1c867;
+  --sender-moss: #a3d58d;
+  --sender-ocean: #6dd6c6;
+  --sender-iris: #c2a1f7;
+  --sender-slate: #9ac5f1;
+  --plain-message-strength: 8%;
+  --attachment-coral: #643a36;
+  --attachment-amber: #594523;
+  --attachment-moss: #3c4a31;
+  --attachment-ocean: #2d4b57;
+  --attachment-iris: #433b55;
+  --attachment-slate: #39464b;
   --coral: #ff8f80;
   --amber: #e5aa58;
   --moss: #a9c777;
   --ocean: #6db9d4;
   --iris: #b4a5e3;
   --slate: #a2afb5;
-  --sender-coral: #ff8f80;
-  --sender-amber: #e5aa58;
-  --sender-moss: #a9c777;
-  --sender-ocean: #6db9d4;
-  --sender-iris: #b4a5e3;
-  --sender-slate: #a2afb5;
 }
 
 :root[data-theme="dark"] {
@@ -143,19 +190,20 @@
   --line: #252b31;
   --line-strong: #444c56;
   --control-border: #6e7a87;
-  --message-accent-strength: 8%;
-  --message-muted: #b6bec8;
-  --message-link: #8bb8ff;
+  --message-accent-strength: 23%;
+  --message-end-strength: 51%;
+  --message-muted: #c1c9d3;
+  --message-link: #a1c9ff;
   --attachment-ink: #f4f6f8;
   --attachment-muted: #c4cbd3;
   --attachment-warning: #ffd4a8;
   --attachment-critical: #ffb4ab;
-  --attachment-coral: #472724;
-  --attachment-amber: #3f3019;
-  --attachment-moss: #293421;
-  --attachment-ocean: #20353d;
-  --attachment-iris: #302a3d;
-  --attachment-slate: #293337;
+  --attachment-guava: #4e302b;
+  --attachment-honey: #44361c;
+  --attachment-jade: #293e2c;
+  --attachment-lagoon: #193c3b;
+  --attachment-orchid: #3b304b;
+  --attachment-periwinkle: #28394d;
   --focus: #8bb8ff;
   --button-primary: #1f66ad;
   --button-primary-hover: #195690;
@@ -166,18 +214,31 @@
   --warning: #f0bd78;
   --overlay: #000000;
   --shadow-overlay: #000000;
+  --guava: #ff9f87;
+  --honey: #f1c867;
+  --jade: #a3d58d;
+  --lagoon: #6dd6c6;
+  --orchid: #c2a1f7;
+  --periwinkle: #9ac5f1;
+  --sender-coral: #ff9f87;
+  --sender-amber: #f1c867;
+  --sender-moss: #a3d58d;
+  --sender-ocean: #6dd6c6;
+  --sender-iris: #c2a1f7;
+  --sender-slate: #9ac5f1;
+  --plain-message-strength: 8%;
+  --attachment-coral: #472724;
+  --attachment-amber: #3f3019;
+  --attachment-moss: #293421;
+  --attachment-ocean: #20353d;
+  --attachment-iris: #302a3d;
+  --attachment-slate: #293337;
   --coral: #ff8f80;
   --amber: #e5aa58;
   --moss: #a9c777;
   --ocean: #6db9d4;
   --iris: #b4a5e3;
   --slate: #a2afb5;
-  --sender-coral: #ff8f80;
-  --sender-amber: #e5aa58;
-  --sender-moss: #a9c777;
-  --sender-ocean: #6db9d4;
-  --sender-iris: #b4a5e3;
-  --sender-slate: #a2afb5;
 }
 
 * {
@@ -538,35 +599,107 @@ button.rail-section-label {
   border: 0;
 }
 
+[data-accent] {
+  --future-start-weight: 8%;
+  --future-middle-weight: 4%;
+  --future-middle-position: 52%;
+  --accent-tint: var(--accent);
+  --message-tint-weight: var(--plain-message-strength);
+  --swatch-fill: var(--accent-action);
+  --swatch-ink: var(--on-action);
+  --swatch-gradient: none;
+  --action-gradient: none;
+}
+[data-accent$="-gradient"] {
+  --future-start-weight: 10%;
+  --future-middle-weight: 9%;
+  --future-middle-position: 48%;
+  --message-tint-weight: var(--message-accent-strength);
+  --swatch-fill: var(--accent);
+  --swatch-ink: var(--swatch-check);
+  --swatch-gradient: linear-gradient(
+    118deg in srgb,
+    var(--accent-tint),
+    var(--accent) 47%,
+    color-mix(in srgb, var(--accent-end) 75%, var(--accent-tint))
+  );
+  --action-gradient: linear-gradient(
+    118deg in srgb,
+    var(--accent-action),
+    var(--accent-end)
+  );
+}
 [data-accent="coral"] {
   --accent: var(--coral);
   --accent-action: var(--coral-action);
   --attachment-surface: var(--attachment-coral);
+}
+[data-accent="coral-gradient"] {
+  --accent: var(--guava);
+  --accent-tint: var(--guava-tint);
+  --accent-action: var(--guava-action);
+  --accent-end: var(--guava-end);
+  --attachment-surface: var(--attachment-guava);
 }
 [data-accent="amber"] {
   --accent: var(--amber);
   --accent-action: var(--amber-action);
   --attachment-surface: var(--attachment-amber);
 }
+[data-accent="amber-gradient"] {
+  --accent: var(--honey);
+  --accent-tint: var(--honey-tint);
+  --accent-action: var(--honey-action);
+  --accent-end: var(--honey-end);
+  --attachment-surface: var(--attachment-honey);
+}
 [data-accent="moss"] {
   --accent: var(--moss);
   --accent-action: var(--moss-action);
   --attachment-surface: var(--attachment-moss);
+}
+[data-accent="moss-gradient"] {
+  --accent: var(--jade);
+  --accent-tint: var(--jade-tint);
+  --accent-action: var(--jade-action);
+  --accent-end: var(--jade-end);
+  --attachment-surface: var(--attachment-jade);
 }
 [data-accent="ocean"] {
   --accent: var(--ocean);
   --accent-action: var(--ocean-action);
   --attachment-surface: var(--attachment-ocean);
 }
+[data-accent="ocean-gradient"] {
+  --accent: var(--lagoon);
+  --accent-tint: var(--lagoon-tint);
+  --accent-action: var(--lagoon-action);
+  --accent-end: var(--lagoon-end);
+  --attachment-surface: var(--attachment-lagoon);
+}
 [data-accent="iris"] {
   --accent: var(--iris);
   --accent-action: var(--iris-action);
   --attachment-surface: var(--attachment-iris);
 }
+[data-accent="iris-gradient"] {
+  --accent: var(--orchid);
+  --accent-tint: var(--orchid-tint);
+  --accent-action: var(--orchid-action);
+  --accent-end: var(--orchid-end);
+  --attachment-surface: var(--attachment-orchid);
+}
 [data-accent="slate"] {
   --accent: var(--slate);
   --accent-action: var(--slate-action);
   --attachment-surface: var(--attachment-slate);
+}
+[data-accent="slate-gradient"] {
+  --accent: var(--periwinkle);
+  --accent-tint: var(--periwinkle-tint);
+  --accent-action: var(--periwinkle-action);
+  --accent-end: var(--periwinkle-end);
+  --attachment-surface: var(--attachment-periwinkle);
 }
 
 .local-footnote {
@@ -930,6 +1063,9 @@ button.rail-section-label {
   background: var(--search-match);
   color: var(--search-match-ink);
   border-radius: 2px;
+}
+.message-bubble .search-highlight {
+  outline: 1px solid currentColor;
 }
 @container (max-width: 600px) {
   .project-search {
@@ -1319,8 +1455,14 @@ button.rail-section-label {
     color-mix(in srgb, var(--accent) 30%, var(--line));
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--accent) 9%, var(--history)) 0%,
-    color-mix(in srgb, var(--accent) 4%, var(--history)) 52%,
+    color-mix(in srgb, var(--accent) var(--future-start-weight), var(--history))
+      0%,
+    color-mix(
+        in srgb,
+        var(--accent-tint) var(--future-middle-weight),
+        var(--history)
+      )
+      var(--future-middle-position),
     var(--history) 100%
   );
   background-repeat: no-repeat;
@@ -1392,7 +1534,7 @@ button.rail-section-label {
 .message-bubble {
   --message-surface: color-mix(
     in srgb,
-    var(--accent) var(--message-accent-strength),
+    var(--accent-tint) var(--message-tint-weight),
     var(--paper)
   );
   position: relative;
@@ -1403,8 +1545,22 @@ button.rail-section-label {
   border-radius: 14px 14px 5px 14px;
   background: var(--message-surface);
 }
-.message-row--participant .message-bubble {
-  --message-surface: var(--paper);
+:where([data-accent$="-gradient"]) .message-bubble,
+.theme-preview-history i {
+  background-image: linear-gradient(
+    118deg in srgb,
+    color-mix(in srgb, var(--message-surface) 43%, var(--paper)),
+    var(--message-surface) 47%,
+    color-mix(
+      in srgb,
+      var(--accent-end) var(--message-end-strength),
+      var(--paper)
+    )
+  );
+}
+.message-row--participant .message-bubble,
+.project-search-result[data-participant] {
+  background: var(--paper);
   border: 0;
   border-radius: 14px 14px 14px 5px;
 }
@@ -1645,14 +1801,11 @@ button.rail-section-label {
 .message-body-viewport--collapsed {
   max-height: var(--message-collapse-height);
   overflow: hidden;
-}
-.message-body-viewport--collapsed::after {
-  content: "";
-  position: absolute;
-  inset: auto 0 0;
-  height: 3.75rem;
-  background: linear-gradient(to bottom, transparent, var(--message-surface));
-  pointer-events: none;
+  mask-image: linear-gradient(
+    to bottom,
+    black calc(100% - 3.75rem),
+    transparent
+  );
 }
 .message-collapse-toggle {
   min-height: 32px;
@@ -1973,9 +2126,11 @@ button.rail-section-label {
   --preview-canvas: #f6f7f9;
   --preview-rail: #eef1f4;
   --preview-ink: #626a75;
-  --preview-note: #e7eef2;
+  --preview-note: #9ed6cb;
+  --preview-paper: #ffffff;
+  --preview-end-strength: 35%;
   --preview-field: #ffffff;
-  --preview-accent: #33758c;
+  --preview-accent: #168e86;
   position: relative;
   min-width: 0;
   overflow: hidden;
@@ -1990,17 +2145,21 @@ button.rail-section-label {
   --preview-canvas: #32373d;
   --preview-rail: #292d32;
   --preview-ink: #c4cbd3;
-  --preview-note: #46515b;
+  --preview-note: #48555a;
+  --preview-paper: #383d44;
+  --preview-end-strength: 48%;
   --preview-field: #444a52;
-  --preview-accent: #6db9d4;
+  --preview-accent: #6dd6c6;
 }
 .theme-option[data-preview-theme="dark"] {
   --preview-canvas: #13171b;
   --preview-rail: #0d1013;
   --preview-ink: #b6bec8;
-  --preview-note: #24313a;
+  --preview-note: #374747;
+  --preview-paper: #181c20;
+  --preview-end-strength: 51%;
   --preview-field: #242a30;
-  --preview-accent: #6db9d4;
+  --preview-accent: #6dd6c6;
 }
 .theme-option:hover {
   background: var(--selection);
@@ -2060,10 +2219,14 @@ button.rail-section-label {
   gap: 9px;
 }
 .theme-preview-history i {
+  --message-surface: var(--preview-note);
+  --paper: var(--preview-paper);
+  --accent-end: var(--lagoon-end);
+  --message-end-strength: var(--preview-end-strength);
   width: 78%;
   height: 18px;
   border-radius: 5px 5px 2px 5px;
-  background: var(--preview-note);
+  background-color: var(--preview-note);
 }
 .theme-preview-history i:last-child {
   width: 56%;
@@ -2365,6 +2528,7 @@ kbd {
   border-radius: 8px;
   color: var(--on-action);
   background: var(--accent-action);
+  background-image: var(--action-gradient);
   cursor: pointer;
   font-size: 0.72rem;
   font-weight: 750;
@@ -2779,8 +2943,14 @@ kbd {
   padding: 0;
   border: 0;
 }
+.accent-selection-name {
+  margin-inline-start: 8px;
+  color: var(--muted);
+  font-weight: 500;
+}
 .project-settings-fields .accent-options {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   padding: 6px 10px;
@@ -2791,8 +2961,7 @@ kbd {
   position: relative;
   display: grid;
   place-items: center;
-  flex: 0 1 44px;
-  min-width: 32px;
+  flex: 0 0 44px;
   min-height: 44px;
   padding: 4px;
   border: 0;
@@ -2810,8 +2979,9 @@ kbd {
   place-items: center;
   width: 28px;
   height: 28px;
-  background: var(--accent-action);
-  color: var(--on-action);
+  background: var(--swatch-fill);
+  background-image: var(--swatch-gradient);
+  color: var(--swatch-ink);
 }
 .project-settings-fields .accent-swatch svg {
   width: 18px;
@@ -3282,7 +3452,10 @@ kbd {
     border-block-start-color: CanvasText;
   }
 
-  .message-body-viewport--collapsed::after,
+  .message-body-viewport--collapsed {
+    mask-image: none;
+  }
+
   .composer-wrap::before {
     display: none;
   }

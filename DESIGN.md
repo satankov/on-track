@@ -61,14 +61,17 @@ the complete active palette, including inherited values, directly from CSS.
 
 ### Accents and specialized surfaces
 
-- Six project identities: Coral, Amber, Moss, Ocean, Iris, Slate. `data-accent`
-  maps `--accent`, `--accent-action`, and `--attachment-surface`. Reuse these
-  mappings; never choose a seventh color ad hoc.
-- `--accent` is orientation/identity. `--accent-action` is the darker,
-  contrast-tested fill used with `--on-action`. They are deliberately different
-  in dark themes; a bright decorative accent is not a button background.
-- Own messages mix `--accent` into `--paper`: 36% in Light, 8% in Neutral/Dark.
-  Participant bubbles use `--paper` and sender-specific `--sender-*` text.
+- The single Accent picker lists Coral, Amber, Moss, Ocean, Iris and Slate, then
+  Guava, Honey, Jade, Lagoon, Orchid and Periwinkle. Both Create and Edit use
+  this order. The name beside Accent follows the checked swatch.
+- The first six use the original flat palette, with solid action fills and a
+  message tint mixed into paper at 36% in Light and 8% in Neutral and Dark.
+- Guava moves from apricot to rose, Honey from gold to copper, Jade from sage
+  to teal, Lagoon from teal to blue, Orchid from lavender to plum and
+  Periwinkle from powder blue to violet. Their 118° outgoing message gradients
+  put the project tint at 47%. Their composer actions use deeper versions for
+  white text. Swatches and the rail marker share the project hue.
+- Participant messages use solid paper in conversation history and search.
 - Message links and metadata use `--message-link` and `--message-muted`.
   Attachments use their own `--attachment-*` foreground, status, and surface
   pairs. Do not substitute generic muted text on a dark attachment inset.
@@ -165,24 +168,25 @@ separation, whitespace, and alignment. No decorative bright outline around a
 composer, participant bubble, message label, rail Add/Settings button, history
 arrow, label popup, or settings group. Never nest a cosmetic card behind a group.
 
-| Treatment                                  | Allowed use                                                      |
-| ------------------------------------------ | ---------------------------------------------------------------- |
-| No border / no shadow                      | Normal grouped settings, bubbles, composer, icon buttons, labels |
-| 1px `--line`                               | Composer toolbar separators and table cells                      |
-| 1px `--line-strong`                        | Existing compact sender/timestamp control boundaries             |
-| 1.5px `--muted`                            | Unchecked square checkbox; meaningful off-state affordance       |
-| 1px `--focus`, offset 1px                  | Keyboard focus for non-text controls                             |
-| `0 12px 34px` shadow at 22%                | Floating message action and label popups                         |
-| `0 20px 60px` shadow at 22%                | Create dialog only                                               |
-| Transparent → `--history`, 32px            | Composer's top fade; `pointer-events:none`; no black band        |
-| Transparent → `--message-surface`, 3.75rem | Collapsed message fade above Show more                           |
+| Treatment                       | Allowed use                                                                      |
+| ------------------------------- | -------------------------------------------------------------------------------- |
+| No border / no shadow           | Normal grouped settings, bubbles, composer, icon buttons, labels                 |
+| 1px `--line`                    | Composer toolbar separators and table cells                                      |
+| 1px `--line-strong`             | Existing compact sender/timestamp control boundaries                             |
+| 1.5px `--muted`                 | Unchecked square checkbox; meaningful off-state affordance                       |
+| 1px `--focus`, offset 1px       | Keyboard focus for non-text controls                                             |
+| `0 12px 34px` shadow at 22%     | Floating message action and label popups                                         |
+| `0 20px 60px` shadow at 22%     | Create dialog only                                                               |
+| Transparent → `--history`, 32px | Composer's top fade; `pointer-events:none`; no black band                        |
+| Content mask, final 3.75rem     | Collapsed message text fades into the underlying bubble gradient above Show more |
 
 Overlay backdrops use `--overlay` at 54% with 3px blur, applied once to the native
 `::backdrop`. The full-viewport dialog shell is transparent and resets native
 maximum dimensions so its content stays centered. Blur is an overlay
 exception, not a glass visual system for ordinary product surfaces.
-The future-message boundary is a separate full-width accent fade with a subtle
-top line. Preserve its chronological meaning; do not reuse it as decoration.
+The future-message boundary keeps its subtle top line and full-width fade.
+It starts with the project marker color, passes through the message tint,
+and ends on the history background.
 
 Keep the existing stacking relationships: normal content 0–2, composer 3,
 history arrows 4, global error 5, dialog backdrop 10, label popup 12 inside its
@@ -205,19 +209,19 @@ does not fix clipping or a parent stacking context.
 
 ## Shapes
 
-| Family                                           | Radius / size                                             |
-| ------------------------------------------------ | --------------------------------------------------------- |
-| Settings groups, fields, composer, theme preview | 12px                                                      |
-| Create dialog                                    | 16px; max-width 560px; padding `clamp(20px,4vw,32px)`     |
-| Standard buttons                                 | 8px; min-height 40px; horizontal padding 15px             |
-| Rail Add / Settings                              | 9px; 38×38px; visible keyboard focus                      |
-| History arrows                                   | Circle; 44×44px; 20px icon                                |
-| Checkbox                                         | 5px; 22×22px square inside a clickable row                |
-| Accent swatch                                    | Circle 28px; 44px target (min-width 32px at tight widths) |
-| Own bubble                                       | 14px 14px 5px 14px; participant: 14px 14px 14px 5px       |
-| Message-label popup                              | 9px; width 218px; padding 10px                            |
-| Text label                                       | Pill 999px; min-height 18px; padding 1px 6px              |
-| Attachment group / row                           | 10px / 7px                                                |
+| Family                                           | Radius / size                                          |
+| ------------------------------------------------ | ------------------------------------------------------ |
+| Settings groups, fields, composer, theme preview | 12px                                                   |
+| Create dialog                                    | 16px; max-width 560px; padding `clamp(20px,4vw,32px)`  |
+| Standard buttons                                 | 8px; min-height 40px; horizontal padding 15px          |
+| Rail Add / Settings                              | 9px; 38×38px; visible keyboard focus                   |
+| History arrows                                   | Circle; 44×44px; 20px icon                             |
+| Checkbox                                         | 5px; 22×22px square inside a clickable row             |
+| Accent swatch                                    | Circle 28px inside a 44px target; wrap at tight widths |
+| Own bubble                                       | 14px 14px 5px 14px; participant: 14px 14px 14px 5px    |
+| Message-label popup                              | 9px; width 218px; padding 10px                         |
+| Text label                                       | Pill 999px; min-height 18px; padding 1px 6px           |
+| Attachment group / row                           | 10px / 7px                                             |
 
 Radii are component families, not permission to round every wrapper. A new
 settings surface uses 12px; it does not get an arbitrary 18px radius.
@@ -255,7 +259,7 @@ introductory sentence explaining that this is the settings screen.
 - Edit has an accessible main landmark named Edit project, no visible duplicate
   title. The Settings-style back arrow (accessible name “Back to project”) comes first,
   at the top left. Save changes follows the last field at the bottom right.
-- Project accent: one horizontal swatch strip, native radios, visible check on
+- Project accent: one wrapping swatch strip, native radios, visible check on
   selected swatch. Color names remain accessible, not printed beside every dot.
 - Project labels: one column, icon then name then right-aligned square checkbox.
   On = filled square with check; off = empty outlined square. No iPhone switch.
@@ -392,6 +396,8 @@ whole project even when the selected filters intersect.
 - Search defaults to the current conversation; Project includes Main and all
   children. Reuse the quiet compact field, counts,
   clear action, no-results feedback, and the existing highlight color pair.
+  Search matches inside bubbles have a thin outline in the match text color so
+  they stay distinct on every project tint.
 - Hover anywhere across a message row to reveal Label and More, including the
   empty space beside the bubble. A mouse-opened popup stays open while the
   pointer moves across the row or into the popup. Leaving both dismisses the

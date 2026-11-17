@@ -246,7 +246,12 @@ test("creates, customizes, records, and reopens a private project thread", async
   await page.goto(localApp.url);
   await page.getByRole("button", { name: "New project" }).click();
   await page.getByLabel("Project name").fill(projectName);
-  await page.getByRole("radio", { name: "Ocean" }).check();
+  const picker = page.getByRole("group", { name: "Accent", exact: true });
+  await expect(picker.getByRole("radio")).toHaveCount(12);
+  await expect(
+    picker.getByRole("radio", { name: "Coral", exact: true }),
+  ).toBeChecked();
+  await picker.getByRole("radio", { name: "Ocean", exact: true }).check();
   await page.getByRole("button", { name: "Create project" }).click();
 
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
@@ -319,7 +324,11 @@ test("creates, customizes, records, and reopens a private project thread", async
 
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByLabel("Project name").fill(renamedProject);
-  await page.getByRole("radio", { name: "Iris" }).check();
+  await expect(picker.getByRole("radio")).toHaveCount(12);
+  await expect(
+    picker.getByRole("radio", { name: "Ocean", exact: true }),
+  ).toBeChecked();
+  await picker.getByRole("radio", { name: "Orchid", exact: true }).check();
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(
     page.getByRole("heading", { name: renamedProject }),
@@ -349,6 +358,10 @@ test("creates, customizes, records, and reopens a private project thread", async
       .locator(".message-list")
       .getByText("Ship the smallest useful workflow."),
   ).toBeVisible();
+  await expect(page.locator(".message-bubble").first()).toHaveCSS(
+    "background-image",
+    /linear-gradient/,
+  );
   await page.screenshot({
     path: testInfo.outputPath("workspace.png"),
     fullPage: true,
@@ -512,7 +525,7 @@ test("collapses long messages using the persisted project default", async ({
   const suffix = `${viewportName(testInfo.project.name)}-${Date.now()}`;
   const project = await createProject(request, localApp.url, {
     title: `Long messages ${suffix}`,
-    accent: "ocean",
+    accent: "ocean-gradient",
   });
   const body = [
     "## Weekly research summary",
@@ -534,6 +547,10 @@ test("collapses long messages using the persisted project default", async ({
   const clippedLink = page.getByRole("link", { name: "Clipped reference" });
   await expect(showMore).toHaveAttribute("aria-expanded", "false");
   await expect(viewport).toHaveClass(/message-body-viewport--collapsed/);
+  await expect(page.locator(".message-row--own .message-bubble")).toHaveCSS(
+    "background-image",
+    /linear-gradient/,
+  );
   await expect(showMore).toHaveCSS("padding-left", "0px");
   await expect(showMore).toHaveCSS("border-radius", "0px");
   await showMore.hover();
@@ -936,6 +953,10 @@ test("attributes participant messages with the compact desktop sender control", 
 
   const participantRows = page.locator(".message-row--participant");
   await expect(participantRows).toHaveCount(3);
+  await expect(participantRows.first().locator(".message-bubble")).toHaveCSS(
+    "background-image",
+    "none",
+  );
   const participantPresentation = await page.evaluate(() => {
     const rows = [
       ...document.querySelectorAll<HTMLElement>(".message-row--participant"),

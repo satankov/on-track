@@ -105,6 +105,12 @@ const ACCENT_NAMES: Record<Accent, string> = {
   ocean: "Ocean",
   iris: "Iris",
   slate: "Slate",
+  "coral-gradient": "Guava",
+  "amber-gradient": "Honey",
+  "moss-gradient": "Jade",
+  "ocean-gradient": "Lagoon",
+  "iris-gradient": "Orchid",
+  "slate-gradient": "Periwinkle",
 };
 
 const LABEL_MARKS: Partial<Record<Label, string>> = {
@@ -431,7 +437,12 @@ function ProjectAccentPicker({
 }) {
   return (
     <fieldset className="accent-fieldset">
-      <legend>Project accent</legend>
+      <legend>
+        Accent{" "}
+        <span className="accent-selection-name" aria-hidden="true">
+          {ACCENT_NAMES[accent]}
+        </span>
+      </legend>
       <div className="accent-options">
         {ACCENTS.map((value) => (
           <label

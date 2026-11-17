@@ -203,7 +203,7 @@ it.each(["replace", "merge"] as const)(
       try {
         expect(
           db.prepare("SELECT schema_version FROM app_metadata").pluck().get(),
-        ).toBe(12);
+        ).toBe(13);
         const paths = db
           .prepare("SELECT storage_path FROM note_attachments")
           .pluck()
@@ -874,7 +874,7 @@ it.each([
       await app.inject({
         method: "POST",
         url: "/api/chats",
-        payload: { title: "Website", accent: "ocean" },
+        payload: { title: "Website", accent: "ocean-gradient" },
       })
     ).json();
     const other = (
@@ -969,7 +969,7 @@ it.each([
         chat.id !== other.id &&
         (mode === "replace" || chat.id !== root.id),
     );
-    expect(newRoot).toBeDefined();
+    expect(newRoot?.accent).toBe("ocean-gradient");
     const project = (
       await app.inject(`/api/chats/${newRoot.id}/project`)
     ).json();
@@ -985,6 +985,7 @@ it.each([
       (chat: { id: string }) => chat.id === newRoot.id,
     );
     expect(copiedChild).toMatchObject({
+      accent: "ocean-gradient",
       manualAlert: true,
       projectId: newRoot.id,
       origin: {

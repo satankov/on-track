@@ -40,6 +40,7 @@ export function ProjectSearchResults({
                 className="message-bubble project-search-result"
                 data-note-id={note.id}
                 data-chat-id={conversation.id}
+                data-participant={note.sender ? true : undefined}
               >
                 {excerpt && (
                   <p className="note-body project-search-result-body">

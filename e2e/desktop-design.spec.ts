@@ -32,7 +32,7 @@ test("keeps text entry borderless and primary actions visible in every theme", a
   localApp,
 }) => {
   await request.post(`${localApp.url}/api/chats`, {
-    data: { title: "Workspace controls", accent: "ocean" },
+    data: { title: "Workspace controls", accent: "ocean-gradient" },
   });
   await page.goto(localApp.url);
   await page.getByRole("button", { name: "Open Workspace controls" }).click();
@@ -85,6 +85,7 @@ test("keeps text entry borderless and primary actions visible in every theme", a
     }
     const send = page.locator(".send-button");
     await expect(send).toBeEnabled();
+    await expect(send).toHaveCSS("background-image", /linear-gradient/);
     await expect(send).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     await expect(send).toHaveCSS("color", "rgb(255, 255, 255)");
     await page
@@ -102,6 +103,34 @@ test("keeps text entry borderless and primary actions visible in every theme", a
   await page.getByRole("button", { name: "New project", exact: true }).click();
   const title = page.getByLabel("Project name", { exact: true });
   await expect(title).toBeFocused();
+  const picker = page.getByRole("group", { name: "Accent", exact: true });
+  const radios = picker.getByRole("radio");
+  await expect(radios).toHaveCount(12);
+  const names = [
+    "Coral",
+    "Amber",
+    "Moss",
+    "Ocean",
+    "Iris",
+    "Slate",
+    "Guava",
+    "Honey",
+    "Jade",
+    "Lagoon",
+    "Orchid",
+    "Periwinkle",
+  ];
+  for (const [index, name] of names.entries()) {
+    await expect(radios.nth(index)).toHaveAccessibleName(name);
+    await expect(picker.locator(".accent-swatch").nth(index)).toHaveCSS(
+      "background-image",
+      index < 6 ? "none" : /linear-gradient/,
+    );
+  }
+  await radios.nth(5).check();
+  await radios.nth(5).press("ArrowRight");
+  await expect(radios.nth(6)).toBeChecked();
+  await expect(picker.locator(".accent-selection-name")).toHaveText("Guava");
   await expect(title).toHaveCSS("outline-style", "none");
   await expect(title).toHaveCSS("border-top-width", "0px");
   await title.fill("A second project");
@@ -113,6 +142,10 @@ test("keeps text entry borderless and primary actions visible in every theme", a
   await expect(create).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(create).toHaveCSS("color", "rgb(255, 255, 255)");
   await page.emulateMedia({ forcedColors: "active" });
+  await expect(picker.locator(".accent-swatch").nth(6)).toHaveCSS(
+    "background-image",
+    "none",
+  );
   await expect(title).toHaveCSS("outline-style", "none");
   await expect(title).toHaveCSS("border-top-width", "0px");
 });

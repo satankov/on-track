@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { storedAccent, type AccentStyle } from "./project-accent.js";
 import {
   insertProjectLabel,
   readProjectLabels,
@@ -20,13 +21,15 @@ import type {
 import {
   PERMANENT_LABELS,
   type Accent,
+  type AccentFamily,
   type ConfigurableLabel,
   type Label,
 } from "../../domain/validation.js";
 
 interface ChatRow {
   project_id: string | null;
-  effective_accent: Accent;
+  effective_accent: AccentFamily;
+  effective_accent_style: AccentStyle;
   origin_id: string | null;
   source_chat_id: string | null;
   source_note_id: string | null;
@@ -34,7 +37,6 @@ interface ChatRow {
   source_note_position_id: string | null;
   id: string;
   title: string;
-  accent: Accent;
   created_at: number;
   updated_at: number;
   archived_at: number | null;
@@ -79,7 +81,10 @@ function toChat(
   return {
     id: row.id,
     title: row.title,
-    accent: row.effective_accent,
+    accent:
+      row.effective_accent_style === "gradient"
+        ? `${row.effective_accent}-gradient`
+        : row.effective_accent,
     projectId: row.project_id,
     origin:
       row.origin_id == null
@@ -164,6 +169,7 @@ export class InvalidSubthreadError extends Error {
 }
 
 const CHAT_SELECT = `SELECT chats.*, COALESCE(root.accent, chats.accent) AS effective_accent,
+  COALESCE(root.accent_style, chats.accent_style) AS effective_accent_style,
   origin.chat_id AS origin_id, origin.source_chat_id, origin.source_note_id,
   COALESCE(source_note.created_at, origin.source_note_created_at) AS source_note_created_at, origin.source_note_position_id
   FROM chats LEFT JOIN chats AS root ON root.id = chats.project_id
@@ -182,10 +188,10 @@ export class SqliteChatRepository {
     const create = this.database.transaction(() => {
       this.database
         .prepare(
-          `INSERT INTO chats (id, title, accent, created_at, updated_at)
-           VALUES (@id, @title, @accent, @now, @now)`,
+          `INSERT INTO chats (id, title, accent, accent_style, created_at, updated_at)
+           VALUES (@id, @title, @accent, @accent_style, @now, @now)`,
         )
-        .run(input);
+        .run({ ...input, ...storedAccent(input.accent) });
       seedProjectLabels(this.database, input.id);
     });
     create();
@@ -213,14 +219,14 @@ export class SqliteChatRepository {
         throw new InvalidSubthreadError();
       this.database
         .prepare(
-          `INSERT INTO chats (id, title, accent, created_at, updated_at, project_id, collapse_long_messages)
-        VALUES (@id, @title, @accent, @now, @now, @projectId, @collapseLongMessages)`,
+          `INSERT INTO chats (id, title, accent, accent_style, created_at, updated_at, project_id, collapse_long_messages)
+        VALUES (@id, @title, @accent, @accent_style, @now, @now, @projectId, @collapseLongMessages)`,
         )
         .run({
           id: input.id,
           title: input.title,
           now: input.now,
-          accent: root.accent,
+          ...storedAccent(root.accent),
           projectId: root.id,
           collapseLongMessages: Number(root.collapseLongMessages),
         });
@@ -306,17 +312,22 @@ export class SqliteChatRepository {
           `UPDATE chats
            SET title = COALESCE(@title, title),
                accent = COALESCE(@accent, accent),
+               accent_style = COALESCE(@accent_style, accent_style),
                collapse_long_messages = COALESCE(
                  @collapseLongMessages,
                  collapse_long_messages
                ),
-               updated_at = CASE WHEN (@title IS NOT NULL AND @title != title) OR (@accent IS NOT NULL AND @accent != accent) OR (@collapseLongMessages IS NOT NULL AND @collapseLongMessages != collapse_long_messages) THEN @now ELSE updated_at END
+               updated_at = CASE WHEN (@title IS NOT NULL AND @title != title)
+                 OR (@accent IS NOT NULL AND (@accent != accent OR @accent_style != accent_style))
+                 OR (@collapseLongMessages IS NOT NULL AND @collapseLongMessages != collapse_long_messages) THEN @now ELSE updated_at END
            WHERE id = @id`,
         )
         .run({
           id,
           title: input.title ?? null,
-          accent: input.accent ?? null,
+          ...(input.accent === undefined
+            ? { accent: null, accent_style: null }
+            : storedAccent(input.accent)),
           collapseLongMessages:
             input.collapseLongMessages === undefined
               ? null

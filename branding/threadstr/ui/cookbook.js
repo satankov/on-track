@@ -1,7 +1,21 @@
 /* global document, getComputedStyle, CSS */
 
 const root = document.documentElement;
-const accents = ["coral", "amber", "moss", "ocean", "iris", "slate"];
+const accentNames = {
+  coral: "Coral",
+  amber: "Amber",
+  moss: "Moss",
+  ocean: "Ocean",
+  iris: "Iris",
+  slate: "Slate",
+  "coral-gradient": "Guava",
+  "amber-gradient": "Honey",
+  "moss-gradient": "Jade",
+  "ocean-gradient": "Lagoon",
+  "iris-gradient": "Orchid",
+  "slate-gradient": "Periwinkle",
+};
+const accents = Object.keys(accentNames);
 const featuredTokens = [
   ["history", "Workspace"],
   ["paper", "Group / participant"],
@@ -44,19 +58,31 @@ function renderPalette() {
   }
   const accentGrid = document.querySelector("#cb-accents");
   accentGrid.replaceChildren();
+  const notes = {
+    coral: "The glaze samples are ready.",
+    amber: "Try the new espresso blend.",
+    moss: "Plant the basil this weekend.",
+    ocean: "Save this take for the chorus.",
+    iris: "Keep the last frame a little longer.",
+    slate: "The prototype fits the workbench.",
+  };
   for (const accent of accents) {
-    const item = element("div");
-    const identity = element("i");
-    identity.style.background = value(accent);
-    identity.title = `Identity: ${value(accent)}`;
-    const action = element("i", "", "✓");
-    action.style.background = value(`${accent}-action`);
-    action.title = `Action fill: ${value(`${accent}-action`)}`;
-    item.append(
-      identity,
-      action,
-      element("b", "", accent[0].toUpperCase() + accent.slice(1)),
+    const item = element("figure");
+    item.dataset.accent = accent;
+    const message = element(
+      "div",
+      "message-bubble",
+      notes[accent.split("-")[0]],
     );
+    const identity = element("span", "cb-identity-sample", "✓");
+    identity.setAttribute("aria-hidden", "true");
+    const caption = element("figcaption");
+    caption.append(
+      identity,
+      element("b", "", accentNames[accent]),
+      element("span", "cb-action-sample send-button", "Add"),
+    );
+    item.append(message, caption);
     accentGrid.append(item);
   }
   const table = document.querySelector("#cb-all-tokens");
@@ -86,18 +112,19 @@ document.querySelectorAll('input[name="theme"]').forEach((input) => {
   });
 });
 
-function swatchOptions(containerId, groupName) {
+function swatchOptions(containerId, groupName, selected) {
   const container = document.getElementById(containerId);
   for (const accent of accents) {
     const label = element("label", "accent-option");
     label.dataset.accent = accent;
+    label.title = accentNames[accent];
     const input = element("input");
     input.type = "radio";
     input.name = groupName;
     input.value = accent;
-    input.checked = accent === "ocean";
+    input.checked = accent === selected;
     input.defaultChecked = input.checked;
-    input.setAttribute("aria-label", accent[0].toUpperCase() + accent.slice(1));
+    input.setAttribute("aria-label", accentNames[accent]);
     const swatch = element("span", "accent-swatch");
     swatch.setAttribute("aria-hidden", "true");
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -109,13 +136,17 @@ function swatchOptions(containerId, groupName) {
     label.append(input, swatch);
     container.append(label);
     input.addEventListener("change", () => {
+      container
+        .closest("fieldset")
+        .querySelector(".accent-selection-name").textContent =
+        accentNames[accent];
       const surface = container.closest("[data-accent]");
       if (surface) surface.dataset.accent = accent;
     });
   }
 }
-swatchOptions("cb-swatch-options", "project-accent");
-swatchOptions("cb-create-swatches", "create-accent");
+swatchOptions("cb-swatch-options", "project-accent", "ocean");
+swatchOptions("cb-create-swatches", "create-accent", "coral");
 
 const settingsForm = document.querySelector("#cb-settings-form");
 settingsForm.addEventListener("submit", (event) => {
@@ -125,6 +156,8 @@ settingsForm.addEventListener("submit", (event) => {
 });
 document.querySelector("#cb-reset").addEventListener("click", () => {
   settingsForm.reset();
+  settingsForm.querySelector(".accent-selection-name").textContent =
+    accentNames.ocean;
   settingsForm.closest("[data-accent]").dataset.accent = "ocean";
   document.querySelector("#cb-save-status").textContent = "";
 });

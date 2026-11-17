@@ -95,19 +95,16 @@
         </section>
 
         <section id="color" class="cb-section">
-          <p class="cb-kicker">02 / Color roles</p>
-          <h2>Choose a role, not a hex.</h2>
-          <p>
-            Switch the theme above. Every swatch and value is read from the live
-            stylesheet, including inherited tokens.
-          </p>
+          <div class="cb-accent-specimen" id="project-accents">
+            <h2>Project accents</h2>
+            <p>
+              Each project accent is shown on a message, its picker swatch and
+              the Add button.
+            </p>
+            <div id="cb-accents" class="cb-accent-grid"></div>
+          </div>
+          <h3>Workspace colors</h3>
           <div id="cb-colors" class="cb-colors"></div>
-          <h3>Project identity / action fill</h3>
-          <p>
-            The bright identity color is distinct from the darker action fill.
-            White checks and labels use the action fill.
-          </p>
-          <div id="cb-accents" class="cb-accent-grid"></div>
           <details class="cb-details">
             <summary>
               Full palette: attachments, senders, status, code, overlays
@@ -260,7 +257,12 @@
                 required
               />
               <fieldset class="accent-fieldset">
-                <legend>Project accent</legend>
+                <legend>
+                  Accent
+                  <span class="accent-selection-name" aria-hidden="true"
+                    >Ocean</span
+                  >
+                </legend>
                 <div class="accent-options" id="cb-swatch-options"></div>
               </fieldset>
               <fieldset
@@ -547,7 +549,7 @@
             ><strong>Always show message time</strong>
             <input type="checkbox" id="cb-message-time" checked
           /></label>
-          <div class="cb-conversation" data-accent="ocean">
+          <div class="cb-conversation" data-accent="ocean-gradient">
             <div class="message-row message-row--participant">
               <div class="message-stack">
                 <article class="message-bubble">
@@ -1330,7 +1332,12 @@
             value="A new notebook"
           />
           <fieldset class="accent-fieldset">
-            <legend>Project accent</legend>
+            <legend>
+              Accent
+              <span class="accent-selection-name" aria-hidden="true"
+                >Coral</span
+              >
+            </legend>
             <div class="accent-options" id="cb-create-swatches"></div>
           </fieldset>
           <div class="dialog-actions">

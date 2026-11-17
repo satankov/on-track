@@ -5,7 +5,9 @@
 The v0.2.1 workspace builds on the v0.2.0 subthread release tag.
 Schema 12 adds a checked boolean to each conversation for manual Alert and a
 checked boolean to workspace preferences for timestamp visibility. Both use
-the existing database and format-1 backup lifecycle. The managed compatibility
+the existing database and format-1 backup lifecycle. Schema 13 adds a checked plain or gradient finish alongside the six stored
+hues. The API exposes the selection as a single accent ID. Roots supply both
+values to their subthreads. The managed compatibility
 floor remains `0.0.7`. See [workspace controls](plans/0036-v0.2.1-workspace-controls.md)
 and [subthread ownership](adr/0014-flat-project-subthreads.md).
 The included flat UI/design-contract slice changes client UI, tests, and documentation
@@ -369,8 +371,8 @@ integrity, foreign-key, count, size, hash, and inventory checks run before the
 completed private file is streamed. Restore incrementally stages a bounded
 upload, rejects raw SQLite, schema-2, and other unsupported bundles, generates
 fresh managed paths, removes bundle payload tables, and compacts the current-
-schema candidate. Schema 3–11 bundles are checked against their trusted legacy descriptors
-before migration to schema 12 in staging. Older conversations start with manual
+schema candidate. Schema 3–12 bundles are checked against their trusted legacy descriptors
+before migration to schema 13 in staging. Legacy projects adopt the plain finish. Older conversations start with manual
 Alert off. Older preference rows default to always displaying message time.
 It then uses the maintenance gate and
 restore journal to replace live state. Exact active-schema expectations come
