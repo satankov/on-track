@@ -49,8 +49,8 @@ keeping any custom data path unchanged. On PowerShell, use `npm.cmd` in place of
 - Pin important projects above the activity-sorted project list, and independently
   collapse Pinned, Projects, Archive, and Examples. Their state is saved in the database.
 - Choose **Edit** to change a project's name, accent, labels, and message display.
-  Color swatches show the selected accent with a check; label checkboxes on the
-  right enable or disable labels. Add up to **5 custom labels** per project, each
+  Choose a plain or gradient accent. Label checkboxes on the right enable or
+  disable labels. Add up to **5 custom labels** per project, each
   with a name of **1–8 characters** and an optional symbol or emoji. Type directly
   in the empty last row; a new empty row appears as you enter data, until all five
   custom slots are used. Name/symbol errors appear while typing. Use the × to
@@ -74,7 +74,7 @@ keeping any custom data path unchanged. On PowerShell, use `npm.cmd` in place of
   configured from Edit project.
 - Hover anywhere across a message row, including the empty space beside its
   bubble, to reveal **Label** and **More**. Use **Label** to change its labels.
-  Open **More** to continue in a subthread, copy, edit or delete the message.
+  Open **More** to continue in a subthread, select messages, copy, edit or delete a message.
   Conversation search also offers **Open message in history** there.
 - Message times appear in the bottom-right corner of each bubble. Uncheck
   **Settings → General → Always show message time** to show a time when you
@@ -89,6 +89,8 @@ keeping any custom data path unchanged. On PowerShell, use `npm.cmd` in place of
   image, audio, and video formats. Other files, including archives, launchers,
   and legacy or macro-enabled Office formats, remain accessible through Show in
   Folder. An allowed format does not guarantee safe file contents.
+- Eligible JPEG and PNG attachments appear in the conversation. Select a
+  preview to view the full picture.
 - Filter messages containing Markdown/GFM links with the automatic Links filter
   after Files, without applying a label. Hold **⌘** on macOS or **Ctrl** on
   Windows/Linux while clicking filters to combine them; messages must match
@@ -135,6 +137,20 @@ message is deleted, its continuation marker stays at that date without retaining
 the deleted text. Deleting a source conversation makes its backlink unavailable
 but preserves sibling subthreads. Deleting a root project removes Main, all its
 subthreads, and their managed attachments; export a backup first when needed.
+
+## Work with selected messages
+
+Open **More → Select messages** on a message, then check the other messages you
+want. Use **Select all** to select visible results in the current conversation.
+You can work with up to 1,000 messages at a time.
+
+- **Copy** or **Move** sends the selection to another conversation with its
+  labels and files. Choose the destination before confirming.
+- **Export** opens a preview of the selected messages in chronological order.
+  Choose **Markdown** or **Plain text**, choose whether to include message
+  labels, then use **Copy text** or download the file. Excerpts show attachment
+  counts. To preserve the files themselves, export a project backup.
+- **Delete** asks you to confirm the number of messages and the conversation.
 
 ## Markdown assistance
 
@@ -207,10 +223,10 @@ Explicit project selections allow up to 10,000 projects and 1 MiB of options.
 A merge can grow the workspace beyond one bundle's limits; use selective export
 for smaller project sets.
 
-The v0.2.1 workspace uses schema 12 and backup format 1. It accepts current
-backups and strictly validated schema 3–11 bundles, migrating older backups in
-staging. It does not restore v0.0.3/schema-2 bundles. Supported older databases
-migrate during startup; older app versions cannot reopen a schema-12 database.
+The v0.2.1 workspace uses schema 15 and backup format 1. It accepts current
+backups and migrates validated schema 3–14 bundles during import. Restoring a
+v0.0.3/schema-2 bundle is unsupported. Supported older databases migrate during
+startup. Older app versions cannot reopen a schema-15 database.
 Export a backup before upgrading. You can isolate evaluation data
 with an absolute disposable path:
 
@@ -225,24 +241,21 @@ $env:ON_TRACK_DATA_DIR = "C:\absolute\path\to\threadstr-data"
 npm start
 ```
 
-Local ownership is not the same as encryption: anyone who can read your account's
-application-data directory can currently read the database and attachments.
+## Local use and privacy
 
-## Local use and alpha limitations
+threadstr runs on your computer and opens in your browser at a loopback address.
+Normal use works offline. Setup and explicit updates download software, and
+opening an external link visits that website. Your projects stay on this device.
 
-The interface is served on your computer at a loopback address. A browser-based
-interface does not mean cloud storage or access from other devices. Setup and
-explicit updates download software; normal use needs no internet connection and
-threadstr does not upload your project content. Opening an external link uses
-your browser normally and visits that website.
+The database, attachments, and backups are unencrypted. Anyone with access to
+these files can read their contents. Keep independent backups and keep
+confidential, NDA-bound, or irreplaceable information out of the workspace.
 
-This is an early plaintext alpha. Do not use it for confidential, NDA-bound, or
-irreplaceable information yet. Keep your own backups. Encryption and device sync
-are not currently available. Preferences belong to the local database and are
-shared by browsers using it. Full backups include them; selected-project exports
-omit them. Replacing from a full backup restores its preferences. Replacing from
-a selected-project or older backup keeps your current preferences, as does merging
-projects. Custom label definitions and assignments travel with their projects.
+Browsers using the same local database share workspace preferences. Replacing
+the database from a full backup restores any saved preferences it contains.
+Selected-project backups and backups from schemas 3–7 omit these settings,
+so replacement keeps your current preferences. Merging projects also keeps your
+current preferences. Custom label definitions and assignments travel with their projects.
 
 ## Further reading
 
@@ -291,7 +304,7 @@ current filtered history. Each appears only when there is more content in that
 direction. The end includes future-dated messages. Existing reading positions
 are retained when switching projects or returning to All.
 
-Click Add or press Cmd/Ctrl+Enter to send. Enter still adds a newline. The composer
+Click **Add** or press Cmd/Ctrl+Enter to send. Enter still adds a newline. The composer
 gives one brief glow in the project color when a valid send or edit save starts.
 New notes appear with a small entrance animation after saving. Errors keep the draft. System
 reduced-motion settings replace this with a brief static border and no movement.
@@ -301,5 +314,5 @@ reduced-motion settings replace this with a brief static border and no movement.
 `thr uninstall` removes the managed application and its private dependencies,
 keeping projects. `thr uninstall --delete-data` also deletes projects and managed
 attachments after showing the paths and asking for confirmation. Export a backup
-first if needed. See the [complete uninstall instructions](install/README.md#uninstall-next-release)
+first if needed. See the [complete uninstall instructions](install/README.md#uninstall)
 for retained files, manual installations, interrupted cleanup, and Windows receipts.

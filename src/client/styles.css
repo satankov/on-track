@@ -4609,3 +4609,229 @@ kbd {
     outline-color: Highlight;
   }
 }
+
+/* A local text excerpt uses the same workspace and gutters as the batch picker. */
+.message-export .export-sheet {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.export-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 24px;
+}
+.export-head .settings-back-button {
+  margin: 0;
+}
+.export-head h1 {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.export-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 4px;
+  margin-inline: -4px;
+  flex: 1;
+}
+.export-options {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+}
+.export-options fieldset {
+  margin: 0;
+  flex: 0 1 360px;
+}
+.export-formats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-radius: 12px;
+  background: var(--paper);
+  padding: 4px;
+}
+.export-formats label {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  flex: 1 1 130px;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 0.84rem;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.export-formats input {
+  margin: 0;
+  accent-color: var(--button-primary);
+  width: 18px;
+  height: 18px;
+}
+.export-formats label:hover,
+.export-formats label:has(:checked) {
+  background: var(--selection);
+}
+.export-formats small,
+.export-filename {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.export-formats small {
+  margin-left: auto;
+}
+.export-labels {
+  width: fit-content;
+  gap: 12px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+}
+.export-labels input {
+  margin: 0;
+}
+.export-excerpt {
+  margin-top: 24px;
+}
+.export-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 0 4px 8px;
+}
+.export-meta h2 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.export-filename {
+  display: inline-flex;
+  gap: 4px;
+  min-width: 0;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+.export-filename svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+.export-text {
+  margin: 0;
+  width: 100%;
+  padding: 24px 32px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 0;
+  border-radius: 12px;
+  color: var(--ink);
+  background: var(--paper);
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1.52;
+  tab-size: 4;
+}
+textarea.export-text {
+  resize: vertical;
+}
+.export-gap {
+  display: block;
+  height: 8px;
+  font-size: 0;
+  line-height: 0;
+}
+.export-gap.before-day {
+  height: 24px;
+}
+.export-gap.before-byline {
+  height: 16px;
+}
+.export-part-byline + .export-gap {
+  height: 4px;
+}
+.export-part-title {
+  font-size: 1.12rem;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+.export-part-day,
+.export-part-byline {
+  font-weight: 650;
+}
+.export-part-detail {
+  color: var(--muted);
+}
+.export-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding-top: 12px;
+}
+.export-foot .field-help {
+  flex: 1 1 160px;
+  margin: 0;
+}
+.export-foot .field-help:empty {
+  display: none;
+}
+.export-actions {
+  display: flex;
+  margin-left: auto;
+  gap: 8px;
+}
+@media (max-width: 760px) {
+  .message-export .export-sheet {
+    padding-block: 16px;
+  }
+  .export-head {
+    padding-bottom: 16px;
+  }
+  .export-text {
+    padding: 16px;
+  }
+  .export-excerpt {
+    margin-top: 12px;
+  }
+}
+/* Within the mobile header's existing 88px, give a child title its own line. */
+@media (max-width: 420px) {
+  .chat-header:has(.subthread-heading) {
+    padding-block: 0;
+  }
+  .chat-header:has(.subthread-heading) .chat-header-inner {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0 4px;
+  }
+  .chat-header:has(.subthread-heading) .chat-heading {
+    flex: 1 0 calc(100% - 46px);
+  }
+  .chat-header:has(.subthread-heading) .edit-project-button {
+    margin-inline-start: 0;
+  }
+}
+@media (max-height: 500px) {
+  .message-export .export-sheet {
+    padding-block: 4px;
+  }
+  .export-head,
+  .export-foot {
+    padding-block: 4px;
+  }
+}

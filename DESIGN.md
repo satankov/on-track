@@ -162,7 +162,7 @@ the requested adjustment is to the left margin.**
   when changing search or examples. Home's 1100px breakpoint is Home-specific.
 - Verify 1440×900, 1024×768, 390×844 and 320px-wide reflow. At 200% zoom, wrap
   labels/help and keep actions reachable. Local tables/code may scroll; the
-  document must not gain horizontal overflow. Mobile remains an alpha target.
+  document must not gain horizontal overflow.
 
 ## Elevation & Depth
 
@@ -335,7 +335,8 @@ Show five active children, pins first, keeping the selected child visible;
 Show all expands in place. Preserve
 candidate title-only rows and Attention indicators.
 
-Child headers contain a muted clickable root, slash, and child title. Both titles
+Child headers contain a muted clickable root, slash, and child title. At 420px
+and below, Back and the title sit above the actions within the existing header height. Both titles
 have min-width:0, single-line overflow and independent ellipsis; actions stay
 visible. The root consumes at most 40% of available title space and short names
 remain adjacent. Use the same branch glyph in New subthread and message actions.
@@ -368,14 +369,18 @@ whole project even when the selected filters intersect.
 
 ### Message stream, composer, labels, attachments
 
-- **Select messages** checks the invoking message and opens a selection bar
+- In a message’s More menu, **Select messages** checks the invoking message and opens a selection bar
   in the composer's place. Align native square checkboxes in one left gutter
   for both senders. Shift-click or Shift+Space extends the selection from the
   last picked message through the current message, inclusive. Select all picks
   every message in the current filtered history. Show the count alongside
-  Select all, Cancel, Copy, Move and Delete.
+  Select all, Cancel, Copy, Move, Export and Delete.
   Keep the draft and reading position when returning from the destination
   picker. Confirm deletion with the count and source conversation.
+- Export opens a flat review workspace with the Edit gutters, Back, format
+  radios and an optional Include message labels checkbox. Preview the exact text
+  on paper with persistent Copy text and Download actions. Back restores the
+  selection and reading position. Feedback and manual clipboard recovery stay inline.
 - Copy and Move use the Edit project's workspace layout. Keep Back, the
   title and search field above a scrolling list, with the counted action
   always visible below it. Use compact project rows matching the sidebar.

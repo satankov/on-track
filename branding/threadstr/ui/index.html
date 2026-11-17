@@ -1029,6 +1029,13 @@
                   Move
                 </button>
                 <button
+                  class="button batch-transfer"
+                  type="button"
+                  data-batch="Export"
+                >
+                  Export
+                </button>
+                <button
                   class="button batch-delete"
                   type="button"
                   data-batch="Delete"
@@ -1038,6 +1045,18 @@
               </div>
             </div>
           </div>
+          <section id="cb-export" hidden aria-label="Export preview">
+            <button type="button" data-batch="back" class="button">
+              Back to selected messages
+            </button>
+            <h3></h3>
+            <pre class="export-text" tabindex="0"></pre>
+            <p>
+              <a href="../message-export/index.html"
+                >Explore Markdown and plain text in the export study</a
+              >
+            </p>
+          </section>
           <div id="cb-selection-picker" class="batch-destination" hidden>
             <form class="project-edit-form project-settings-fields">
               <button

@@ -2,19 +2,14 @@
 
 ## Supported versions
 
-threadstr is pre-1.0 alpha software. Security fixes are made only on the latest
-released version.
-
-| Version        | Supported |
-| -------------- | --------- |
-| Latest `0.0.x` | Yes       |
-| Older versions | No        |
+Security fixes apply to the [latest release](https://github.com/satankov/on-track/releases/latest).
+Older releases receive no backports.
 
 ## Reporting a vulnerability
 
-Please do not open a public issue for a suspected vulnerability. Use GitHub's
-private vulnerability reporting for this repository after the repository owner
-enables it under **Settings -> Security -> Private vulnerability reporting**.
+Send suspected vulnerabilities to the maintainers through
+[GitHub’s private reporting form](https://github.com/satankov/on-track/security/advisories/new).
+Keep technical details private until a fix is available.
 
 Include a concise impact description, affected version, reproduction steps, and
 suggested mitigation if known. Do not include real personal data, database files,

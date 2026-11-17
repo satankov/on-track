@@ -1,9 +1,5 @@
 import { defaultUrlTransform } from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkParse from "remark-parse";
-import { unified } from "unified";
-
-const parser = unified().use(remarkParse).use(remarkGfm).freeze();
+import { markdownParser } from "./markdown-parser.js";
 
 type MarkdownNode = {
   type: string;
@@ -32,7 +28,7 @@ export function analyzeMarkdown(body: string): {
   text: string;
   hasLinks: boolean;
 } {
-  const tree = parser.parse(body);
+  const tree = markdownParser.parse(body);
   const definitions = new Map<string, string>();
   const footnotes = new Map<string, MarkdownNode>();
   const referencedFootnotes = new Set<string>();

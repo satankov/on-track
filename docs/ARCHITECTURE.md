@@ -339,6 +339,13 @@ message. Both retain sender, message time and relative order. The database
 commits the group together. Moving or deleting a source message keeps any
 existing continuation anchored in its source conversation.
 
+The browser can also export selected messages from one visible timeline as a
+readable Markdown or plain-text excerpt. It snapshots the selected bodies,
+sender, time, display labels, attachment counts and conversation title. A change
+to that snapshot closes the preview. A local worker formats large selections.
+Copy text and a browser download use the same preview string. The export uses
+client memory and has no server route or database writes.
+
 Built-in labels transfer by canonical ID. A custom label with the same name and
 symbol in the destination uses its local definition, including a disabled one.
 Otherwise, `note_label_snapshots` records the name and symbol on that message.

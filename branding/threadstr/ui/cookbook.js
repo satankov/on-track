@@ -379,6 +379,7 @@ toolbar.querySelector('[role="menu"]').addEventListener("click", (event) => {
 });
 
 const selection = document.querySelector("#message-selection");
+const exportView = selection.querySelector("#cb-export");
 const selectedHistory = selection.querySelector("#cb-selection-history");
 const destinationView = selection.querySelector("#cb-selection-picker");
 const destinationForm = selection.querySelector("form");
@@ -472,9 +473,11 @@ function updateSelectionSpecimen() {
   const amount = count + (count === 1 ? " message" : " messages");
   for (const action of selectedHistory.querySelectorAll("button[data-batch]")) {
     action.disabled =
-      ["Copy", "Move", "Delete"].includes(action.dataset.batch) && count === 0;
+      ["Copy", "Move", "Export", "Delete"].includes(action.dataset.batch) &&
+      count === 0;
     action.hidden =
-      deleting && ["all", "Copy", "Move"].includes(action.dataset.batch);
+      deleting &&
+      ["all", "Copy", "Move", "Export"].includes(action.dataset.batch);
     if (action.dataset.batch === "Delete")
       action.textContent = deleting ? "Delete " + amount : "Delete";
   }
@@ -517,6 +520,7 @@ selection.addEventListener("click", (event) => {
   if (action === "back" || action === "cancel") {
     selectedHistory.hidden = false;
     destinationView.hidden = true;
+    exportView.hidden = true;
     if (action === "cancel" && batchCommand !== "Delete")
       choices.forEach((choice) => {
         choice.checked = false;
@@ -524,6 +528,37 @@ selection.addEventListener("click", (event) => {
     batchCommand = "";
     updateSelectionSpecimen();
     choices[0].focus();
+  } else if (action === "Export") {
+    const selected = choices.filter((choice) => choice.checked);
+    const count = selected.length;
+    if (!count) return;
+    selectedHistory.hidden = true;
+    exportView.hidden = false;
+    exportView.querySelector("h3").textContent =
+      "Export " + count + (count === 1 ? " message" : " messages");
+    const entries = selected.map((choice) => {
+      const row = choice.closest(".message-row");
+      const index = choices.indexOf(choice);
+      const sender =
+        row.querySelector(".message-sender")?.textContent || "Notebook owner";
+      return (
+        "**09:1" +
+        index +
+        " · " +
+        sender +
+        "**\n\n" +
+        row.querySelector(".note-body").textContent.trim()
+      );
+    });
+    exportView.querySelector("pre").textContent =
+      "# Website\n\n" +
+      count +
+      " selected message" +
+      (count === 1 ? "" : "s") +
+      " · Times in Europe/London\n\n## 16 November 2026\n\n" +
+      entries.join("\n\n") +
+      "\n";
+    exportView.querySelector("button").focus();
   } else if (action === "all") {
     for (const choice of choices) choice.checked = true;
     updateSelectionSpecimen();

@@ -472,12 +472,17 @@ try {
     );
     const original = await inspect(oldSource, dbPath);
     assert.deepEqual(original.app_metadata, [{ id: 1, schema_version: 7 }]);
-    // Schema metadata must advance; every released user-data field must survive.
+    // Schema 15 adds draft ownership fields; existing attachments stay on notes.
     const migratedOriginal = {
       ...original,
       app_metadata: [
         { id: 1, schema_version: candidateDescription.schemaVersion },
       ],
+      note_attachments: original.note_attachments.map((attachment) => ({
+        ...attachment,
+        draft_chat_id: null,
+        position: null,
+      })),
     };
     const installBytes = readFileSync(join(root, "install.json"));
     const oldLauncher = readFileSync(launcher(root, "ontrack"));

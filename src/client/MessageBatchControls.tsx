@@ -3,6 +3,8 @@ import { useState, type ReactNode } from "react";
 import type { Chat } from "../domain/types.js";
 import { MAX_BATCH_NOTES, type BatchNotesInput } from "../domain/validation.js";
 
+import type { SelectionAction } from "./useMessageSelection.js";
+
 type Transfer = Exclude<BatchNotesInput["action"], "delete">;
 
 export function MessageDestinationPicker({
@@ -192,7 +194,7 @@ export function MessageSelectionBar({
   error: string;
   onCancel: () => void;
   onSelectAll: () => void;
-  onAction: (action: BatchNotesInput["action"]) => void;
+  onAction: (action: SelectionAction) => void;
   onConfirm: () => void;
 }) {
   const number = `${count} ${count === 1 ? "message" : "messages"}`;
@@ -234,7 +236,7 @@ export function MessageSelectionBar({
             {busy ? "Deleting…" : "Delete " + number}
           </button>
         ) : (
-          (["copy", "move", "delete"] as const).map((action) => (
+          (["copy", "move", "export", "delete"] as const).map((action) => (
             <button
               key={action}
               type="button"

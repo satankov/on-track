@@ -1,30 +1,9 @@
 import { createContext, useContext } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Root as MdRoot, RootContent } from "mdast";
+import { remarkSoftBreaks } from "./markdown-parser.js";
 import type { Element, ElementContent, Root } from "hast";
 import { rehypeSearchHighlight } from "./search-highlight.js";
-
-function remarkSoftBreaks() {
-  return (root: MdRoot) => {
-    function visit(parent: { children: RootContent[] }) {
-      parent.children = parent.children.flatMap((child): RootContent[] => {
-        if ("children" in child) visit(child);
-        if (child.type !== "text" || !/[\r\n]/.test(child.value))
-          return [child];
-        const result: RootContent[] = [];
-        for (const [index, line] of child.value
-          .split(/\r\n|[\r\n]/)
-          .entries()) {
-          if (index) result.push({ type: "break" });
-          if (line) result.push({ type: "text", value: line });
-        }
-        return result;
-      });
-    }
-    visit(root);
-  };
-}
 
 function taskLabel(node: ElementContent): string {
   if (node.type === "text") return node.value;

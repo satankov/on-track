@@ -61,9 +61,10 @@ remain separate desktop evidence.
 
 ## Prepare a version
 
-The v0.2.1 feature branch is `codex/v0.2.1`, based on the v0.2.0 tag.
-[Plan 0036](plans/0036-v0.2.1-workspace-controls.md) covers implementation and
-local verification.
+The v0.2.1 candidate is on `release/v0.2.1`, based on the v0.2.0 tag.
+The [changelog](../CHANGELOG.md) lists the changes and the backup needed for a
+return to v0.2.0. The [compatibility guide](compatibility.md) records the
+database schema, backup format, and managed installation identifiers.
 
 1. Start a release branch from current `main` and choose an unused stable
    `X.Y.Z`. In the commands below, set `release_version` to that chosen value.
@@ -155,11 +156,10 @@ verification gate prevents publication. An interrupted upload/publication can
 leave a draft; inspect it before retrying rather than overwriting assets blindly.
 Never move or reuse a published version tag; fix the issue in a new version.
 
-README and platform guides disclose experimental installation and the next-release
-branding boundary. After publication, update the current-release notice. Verify publication includes `install.sh` and `install.ps1`;
-commands cannot work before those assets exist. Download the complete installer
-successfully before executing it. Remove experimental wording only after the
-deferred installation/platform validation passes in the next release.
+After publication, verify that the [installation guide](install/README.md)
+and its platform links lead to the published `install.sh` and `install.ps1`
+assets. Keep the installer’s experimental status in the installation guides
+until the outstanding clean-machine and platform checks pass.
 
 ## Rollback and incident response
 

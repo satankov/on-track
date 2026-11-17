@@ -15,9 +15,10 @@ recovery parts of that promise.
 
 ## Current phase
 
-The v0.2.1 workspace builds on the v0.2.0 tag. The application remains a
-plaintext alpha under Apache License 2.0, with the `thr` CLI, `ontrack`
-compatibility alias and managed compatibility floor `0.0.7`.
+The v0.2.1 workspace builds on the v0.2.0 tag. threadstr runs locally under
+Apache License 2.0. Its database, attachments, and backups are unencrypted.
+Managed installations provide the `thr` CLI and the `ontrack` compatibility
+alias. The managed compatibility floor is `0.0.7`.
 
 ## Current objective
 
@@ -25,7 +26,7 @@ Deliver the [v0.2.1 workspace controls](plans/0036-v0.2.1-workspace-controls.md)
 Projects and subthreads gain an expandable shortcut strip and a persistent Alert.
 Messages use a Label and More toolbar and a workspace preference for time
 visibility. Schema 13 adds twelve project accent choices to the same persistence and backup
-flow. Messages can be selected together and copied, moved or deleted. Copy and
+flow. Messages can be selected together and copied, moved, deleted or [exported as Markdown or plain text](plans/0040-selected-message-export.md). Copy and
 Move retain every label, including custom names and symbols specific to the
 source conversation. Schema 14 preserves these on individual messages. Format 1
 supports legacy bundles from schemas 3–14. Schema 15 saves one outgoing draft
@@ -58,8 +59,8 @@ real desktop behavior, accessibility, and live published-upgrade evidence remain
 separate validation requirements.
 
 Complete installation/platform and upgrade validation, retain the manual Node
-matrix and plaintext warnings, and record remaining evidence limits. Mobile
-remains a regression-protected alpha, not a dedicated design target.
+matrix and plaintext warnings, and record remaining evidence limits. Desktop is
+the primary design target. Browser tests cover the mobile layout.
 
 ## v0.0.1 outcome
 
@@ -265,7 +266,7 @@ remains a regression-protected alpha, not a dedicated design target.
 ## Near-term priorities
 
 1. Complete managed CLI installation and recovery gates, then prepare the next
-   alpha candidate with release review and the preserved platform-scoped manual
+   release candidate with review and the preserved platform-scoped manual
    Node 22.16/24 verification matrix.
 2. Continue hardening backup, restore, integrity checking, recovery, and
    conflict-free import semantics before users entrust irreplaceable data to the
@@ -286,7 +287,7 @@ offline history, deletion rules, recovery, and relay/discovery decisions. The
 current stable IDs, explicit migrations, and repository boundaries preserve
 options without pretending those choices are solved.
 
-## Non-goals for current plaintext alpha
+## Current non-goals
 
 Collaboration, accounts, cross-project or semantic search, encryption,
 NDA-safe claims, native installers, mobile apps, peer-to-peer sync, public
@@ -296,7 +297,7 @@ hosting, analytics, and telemetry.
 
 - A chat is a private project notebook, not a cooperative messenger.
 - Data is local by default and stored outside the Git checkout.
-- Settings is the sole action in the sidebar footer. The README and backup
+- Settings is the sole action in the sidebar footer. The user guide and backup
   settings explain the plaintext storage model.
 - Manual GitHub source installation supports Node.js 22 from 22.16.0 on macOS
   and Linux and Node.js 24 on Windows, macOS, and Linux. Managed CLI delivery
@@ -361,16 +362,19 @@ live in `docs/adr/`; significant work lives in `docs/plans/`.
   multipart advisory: its affected `saveRequestFiles()` API is unused, while
   application uploads use `request.parts()` and owned staging. Reassess that
   exposure before adopting another multipart API.
-- v0.0.4 deliberately does not restore v0.0.3/schema-2 backup bundles. Live
-  v0.0.3 databases still migrate at startup, and this compatibility break is
-  acceptable only under the current no-user alpha assumption.
+- Restoring a v0.0.3/schema-2 backup bundle has been unsupported since v0.0.4.
+  Live v0.0.3 databases still migrate at startup. The original compatibility
+  decision is recorded in [plan 0012](plans/0012-node-22-and-complexity-simplification.md).
 - Native command construction is tested for macOS, Windows, and Linux, but real
   OS dispatch has been manually reported only on one macOS host. Windows and
   Linux desktop integration remains unverified.
 - Browser file-drop regressions pass, but actual Finder-origin dragging and
   cancellation remain manually unverified; this is separate from native Open.
-- Managed uninstall is locally verified on disposable macOS/Node 22 fixtures;
-  native Windows/Linux and Node 24 dispatcher cleanup still require evidence.
+- Managed uninstall has passed on disposable macOS arm64 installations under
+  Node 22 and the pinned Node 24.14.0 runtime, including the two-process
+  dispatcher, default retention, and explicit deletion. The v0.2.0 native CI
+  runs also passed the uninstall smoke on Windows and Linux. Remaining native
+  recovery and cleanup checks are tracked in [issue #62](https://github.com/satankov/on-track/issues/62).
   It preserves unknown files and small ownership locks; only explicit
   `--delete-data` removes project content. See ADR-0012 and plan 0027.
 - Loopback HTTP narrows exposure but is still a trust boundary requiring Host,

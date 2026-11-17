@@ -4546,7 +4546,9 @@ describe("personal project chat workspace", () => {
     expect(screen.queryByText("draft.pdf")).not.toBeInTheDocument();
   });
 
-  it("opens settings as a rail mode and exports from the main workspace", async () => {
+  it("opens settings as a rail mode and exports from the main workspace", async ({
+    onTestFinished,
+  }) => {
     const user = userEvent.setup();
     const api = createApi({
       exportDatabase: vi.fn().mockResolvedValue(
@@ -4557,13 +4559,23 @@ describe("personal project chat workspace", () => {
     });
     const createObjectURL = vi.fn(() => "blob:threadstr-export");
     const revokeObjectURL = vi.fn();
-    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
-      this: HTMLAnchorElement,
-    ) {
-      expect(this.download).toMatch(
-        /^threadstr-\d{4}-\d{2}-\d{2}\.on-track-backup$/,
-      );
+    vi.stubGlobal(
+      "URL",
+      class extends URL {
+        static createObjectURL = createObjectURL;
+        static revokeObjectURL = revokeObjectURL;
+      },
+    );
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        expect(this.download).toMatch(
+          /^threadstr-\d{4}-\d{2}-\d{2}\.on-track-backup$/,
+        );
+      });
+    onTestFinished(() => {
+      click.mockRestore();
+      vi.unstubAllGlobals();
     });
     render(<App api={api} />);
 
@@ -6630,6 +6642,109 @@ describe("bulk message actions", () => {
       ...overrides,
     });
   }
+  it("exports through a message’s More menu and restores focus and draft", async () => {
+    const user = userEvent.setup();
+    const api = batchApi();
+    render(<App api={api} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open Source" }),
+    );
+    await user.type(
+      await screen.findByRole("textbox", { name: "Add a note" }),
+      "private draft",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Select messages" }),
+    ).not.toBeInTheDocument();
+    const row = screen.getByText("Readiness").closest("li")!;
+    await chooseMessageAction(user, "Select messages", row);
+    const selected = within(row).getByRole("checkbox", {
+      name: "Select message: Readiness",
+    });
+    expect(selected).toHaveFocus();
+    expect(selected).toBeChecked();
+    await user.click(selected);
+    expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
+    await user.click(selected);
+    await user.click(screen.getByRole("button", { name: "Export" }));
+    const preview = await screen.findByLabelText("Exact export text");
+    expect(preview.textContent).toContain("# Source");
+    expect(preview.textContent).toContain("Readiness");
+    expect(preview.textContent).not.toMatch(/Checklist|private draft/);
+    await user.click(screen.getByRole("radio", { name: /Plain text/ }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Exact export text").textContent).toMatch(
+        /^Source\n/,
+      ),
+    );
+    const copy = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockRejectedValueOnce(new Error("denied"));
+    await user.click(screen.getByRole("button", { name: "Copy text" }));
+    const manual = await screen.findByRole("textbox", {
+      name: "Exact export text",
+    });
+    expect(manual).toHaveFocus();
+    expect((manual as HTMLTextAreaElement).selectionEnd).toBe(
+      (manual as HTMLTextAreaElement).value.length,
+    );
+    await user.click(screen.getByRole("button", { name: "Copy text" }));
+    expect(copy).toHaveBeenLastCalledWith(
+      (manual as HTMLTextAreaElement).value,
+    );
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "Export" })).toHaveFocus();
+    expect(
+      screen.getByRole("checkbox", { name: "Select message: Readiness" }),
+    ).toBeChecked();
+    await user.keyboard("{Escape}");
+    expect(
+      within(row).getByRole("button", { name: "More message actions" }),
+    ).toHaveFocus();
+    expect(screen.getByRole("textbox", { name: "Add a note" })).toHaveValue(
+      "private draft",
+    );
+    expect(api.batchNotes).not.toHaveBeenCalled();
+  });
+  it("ignores a stale copy denial after switching formats and copying again", async () => {
+    const user = await openSelection(batchApi());
+    await user.click(screen.getByRole("button", { name: "Export" }));
+    await screen.findByLabelText("Exact export text");
+    const pending = deferred<void>();
+    vi.spyOn(navigator.clipboard, "writeText")
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValueOnce(undefined);
+    await user.click(screen.getByRole("button", { name: "Copy text" }));
+    await user.click(screen.getByRole("radio", { name: /Plain text/ }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Exact export text").textContent).toMatch(
+        /^Source\n/,
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Copy text" }));
+    expect(await screen.findByText("Text copied.")).toBeVisible();
+    await act(async () => pending.reject(new Error("denied")));
+    expect(screen.getByText("Text copied.")).toBeVisible();
+    expect(
+      screen.queryByRole("textbox", { name: "Exact export text" }),
+    ).toBeNull();
+  });
+  it("closes export when a selected body changes under the same ID", async () => {
+    const api = batchApi();
+    const user = await openSelection(api);
+    await user.click(screen.getByRole("button", { name: "Export" }));
+    await screen.findByLabelText("Exact export text");
+    vi.mocked(api.getChat).mockResolvedValue({
+      ...source,
+      notes: [{ ...messages[0], body: "Changed" }, messages[1]],
+    });
+    act(() => window.dispatchEvent(new Event("focus")));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Messages changed. Review your selection.",
+    );
+    expect(screen.queryByRole("button", { name: "Copy text" })).toBeNull();
+    expect(screen.getByText("2 selected")).toBeVisible();
+  });
   it("selects inclusive Shift ranges in visible history order and keeps earlier choices", async () => {
     const user = userEvent.setup();
     const notes = [6, 1, 3, 2, 0, 5, 4].map((i) => ({

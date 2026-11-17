@@ -20,11 +20,11 @@ Node/npm instructions.
 Both methods run the same local browser application and keep projects separate
 from application code. Neither starts automatically after a reboot.
 
-**Experimental installer:** [v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1)
-is the current release and includes published installer assets;
-installation/OS validation is ongoing. Releases showing only **Source code (zip)**,
-**Source code (tar.gz)**, and an attestation are source-only; use manual setup
-with their ZIP archive. Older releases do not gain installer files automatically.
+Find the installer scripts under **Assets** on the
+[latest release](https://github.com/satankov/on-track/releases/latest).
+Managed installation is experimental while clean-machine validation continues
+across operating systems. For a source-only release, download **Source code
+(zip)** and follow manual setup in your OS guide.
 
 ## Commands and updates
 
@@ -48,10 +48,10 @@ Replace `vX.Y.Z` with an already published compatible release tag. Updates accep
 support; development branches, prereleases, and downgrades are not supported.
 An unavailable version leaves the working server running.
 
-Save browser drafts before updating. The command prepares the new version,
-then asks before restarting. Reload your browser tabs after it finishes.
-Export a backup in Settings before important upgrades; update recovery files
-are not a replacement for a full backup.
+Before updating, finish any edits and export a backup in **Settings → Backups**.
+In v0.2.0 and earlier, send or copy any draft you want to keep before reloading.
+From v0.2.1 onward, wait for **Draft saved**. The update command prepares the
+new version, then asks before restarting. Reload your browser tabs afterward.
 
 Use `thr run --no-open` to start without opening a browser, and
 `thr --help` for command options. Start again with `thr run` after a reboot.
@@ -88,8 +88,8 @@ installer staging folders, exported backups, original files outside managed
 attachments, manual source checkouts, and system Node/npm remain. Retained paths
 are reported; review them before deleting anything manually. Exact owned shell
 PATH entries are removed; modified or ambiguous profile blocks remain with
-cleanup guidance. Open a new terminal afterward. Browser appearance preferences
-can be removed through the browser's site-data controls.
+cleanup guidance. Open a new terminal afterward. Appearance preferences stay
+with the project database when you keep your data.
 
 On Windows, the command first stops the app, then schedules remaining runtime
 cleanup after both CLI and dispatcher exit. **Pending is not complete.** Read the
@@ -103,9 +103,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\exact\printed\cleanu
 Use the actual printed paths. The helper removes its script/job on success;
 the receipt remains for inspection. On all operating systems, small ownership
 lock files remain in the runtime/data folders to avoid racing another local
-process; they contain no project content. Actual Windows and Linux
-uninstall smoke validation remains pending; macOS has local disposable-fixture
-evidence. This does not widen the installer's experimental platform guarantees.
+process; they contain no project content. CI exercises uninstall with disposable
+fixtures on Windows, Linux, and macOS. Clean-machine validation of the
+end-user installation remains in progress.
 
 An interrupted macOS/Linux uninstall retains a validated removal record. Retry
 the same command/options. If the launcher has already been removed, use a built
@@ -149,7 +149,8 @@ your shell resolution and use the absolute managed launcher path printed by setu
 
 ## Manual updates
 
-1. Export a backup in **Settings** and save browser drafts.
+1. Finish any edits, preserve drafts as described in [Commands and updates](#commands-and-updates),
+   and export a backup in **Settings → Backups**.
 2. Stop the old server with **Ctrl+C**.
 3. Download and extract the new source release into a separate folder.
 4. Run `npm run quickstart` there (`npm.cmd run quickstart` on PowerShell).
@@ -194,11 +195,11 @@ Legacy v0.0.6 and unpublished/custom builds cannot be adopted directly.
 | Linux   | `$XDG_DATA_HOME/on-track/` or `~/.local/share/on-track/` |
 | Windows | `%APPDATA%\On Track\`                                    |
 
-Use **Settings → Export** to save a `.on-track-backup` containing projects and
-attachments. Store backups separately from the live data folder. Do not back up
-by copying only a running SQLite database: that omits attachments and may miss
-recent changes. Local data and backups are not encrypted.
-See [data and backup details](../../README.md#where-your-data-lives).
+Use **Settings → Backups** and choose **Export all** or **Export selected** to
+save a `.on-track-backup` with your projects and attachments. Store backups
+separately from the live data folder. Copying only a running SQLite database
+omits attachments and may miss recent changes. Local data and backups are
+unencrypted. See [data and backup details](../USER_GUIDE.md#where-your-data-lives).
 
 ## If something goes wrong
 

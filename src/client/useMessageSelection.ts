@@ -7,6 +7,13 @@ import {
   type ReadingPosition,
 } from "./history-position.js";
 
+import {
+  sameExportSource,
+  type ExportSource,
+} from "./message-export-source.js";
+
+export type SelectionAction = BatchNotesInput["action"] | "export";
+const exportChanged = "Messages changed. Review your selection.";
 const selectionChanged = "The visible messages changed. Review your selection.";
 
 export function useMessageSelection(
@@ -14,10 +21,10 @@ export function useMessageSelection(
   workspaceRef: RefObject<HTMLElement | null>,
   visibleIds: ReadonlySet<string>,
   onBatchNotes?: (input: BatchNotesInput) => Promise<void>,
+  getExportSource?: (selected: ReadonlySet<string>) => ExportSource,
 ) {
-  const [batchStage, setBatchStage] = useState<
-    "select" | BatchNotesInput["action"]
-  >();
+  const [batchStage, setBatchStage] = useState<"select" | SelectionAction>();
+  const [exportSource, setExportSource] = useState<ExportSource>();
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [batchError, setBatchError] = useState("");
   const [batchBusy, setBatchBusy] = useState(false);
@@ -33,11 +40,13 @@ export function useMessageSelection(
   >(undefined);
   const selectionStart = useRef<ReadingPosition | undefined>(undefined);
   const batchPosition = useRef<ReadingPosition | undefined>(undefined);
-  const isPicker = batchStage === "copy" || batchStage === "move";
+  const isPicker =
+    batchStage === "copy" || batchStage === "move" || batchStage === "export";
   useLayoutEffect(() => {
     const target =
       nextFocus.current ??
-      (batchStage === "select" && batchError === selectionChanged
+      (batchStage === "select" &&
+      (batchError === selectionChanged || batchError === exportChanged)
         ? { selector: "[data-select-note]:checked, [data-selection-cancel]" }
         : undefined);
     if (isPicker || !target) return;
@@ -71,12 +80,23 @@ export function useMessageSelection(
     const remaining = new Set([...selected].filter((id) => visibleIds.has(id)));
     setSelected(remaining);
     setBatchStage("select");
-    setBatchError(selectionChanged);
+    setExportSource(undefined);
+    setBatchError(batchStage === "export" ? exportChanged : selectionChanged);
+  } else if (
+    batchStage === "export" &&
+    exportSource &&
+    getExportSource &&
+    !sameExportSource(exportSource, getExportSource(selected))
+  ) {
+    setBatchStage("select");
+    setExportSource(undefined);
+    setBatchError(exportChanged);
   }
   function endSelection() {
     if (batchInFlight.current) return;
     batchPosition.current = selectionStart.current;
     nextFocus.current = { id: openerId.current };
+    setExportSource(undefined);
     setBatchStage(undefined);
     setBatchError("");
     setSelected(new Set());
@@ -84,6 +104,7 @@ export function useMessageSelection(
 
   function resetSelectionForFilter() {
     if (!batchStage || batchInFlight.current) return;
+    setExportSource(undefined);
     setBatchStage(undefined);
     setBatchError("");
     setSelected(new Set());
@@ -132,7 +153,11 @@ export function useMessageSelection(
     if (applySelection(next)) rangeAnchor.current = id;
   }
 
-  function chooseBatchAction(action: BatchNotesInput["action"]) {
+  function chooseBatchAction(action: SelectionAction) {
+    if (action === "export") {
+      if (!selected.size || !getExportSource) return;
+      setExportSource(getExportSource(selected));
+    }
     if (action === "delete")
       nextFocus.current = { selector: "[data-selection-cancel]" };
     else if (historyRef.current)
@@ -144,6 +169,7 @@ export function useMessageSelection(
   function backToSelection() {
     if (batchInFlight.current) return;
     nextFocus.current = { action: batchStage };
+    setExportSource(undefined);
     setBatchError("");
     setBatchStage("select");
   }
@@ -153,6 +179,7 @@ export function useMessageSelection(
       !onBatchNotes ||
       !batchStage ||
       batchStage === "select" ||
+      batchStage === "export" ||
       !selected.size ||
       batchInFlight.current
     )
@@ -195,6 +222,7 @@ export function useMessageSelection(
 
   return {
     stage: batchStage,
+    exportSource,
     selected,
     busy: batchBusy,
     error: batchError,

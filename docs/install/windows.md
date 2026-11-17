@@ -1,9 +1,7 @@
 # Install threadstr on Windows
 
-> **Release guidance:** the latest published release is
-> [threadstr v0.1.1](https://github.com/satankov/on-track/releases/tag/v0.1.1),
-> with `thr` and the `ontrack` compatibility alias. The `latest` downloads include
-> the uninstall commands below, available since v0.1.0.
+The installer downloads the [latest release](https://github.com/satankov/on-track/releases/latest)
+and provides the `thr` command and its `ontrack` compatibility alias.
 
 ## Quick setup — one command
 
@@ -22,8 +20,7 @@ and opens your browser with the server running in the background. You can close
 PowerShell after setup. Git, a system Node installation, and administrator
 access are not required. The execution-policy setting applies to this process.
 
-The initial target is Windows x64; Windows ARM64 is not included. Windows
-verification is still pending.
+The managed installer targets Windows x64. Windows ARM64 is unsupported.
 
 Open a **new PowerShell window** after setup, then use:
 
@@ -41,7 +38,7 @@ for logs and updating to a specific version.
 
 Replace `releases/latest/download` in the command with
 `releases/download/vX.Y.Z`, replacing `vX.Y.Z` with an already published tag
-that includes installer files. This placeholder does not select the next version.
+that includes installer files.
 
 ### Download first, then run
 
@@ -122,12 +119,14 @@ For startup, download, or update problems, see [troubleshooting](README.md#if-so
 The retained legacy data and runtime names are deliberate; see
 [compatibility guidance](../compatibility.md).
 
-## Uninstall (next release)
+<a id="uninstall-next-release"></a>
+
+## Uninstall
 
 Run `thr uninstall` to remove the managed app and private Node/npm dependencies
 while keeping your projects. Run `thr uninstall --delete-data` to also delete
 projects and attachments after reviewing the printed paths and confirming.
 Export a backup first if you need to keep that data.
 
-See [uninstall and manual removal](README.md#uninstall-next-release) for retained
+See [uninstall and manual removal](README.md#uninstall) for retained
 files, recovery, noninteractive options, and the Windows completion receipt.

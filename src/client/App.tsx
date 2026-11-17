@@ -10,6 +10,8 @@ import {
   MAX_PICTURE_PREVIEW_BYTES,
   picturePreviewMediaType,
 } from "../domain/picture-preview.js";
+import { MessageExportWorkspace } from "./MessageExportWorkspace.js";
+import { selectedMessageSource } from "./message-export-source.js";
 import { useMessageSelection } from "./useMessageSelection.js";
 import { SharedMessageGradient } from "./SharedMessageGradient.js";
 import { ProjectSearchResults } from "./ProjectSearchResults.js";
@@ -2960,6 +2962,23 @@ function ChatWorkspace({
     workspaceRef,
     visibleIds,
     onBatchNotes,
+    (selected) =>
+      selectedMessageSource(
+        detail.projectId
+          ? [root?.title ?? "Project", detail.title]
+          : [detail.title],
+        visibleNotes,
+        selected,
+        definitions,
+      ),
+  );
+  const canSelectMessages = Boolean(
+    onBatchNotes &&
+    !saving &&
+    !editingNote &&
+    !projectSearchActive &&
+    !searchQuery.error &&
+    visibleNotes.length,
   );
   const noticeDestination = batch.notice?.destination;
   const fileDrop = useComposerFileDrop(
@@ -3241,6 +3260,13 @@ function ChatWorkspace({
 
   return (
     <ProjectLabelContext.Provider value={definitions}>
+      {batch.stage === "export" && batch.exportSource && (
+        <MessageExportWorkspace
+          source={batch.exportSource}
+          onBack={batch.back}
+          backIcon={<ArrowLeftIcon />}
+        />
+      )}
       {(batch.stage === "copy" || batch.stage === "move") && (
         <MessageDestinationPicker
           key={batch.stage}
@@ -3633,11 +3659,7 @@ function ChatWorkspace({
             </div>
           ) : (
             <MessageGroups
-              onStartSelection={
-                onBatchNotes && !saving && !editingNote
-                  ? batch.begin
-                  : undefined
-              }
+              onStartSelection={canSelectMessages ? batch.begin : undefined}
               selected={batch.stage ? batch.selected : undefined}
               onToggleSelected={batch.toggle}
               selectionLocked={batch.stage === "delete" || batch.busy}

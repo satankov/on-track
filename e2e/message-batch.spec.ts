@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
 import type { ChatDetail, Note } from "../src/domain/types.js";
 import { expect, test } from "./fixtures.js";
@@ -256,4 +257,136 @@ test("selects a range or all messages and keeps the transfer controls visible wh
     await request.get(`${base}/${destination.id}`)
   ).json();
   expect(stored.notes).toHaveLength(6);
+});
+
+test("exports a sparse selection in both formats using the flat workspace", async ({
+  localApp,
+  page,
+  request,
+}, testInfo) => {
+  const title = "Handover notes";
+  const source: ChatDetail = await (
+    await request.post(localApp.url + "/api/chats", {
+      data: { title, accent: "ocean" },
+    })
+  ).json();
+  const child: ChatDetail = await (
+    await request.post(
+      localApp.url + "/api/chats/" + source.id + "/subthreads",
+      { data: { title: "Move day" } },
+    )
+  ).json();
+  const base = localApp.url + "/api/chats/" + child.id + "/notes";
+  // Three long selected bodies exercise the actual background formatter in
+  // the production build. The omitted row sits between the first two.
+  for (const [i, name] of [
+    "First step",
+    "Private aside",
+    "Second step",
+    "Final step",
+  ].entries()) {
+    const body =
+      name + "\n\n" + (i === 1 ? "Private detail" : "Room 12. ".repeat(950));
+    const r = await request.post(base, {
+      multipart: {
+        body,
+        createdAt: String(Date.UTC(2026, 10, 16, 12, i)),
+        ...(i === 0
+          ? {
+              sender: "Maya",
+              files: {
+                name: "unshared.txt",
+                mimeType: "text/plain",
+                buffer: Buffer.from("Private attachment"),
+              },
+            }
+          : {}),
+      },
+    });
+    expect(r.ok()).toBe(true);
+  }
+  await page.goto(localApp.url);
+  await page
+    .getByRole("button", { name: "Open " + title, exact: true })
+    .click();
+  if (testInfo.project.name === "mobile-webkit")
+    await page
+      .getByRole("button", { name: "Back to projects", exact: true })
+      .click();
+  await page
+    .getByRole("button", { name: "Open Move day", exact: true })
+    .click();
+  if (testInfo.project.name === "mobile-webkit")
+    await page.setViewportSize({ width: 320, height: 650 });
+  const header = page.locator(".chat-header");
+  const childTitle = header.getByText("Move day", { exact: true });
+  await expect(childTitle).toBeVisible();
+  await expect(
+    header.getByRole("button", { name: "Select messages", exact: true }),
+  ).toHaveCount(0);
+  await expect
+    .poll(async () => (await childTitle.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(40);
+  const rows = page.locator(".message-row");
+  const first = rows.nth(3);
+  await first.getByRole("button", { name: "More message actions" }).click();
+  await first.getByRole("menuitem", { name: "Select messages" }).click();
+  for (const i of [0, 2])
+    await rows.nth(i).locator("[data-select-note]").check();
+  const requests: string[] = [];
+  page.on("request", (r) => {
+    const url = new URL(r.url());
+    if (
+      url.pathname.includes("/api/") ||
+      (url.origin !== new URL(localApp.url).origin && url.protocol !== "blob:")
+    )
+      requests.push(url.pathname);
+  });
+  await page.getByRole("button", { name: "Export", exact: true }).click();
+  const view = page.getByRole("main", { name: "Export 3 messages" });
+  await expect(view).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  for (const [ext, label] of [
+    ["md", "Markdown"],
+    ["txt", "Plain text"],
+  ] as const) {
+    await view.getByRole("radio", { name: new RegExp(label) }).check();
+    const preview = view.getByLabel("Exact export text");
+    await expect(preview).toContainText("Final step");
+    const text = await preview.textContent();
+    expect(text).toContain("1 attachment omitted.");
+    expect(text).not.toMatch(/Private aside|unshared.txt/);
+    expect(text!.indexOf("First step")).toBeLessThan(
+      text!.indexOf("Second step"),
+    );
+    expect(text!.indexOf("Second step")).toBeLessThan(
+      text!.indexOf("Final step"),
+    );
+    const download = view.getByRole("button", {
+      name: "Download ." + ext,
+      exact: true,
+    });
+    await expect(download).toBeInViewport({ ratio: 1 });
+    const [file] = await Promise.all([
+      page.waitForEvent("download"),
+      download.click(),
+    ]);
+    expect(file.suggestedFilename()).toBe(
+      "handover-notes_move-day_2026-11-16." + ext,
+    );
+    expect(await readFile((await file.path())!)).toEqual(
+      Buffer.from(text!, "utf8"),
+    );
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("button", { name: "Export", exact: true }),
+  ).toBeFocused();
+  await expect(rows.locator("[data-select-note]:checked")).toHaveCount(3);
+  expect(requests).toEqual([]);
 });
