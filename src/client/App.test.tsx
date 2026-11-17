@@ -334,6 +334,57 @@ describe("personal project chat workspace", () => {
     expect(open).not.toHaveAccessibleDescription(/Manual alert/);
   });
 
+  it.each(["touch", "pen"])(
+    "keeps the project title target stable when %s focuses it before activation",
+    async (pointerType) => {
+      const user = userEvent.setup();
+      const chat = {
+        id: "pointer",
+        title: "Pointer project",
+        accent: "ocean",
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      const api = createApi({
+        listChats: vi.fn().mockResolvedValue([chat]),
+        getChat: vi.fn().mockResolvedValue({ ...chat, notes: [] }),
+      });
+      render(<App api={api} />);
+      const title = await screen.findByRole("button", {
+        name: "Open Pointer project",
+      });
+
+      fireEvent.pointerDown(title, { pointerType });
+      act(() => title.focus());
+      expect(
+        screen.queryByRole("group", { name: "Shortcuts for Pointer project" }),
+      ).toBeNull();
+      fireEvent.pointerUp(title, { pointerType });
+      fireEvent.click(title);
+      await waitFor(() => expect(api.getChat).toHaveBeenCalledWith(chat.id));
+      expect(await screen.findByLabelText("Add a note")).toBeVisible();
+
+      act(() => title.focus());
+      await user.tab();
+      await user.tab({ shift: true });
+      expect(
+        screen.getByRole("group", { name: "Shortcuts for Pointer project" }),
+      ).toBeVisible();
+      await user.keyboard("{Escape}");
+
+      const disclosure = screen.getByRole("button", {
+        name: "Shortcuts for Pointer project",
+      });
+      fireEvent.pointerDown(disclosure, { pointerType });
+      act(() => disclosure.focus());
+      fireEvent.pointerUp(disclosure, { pointerType });
+      fireEvent.click(disclosure);
+      expect(
+        screen.getByRole("button", { name: "Alert Pointer project" }),
+      ).toHaveFocus();
+    },
+  );
+
   it("dismisses mouse shortcuts after opening the project or setting its Alert", async () => {
     const user = userEvent.setup();
     const chat = {
@@ -2581,6 +2632,9 @@ describe("personal project chat workspace", () => {
       expect(getChat).toHaveBeenCalledTimes(2);
     });
 
+    await user.click(
+      screen.getByRole("button", { name: "Shortcuts for Alpha" }),
+    );
     await user.click(screen.getByRole("button", { name: "Pin Alpha" }));
     expect(screen.getByRole("button", { name: "Pin Alpha" })).toHaveAttribute(
       "aria-pressed",

@@ -47,17 +47,20 @@ const render = (
   );
 describe("readable selected-message exports", () => {
   it.each(["md", "txt"] as const)(
-    "matches the reviewed .%s file exactly",
+    "matches the reviewed .%s file with LF output",
     (format) => {
       const actual = render(sample.messages, format, sample.titles);
       const name = "riverside-move_move-day_2026-11-16." + format;
       expect(actual.filename).toBe(name);
+      // Git may check out the reference with CRLF on Windows. Normalize only
+      // that reference; the exported bytes must retain the specified LF format.
       expect(actual.text).toBe(
         readFileSync(
           "branding/threadstr/message-export/examples/" + name,
           "utf8",
-        ),
+        ).replace(/\r\n/g, "\n"),
       );
+      expect(actual.text).not.toContain("\r");
     },
   );
   it("keeps the timeline's hard prose breaks and literal code whitespace", () => {

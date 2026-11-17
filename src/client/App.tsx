@@ -873,11 +873,11 @@ function ProjectRail({
   const [shortcutsId, setShortcutsId] = useState<string>();
   const [hoveredRow, setHoveredRow] = useState<string>();
   const focusShortcuts = useRef<string | undefined>(undefined);
-  const mouseFocus = useRef(false);
+  const pointerFocus = useRef(false);
   useEffect(() => {
     // A Tab from elsewhere in the workspace can be the next entry into the rail.
     const useKeyboardFocus = () => {
-      mouseFocus.current = false;
+      pointerFocus.current = false;
     };
     document.addEventListener("keydown", useKeyboardFocus, true);
     return () =>
@@ -988,7 +988,7 @@ function ProjectRail({
     const open = shortcutsId === chat.id || hoveredRow === rowKey;
     const visibleAttention = chat.manualAlert ? "today" : attention;
     function revealOnFocus() {
-      if (!mouseFocus.current) setShortcutsId(chat.id);
+      if (!pointerFocus.current) setShortcutsId(chat.id);
     }
     const shortcutsLabel = `Shortcuts for ${chat.title}`;
     const actionButton = (
@@ -1031,8 +1031,9 @@ function ProjectRail({
             );
         }}
         onPointerDownCapture={(event) => {
-          mouseFocus.current = usesMouseHover(event.pointerType);
-          if (mouseFocus.current) setShortcutsId(undefined);
+          // Touch and pen focus must not move the title before activation.
+          pointerFocus.current = true;
+          if (usesMouseHover(event.pointerType)) setShortcutsId(undefined);
         }}
         onBlur={(event) => {
           if (
