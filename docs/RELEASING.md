@@ -61,9 +61,10 @@ remain separate desktop evidence.
 
 ## Prepare a version
 
-The v0.2.1 candidate is on `release/v0.2.1`, based on the v0.2.0 tag.
-The [changelog](../CHANGELOG.md) lists the changes and the backup needed for a
-return to v0.2.0. The [compatibility guide](compatibility.md) records the
+The v0.2.2 patch is prepared from `main` after the v0.2.1 release and PR #84.
+The [changelog](../CHANGELOG.md) lists the focus correction and test maintenance.
+Schema 15, backup format 1, and the managed compatibility floor remain unchanged.
+The [compatibility guide](compatibility.md) records the
 database schema, backup format, and managed installation identifiers.
 
 1. Start a release branch from current `main` and choose an unused stable

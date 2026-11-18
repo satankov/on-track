@@ -53,7 +53,7 @@ Install this tool https://github.com/satankov/on-track
 
 ## Quick start
 
-This checkout prepares **v0.2.1**. The installers below select the latest
+This checkout contains **v0.2.2**. The installers below select the latest
 published release. See the [changelog](CHANGELOG.md) for changes and upgrade guidance.
 
 On **macOS or Linux**, run this command in Terminal.

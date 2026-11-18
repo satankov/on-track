@@ -8,7 +8,7 @@ limits live here. For managed installation and CLI commands, use the
 [macOS](install/macos.md), [Linux](install/linux.md), and
 [Windows](install/windows.md).
 
-This guide describes the v0.2.1 workspace.
+This guide describes the v0.2.2 workspace.
 The primary command is `thr`; `ontrack` remains a compatibility alias.
 
 ## Try the Amsterdam example
@@ -223,10 +223,10 @@ Explicit project selections allow up to 10,000 projects and 1 MiB of options.
 A merge can grow the workspace beyond one bundle's limits; use selective export
 for smaller project sets.
 
-The v0.2.1 workspace uses schema 15 and backup format 1. It accepts current
+The v0.2.2 workspace uses schema 15 and backup format 1, unchanged from v0.2.1. It accepts current
 backups and migrates validated schema 3–14 bundles during import. Restoring a
 v0.0.3/schema-2 bundle is unsupported. Supported older databases migrate during
-startup. Older app versions cannot reopen a schema-15 database.
+startup. Versions before v0.2.1 cannot reopen a schema-15 database.
 Export a backup before upgrading. You can isolate evaluation data
 with an absolute disposable path:
 

@@ -2,7 +2,8 @@
 
 ## Status
 
-The v0.2.1 workspace builds on the v0.2.0 subthread release tag.
+The v0.2.2 patch corrects mobile focus after project creation. It retains the
+v0.2.1 architecture, schema 15, backup format 1, and installation contracts.
 Schema 12 adds a checked boolean to each conversation for manual Alert and a
 checked boolean to workspace preferences for timestamp visibility. Both use
 the existing database and format-1 backup lifecycle. Schema 13 adds a checked plain or gradient finish alongside the six stored
