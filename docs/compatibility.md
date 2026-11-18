@@ -1,7 +1,7 @@
 # threadstr compatibility identifiers
 
 Version 0.0.9 introduced **threadstr** and **thr** as the primary CLI command.
-This checkout prepares v0.2.1 from the v0.2.0 tag. The repository and existing
+The v0.2.2 patch retains v0.2.1's data and installation contracts. The repository and existing
 published releases retain their real names and URLs.
 
 ## Commands and installation
@@ -43,9 +43,10 @@ managed launcher path when needed.
 Backup download display names begin `threadstr-`; the format and extension stay
 compatible. The identity transition itself requires no database migration or
 data-path relocation. v0.2.0 separately migrates schema 9 to 11 for subthreads and
-retained source positions. The current checkout adds Alerts and timestamp preferences
+retained source positions. v0.2.1 adds Alerts and timestamp preferences
 in schema 12, project accent finishes in schema 13, and message-owned custom labels
-for Copy and Move in schema 14. Schema 15 adds outgoing drafts and their managed files. Older versions refuse the newer database. Back up
+for Copy and Move in schema 14. Schema 15 adds outgoing drafts and their managed files.
+v0.2.2 adds no migration. Versions before v0.2.1 refuse the schema-15 database. Back up
 before upgrading. Selecting a project for backup includes all its subthreads.
 Do not rename existing files, rewrite backup tables, or edit shipped migrations.
 Keeping ownership identities also prevents old and new launchers from opening

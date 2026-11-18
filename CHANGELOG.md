@@ -6,10 +6,19 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-18
+
 ### Fixed
 
 - Restore mobile navigation focus after creating a project without overriding
   a control the user has already focused.
+
+### Maintenance
+
+- Isolate managed-install tests from the runner's command search paths while
+  preserving coverage for conflicting commands.
+- Keep database schema 15, backup format 1, and managed compatibility floor
+  `0.0.7` unchanged from v0.2.1.
 
 ## [0.2.1] - 2026-11-17
 

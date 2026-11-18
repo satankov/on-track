@@ -15,14 +15,16 @@ recovery parts of that promise.
 
 ## Current phase
 
-The v0.2.1 workspace builds on the v0.2.0 tag. threadstr runs locally under
+The v0.2.2 patch builds on v0.2.1 and corrects mobile navigation focus after
+project creation. threadstr runs locally under
 Apache License 2.0. Its database, attachments, and backups are unencrypted.
 Managed installations provide the `thr` CLI and the `ontrack` compatibility
 alias. The managed compatibility floor is `0.0.7`.
 
 ## Current objective
 
-Deliver the [v0.2.1 workspace controls](plans/0036-v0.2.1-workspace-controls.md).
+Deliver the v0.2.2 focus correction while preserving the
+[v0.2.1 workspace controls](plans/0036-v0.2.1-workspace-controls.md).
 Projects and subthreads gain an expandable shortcut strip and a persistent Alert.
 Messages use a Label and More toolbar and a workspace preference for time
 visibility. Schema 13 adds twelve project accent choices to the same persistence and backup
