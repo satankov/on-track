@@ -692,6 +692,85 @@ describe("personal project chat workspace", () => {
     },
   );
 
+  it.each([false, true])(
+    "mobile project creation handles native dialog focus restoration (moved: %s)",
+    async (moved) => {
+      vi.stubGlobal("matchMedia", () => ({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+      const frames: FrameRequestCallback[] = [];
+      const frame = vi
+        .spyOn(window, "requestAnimationFrame")
+        .mockImplementation((callback) => {
+          frames.push(callback);
+          return frames.length;
+        });
+      const prototype = HTMLDialogElement.prototype;
+      const originalShow = Object.getOwnPropertyDescriptor(
+        prototype,
+        "showModal",
+      );
+      const originalClose = Object.getOwnPropertyDescriptor(prototype, "close");
+      let opener: HTMLElement | null = null;
+      Object.defineProperties(prototype, {
+        showModal: {
+          configurable: true,
+          value(this: HTMLDialogElement) {
+            opener = document.activeElement as HTMLElement | null;
+            this.setAttribute("open", "");
+            this.querySelector<HTMLInputElement>("input")?.focus();
+          },
+        },
+        close: {
+          configurable: true,
+          value(this: HTMLDialogElement) {
+            this.removeAttribute("open");
+            opener?.focus();
+          },
+        },
+      });
+      try {
+        render(<App api={createApi()} />);
+        const create = await screen.findByRole("button", {
+          name: "New project",
+        });
+        act(() => create.focus());
+        fireEvent.click(create);
+        fireEvent.change(screen.getByLabelText("Project name"), {
+          target: { value: "Launch" },
+        });
+        const submit = screen.getByRole("button", { name: "Create project" });
+        act(() => submit.focus());
+        fireEvent.click(submit);
+        await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+        expect(create).toHaveFocus();
+        const composer = screen.getByLabelText("Add a note");
+        if (moved) act(() => composer.focus());
+        for (let i = 0; i < 3; i++) {
+          await act(async () => {
+            for (const callback of frames.splice(0)) callback(0);
+          });
+        }
+        expect(
+          moved
+            ? composer
+            : screen.getByRole("button", { name: "Back to projects" }),
+        ).toHaveFocus();
+      } finally {
+        frame.mockRestore();
+        vi.unstubAllGlobals();
+        if (originalShow)
+          Object.defineProperty(prototype, "showModal", originalShow);
+        else Reflect.deleteProperty(prototype, "showModal");
+        if (originalClose)
+          Object.defineProperty(prototype, "close", originalClose);
+        else Reflect.deleteProperty(prototype, "close");
+      }
+    },
+  );
+
   it("announces successful edits and sends hidden by search while refreshing membership", async () => {
     const user = userEvent.setup();
     const chat = {

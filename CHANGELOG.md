@@ -6,6 +6,11 @@ below `1.0.0`, releases may contain breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- Restore mobile navigation focus after creating a project without overriding
+  a control the user has already focused.
+
 ## [0.2.1] - 2026-11-17
 
 ### Added

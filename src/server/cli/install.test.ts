@@ -17,6 +17,7 @@ import { readActiveRelease, readInstallState } from "./state.js";
 import type { ManagedReleaseManifest } from "./release.js";
 const roots: string[] = [];
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const root of roots.splice(0))
     rmSync(root, { recursive: true, force: true });
 });
@@ -151,6 +152,12 @@ function preparedInstall() {
     mkdtempSync(join(tmpdir(), "threadstr-prepared-install-")),
   );
   roots.push(base);
+  // Keep real command collision checks inside this fixture instead of scanning
+  // every directory in the host's PATH, which can be slow on cold Windows CI.
+  const commandPath = join(base, "commands");
+  mkdirSync(commandPath);
+  vi.stubEnv("PATH", commandPath);
+  vi.stubEnv("PATHEXT", ".COM;.EXE;.BAT;.CMD");
   const current = sourceFixture(base, "0.0.9");
   const runtime = join(base, "prepared-node");
   mkdirSync(join(runtime, "bin"), { recursive: true });
@@ -171,7 +178,7 @@ function preparedInstall() {
     "no-profile": true,
     "no-open": true,
   };
-  return { base, current, runtime, root, data, options };
+  return { base, current, runtime, root, data, options, commandPath };
 }
 beforeEach(() => {
   vi.resetAllMocks();
@@ -224,6 +231,22 @@ it("keeps initialization retryable if interrupted between selection and final in
   await installManaged(f.root, f.options);
   expect(readInstallState(f.root).port).toBe(4189);
   expect(boundary.start).toHaveBeenCalledTimes(1);
+});
+it("refuses a conflicting command before selecting or starting the installation", async () => {
+  const f = preparedInstall();
+  const command = join(
+    f.commandPath,
+    process.platform === "win32" ? "ThR.ExE" : "thr",
+  );
+  writeFileSync(command, "unrelated command", { mode: 0o755 });
+  await expect(installManaged(f.root, f.options)).rejects.toThrow(command);
+  expect(readFileSync(command, "utf8")).toBe("unrelated command");
+  expect(existsSync(join(f.root, "active.json"))).toBe(false);
+  expect(existsSync(join(f.root, "install.json"))).toBe(false);
+  expect(boundary.select).not.toHaveBeenCalled();
+  expect(boundary.save).not.toHaveBeenCalled();
+  expect(boundary.start).not.toHaveBeenCalled();
+  expect(boundary.command).not.toHaveBeenCalled();
 });
 it("repeated setup reuses saved configuration and refuses a different requested port", async () => {
   const f = preparedInstall();

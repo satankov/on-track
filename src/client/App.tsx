@@ -4239,6 +4239,15 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   const [mode, setMode] = useState<"projects" | "settings" | "projectEdit">(
     "projects",
   );
+  const pendingCreatedProjectFocus = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    const createdId = pendingCreatedProjectFocus.current;
+    if (!createdId || dialog) return;
+    pendingCreatedProjectFocus.current = undefined;
+    // Native dialog cleanup restores its opener before this focus baseline.
+    if (mode === "projects" && active?.id === createdId)
+      focusMobileBackButton();
+  }, [active?.id, dialog, mode]);
   const [settingsSection, setSettingsSection] =
     useState<SettingsSection>("general");
   const [editingNote, setEditingNote] = useState<Note>();
@@ -4669,6 +4678,7 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
   async function createChat(input: { title: string; accent: Accent }) {
     rememberConversation();
     const chat = await api.createChat(input);
+    pendingCreatedProjectFocus.current = chat.id;
     setNavigationTarget(undefined);
     setExpandedProjects((current) => new Set(current).add(chat.id));
     setExample(undefined);
@@ -4686,7 +4696,6 @@ export function App({ api = apiClient }: { api?: ApiClient }) {
     setComposerTimestampOpen(false);
     setEditingNote(undefined);
     setEditingAttachmentIds([]);
-    focusMobileBackButton();
   }
 
   async function createSubthread(title: string) {
